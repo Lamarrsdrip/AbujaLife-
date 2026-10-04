@@ -1,6 +1,10 @@
 name: Bootstrap AbujaLife Source
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/bootstrap.yml'
   workflow_dispatch:
 
 permissions:
@@ -13,4 +17,66 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - run: echo 'Bootstrap staging in progress.'
+
+      - name: Verify staged source
+        shell: bash
+        run: |
+          set -euo pipefail
+          check() {
+            local file="$1" expected="$2"
+            local actual
+            actual=$(git hash-object ".bootstrap/$file")
+            echo "$file $actual"
+            test "$actual" = "$expected"
+          }
+          check part-00.txt 614730737a10af2ed4cfa19f0c12bd92415a9441
+          check part-01.txt 39fbb60d5328edf90e7f731d3a2cd6140941ecc6
+          check part-02.txt 55c45e8124203afc9fa9adf448cdbb7fcf116d0d
+          check part-03.txt fea7fdfab7d326affaaa39b33af75250895778a7
+          check part-04.txt 9d61961c18d83b10549df2b97f3955439848c1f9
+          check part-05.txt e8c18014e4e4870a3985e548ce743aaa8283c0d4
+          check part-06-00.txt 9dbc8a94f6ec1a5d2fcfeb77e10ae1d57469c1ce
+          check part-06-01.txt 7148666394e40d15f8b73bdcad70ce6dc2ca2593
+          check part-06-02.txt 4f8c8d46d4cf0bee2064a1ff036a9f6886adf0c1
+          check part-06-03.txt 0b3c63ddd2a62ab5895e83cee51f5f1ec62beed1
+          check part-06-04.txt a51ae0306e9f91a6c024e12d2b55f952574af6ad
+          check part-06-05.txt 99479a6271dd22b6e0d392ce8a9e8a0c1d5e0679
+          check part-06-06.txt 3fafb3223018d4234965d6f83f3bb407acc54834
+          check part-07.txt a43d7cdbc316877d8afd2a5d9df2d2f726d713e0
+          check part-08.txt 8a097bde587b503b4702602765369749f7dc97a4
+          check part-09.txt c692593196769fb2e78445f973fa084f650ce6ad
+          check part-10.txt 9304dd650f1a6975cd48c26fe4ac83855d5811d9
+          check part-11.txt e3ee8bc152643894fe14fb5eeeb4763d25d06d7a
+          check part-12.txt d26b7c12b6a1697cbde83b0e7d9e5df68eb93b7a
+          check part-13.txt cf0a427aa3577dac8d666e80c8467fba934c363f
+          check part-14.txt ad0da961d303ee28aa3f8a377dcf34ee20cacab0
+          check part-15.txt 79b0d15041a952c665688e095a27256d28e0182f
+          check part-16.txt d84df98c692e040688676b3c5696c9247e04e7a0
+          check part-17.txt a4dae51c18cd69aea98dca55bcaa1091ff28c824
+
+      - name: Expand AbujaLife source
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > /tmp/AbujaLife.b64
+          for n in 00 01 02 03 04 05; do cat ".bootstrap/part-$n.txt" >> /tmp/AbujaLife.b64; done
+          for f in .bootstrap/part-06-*.txt; do cat "$f" >> /tmp/AbujaLife.b64; done
+          for n in 07 08 09 10 11 12 13 14 15 16 17; do cat ".bootstrap/part-$n.txt" >> /tmp/AbujaLife.b64; done
+          base64 --decode /tmp/AbujaLife.b64 > /tmp/AbujaLife.zip
+          echo '5f363a19a5d1308bc29103217485a08b7ea554169d945db0272c1c208863b8a4  /tmp/AbujaLife.zip' | sha256sum -c -
+          unzip -oq /tmp/AbujaLife.zip -d .
+          rm -rf .bootstrap
+          rm -f .github/workflows/bootstrap.yml
+
+      - name: Run repository QA
+        run: npm run qa
+
+      - name: Commit expanded source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'AbujaLife Bootstrap'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          git commit -m 'feat: bootstrap AbujaLife open-world foundation'
+          git push origin HEAD:main

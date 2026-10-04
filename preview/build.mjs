@@ -4,20 +4,50 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ABUJA_ATLAS, AREA_COUNCILS, LANDMARKS, ATLAS_META } from '../src/shared/atlas.mjs';
 import { jobs, catalog, properties, transportModes, appearanceOptions, activities } from '../src/server/gameStore.mjs';
+import { VENUES, VENUE_ACTIONS, LIFE_GOALS, ECONOMY_META } from '../src/shared/life.mjs';
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const repository = path.dirname(directory);
 // Only public catalogues are exported. No database, account, session or credential is read.
 const data = { atlas:ABUJA_ATLAS, councils:AREA_COUNCILS, landmarks:LANDMARKS,
-  atlasMeta:ATLAS_META, jobs, catalog, properties, transportModes, appearanceOptions, activities };
+  atlasMeta:ATLAS_META, jobs, catalog, properties, transportModes, appearanceOptions, activities,
+  venues:VENUES, venueActions:VENUE_ACTIONS, lifeGoals:LIFE_GOALS, economyMeta:ECONOMY_META };
 await fs.writeFile(path.join(directory,'data.mjs'), `// Generated public preview catalogue. Rebuild with npm run preview:build.\nexport default ${JSON.stringify(data)};\n`);
 const result = await build({
   absWorkingDir:repository, entryPoints:['preview/runtime.mjs'], bundle:true, write:false,
   format:'esm', platform:'browser', target:'es2022', minify:true, charset:'utf8', legalComments:'inline'
 });
 const script = result.outputFiles[0].text.replace(/<\/script/gi,'<\\/script');
-const styles = await Promise.all(['styles.css','world.css','phone.css','map.css'].map(name=>fs.readFile(path.join(repository,'app',name),'utf8')));
-const css = styles.map(text=>text.replace(/^@import[^;]+;\s*/gm,'')).join('\n');
+// Inline the whole client stylesheet graph. New world/interior styles travel with
+// the public preview, instead of depending on a CDN resolving relative CSS URLs.
+const appDirectory=path.join(repository,'app'),includedStyles=new Set();
+async function inlineStyles(filename,parents=[]) {
+  const absolute=path.resolve(appDirectory,filename);
+  if(!absolute.startsWith(`${appDirectory}${path.sep}`))throw new Error('Preview CSS imports must stay in the app directory');
+  if(parents.includes(absolute))throw new Error(`Circular CSS import: ${filename}`);
+  if(includedStyles.has(absolute))return '';
+  includedStyles.add(absolute);
+  const source=await fs.readFile(absolute,'utf8');
+  const imports=/@import\s+(?:url\(\s*['"]?([^'"()\s]+)['"]?\s*\)|['"]([^'"]+)['"])\s*;/g;
+  let output='',cursor=0;
+  for(const match of source.matchAll(imports)) {
+    const imported=match[1]||match[2];
+    if(/^(?:https?:|data:|\/\/)/i.test(imported))throw new Error('Preview styles must not require an external stylesheet');
+    output+=source.slice(cursor,match.index);
+    output+=await inlineStyles(path.relative(appDirectory,path.resolve(path.dirname(absolute),imported)),[...parents,absolute]);
+    cursor=match.index+match[0].length;
+  }
+  return output+source.slice(cursor);
+}
+const clientHTML=await fs.readFile(path.join(appDirectory,'index.html'),'utf8');
+let css='';
+for(const [link] of clientHTML.matchAll(/<link\b[^>]*>/gi)) {
+  if(!/\brel\s*=\s*["']stylesheet["']/i.test(link))continue;
+  const href=link.match(/\bhref\s*=\s*["']([^"']+)["']/i)?.[1];
+  if(href&&href.endsWith('.css'))css+=`\n${await inlineStyles(href.replace(/^\/+/,''))}`;
+}
+if(!includedStyles.size)css=await inlineStyles('styles.css');
+for(const name of (await fs.readdir(appDirectory)).filter(name=>name.endsWith('.css')).sort())css+=`\n${await inlineStyles(name)}`;
 const html = `<!doctype html>
 <html lang="en">
 <head>

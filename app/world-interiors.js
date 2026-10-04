@@ -1,0 +1,415 @@
+// AbujaLife's authored, walkable cutaway interiors. Coordinates describe the floor,
+// including furniture footprints; raised furniture is drawn above those footprints.
+import { VENUE_ACTIONS, VENUES } from '../src/shared/life.mjs';
+const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const rect = (x,y,w,h,fill,rx=0,extra='') => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" fill="${fill}" ${extra}/>`;
+const path = (d,fill,extra='') => `<path d="${d}" fill="${fill}" ${extra}/>`;
+const line = (x1,y1,x2,y2,stroke,width=2,extra='') => `<path d="M${x1} ${y1}L${x2} ${y2}" fill="none" stroke="${stroke}" stroke-width="${width}" ${extra}/>`;
+const ellipse = (x,y,rx,ry,fill,extra='') => `<ellipse cx="${x}" cy="${y}" rx="${rx}" ry="${ry}" fill="${fill}" ${extra}/>`;
+const text = (x,y,value,size=13,fill='#66705e',extra='') => `<text x="${x}" y="${y}" font-family="Inter,Arial,sans-serif" font-size="${size}" fill="${fill}" ${extra}>${esc(value)}</text>`;
+const group = (x,y,art,extra='') => `<g transform="translate(${x} ${y})" ${extra}>${art}</g>`;
+const shadow = (x,y,w,h) => rect(x+5,y+7,w,h,'#394a3d',8,'opacity=".12"');
+
+function definitions(id) {
+  return `<defs>
+    <pattern id="${id}-oak" width="100" height="32" patternUnits="userSpaceOnUse"><rect width="100" height="32" fill="#d4bea0"/><path d="M0 0H100M0 32H100M50 0V32" stroke="#bba383" stroke-width="1"/><path d="M7 8H41M59 22H92M10 25H36" stroke="#ead6b7" opacity=".55"/></pattern>
+    <pattern id="${id}-darkoak" width="112" height="34" patternUnits="userSpaceOnUse"><rect width="112" height="34" fill="#b89d7b"/><path d="M0 0H112M56 0V34" stroke="#9b8367"/><path d="M5 9H48M64 22H105" stroke="#cdb290" opacity=".5"/></pattern>
+    <pattern id="${id}-tile" width="58" height="58" patternUnits="userSpaceOnUse"><rect width="58" height="58" fill="#e1dfce"/><path d="M0 0H58V58" fill="none" stroke="#c6caba" stroke-width="2"/></pattern>
+    <pattern id="${id}-bath" width="32" height="32" patternUnits="userSpaceOnUse"><rect width="32" height="32" fill="#bacfc4"/><path d="M0 0H32V32" fill="none" stroke="#d9e4d9" stroke-width="1.5"/></pattern>
+    <pattern id="${id}-pave" width="82" height="55" patternUnits="userSpaceOnUse"><rect width="82" height="55" fill="#d4d2b8"/><path d="M0 0H82V55M41 0V55" fill="none" stroke="#b9bda2" stroke-width="2"/></pattern>
+    <pattern id="${id}-rug" width="28" height="28" patternUnits="userSpaceOnUse"><path d="M0 14L14 0L28 14L14 28Z" fill="none" stroke="#ead7b2" stroke-width="2" opacity=".4"/></pattern>
+    <linearGradient id="${id}-glass" x2=".5" y2="1"><stop stop-color="#bbd6cc"/><stop offset="1" stop-color="#759c99"/></linearGradient>
+    <linearGradient id="${id}-water" x2=".3" y2="1"><stop stop-color="#6ca7a2"/><stop offset="1" stop-color="#a3c9b5"/></linearGradient>
+    <linearGradient id="${id}-light" x2=".7" y2="1"><stop stop-color="#fff4ca" stop-opacity=".32"/><stop offset="1" stop-color="#fff4ca" stop-opacity="0"/></linearGradient>
+  </defs>`;
+}
+
+function bedArt(w=160,h=210,color='#799282') {
+  return shadow(0,0,w,h)+rect(0,-47,w,66,'#967b5c',7)+rect(9,-37,w-18,48,'#b79a73',4)+rect(0,0,w,h,'#856e53',5)+rect(7,-6,w-14,h-15,'#ece4cf',9)+rect(7,48,w-14,h-68,color,5)+rect(7,48,w-14,18,'#b8c4ae',3)+rect(15,4,w/2-21,34,'#faf2df',8)+rect(w/2+5,4,w/2-20,34,'#faf2df',8)+line(17,91,w-17,91,'#ffffff',2,'opacity=".15"')+line(17,126,w-17,126,'#ffffff',2,'opacity=".15"')+rect(3,h-18,w-6,21,'#927453',3)+line(14,h+2,14,h+12,'#5e5745',7)+line(w-14,h+2,w-14,h+12,'#5e5745',7);
+}
+function sofaArt(w=240,h=86,color='#849b86') {
+  return shadow(0,0,w,h)+rect(4,-43,w-8,85,'#5c7667',13)+rect(13,-34,(w-32)/2,65,color,8)+rect(w/2+3,-34,(w-32)/2,65,color,8)+rect(9,21,w-18,h-28,'#a5b5a0',9)+rect(9,h-24,w-18,30,color,7)+line(w/2,23,w/2,h-24,'#728e77',2)+rect(-4,-4,24,h+3,color,8)+rect(w-20,-4,24,h+3,color,8)+rect(30,-21,41,37,'#d9b984',7,'transform="rotate(-12 49 -2)"')+rect(w-77,-20,43,37,'#e4dfc5',7,'transform="rotate(12 '+(w-55)+' -2)"')+line(14,h+2,14,h+13,'#625946',7)+line(w-14,h+2,w-14,h+13,'#625946',7);
+}
+function chairArt(color='#c59a73') {
+  return shadow(0,0,82,78)+rect(2,-25,78,57,'#937553',10)+rect(9,-18,64,48,color,8)+rect(6,25,70,45,'#ddbd94',7)+rect(-3,10,14,61,color,5)+rect(71,10,14,61,color,5)+rect(9,68,64,12,'#a5845f',3)+line(13,79,10,92,'#5f604c',5)+line(67,79,70,92,'#5f604c',5);
+}
+function coffeeArt(w=130,h=70) {
+  return shadow(0,0,w,h)+line(13,h-5,10,h+14,'#695c48',7)+line(w-13,h-5,w-10,h+14,'#695c48',7)+rect(0,-5,w,h,'#a58660',13)+rect(0,-14,w,h,'#c8a778',13)+rect(15,4,47,31,'#ebe1c6',2,'transform="rotate(-7 39 18)"')+rect(18,8,38,5,'#789382')+ellipse(w-29,15,13,9,'#89674e')+ellipse(w-29,11,13,9,'#e7d5b4')+ellipse(w-29,11,9,6,'#8d6148');
+}
+function wardrobeArt(w=120,h=70) {
+  return shadow(0,0,w,h)+rect(0,-92,w,h+92,'#927c5d',3)+rect(5,-87,w-10,h+78,'#b99d75',2)+line(w/2,-85,w/2,h-12,'#816c4f',3)+rect(w/2-13,-12,4,23,'#635d49',2)+rect(w/2+9,-12,4,23,'#635d49',2)+rect(0,h-10,w,12,'#7d684c',2)+line(9,-78,w-9,-78,'#d9c199',3);
+}
+function shelfArt(w=120,h=56) {
+  let art=shadow(0,0,w,h)+rect(0,-98,w,h+98,'#997e5e',3)+rect(8,-89,w-16,h+73,'#78664f');
+  for(let row=0;row<3;row++) {
+    const y=-83+row*43;
+    for(let i=0;i<7;i++) art+=rect(13+i*13,y+((i+row)%3)*4,9,31-((i+row)%3)*4,['#a9b997','#d4b889','#bc8668','#d5d4b9'][i%4],1);
+    art+=rect(5,y+31,w-10,7,'#c8aa7d');
+  }
+  return art;
+}
+function plantArt(scale=1) {
+  return `<g transform="scale(${scale})">${ellipse(0,3,28,12,'#334e38','opacity=".14"')}${path('M-22-30H22L17 10H-17Z','#bf9770')}${ellipse(0,-30,22,8,'#d6b68f')}${path('M0-27V-100M0-48Q-37-64-29-89Q-3-80 0-59M0-66Q39-77 31-102Q5-95 0-74M0-86Q-18-112-7-131Q13-111 0-90','#4b7752','stroke="#4b7752" stroke-width="4" stroke-linejoin="round"')}${path('M-3-60Q-12-75-23-79M4-82Q18-90 25-95','none','stroke="#7e9b65" stroke-width="2"')}</g>`;
+}
+function kitchenArt(w=270,h=80) {
+  let art=shadow(0,0,w,h)+rect(0,-11,w,h+12,'#98a58d',4)+rect(6,6,w-12,h-16,'#acb79d',2);
+  for(let i=1;i<4;i++) art+=line(i*w/4,7,i*w/4,h-10,'#7e927b',2)+rect(i*w/4+8,23,19,4,'#5e7061',2);
+  art+=rect(-5,-24,w+10,37,'#e3ddc7',4)+ellipse(48,-5,31,12,'#94aaa0')+ellipse(48,-6,24,8,'#728f86')+path('M48-11V-31Q48-44 62-38V-24','none','stroke="#81968b" stroke-width="5"')+rect(w-101,-18,78,29,'#3d5049',3)+ellipse(w-80,-10,12,5,'#84938b')+ellipse(w-43,0,12,5,'#84938b')+rect(w-84,-25,24,18,'#bc805c',3)+ellipse(w-72,-25,12,5,'#d1a27a')+rect(110,-15,27,19,'#c8ad80',3)+path('M123-15L116-50L125-44L130-15','#628459');
+  return art;
+}
+function fridgeArt() { return shadow(0,0,66,74)+rect(0,-91,66,165,'#bdc5b6',5)+rect(5,-85,56,53,'#e0e2d2',3)+rect(5,-24,56,92,'#d5d9c9',3)+rect(11,-67,4,24,'#718779',2)+rect(11,-8,4,35,'#718779',2); }
+function showerArt(id,w=115,h=120) {
+  return shadow(0,0,w,h)+rect(0,0,w,h,'#e7ede0',5)+rect(8,8,w-16,h-16,`url(#${id}-bath)`,4)+rect(5,-67,w-10,155,`url(#${id}-glass)`,2,'opacity=".38"')+line(5,-67,5,h-10,'#75998d',4)+line(w-5,-67,w-5,h-10,'#75998d',4)+line(5,-67,w-5,-67,'#75998d',4)+path(`M27-49V-22Q27-12 49-12`,'none','stroke="#799187" stroke-width="5"')+ellipse(54,-11,17,5,'#6b857b')+line(w/2,-62,w/2,h-16,'#eaf3e4',3)+line(w/2+11,32,w/2+11,54,'#79958a',4)+ellipse(w/2,h-24,7,3,'#839c8f');
+}
+function basinArt() { return shadow(0,0,67,58)+rect(0,-25,67,80,'#96aa98',3)+rect(-5,-39,77,49,'#e4e7d7',7)+ellipse(34,-14,25,13,'#9bb4a4')+ellipse(34,-15,19,9,'#c9d7c5')+path('M34-24V-43H43','none','stroke="#7b9386" stroke-width="4"')+rect(8,20,51,30,'#b8c5ac',2)+rect(26,29,14,3,'#6b8271',2); }
+function toiletArt() { return shadow(0,0,55,77)+rect(3,-27,49,47,'#eef0e1',6)+rect(37,-19,8,4,'#94aba0',2)+ellipse(27,34,28,36,'#e7ecdc')+ellipse(27,30,21,26,'#c2d2c1')+ellipse(27,31,15,19,'#98b2a4')+rect(14,58,27,17,'#d9e1d0',3); }
+function tableArt(w=155,h=110) {
+  return shadow(-25,-10,w+50,h+30)+rect(-27,18,32,58,'#a5835f',7)+rect(w-5,18,32,58,'#a5835f',7)+rect(w/2-29,-32,58,34,'#b4946d',7)+rect(w/2-29,h-4,58,34,'#b4946d',7)+rect(0,3,w,h,'#947757',12)+rect(0,-8,w,h,'#c1a176',12)+ellipse(31,28,22,15,'#efe6cd')+ellipse(w-31,63,22,15,'#efe6cd')+ellipse(w/2,47,17,11,'#b58a66')+ellipse(w/2,42,16,10,'#6b8653')+line(59,23,59,45,'#76836d',2)+line(w-58,53,w-58,77,'#76836d',2);
+}
+function deskArt(w=190,h=75) {
+  return shadow(0,0,w,h)+rect(8,0,47,h+7,'#9f8665',3)+rect(w-55,0,47,h+7,'#9f8665',3)+rect(-3,-20,w+6,h,'#ceb289',5)+rect(54,-71,85,57,'#40554f',4)+rect(59,-65,75,43,'#89aba3',2)+line(95,-15,95,-2,'#5d6f62',7)+rect(76,-1,39,5,'#667e6b',2)+rect(55,12,85,21,'#eee5cd',3)+rect(14,1,25,32,'#f5ead1',1)+line(20,8,34,8,'#a3b198',2)+line(20,15,32,15,'#a3b198',2);
+}
+function floorLampArt() { return ellipse(0,0,23,9,'#8e8f6f')+line(0,0,0,-112,'#6e7760',6)+path('M-27-113L-18-157H18L27-113Z','#edddba')+ellipse(0,-113,27,8,'#d3be96'); }
+function gardenBenchArt(w=166) {
+  let art=shadow(0,0,w,58)+line(11,0,11,65,'#5e7260',7)+line(w-11,0,w-11,65,'#5e7260',7);
+  for(let i=0;i<3;i++)art+=rect(0,-35+i*13,w,10,'#af9367',2);
+  for(let i=0;i<3;i++)art+=rect(-4,10+i*13,w+8,10,'#c3a474',2);
+  return art+line(1,-4,1,29,'#62735c',6)+line(w-1,-4,w-1,29,'#62735c',6);
+}
+function gardenTreeArt(scale=1) {
+  return `<g transform="scale(${scale})">${ellipse(6,5,70,24,'#4e714c','opacity=".12"')}${path('M-7 0L-3-125H7L10 0Z','#8b7958')}${path('M1-73L-34-111M1-59L38-109','none','stroke="#8b7958" stroke-width="8"')}${ellipse(-39,-118,43,41,'#749261')}${ellipse(32,-121,49,43,'#759465')}${ellipse(-5,-153,51,43,'#829c66')}${ellipse(-16,-94,53,37,'#6f8f5f')}${ellipse(36,-104,40,30,'#769664')}${path('M-39-146Q-19-160 3-154M13-111Q38-124 53-117','none','stroke="#a1b07a" stroke-width="7" stroke-linecap="round" opacity=".45"')}</g>`;
+}
+
+function sceneBase(width,height,id,{floor='oak',name='',accent='#e9e6d7'}={}) {
+  const art=[definitions(id),rect(0,0,width,height,'#b9c5b1'),rect(35,110,width-70,height-160,'#718375',22,'opacity=".16"'),rect(48,118,width-96,height-187,'#b2aa90',9),rect(60,140,width-120,height-220,`url(#${id}-${floor})`),rect(48,76,width-96,70,accent,4),rect(48,139,width-96,11,'#b3b5a0'),rect(48,76,width-96,9,'#f7f0dc'),rect(48,140,13,height-210,'#cbc9b3'),rect(width-61,140,13,height-210,'#cbc9b3')];
+  const obstacles=[{x:0,y:0,w:width,h:142},{x:0,y:140,w:62,h:height-140},{x:width-62,y:140,w:62,h:height-140},{x:0,y:height-81,w:width,h:81}];
+  const items=[],interactables=[];
+  const s={width,height,id,art,items,obstacles,interactables,title:name,subtitle:'',spawn:{x:width/2,y:height-145},
+    floor(x,y,w,h,material='tile'){art.push(rect(x,y,w,h,`url(#${id}-${material})`));},
+    label(x,y,label){art.push(text(x,y,label,12,'#6d755e','letter-spacing="2" opacity=".65"'));},
+    wall(x,y,w,h=15){obstacles.push({x,y,w,h});items.push({y:y+h,art:rect(x+6,y+4,w,h,'#5c6c53',2,'opacity=".1"')+rect(x,y-40,w,h+40,'#d1d0ba',2)+rect(x,y-43,w,h,'#f2ecd9',2)+rect(x,y+h-8,w,8,'#b2b89c')});},
+    object(x,y,w,h,content,{solid=true,sort=y+h}={}){if(solid)obstacles.push({x,y,w,h});items.push({y:sort,x,footY:y,w,h,art:group(x,y,content)});},
+    point(key,x,y,label,action,payload={}){interactables.push({id:`${id}-${key}`,x,y,label,action,payload,radius:85});},
+    plant(x,y,scale=1){this.object(x-20*scale,y-22*scale,40*scale,37*scale,group(20*scale,22*scale,plantArt(scale)));},
+    rug(x,y,w,h,color='#b1b59a'){art.push(rect(x,y,w,h,color,7)+rect(x+9,y+9,w-18,h-18,`url(#${id}-rug)`,3)+rect(x+8,y+8,w-16,h-16,'none',3,'stroke="#e4d3ac" stroke-width="3" opacity=".65"'));},
+    window(x,w=220,view='garden'){art.push(group(x,84,rect(0,0,w,54,`url(#${id}-glass)`,2)+path(`M3 33Q${w/4} 12 ${w/2} 28Q${w*.8} 9 ${w-3} 29V51H3Z`,view==='lake'?'#699a92':'#7c9d74')+line(w/2,0,w/2,54,'#f1ebd5',5)+rect(-5,-5,w+10,64,'none',1,'stroke="#f3eedb" stroke-width="7"')+rect(-8,54,w+16,8,'#b4bba5')));art.push(path(`M${x} 149H${x+w}L${x+w+170} 470H${x+105}Z`,`url(#${id}-light)`));},
+    door(x=width/2,label='OUTSIDE',action='leave-home'){art.push(rect(x-54,height-109,108,24,'#a69773',3)+rect(x-49,height-106,98,15,'#cab68c',2)+rect(x-47,height-158,94,38,'#c4ae80',4)+line(x-38,height-149,x+38,height-149,'#af946a',2)+line(x-38,height-140,x+38,height-140,'#af946a',2)+text(x,height-89,label,10,'#596650','text-anchor="middle" letter-spacing="2"'));this.spawn={x,y:height-170};this.point('exit',x,height-137,'Head outside',action);},
+    finish(){this.art.push(...this.items.sort((a,b)=>a.y-b.y).map(item=>item.art));this.art.push(rect(48,height-83,width-96,14,'#ece5cb',2));return {width,height,spawn:this.spawn,art:this.art.join(''),obstacles,interactables,title:this.title,subtitle:this.subtitle,furnishingArea:this.furnishingArea,furniturePlacements:this.furniturePlacements||[],storedFurniture:this.storedFurniture||[]};}
+  };
+  return s;
+}
+
+function bedroom(s,x,y,{w=160,h=210,color='#799282',main=true,pointSide='bottom'}={}) {
+  s.rug(x-22,y-14,w+44,h+48,'#c8c4a7');s.object(x,y,w,h,bedArt(w,h,color));
+  s.object(x+w+24,y+18,51,49,coffeeArt(51,49));
+  if(main)s.point('sleep',pointSide==='left'?x-45:x+w/2,pointSide==='left'?y+h*.65:y+h+51,'Sleep in bed','sleep');
+}
+function bathroom(s,x,y,{large=false}={}) {
+  s.object(x,y,115,120,showerArt(s.id));s.point('shower',x+55,y+161,'Take a shower','shower');
+  s.object(x+156,y+8,55,77,toiletArt());
+  if(large)s.object(x+147,y+149,67,58,basinArt());
+  else s.object(x+151,y+145,67,58,basinArt());
+}
+function kitchen(s,x,y,w=270) {s.object(x,y,w,80,kitchenArt(w));s.object(x+w+18,y-4,66,74,fridgeArt());s.point('eat',x+w*.5,y+130,'Make something to eat','eat');}
+function lounge(s,x,y,{w=240,color='#849b86',table=true}={}) {
+  s.rug(x-33,y-10,w+66,252,'#a7b39a');s.object(x,y,w,86,sofaArt(w,86,color));
+  if(table)s.object(x+w/2-65,y+158,130,70,coffeeArt());
+  s.point('relax',x+w/2,y+118,'Settle on the sofa','relax');
+}
+function wardrobe(s,x,y,w=120){s.object(x,y,w,70,wardrobeArt(w));s.point('wardrobe',x+w/2,y+116,'Choose an outfit','wardrobe');}
+
+const HOME_META={
+  'garki-studio':['Garki starter studio','A cosy first place · Studio'],
+  'lugbe-flat':['Lugbe one-bedroom','Room to settle in · One bedroom'],
+  'gwarinpa-apartment':['Gwarinpa apartment','Space for company · Two bedrooms'],
+  'jabi-apartment':['Jabi lake-side apartment','Light, water and open space · Lake balcony'],
+  'guzape-terrace':['Guzape terrace','Above the city · Split-level terrace'],
+  'maitama-villa':['Maitama villa','Your own quiet corner · Garden courtyard']
+};
+
+function buildHome(profile,id) {
+  const property=profile.home?.propertyId||'garki-studio';
+  const key=HOME_META[property]?property:'garki-studio';
+  const dimensions={'garki-studio':[1120,900],'lugbe-flat':[1280,1000],'gwarinpa-apartment':[1450,1100],'jabi-apartment':[1420,1080],'guzape-terrace':[1540,1160],'maitama-villa':[1760,1280]}[key];
+  const owned=new Set((Array.isArray(profile.inventory)?profile.inventory:[]).map(v=>typeof v==='string'?v:v.itemId||v.id));
+  const s=sceneBase(...dimensions,id,{name:profile.home?.name||HOME_META[key][0],floor:key==='maitama-villa'||key==='jabi-apartment'?'tile':'oak'});
+  s.subtitle=HOME_META[key][1];const sofaColor=owned.has('sofa')?'#b68b6b':'#849b86';
+  if(key==='garki-studio') {
+    s.window(95,247);s.window(473,220);s.floor(762,145,296,320,'bath');
+    s.wall(747,143,15,324);s.wall(762,466,64);s.wall(944,466,114);
+    s.label(90,765,'YOUR FIRST PLACE');s.label(805,432,'BATH');
+    bedroom(s,115,255,{w:160,h:200});wardrobe(s,317,166,105);kitchen(s,475,182,170);
+    bathroom(s,788,190);lounge(s,438,432,{w:232,color:sofaColor});
+    s.plant(710,694,.85);s.object(92,630,20,20,group(10,10,floorLampArt()));
+    s.door(556);s.furnitureAnchors=[{x:834,y:690},{x:170,y:710},{x:945,y:560},{x:329,y:612}];
+  } else if(key==='lugbe-flat') {
+    s.window(113,296);s.window(616,228);s.floor(946,144,273,325,'bath');s.floor(568,144,364,290,'tile');
+    s.wall(543,143,15,397);s.wall(62,530,297);s.wall(476,530,82);s.wall(932,143,15,326);s.wall(947,468,66);s.wall(1126,468,93);
+    bedroom(s,148,220,{w:175,h:222});wardrobe(s,392,188,115);bathroom(s,968,188);
+    kitchen(s,587,191,235);lounge(s,143,635,{w:255,color:sofaColor});
+    s.object(826,619,197,152,tableArt(145,110));s.rug(672,794,399,61,'#c3b194');
+    s.label(95,501,'BEDROOM');s.label(613,413,'KITCHEN');s.label(1080,858,'DINING');
+    s.plant(1180,834,1);s.door(662);s.furnitureAnchors=[{x:493,y:669},{x:1145,y:595},{x:101,y:838},{x:680,y:514}];
+  } else if(key==='gwarinpa-apartment') {
+    s.window(114,305);s.window(978,275);s.floor(548,145,318,408,'bath');
+    s.wall(529,143,16,416);s.wall(871,143,16,416);s.wall(62,556,287);s.wall(461,556,86);s.wall(547,556,90);s.wall(756,556,133);s.wall(886,556,94);s.wall(1105,556,283);
+    bedroom(s,142,233,{w:181,h:219});wardrobe(s,369,181,125);bathroom(s,582,214,{large:true});
+    bedroom(s,958,223,{w:151,h:205,color:'#b89b73',main:false});s.object(1160,195,170,75,deskArt(170));
+    lounge(s,151,668,{w:278,color:sofaColor});kitchen(s,1020,684,240);s.object(687,765,202,154,tableArt(150,112));
+    s.label(100,518,'MAIN BEDROOM');s.label(947,518,'GUEST ROOM & STUDY');s.label(1040,957,'KITCHEN');
+    s.plant(541,855,.95);s.plant(1329,964,1.1);s.door(711);s.furnitureAnchors=[{x:81,y:949},{x:497,y:684},{x:1199,y:917},{x:911,y:697}];
+  } else if(key==='jabi-apartment') {
+    s.floor(63,146,1294,133,'pave');s.art.push(rect(68,147,1284,31,`url(#${id}-water)`));
+    s.art.push(line(63,177,1357,177,'#8baca0',5));for(let x=95;x<1350;x+=95)s.art.push(line(x,146,x,178,'#bcd1bd',4));
+    s.wall(64,284,530);s.wall(748,284,607);s.window(140,355,'lake');s.window(788,404,'lake');
+    s.object(240,198,82,60,chairArt('#b3bca2'));s.object(1060,198,82,60,chairArt('#b3bca2'));s.plant(1267,232,.8);
+    s.floor(1054,303,303,278,'bath');s.wall(1039,299,15,286);s.wall(1054,581,62);s.wall(1233,581,124);
+    s.wall(854,664,502);s.wall(843,664,15,63);s.wall(843,856,15,139);
+    bathroom(s,1080,332);kitchen(s,653,345,244);lounge(s,212,432,{w:284,color:'#8ba7a1'});
+    bedroom(s,1070,715,{w:188,h:213,color:'#81a3a2',pointSide:'left'});wardrobe(s,898,677,120);
+    s.object(211,798,220,145,tableArt(166,110));s.label(510,234,'LAKE BALCONY');s.label(1095,982,'BEDROOM');
+    s.plant(110,720,1.05);s.door(675);s.furnitureAnchors=[{x:509,y:757},{x:750,y:649},{x:1257,y:704},{x:467,y:900}];
+  } else if(key==='guzape-terrace') {
+    s.window(128,303);s.window(1000,310);s.floor(611,145,306,422,'bath');s.floor(684,685,410,268,'tile');
+    s.wall(591,143,15,429);s.wall(925,143,15,429);s.wall(62,570,341);s.wall(520,570,88);s.wall(608,570,82);s.wall(805,570,136);s.wall(941,570,148);s.wall(1210,570,268);
+    bedroom(s,151,241,{w:192,h:225,color:'#ab9479'});wardrobe(s,408,180,129);bathroom(s,650,212,{large:true});
+    bedroom(s,999,224,{w:167,h:222,color:'#a5aa8d',main:false});s.object(1250,195,164,75,deskArt(164));
+    lounge(s,166,697,{w:292,color:sofaColor});kitchen(s,705,718,265);
+    s.object(1163,758,269,228,stairArt(269,228));s.object(783,938,164,84,coffeeArt(164,84));
+    s.label(1155,1046,'UPPER LANDING');s.label(951,534,'GUEST SUITE');s.plant(548,995,1.1);s.door(666);
+    s.furnitureAnchors=[{x:87,y:960},{x:519,y:683},{x:1377,y:650},{x:1092,y:977}];
+  } else {
+    s.window(119,307);s.window(997,280);s.window(1380,245);s.floor(583,145,331,417,'bath');s.floor(1274,671,423,523,'pave');
+    s.wall(565,144,15,417);s.wall(922,144,15,417);s.wall(1328,144,15,417);
+    s.wall(62,562,300);s.wall(482,562,99);s.wall(581,562,95);s.wall(798,562,139);s.wall(937,562,132);s.wall(1190,562,154);s.wall(1344,562,78);s.wall(1547,562,149);
+    bedroom(s,133,239,{w:213,h:229,color:'#557d70'});wardrobe(s,409,191,122);bathroom(s,625,205,{large:true});
+    s.object(1007,241,223,90,deskArt(223,90));s.object(992,416,82,78,chairArt('#af9773'));s.object(1193,173,115,56,shelfArt(115));
+    bedroom(s,1407,241,{w:160,h:219,color:'#b59e7a',main:false});
+    lounge(s,175,714,{w:302,color:'#678a7c'});s.object(541,800,82,78,chairArt('#c6ac85'));
+    kitchen(s,873,710,245);s.object(968,950,216,155,tableArt(162,113));
+    s.wall(1259,672,15,152);s.wall(1259,965,15,228);s.art.push(rect(1322,753,316,290,'#e7e6d2',14));
+    s.object(1337,767,286,263,rect(0,0,286,263,`url(#${id}-water)`,10)+rect(10,10,266,243,'none',8,'stroke="#c6e0cc" stroke-width="3"')+path('M25 63Q84 50 146 64T259 62M24 123Q90 139 156 122T260 123M25 202Q104 187 175 202T260 203','none','stroke="#daeddb" stroke-width="3" opacity=".4"'));
+    s.plant(1350,1110,1.15);s.plant(1652,718,1.05);s.label(980,520,'STUDY');s.label(1385,1161,'GARDEN COURTYARD');s.plant(724,965,1.2);s.door(857);
+    s.furnitureAnchors=[{x:79,y:1079},{x:548,y:971},{x:1172,y:848},{x:751,y:734}];
+  }
+  s.furnishingArea={x:62,y:160,w:s.width-124,h:s.height-280};
+  addOwnedFurniture(s,profile,owned);
+  const furnishPoint=[{x:s.spawn.x+114,y:s.spawn.y-2},{x:s.spawn.x-114,y:s.spawn.y-2},{x:s.spawn.x,y:s.spawn.y-74}].find(p=>!s.obstacles.some(b=>p.x>b.x-32&&p.x<b.x+b.w+32&&p.y>b.y-32&&p.y<b.y+b.h+32))||{x:s.spawn.x,y:s.spawn.y};
+  s.point('furnish',furnishPoint.x,furnishPoint.y,'Arrange your home','furnish');
+  return s.finish();
+}
+
+function stairArt(w,h) {
+  let art=shadow(0,0,w,h)+rect(0,0,w,h,'#8c8068',3);
+  for(let i=0;i<9;i++){const y=i*h/9;art+=rect(0,y-18,w,h/9,'#c6b393',2)+rect(0,y+h/9-22,w,5,'#e7d8b9');}
+  return art+line(14,-25,14,h-6,'#607461',6)+line(w-14,-25,w-14,h-6,'#607461',6);
+}
+
+// Round-based upright decor keeps its elevation art vertical when its yaw changes.
+const FURNITURE={
+  plant:{w:44,h:38,upright:true,art:()=>group(22,27,plantArt(.95))},
+  bookshelf:{w:116,h:56,art:()=>shelfArt(116)},
+  'lounge-chair':{w:82,h:78,art:()=>chairArt()},
+  desk:{w:164,h:75,art:()=>deskArt(164)},
+  'dining-table':{w:205,h:170,art:()=>group(27,32,tableArt(150,110))},
+  sofa:{w:232,h:86,art:()=>sofaArt(232,86,'#b68b6b')},
+  bed:{w:170,h:214,art:()=>bedArt(170,214,'#8a9e88')},
+  fridge:{w:66,h:74,art:()=>fridgeArt()},
+  'floor-lamp':{w:38,h:24,upright:true,art:()=>group(19,12,floorLampArt())},
+  rug:{w:224,h:142,solid:false,art:()=>rect(0,0,224,142,'#bda37d',5)+rect(9,9,206,124,'none',3,'stroke="#e3cdab" stroke-width="4"')+path('M22 71L69 26L112 71L156 26L201 71L156 116L112 71L69 116Z','none','stroke="#e4cba8" stroke-width="3" opacity=".6"')},
+  tv:{w:146,h:51,art:()=>shadow(0,0,146,51)+rect(0,0,146,51,'#9e8661',4)+rect(8,-87,130,83,'#40554d',4)+rect(14,-81,118,69,'#769790',2)+path('M17-15L66-54L100-27L130-60V-15Z','#acc2ab')+line(74,-3,74,9,'#536c5d',7)+rect(52,9,45,5,'#536c5d',2)}
+};
+export function furnitureGhost(itemId) {
+  const def=FURNITURE[itemId]||FURNITURE.plant;
+  return {art:def.art(),width:def.w,height:def.h,upright:!!def.upright};
+}
+
+function addOwnedFurniture(s,profile,owned) {
+  const configured=profile.furnitureLayout||profile.home?.furnitureLayout||profile.home?.furniture||{};
+  const entries=Array.isArray(configured)?configured:Object.entries(configured).map(([itemId,value])=>({itemId,...(typeof value==='object'?value:{slot:value})}));
+  s.furniturePlacements=[];
+  s.storedFurniture=[];
+  const adoptBase=itemId=>{
+    const base=s.items.find(v=>itemId==='bed'?v.art.includes('#faf2df'):itemId==='dining-table'?v.art.includes('#6b8653')&&v.art.includes('#efe6cd'):false);
+    if(!base)return false;
+    const area=s.furnishingArea,px=(base.x+base.w/2-area.x)/area.w,py=(base.footY+base.h/2-area.y)/area.h;
+    let art=base.art;
+    if(itemId==='bed')art=art.replace(/(<rect x="7" y="48"[^>]*fill=")[^"]+("[^>]*\/?>)/,'$1#628779$2')+group(base.x,base.footY,rect(13,base.h-74,base.w-26,29,'#cfb081',3)+line(20,base.h-67,base.w-20,base.h-67,'#e8d3a9',2)+line(20,base.h-52,base.w-20,base.h-52,'#e8d3a9',2));
+    else art=art.replaceAll('#c1a176','#ccaa79').replaceAll('#947757','#8f7252').replaceAll('#efe6cd','#f6ebce');
+    base.art=`<g data-home-item="${itemId}" data-furniture-item="${itemId}" data-placement-x="${px.toFixed(3)}" data-placement-y="${py.toFixed(3)}" data-placement-rotation="0">${art}</g>`;
+    s.furniturePlacements.push({itemId,x:base.x,y:base.footY,w:base.w,h:base.h,rotation:0});return true;
+  };
+  let next=0;
+  for(const itemId of owned) {
+    const def=FURNITURE[itemId];if(!def)continue;
+    const stored=entries.find(v=>(v.itemId||v.id)===itemId);
+    if(!stored&&['bed','dining-table'].includes(itemId)&&adoptBase(itemId))continue;
+    if(itemId==='sofa') {
+      const base=s.items.find(v=>v.art.includes('#d9b984')&&v.art.includes('#e4dfc5'));
+      if(base&&!stored){
+        const area=s.furnishingArea,px=(base.x+base.w/2-area.x)/area.w,py=(base.footY+base.h/2-area.y)/area.h;
+        base.art=`<g data-home-item="sofa" data-furniture-item="sofa" data-placement-x="${px.toFixed(3)}" data-placement-y="${py.toFixed(3)}" data-placement-rotation="0">${base.art}</g>`;
+        s.furniturePlacements.push({itemId:'sofa',x:base.x,y:base.footY,w:base.w,h:base.h,rotation:0});continue;
+      }
+      if(base&&stored){s.items.splice(s.items.indexOf(base),1);const index=s.obstacles.findIndex(b=>b.x===base.x&&b.y===base.footY&&b.w===base.w&&b.h===base.h);if(index>=0)s.obstacles.splice(index,1);}
+    }
+    let anchor=s.furnitureAnchors[(Number(stored?.slot)||next)%s.furnitureAnchors.length];next++;
+    const rotation=[0,90,180,270].includes(stored?.rotation)?stored.rotation:0;
+    const artRotation=def.upright?0:rotation;
+    const w=artRotation%180?def.h:def.w,h=artRotation%180?def.w:def.h;
+    const storedX=Number(stored?.x),storedY=Number(stored?.y),area=s.furnishingArea;
+    const x=storedX>=0&&storedX<=1?area.x+storedX*area.w-w/2:storedX;
+    const y=storedY>=0&&storedY<=1?area.y+storedY*area.h-h/2:storedY;
+    if(Number.isFinite(x)&&Number.isFinite(y)&&x>65&&x+w<s.width-65&&y>165&&y+h<s.height-115)anchor={x,y};
+    const overlaps=(a,b,pad=16)=>a.x<b.x+b.w+pad&&a.x+a.w>b.x-pad&&a.y<b.y+b.h+pad&&a.y+a.h>b.y-pad;
+    let candidates=[anchor,...s.furnitureAnchors];
+    const clear=a=>(def.solid===false||!s.obstacles.some(b=>overlaps({...a,w,h},b)))&&!s.interactables.some(p=>p.x>a.x-45&&p.x<a.x+w+45&&p.y>a.y-45&&p.y<a.y+h+45)&&Math.hypot(a.x+w/2-s.spawn.x,a.y+h/2-s.spawn.y)>110;
+    let placement=candidates.find(clear);
+    if(!placement)for(let y=s.height-135-h;y>174&&!placement;y-=58)for(let x=85;x<s.width-85-w&&!placement;x+=58){const candidate={x,y};if(clear(candidate))placement=candidate;}
+    if(!placement){if(!adoptBase(itemId))s.storedFurniture.push(itemId);continue;}
+    const normalizedX=(placement.x+w/2-area.x)/area.w,normalizedY=(placement.y+h/2-area.y)/area.h;
+    const art=`<g data-home-item="${esc(itemId)}" data-furniture-item="${esc(itemId)}" data-placement-x="${normalizedX.toFixed(3)}" data-placement-y="${normalizedY.toFixed(3)}" data-placement-rotation="${rotation}" transform="translate(${w/2} ${h/2}) rotate(${artRotation}) translate(${-def.w/2} ${-def.h/2})">${def.art()}</g>`;
+    if(def.solid===false)s.art.push(group(placement.x,placement.y,art));else s.object(placement.x,placement.y,w,h,art);
+    s.furniturePlacements.push({itemId,x:placement.x,y:placement.y,w,h,rotation});
+    if(itemId==='sofa') {
+      const old=s.interactables.find(p=>p.action==='relax');
+      const candidates=[{x:placement.x+w/2,y:placement.y+h+38},{x:placement.x+w+38,y:placement.y+h/2},{x:placement.x-38,y:placement.y+h/2},{x:placement.x+w/2,y:placement.y-38}];
+      const p=candidates.find(p=>!s.obstacles.some(b=>p.x>b.x-15&&p.x<b.x+b.w+15&&p.y>b.y-15&&p.y<b.y+b.h+15));
+      if(old&&p)Object.assign(old,p);
+    }
+  }
+}
+
+function counterArt(w=330,h=93,color='#719280') {
+  return shadow(0,0,w,h)+rect(0,-12,w,h+12,color,5)+rect(12,13,w-24,h-22,'#a1af90',3)+rect(-6,-29,w+12,48,'#dfd2ae',5)+line(11,3,w-11,3,'#f1e3c5',3)+rect(w-94,-62,54,35,'#435b51',4)+rect(w-90,-57,46,23,'#91b8a8',2)+rect(w-84,-27,35,4,'#485e53',2)+rect(28,-15,40,25,'#eae1c8',2);
+}
+function wallSign(s,x,y,title,subtitle='') {s.art.push(rect(x-8,y-29,Math.max(185,title.length*13+36),subtitle?71:47,'#f5ecd6',3)+text(x+8,y,title,21,'#3c6555','font-weight="600" letter-spacing="3"')+(subtitle?text(x+9,y+24,subtitle,11,'#8d886b','letter-spacing="2"'):''));}
+function venueActivities(venue) {
+  const entries=venue?.activities||venue?.actions||VENUE_ACTIONS.filter(a=>a.venueId===venue?.id||(venue?.actionIds||[]).includes(a.id));
+  return Array.isArray(entries)?entries.map(v=>typeof v==='string'?{id:v,name:v.replaceAll('-',' ')}:v):Object.entries(entries).map(([id,v])=>typeof v==='object'?{id,...v}:{id,name:String(v)});
+}
+function venuePoints(s,venue,anchors,fallbacks=[]) {
+  const activities=venueActivities(venue);const points=activities.length?activities:fallbacks.map(([id,name])=>({id,name}));
+  const action={'dealership':'dealership','estate-office':'estate-office','furniture-store':'market'}[venue.id];
+  if(action){const p=anchors[0];s.point('browse',p.x,p.y,venue.id==='dealership'?'Find your next car':venue.id==='estate-office'?'Find your next home':'Choose furniture',action,venue.id==='furniture-store'?{category:'furniture'}:{});return;}
+  points.forEach((a,i)=>{const p=anchors[i%anchors.length];s.point(`activity-${a.id}`,p.x,p.y,a.name||a.label||a.title||'Take part','venue-action',{venueId:venue.id,activityId:a.id});});
+}
+function treadmillArt() {
+  return shadow(0,0,92,158)+rect(5,0,82,149,'#4d665d',8)+rect(15,16,62,112,'#324941',7)+line(23,40,69,40,'#71887b',3)+line(23,105,69,105,'#71887b',3)+path('M2 77L6-24H86L90 77','none','stroke="#98a99c" stroke-width="8"')+rect(12,-42,68,36,'#4d685d',7)+rect(21,-35,50,20,'#9cc1a4',3)+line(43,-30,43,-19,'#edf2ce',3)+line(54,-30,54,-19,'#edf2ce',3);
+}
+function carArt(color='#d8d4c2') {
+  return shadow(0,0,245,127)+rect(31,6,35,24,'#354039',6)+rect(183,6,35,24,'#354039',6)+rect(31,113,35,22,'#354039',6)+rect(183,113,35,22,'#354039',6)+path('M11 23Q12 5 36 1H201Q230 1 237 24L244 94Q244 113 220 119H28Q3 115 3 94Z',color)+path('M76 10H160L184 35L182 84L156 108H72L51 87L53 33Z','#68877d')+path('M85 16H155L170 36H67Z','#bfd1c2')+path('M68 83H170L153 103H84Z','#aec4b9')+rect(80,38,76,44,color,7)+line(181,38,228,38,'#a9b4a3',2)+line(182,84,231,84,'#a9b4a3',2)+rect(224,21,12,24,'#fff2bc',4)+rect(224,83,12,24,'#fff2bc',4)+rect(8,27,8,22,'#bf8161',3)+rect(8,80,8,22,'#bf8161',3);
+}
+function produceArt(w=205,h=103,type=0) {
+  let art=shadow(0,0,w,h)+rect(0,-20,w,h+22,'#9c8763',5)+rect(7,-28,w-14,h+3,'#c5ac7e',3);
+  const colors=type?['#e6d395','#c18d5a','#a9bb83']:['#be765b','#789259','#d5ba6b'];
+  for(let row=0;row<3;row++)for(let col=0;col<7;col++)art+=ellipse(22+col*(w-43)/6,-8+row*29,10,9,colors[(col+row)%3])+ellipse(20+col*(w-43)/6,-11+row*29,3,2,'#f5e4b9','opacity=".4"');
+  return art+line(w/3,-20,w/3,h-21,'#a1875f',3)+line(w*2/3,-20,w*2/3,h-21,'#a1875f',3);
+}
+function cinemaChair(x,y) {return group(x,y,shadow(0,0,61,55)+rect(3,-28,55,52,'#865f58',9)+rect(9,-22,43,42,'#a57768',7)+rect(3,20,55,34,'#b28873',7)+rect(-3,9,10,47,'#6e5c52',4)+rect(54,9,10,47,'#6e5c52',4));}
+
+function buildVenue(profile,venue,id) {
+  const incoming=typeof venue==='string'?{id:venue}:venue||{id:profile.location?.venue};
+  const raw={...VENUES.find(v=>v.id===incoming.id),...incoming};
+  const key=raw.type||raw.kind||raw.id||'restaurant';
+  const type=['restaurant','hotel','gym','cinema','grocery','park','dealership','estate-office','furniture-store','cafe','salon'].find(v=>key===v||String(key).endsWith(`-${v}`)||String(key).startsWith(`${v}-`))||'restaurant';
+  const names={restaurant:'The courtyard kitchen',hotel:'Capital House Hotel',gym:'Neighbourhood fitness',cinema:'City cinema',grocery:'Fresh market',park:'The neighbourhood garden',dealership:'Abuja auto gallery','estate-office':'Abuja property studio','furniture-store':'Home & living',cafe:'The Corner Café',salon:'Fresh Studio'};
+  const dims={restaurant:[1360,1060],hotel:[1570,1180],gym:[1400,1080],cinema:[1430,1100],grocery:[1400,1080],park:[1560,1150],dealership:[1570,1130],'estate-office':[1390,1050],'furniture-store':[1540,1160],cafe:[1210,990],salon:[1260,1010]}[type];
+  const s=sceneBase(...dims,id,{floor:type==='gym'?'darkoak':type==='park'?'pave':'tile',name:raw.name||names[type]});s.subtitle=raw.description||raw.subtitle||'Step inside. Make a little time for yourself.';
+  const anchors=[];let fallbacks=[];
+  if(type==='restaurant') {
+    s.window(122,270);s.window(620,260);s.floor(967,144,331,475,'oak');s.wall(952,143,15,270);s.wall(952,537,15,83);
+    wallSign(s,430,110,'THE COURTYARD','A LITTLE TASTE OF ABUJA');
+    s.object(1006,222,230,80,kitchenArt(230));s.object(967,614,330,88,counterArt(330,88));s.object(1018,407,220,83,kitchenArt(220));
+    for(const [x,y] of [[165,263],[513,263],[165,548],[513,548]]){s.rug(x-51,y-52,268,215,'#c5bea0');s.object(x-28,y-31,211,159,group(28,31,tableArt()));}
+    s.object(149,828,430,64,sofaArt(430,64,'#8f9c78'));s.plant(805,310,1.2);s.plant(893,791,1);
+    anchors.push({x:404,y:393},{x:754,y:677},{x:1133,y:754});fallbacks=[['dine','Order a meal'],['hangout','Share a table'],['coffee','Order a drink']];
+    s.label(1022,567,'OPEN KITCHEN');
+  } else if(type==='hotel') {
+    s.window(170,325);s.window(765,247);s.floor(1165,145,343,386,'bath');s.wall(1148,143,15,402);s.wall(62,552,447);s.wall(658,552,368);s.wall(1162,545,99);s.wall(1389,545,119);
+    wallSign(s,533,111,'CAPITAL HOUSE','STAY A LITTLE LONGER');
+    bedroom(s,153,231,{w:184,h:225,main:false});s.object(435,231,82,78,chairArt());s.object(761,217,220,75,deskArt(220));bathroom(s,1195,207);
+    // Hotel furniture offers venue activities, rather than residents' home actions.
+    s.interactables.length=0;s.object(749,703,354,98,counterArt(354,98));s.label(807,838,'RECEPTION');
+    lounge(s,174,720,{w:281,color:'#809886'});s.interactables.length=0;
+    s.rug(1169,646,286,369,'#c2c7ac');s.object(1208,729,82,78,chairArt());s.object(1341,729,82,78,chairArt());s.plant(1449,1015,1.1);
+    anchors.push({x:475,y:460},{x:1250,y:368},{x:1304,y:900});fallbacks=[['check-in','Book a room'],['rest','Rest in your room'],['lounge','Enjoy the lounge']];
+  } else if(type==='gym') {
+    wallSign(s,503,111,'MOVE WELL','STRENGTH · BREATH · BALANCE');s.window(134,237);s.window(1039,215);
+    s.art.push(rect(105,164,508,90,`url(#${id}-glass)`,3)+line(274,165,274,253,'#dee6d3',5)+line(444,165,444,253,'#dee6d3',5));
+    [156,343,529].forEach(x=>s.object(x,315,92,158,treadmillArt()));
+    s.rug(814,282,385,377,'#809487');for(let i=0;i<3;i++)s.art.push(rect(843+i*114,329,83,219,['#b7c2a0','#ccb68f','#a2b6b0'][i],8)+line(850+i*114,340,918+i*114,340,'#e0dbc0',3));
+    s.object(163,647,429,92,rect(0,-47,429,108,'#9b9d84',4)+rect(8,-41,413,47,'#c5c6ac',3)+Array.from({length:8},(_,i)=>group(22+i*51,-17,rect(0,-3,39,7,'#4a5d50',2)+rect(-3,-12,9,25,'#53675b',2)+rect(33,-12,9,25,'#53675b',2))).join(''));
+    s.object(865,806,322,86,counterArt(322,86));s.plant(725,223,.9);
+    anchors.push({x:389,y:528},{x:1008,y:700},{x:373,y:794},{x:1024,y:940});fallbacks=[['workout','Start a workout'],['yoga','Stretch and reset'],['weights','Lift weights']];
+  } else if(type==='cinema') {
+    s.art.push(rect(70,155,1290,682,'#8e8978'),rect(129,157,1172,128,'#576e66',7),rect(151,175,1128,95,'#dce0c7',5),path('M151 258Q360 209 492 250T852 247T1279 244V270H151Z','#a1b59b'),ellipse(970,205,24,24,'#dfc484'),text(715,226,'ABUJA AFTER HOURS',27,'#587566','text-anchor="middle" letter-spacing="6"'));
+    for(let row=0;row<4;row++)for(let col=0;col<12;col++){const x=150+col*82+(col>5?60:0),y=354+row*119;s.object(x,y,61,55,cinemaChair(0,0));}
+    s.art.push(rect(668,304,88,525,'#b3a282'),line(682,315,682,820,'#d6c496',3),line(741,315,741,820,'#d6c496',3));
+    s.object(106,908,293,69,counterArt(293,69,'#917a63'));s.object(1008,908,298,69,counterArt(298,69,'#917a63'));
+    wallSign(s,511,110,'CITY CINEMA','YOUR EVENING, ON THE BIG SCREEN');
+    anchors.push({x:714,y:792},{x:429,y:938},{x:970,y:938});fallbacks=[['watch','Watch a film'],['snacks','Pick up popcorn']];
+  } else if(type==='grocery') {
+    wallSign(s,502,110,'FRESH MARKET','EVERYDAY GOOD THINGS');s.window(136,221);s.window(1060,201);
+    for(const [x,y,i] of [[139,300,0],[477,300,1],[812,300,0],[139,584,1],[477,584,0],[812,584,1]])s.object(x,y,205,103,produceArt(205,103,i));
+    s.object(1133,200,167,409,rect(0,-30,167,439,'#a6b3a0',7)+rect(9,-19,149,408,`url(#${id}-glass)`,3)+Array.from({length:6},(_,row)=>rect(15,10+row*64,137,8,'#e4dfc6')+Array.from({length:5},(_,col)=>rect(24+col*25,-12+row*64,16,23,['#dbc692','#b4c1a3','#cf9b79'][col%3],3)).join('')).join(''));
+    s.object(850,849,404,90,counterArt(404,90));s.object(152,850,205,77,produceArt(205,77));s.label(147,246,'FROM THE MARKET');s.label(901,803,'CHECKOUT');
+    anchors.push({x:409,y:462},{x:743,y:744},{x:1054,y:984});fallbacks=[['groceries','Shop for groceries'],['snack','Grab a snack']];
+  } else if(type==='park') {
+    // The park is a bounded garden scene, with broad continuous walking paths.
+    s.art.push(rect(63,145,1434,924,'#aebc94'),rect(646,145,269,924,`url(#${id}-pave)`),rect(64,569,1432,178,`url(#${id}-pave)`),ellipse(780,663,229,158,`url(#${id}-pave)`));
+    s.object(699,588,162,146,ellipse(81,78,86,72,'#9fac8e')+ellipse(81,63,82,66,'#e7ddbc')+ellipse(81,61,69,53,`url(#${id}-water)`)+ellipse(81,59,40,29,'#b0c9b2')+path('M74 57V1H87V57Z','#d5d5b9')+ellipse(81,0,31,10,'#eee3bf')+path('M80-4Q38-14 36 23M81-4Q126-11 128 26','none','stroke="#d8ebcc" stroke-width="3" opacity=".8"'));
+    for(const [x,y] of [[197,339],[1197,355],[263,899],[1240,944]])s.object(x,y,166,59,gardenBenchArt());
+    for(const [x,y] of [[186,257],[400,327],[1104,277],[1373,361],[472,987],[1086,972],[153,937],[1409,536]])s.object(x-12,y-16,24,28,group(12,16,gardenTreeArt(1.15)));
+    s.art.push(ellipse(368,446,194,83,'#99b080'),ellipse(1203,478,177,56,'#98ad7f'),ellipse(337,471,135,43,'#b6c698'),ellipse(1207,466,95,40,'#b1c696'));
+    for(let i=0;i<22;i++){const x=222+(i*73)%260,y=426+(i*31)%57;s.art.push(ellipse(x,y,5,4,['#d9bd8d','#b58a78','#f0dfb2'][i%3]));}
+    wallSign(s,532,111,'A LITTLE GREEN','TAKE YOUR TIME HERE');anchors.push({x:461,y:641},{x:1044,y:653},{x:788,y:870});fallbacks=[['walk','Take a slow walk'],['picnic','Enjoy a picnic'],['relax','Sit in the garden']];
+  } else if(type==='dealership') {
+    s.window(151,342);s.window(1059,317);wallSign(s,620,111,'AUTO GALLERY','YOUR NEXT CHAPTER');
+    for(const [x,y,c] of [[187,306,'#ddd6bd'],[696,306,'#789489'],[187,696,'#b89176'],[696,696,'#c0c8b3']]){s.rug(x-28,y-32,300,195,'#bbc7b0');s.object(x,y,245,127,carArt(c));s.art.push(text(x+120,y+174,'ABUJA COLLECTION',10,'#68806a','letter-spacing="2" text-anchor="middle"'));}
+    s.object(1190,410,224,89,counterArt(224,89));s.object(1230,730,82,78,chairArt());s.plant(1451,887,1.2);
+    anchors.push({x:487,y:447},{x:997,y:447},{x:1300,y:561},{x:977,y:889});fallbacks=[['browse','Explore the collection'],['buy-car','Buy a city compact'],['test-drive','Take a test drive']];
+  } else if(type==='estate-office') {
+    s.window(128,273);s.window(998,230);wallSign(s,490,111,'THE PROPERTY STUDIO','FIND YOUR CORNER OF ABUJA');
+    s.object(855,346,347,94,counterArt(347,94));s.object(166,338,222,86,deskArt(222,86));s.object(183,525,82,78,chairArt());s.object(332,525,82,78,chairArt());
+    s.rug(791,603,440,216,'#b6baa1');s.object(855,652,267,85,sofaArt(267,85));s.object(544,342,125,56,shelfArt(125));
+    for(let i=0;i<3;i++)s.art.push(group(166+i*179,177,rect(0,0,137,85,'#b69d74',2)+rect(6,6,125,73,'#e7dec4')+path('M22 48L66 22L111 48V70H22Z',['#a8b797','#c3b18f','#8da998'][i])+rect(54,46,22,24,'#68846e')+rect(28,50,15,13,'#bfd0b6')+rect(87,50,15,13,'#bfd0b6')));
+    s.plant(1295,884,1.2);s.plant(112,855,1);anchors.push({x:1033,y:497},{x:489,y:563},{x:675,y:718});fallbacks=[['browse-properties','Explore homes'],['rent-home','Find a place to rent'],['buy-home','Buy a home']];
+  } else if(type==='cafe') {
+    s.window(115,278);s.window(852,226);wallSign(s,480,111,'THE CORNER','COFFEE & GOOD COMPANY');
+    s.floor(705,145,444,354,'oak');s.object(752,230,306,90,counterArt(306,90));
+    s.object(873,175,145,30,rect(0,-42,145,63,'#7b8f7c',5)+rect(8,-34,96,44,'#bdc8b0',3)+rect(19,-26,30,20,'#648578',3)+rect(61,-26,30,20,'#648578',3)+line(31,-2,31,17,'#617c69',5)+line(75,-2,75,17,'#617c69',5)+ellipse(30,17,11,5,'#e7dabb')+ellipse(74,17,11,5,'#e7dabb'));
+    s.object(132,289,170,125,tableArt(130,95));s.object(398,289,170,125,tableArt(130,95));
+    s.rug(135,577,448,228,'#bbc0a1');s.object(176,613,281,84,sofaArt(281,84,'#ad9372'));s.object(543,617,82,78,chairArt('#99ab8a'));
+    s.object(865,622,170,125,tableArt(130,95));s.plant(720,715,1.2);s.plant(1093,829,1);
+    s.label(780,445,'SMALL CHOPS · SLOW MOMENTS');anchors.push({x:902,y:378});fallbacks=[['coffee-break','Coffee & small chops']];
+  } else if(type==='salon') {
+    s.window(115,240);s.window(916,230);wallSign(s,425,111,'FRESH STUDIO','A LITTLE TIME FOR YOU');
+    s.floor(81,178,727,409,'darkoak');
+    for(const x of [154,383,611]){
+      s.object(x,219,150,62,rect(-7,-84,164,139,'#bcaa88',5)+rect(3,-77,144,115,`url(#${id}-glass)`,4)+rect(-11,39,172,27,'#e2d1ab',4)+rect(12,28,13,21,'#b98061',2)+rect(34,22,12,27,'#95a888',2));
+      s.object(x+34,406,82,78,chairArt('#7e9b8d'));
+    }
+    s.object(907,312,166,103,rect(12,-30,145,110,'#879e8b',14)+ellipse(85,-7,82,37,'#e5e7d6')+ellipse(85,-9,65,25,'#aec3b1')+path('M88-23V-61H113','none','stroke="#758e7c" stroke-width="7"')+rect(56,76,57,22,'#647d68',7));
+    s.object(159,723,258,82,sofaArt(258,82,'#b49a78'));s.object(865,744,271,83,counterArt(271,83));s.plant(682,764,1.2);
+    s.label(277,593,'CUT · CARE · CONFIDENCE');anchors.push({x:459,y:536});fallbacks=[['salon-cut','Grooming & a fresh look']];
+  } else {
+    s.window(120,295);s.window(1055,305);wallSign(s,509,111,'HOME & LIVING','A SPACE THAT FEELS LIKE YOU');
+    s.rug(116,231,431,340,'#b7c0a0');s.object(159,285,282,86,sofaArt(282,86,'#b18a70'));s.object(222,473,133,67,coffeeArt(133,67));
+    s.rug(719,233,391,331,'#c4baa1');s.object(773,297,185,218,bedArt(185,218,'#a1b39a'));s.object(1135,249,142,70,wardrobeArt(142));
+    s.object(1203,468,116,56,shelfArt(116));s.object(157,750,82,78,chairArt());s.object(297,750,82,78,chairArt('#9eab8b'));
+    s.object(584,731,120,56,shelfArt());s.plant(495,818,1.1);s.plant(781,793,1.05);s.object(1009,895,389,91,counterArt(389,91));
+    s.label(155,610,'LIVING');s.label(776,610,'REST');s.label(180,889,'THE READING CORNER');
+    anchors.push({x:594,y:465},{x:1019,y:604},{x:445,y:871},{x:1208,y:1040});fallbacks=[['browse-furniture','Explore furniture'],['buy-furniture','Choose something for home']];
+  }
+  s.door(s.width/2,'BACK TO THE CITY','exit-venue');
+  venuePoints(s,raw,anchors,fallbacks);
+  return s.finish();
+}
+
+export function buildInterior({profile={},venue,id='interior'}={}) {
+  const safeId=String(id).replace(/[^a-zA-Z0-9_-]/g,'-');
+  const location=profile.location||{};
+  if(venue||location.kind==='venue'||(location.venue&&location.venue!=='home'&&location.kind!=='home'))return buildVenue(profile,venue||{id:location.venue},safeId);
+  return buildHome(profile,safeId);
+}

@@ -8,7 +8,8 @@
     "start": "node scripts/dev.mjs --prod",
     "qa": "node scripts/qa.mjs && node --test tests/*.test.mjs",
     "qa:browser": "python tests/browser-smoke.py",
-    "preview:build": "node preview/build.mjs"
+    "preview:build": "node preview/build.mjs",
+    "qa:gameplay": "python tests/gameplay-smoke.py"
   },
   "engines": {
     "node": ">=24"

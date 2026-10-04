@@ -1,6 +1,6 @@
 # AbujaLife
 
-A browser-first social life game set in Abuja and the wider Federal Capital Territory. Create a resident, make a home, work, travel, and stay connected through your in-game phone.
+A playable browser life simulation set in Abuja and the wider Federal Capital Territory. Create your character, walk and drive around an authored city, enter venues, work, and make a home your own.
 
 Try the [anonymous browser preview](docs/PREVIEW.md) without an account or API key. Its progress stays on your device; the full server provides shared multiplayer.
 
@@ -21,13 +21,16 @@ Use the existing checkout. Every cloud task already has an isolated environment;
 
 ## Playable workflow
 
-- Create a named resident and customize their appearance. Sign in again to restore saved progress.
-- Use the bed, kitchen, shower, sofa, wardrobe, and door in a crafted home scene.
+- Answer the three-step character setup, customize your appearance and choose a life goal. The public preview requires no account; the full server saves registered residents.
+- Move with WASD/arrows, hold Shift to run, or drag the mobile joystick. Tap the ground to walk there; tap a door/object or press E nearby to interact. The camera follows you and the minimap shows your position.
+- Enter restaurants, a hotel, gym, cinema, grocery shop, café, salon, park, dealership, furniture showroom and estate office. Meals, workouts and rest have visible animations, virtual costs and effects on your needs.
+- Walk around six distinct cutaway home layouts and use the bed, kitchen, shower, sofa, wardrobe and front door.
 - Open the iPhone 18 Pro Max-inspired fictional in-game device. Lock/unlock it, open apps, and go back without losing message drafts.
 - Find real registered residents, request friendship, exchange live messages, form friend groups, and send invitations. Presence, typing, message delivery, reading, and unread state come from actual sessions.
 - Choose a job, travel to its district, and answer its work tasks to earn a server-calculated salary. A completed shift cannot pay twice.
-- Buy virtual clothing, furniture, or a vehicle. Premium outfits require ownership; purchased furniture appears in the home.
-- Secure a rental or owned property, then travel there. Bills and owned properties persist.
+- Earn one correct restaurant shift to afford a used hatchback, then walk to the owned car and take the wheel. Drive with the movement controls and park before entering a building. Better vehicles are longer-term goals.
+- Buy clothing and furniture when you want. Arrange owned furniture on a clear floor position, use R to rotate, and see your saved layout in the home. Premium outfits require ownership.
+- Hunt for a home by neighbourhood, bedrooms, layout and game price. Take a free walkthrough, rent or buy, then travel there. Rent covers a game year (28 real days); weekly service bills are separate. Prices are scaled virtual prices, not actual Abuja market quotations.
 - Search the location catalogue, compare a server-calculated fare, take transport, and arrive after a short compressed journey. Walking stays within a neighbourhood.
 - Create events and RSVP. Block, mute, report, and control presence or invitations from the phone.
 
@@ -39,7 +42,7 @@ SQLite stores residents, hashed passwords, sessions, profiles, wallet transactio
 
 The backend validates valuable state in transactions. Authentication uses password hashing with scrypt, random HttpOnly session cookies, and same-origin JSON writes. Server-Sent Events deliver messages to conversation members and nearby activity to the appropriate location zone. Presence privacy and blocking apply to these events.
 
-This deployment architecture supports one Node process with SQLite. Horizontal scale, account recovery, operational moderation tools, payment-provider integration, voice notes/calls, driving simulation, player businesses, and civic elections require further implementation. Home invitations currently record consent and plans; entering another resident's private home is not implemented. These are not advertised as functioning systems.
+This deployment architecture supports one Node process with SQLite. Horizontal scale, account recovery, operational moderation tools, payment-provider integration, voice notes/calls, player businesses, and civic elections require further implementation. Home invitations currently record consent and plans; entering another resident's private home is not implemented. These are not advertised as functioning systems.
 
 ## Geography
 
@@ -56,10 +59,16 @@ Live Lagos Life inspection, FCTA/AGIS verification, and OSM road rendering were 
 ```bash
 npm run qa
 npm run qa:browser
+npm run preview:build
+npm run qa:gameplay
 ```
 
 `qa` checks every application/server/shared/script module, catalogue integrity, and meaningful database/HTTP/SSE tests. Test databases are temporary and do not change live residents.
 
 Browser acceptance requires Python Playwright and Chromium. The cloud environment already provides them. For another machine, install Playwright and its Chromium browser, or set `CHROMIUM_PATH` to a local Chromium executable. The suite starts its own server on port 8790 with disposable residents and data. It tests two separate browser sessions, live social interactions, jobs/economy, persistence, travel, back navigation, a throttled connection, and 320/360/390/430/1440-pixel widths. Set `ABUJALIFE_QA_PORT` to select an unused port and `ABUJALIFE_QA_ARTIFACTS` for evidence output.
+
+`qa:gameplay` serves the self-contained preview from an isolated temporary static server and checks character setup, visible movement and camera follow, touch controls, earned car ownership, venue activities, furniture placement, housing, persistence and input focus. It does not add residents to the real database.
+
+The authored walkable streets and fictional venues are game scenery; the geographic map remains separate and source-backed. Moving city NPCs and traffic are labeled simulations, never fake registered residents or online totals.
 
 The PWA caches only application assets. Private API responses and messages are never cached by the service worker. Gameplay needs a server connection; offline entry gives a retry path rather than pretending progress was saved.

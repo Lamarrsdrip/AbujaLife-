@@ -1,8 +1,10 @@
 # Anonymous public preview
 
-The browser preview opens straight into a local resident. No hosting account, API key, or game signup is required. It uses the actual production client screens and an isolated browser adapter; it never connects to the production resident database.
+The browser preview begins with three short character questions, then opens your local resident. Returning players resume their life. No hosting account, API key, or game signup is required. It uses the actual production client screens and an isolated browser adapter; it never connects to the production resident database.
 
-The preview includes the home scene, Pro Max phone, outfit editor, virtual shopping, job decisions, and compressed journeys. Progress stays in this browser. **Start fresh** resets only preview progress. Shared multiplayer, messages to other residents, and public events require the full server. No fake residents are added.
+The preview includes direct walking and running, mobile joystick control, camera follow, owned-car driving, animated journeys, eleven enterable venues, six walkable homes, furniture placement, character setup, the Pro Max phone, virtual shopping and job decisions. Progress stays in this browser. **Start fresh** resets only preview progress. Shared multiplayer, messages to other residents, and public events require the full server. Ambient traffic and city NPCs are explicitly labeled simulations; no fake registered residents are added.
+
+Desktop: WASD or arrows to move, Shift to run, E to interact nearby. Mobile: drag the joystick and use the contextual action button. Tap any clear ground to walk there or select a door to approach it. Park your car before entering a place. Use **Places**, **Garage**, **Furnish** and **Homes** for planning and purchases. A correctly completed starter restaurant shift makes the ₦28,000 used hatchback affordable from the ₦26,000 starting balance.
 
 ## Build
 

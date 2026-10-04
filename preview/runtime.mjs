@@ -1,5 +1,6 @@
 /** Browser-only public preview. This adapter never connects to the game server. */
 import data from './data.mjs';
+import { LIFE_GOALS, GAME_YEAR_MS, GAME_BILL_PERIOD_MS, venueFor, venueActionFor, applyNeedEffects, furniturePlacement, ownsVehicle } from '../src/shared/life.mjs';
 
 const STORAGE_KEY = 'abujalife.browser-preview.v1';
 const PLAYER_ID = 'browser-preview';
@@ -33,9 +34,10 @@ function initialState() {
       district:'garki-i', location:{kind:'home',district:'garki-i',venue:'home'},
       home:{propertyId:'garki-studio',name:'Garki starter studio',district:'garki-i',tenure:'starter'},
       job:null, careerLevel:1, skills:{}, inventory:[], ownedProperties:[],
+      onboardingComplete:false, lifeGoal:'explore', drivingVehicle:null, furnitureLayout:{},
       settings:{presenceVisible:false,allowInvites:false,soundEnabled:true},
       activeTrip:null, activeShift:null, completedShifts:0, nextShiftAt:0,
-      lastActionAt:timestamp, billsPaidAt:timestamp, createdAt:timestamp
+      lastActionAt:timestamp, billsPaidAt:timestamp, rentPaidAt:timestamp, createdAt:timestamp
     },
     challenge:null, completedChallenges:{},
     notifications:[{id:uid(),kind:'preview',title:'Your browser preview',body:'Explore on your own. Progress saves in this browser; public multiplayer is unavailable.',link:'home',createdAt:timestamp,readAt:null}],
@@ -54,6 +56,18 @@ function restore() {
     restored.profile.settings = {...initial.profile.settings,...saved.profile.settings};
     restored.profile.inventory = (saved.profile.inventory || []).filter(id=>catalog.some(item=>item.id===id));
     restored.profile.ownedProperties = (saved.profile.ownedProperties || []).filter(id=>properties.some(item=>item.id===id));
+    // Existing visitors keep their money, home and purchases, and get the new
+    // resident questions once. No preview save is wiped by this upgrade.
+    restored.profile.onboardingComplete = saved.profile.onboardingComplete === true;
+    restored.profile.lifeGoal = LIFE_GOALS.some(goal=>goal.id===saved.profile.lifeGoal)?saved.profile.lifeGoal:'explore';
+    restored.profile.rentPaidAt=saved.profile.rentPaidAt??saved.profile.billsPaidAt??saved.profile.createdAt??initial.profile.rentPaidAt;
+    restored.profile.drivingVehicle = restored.profile.location?.kind==='public'&&ownsVehicle(restored.profile,catalog,saved.profile.drivingVehicle)?saved.profile.drivingVehicle:null;
+    restored.profile.furnitureLayout={};
+    for(const [itemId,placement] of Object.entries(saved.profile.furnitureLayout||{})) {
+      if(!catalog.some(item=>item.id===itemId&&item.category==='furniture'&&restored.profile.inventory.includes(itemId)))continue;
+      try {restored.profile.furnitureLayout[itemId]=furniturePlacement(placement);}catch {/* Discard only the invalid placement. */}
+    }
+    if(restored.profile.location?.kind==='venue'&&!venueFor(restored.profile.location.venue))restored.profile.location={kind:'public',district:restored.profile.district,venue:'neighbourhood'};
     if (restored.profile.job && !Object.hasOwn(allJobs,restored.profile.job)) { restored.profile.job=null; restored.profile.activeShift=null; restored.challenge=null; }
     if (!Array.isArray(restored.notifications) || !Array.isArray(restored.transactions)) return initialState();
     if (restored.challenge && !Object.hasOwn(allJobs,restored.challenge.jobId)) { restored.challenge=null; restored.profile.activeShift=null; }
@@ -98,7 +112,7 @@ function quote(payload) {
   check(atlas.has(destination),'Choose a location from the Abuja atlas');
   check(['walk','bus','taxi','ride','car'].includes(mode),'Choose a supported transport mode');
   check(mode!=='walk'||destination===profile.district,'Walking is available within your neighbourhood; choose transport for this trip');
-  check(mode!=='car'||profile.inventory.includes('compact-car'),'Buy a car before choosing your own vehicle');
+  check(mode!=='car'||catalog.some(item=>ownsVehicle(profile,catalog,item.id)),'Buy a car before choosing your own vehicle');
   const same=destination===profile.district,distance=same?0:Math.max(4,Math.round(((atlas.get(destination).commute||35)+(atlas.get(profile.district).commute||35))/3));
   const cost=same?0:mode==='bus'?250+distance*20:mode==='car'?350+distance*20:mode==='taxi'?650+distance*45:900+distance*45;
   const seconds=same?1:Math.min(14,Math.max(4,Math.round(distance/(mode==='bus'?2.5:4))));
@@ -111,6 +125,8 @@ function action(name,payload={}) {
   const home=()=>check(profile.location.kind==='home','Go home to use this object');
   const outside=()=>check(profile.location.kind==='public'&&!profile.activeTrip,'Head out into your neighbourhood first');
   if(profile.activeTrip&&!['arrive','topup'].includes(name))throw new PreviewError('Your journey is still in progress');
+  const elapsed=Math.min(120,Math.max(0,(timestamp-profile.lastActionAt)/60000));
+  if(elapsed>1) {profile.energy=clamp(profile.energy-elapsed*.10);profile.hunger=clamp(profile.hunger-elapsed*.12);profile.social=clamp(profile.social-elapsed*.05);}
   switch(name) {
     case 'eat':home();debit(publicData.activities?.eat?.cost??1200);profile.hunger=clamp(profile.hunger+34);profile.mood=clamp(profile.mood+4);break;
     case 'sleep':home();profile.energy=clamp(profile.energy+46);profile.hunger=clamp(profile.hunger-9);profile.stress=clamp(profile.stress-12);break;
@@ -119,18 +135,47 @@ function action(name,payload={}) {
     case 'hangout':outside();debit(publicData.activities?.hangout?.cost??2400);profile.social=clamp(profile.social+28);profile.fun=clamp(profile.fun+20);profile.energy=clamp(profile.energy-8);break;
     case 'exercise':outside();debit(publicData.activities?.exercise?.cost??800);profile.fun=clamp(profile.fun+12);profile.stress=clamp(profile.stress-18);profile.energy=clamp(profile.energy-14);profile.hygiene=clamp(profile.hygiene-10);break;
     case 'cinema':outside();debit(publicData.activities?.cinema?.cost??3800);profile.fun=clamp(profile.fun+34);profile.stress=clamp(profile.stress-16);profile.energy=clamp(profile.energy-5);break;
-    case 'leave-home':home();profile.location={kind:'public',district:profile.district,venue:'neighbourhood'};break;
-    case 'enter-home':check(profile.district===profile.home.district,'Travel to your home neighbourhood first');profile.location={kind:'home',district:profile.district,venue:'home'};break;
+    case 'leave-home':home();profile.drivingVehicle=null;profile.location={kind:'public',district:profile.district,venue:'neighbourhood'};break;
+    case 'enter-home':check(profile.district===profile.home.district,'Travel to your home neighbourhood first');check(!profile.drivingVehicle,'Park your car before entering');check(['public','home'].includes(profile.location.kind),'Head outside before entering your home');profile.location={kind:'home',district:profile.district,venue:'home'};break;
+    case 'enter-venue': {
+      outside();const venue=venueFor(payload.venueId);check(venue,'Choose a place in your neighbourhood');
+      check(!payload.district||payload.district===profile.district,'Travel to this neighbourhood first');
+      check(!profile.drivingVehicle,'Park your car before entering');
+      profile.location={kind:'venue',district:profile.district,venue:venue.id};extra.venue=clone(venue);break;
+    }
+    case 'exit-venue':check(profile.location.kind==='venue','You are already outside');profile.drivingVehicle=null;profile.location={kind:'public',district:profile.district,venue:'neighbourhood'};break;
+    case 'venue-action': {
+      const activity=venueActionFor(payload.activityId);
+      check(activity,'Choose an activity from this place');
+      check(profile.location.kind==='venue'&&profile.location.venue===activity.venueId,'Enter this place before using its facilities');
+      check(!(activity.effects.energy<0)||profile.energy>=-activity.effects.energy,'Rest before doing this activity');
+      debit(activity.cost);applyNeedEffects(profile,activity.effects);
+      if(activity.skill)profile.skills[activity.skill]=(profile.skills[activity.skill]||0)+1;
+      extra.activity={...clone(activity),startedAt:timestamp};break;
+    }
+    case 'toggle-driving': {
+      outside();const vehicleId=payload.vehicleId??null;
+      check(vehicleId===null||ownsVehicle(profile,catalog,vehicleId),'Buy this car before taking the wheel');
+      profile.drivingVehicle=vehicleId;if(vehicleId)extra.vehicle=clone(catalog.find(item=>item.id===vehicleId));break;
+    }
+    case 'place-furniture': {
+      home();const item=catalog.find(item=>item.id===payload.itemId);
+      check(item?.category==='furniture'&&profile.inventory.includes(item.id),'Buy this furniture before placing it');
+      let placement;try{placement=furniturePlacement(payload);}catch(error){throw new PreviewError(error.message);}
+      profile.furnitureLayout||={};profile.furnitureLayout[item.id]=placement;extra.placement={itemId:item.id,...clone(placement)};break;
+    }
     case 'return-home':case 'travel': {
       const destination=name==='return-home'?profile.home.district:payload.district;
-      if(name==='return-home'&&destination===profile.district) { profile.location={kind:'home',district:profile.district,venue:'home'};break; }
+      if(name==='return-home'&&destination===profile.district) { profile.drivingVehicle=null;profile.location={kind:'home',district:profile.district,venue:'home'};break; }
       const fare=quote({district:destination,mode:payload.mode});debit(fare.cost);
-      profile.activeTrip={id:uid(),...fare,arrivesAt:timestamp+fare.seconds*1000,returningHome:name==='return-home'};
+      const vehicleId=fare.mode==='car'?(ownsVehicle(profile,catalog,profile.drivingVehicle)?profile.drivingVehicle:catalog.find(item=>ownsVehicle(profile,catalog,item.id))?.id):null;
+      profile.activeTrip={id:uid(),...fare,vehicleId,arrivesAt:timestamp+fare.seconds*1000,returningHome:name==='return-home'};
+      profile.drivingVehicle=null;
       profile.location={kind:'transit',district:profile.district,venue:'journey'};extra.trip=clone(profile.activeTrip);break;
     }
     case 'arrive': {
       const trip=profile.activeTrip;check(trip&&trip.id===payload.tripId,'This journey is no longer active');check(timestamp>=trip.arrivesAt,'Your journey is still in progress',409,'trip_in_progress');
-      profile.district=trip.destination;profile.location={kind:trip.returningHome?'home':'public',district:trip.destination,venue:trip.returningHome?'home':'neighbourhood'};profile.activeTrip=null;profile.energy=clamp(profile.energy-3);break;
+      profile.district=trip.destination;profile.location={kind:trip.returningHome?'home':'public',district:trip.destination,venue:trip.returningHome?'home':'neighbourhood'};profile.drivingVehicle=!trip.returningHome&&trip.mode==='car'&&ownsVehicle(profile,catalog,trip.vehicleId)?trip.vehicleId:null;profile.activeTrip=null;profile.energy=clamp(profile.energy-3);break;
     }
     case 'take-job':check(typeof payload.jobId==='string'&&Object.hasOwn(allJobs,payload.jobId),'Choose a listed job');check(!next.challenge,'Finish your current shift before switching careers');profile.job=payload.jobId;break;
     case 'start-shift': {
@@ -157,9 +202,16 @@ function action(name,payload={}) {
     case 'move-home': {
       const property=properties.find(item=>item.id===payload.propertyId);check(property&&property.tier>0,'Choose a listed home');check(['rent','own'].includes(payload.tenure),'Choose rent or ownership');check(profile.home.propertyId!==property.id||profile.home.tenure!==payload.tenure,'You already live here');
       debit(payload.tenure==='rent'?property.rent:profile.ownedProperties.includes(property.id)?0:property.buy??property.price);if(payload.tenure==='own'&&!profile.ownedProperties.includes(property.id))profile.ownedProperties.push(property.id);
-      profile.home={propertyId:property.id,name:property.name,district:property.district,tenure:payload.tenure};if(profile.district===property.district)profile.location={kind:'home',district:profile.district,venue:'home'};else if(profile.location.kind==='home')profile.location={kind:'public',district:profile.district,venue:'neighbourhood'};profile.billsPaidAt=timestamp;break;
+      profile.home={propertyId:property.id,name:property.name,district:property.district,tenure:payload.tenure,rentDueAt:payload.tenure==='rent'?timestamp+GAME_YEAR_MS:null};
+      if(profile.district===property.district){profile.drivingVehicle=null;profile.location={kind:'home',district:profile.district,venue:'home'};}else if(profile.location.kind==='home')profile.location={kind:'public',district:profile.district,venue:'neighbourhood'};profile.billsPaidAt=timestamp;profile.rentPaidAt=timestamp;break;
     }
-    case 'pay-bills': {check(timestamp-profile.billsPaidAt>=7*86400000,'Your home bills are up to date');const property=properties.find(item=>item.id===profile.home.propertyId);debit(property.bills+(profile.home.tenure==='rent'?property.rent:0));profile.billsPaidAt=timestamp;break;}
+    case 'pay-bills': {check(timestamp-profile.billsPaidAt>=GAME_BILL_PERIOD_MS,'Your home bills are up to date');const property=properties.find(item=>item.id===profile.home.propertyId);check(property,'Your home listing is unavailable');debit(property.bills);profile.billsPaidAt=timestamp;break;}
+    case 'renew-rent': {
+      check(profile.home.tenure==='rent','Only a rented home needs a rent renewal');
+      const property=properties.find(item=>item.id===profile.home.propertyId);check(property,'Your home listing is unavailable');
+      check(timestamp-profile.rentPaidAt>=GAME_YEAR_MS,'Your rent is already paid for this game year');
+      debit(property.rent);profile.rentPaidAt=timestamp;profile.home.rentDueAt=timestamp+GAME_YEAR_MS;break;
+    }
     case 'topup':throw new PreviewError('Real-money purchases are unavailable in this browser preview',403,'payments_unavailable');
     default:throw new PreviewError('Unknown preview action');
   }
@@ -175,7 +227,10 @@ function handleApi(url,method,body) {
   if(route==='/api/profile'&&method==='POST') {
     const profile=clone(state.profile);
     if(body.displayName!==undefined){check(clean(body.displayName,40).length>=2,'Display name must have at least two characters');profile.displayName=clean(body.displayName,40);}
-    updateAppearance(profile,body.appearance);if(body.settings&&typeof body.settings==='object')for(const key of ['presenceVisible','allowInvites','soundEnabled'])if(typeof body.settings[key]==='boolean')profile.settings[key]=body.settings[key];
+    updateAppearance(profile,body.appearance);
+    if(body.lifeGoal!==undefined){check(LIFE_GOALS.some(goal=>goal.id===body.lifeGoal),'Choose a life goal');profile.lifeGoal=body.lifeGoal;}
+    if(body.onboardingComplete!==undefined){check(typeof body.onboardingComplete==='boolean','Choose a valid resident setup state');profile.onboardingComplete=body.onboardingComplete;}
+    if(body.settings&&typeof body.settings==='object')for(const key of ['presenceVisible','allowInvites','soundEnabled'])if(typeof body.settings[key]==='boolean')profile.settings[key]=body.settings[key];
     state.profile=profile;persist();queueMicrotask(()=>emit('profile',{profile:clone(profile)}));return{ok:true,profile:clone(profile)};
   }
   if(route==='/api/notifications/read'&&method==='POST'){for(const notice of state.notifications)if(!body.id||notice.id===body.id)notice.readAt=Date.now();persist();return{ok:true,notifications:clone(state.notifications)};}

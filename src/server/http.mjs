@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ABUJA_ATLAS, AREA_COUNCILS, LANDMARKS, ATLAS_META } from '../shared/atlas.mjs';
+import { VENUES, VENUE_ACTIONS, LIFE_GOALS, ECONOMY_META } from '../shared/life.mjs';
 import { GameStore, GameError, catalog, properties, transportModes, appearanceOptions, activities } from './gameStore.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const appRoot=path.join(root,'app'), sharedRoot=path.join(root,'src/shared');
@@ -25,7 +26,7 @@ export function createServer(options={}) {
   store.emitZone=(sender,event,data)=>{const zone=store.zone(sender);for(const [res,client] of clients)if(store.zone(client.id)===zone&&!store.blocked(sender,client.id))writeEvent(res,event,data);};
   function broadcastPresence(id,previousZone=null){const friends=store.friendIds(id),zone=store.zone(id);for(const [res,client] of clients){if(client.id===id||store.blocked(id,client.id))continue;if(friends.includes(client.id)||store.zone(client.id)===zone||store.zone(client.id)===previousZone)writeEvent(res,'presence',{resident:store.resident(client.id,id)});}}
   function rateLimit(req,kind,limit=90){const key=`${req.socket.remoteAddress}:${kind}`,timestamp=Date.now(),old=limits.get(key),bucket=old&&timestamp-old.at<60000?old:{at:timestamp,count:0};bucket.count++;limits.set(key,bucket);if(bucket.count>limit)throw new GameError('Please wait a moment before trying again',429,'rate_limited');if(limits.size>5000)for(const [key,value] of limits)if(timestamp-value.at>60000)limits.delete(key);}
-  const publicBootstrap=()=>({authenticated:false,atlas:ABUJA_ATLAS,councils:AREA_COUNCILS,landmarks:LANDMARKS,atlasMeta:ATLAS_META,jobs:store.publicJobs(),catalog,properties,events:[],transportModes,appearanceOptions,activities});
+  const publicBootstrap=()=>({authenticated:false,atlas:ABUJA_ATLAS,councils:AREA_COUNCILS,landmarks:LANDMARKS,atlasMeta:ATLAS_META,jobs:store.publicJobs(),catalog,properties,events:[],transportModes,appearanceOptions,activities,venues:VENUES,venueActions:VENUE_ACTIONS,lifeGoals:LIFE_GOALS,economyMeta:ECONOMY_META});
   const bootstrap=id=>({...publicBootstrap(),...(id?store.bootstrap(id):{})});
   const server=http.createServer(async(req,res)=>{
     try{

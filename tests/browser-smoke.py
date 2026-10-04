@@ -119,6 +119,48 @@ async def open_phone(page, app=None):
         await page.locator(f'.ph-app-grid [data-app="{app}"]').click()
 
 
+async def complete_resident_wizard(page, display_name, hair):
+    """Complete the real character/life/controls flow after account creation."""
+    await expect(page.locator('#onboarding-form')).to_be_visible()
+    for _ in range(8):
+        form=page.locator('#onboarding-form')
+        name_control=form.locator('[name="displayName"]:visible')
+        if await name_control.count():
+            await name_control.fill(display_name)
+        hair_control=form.locator('select[name="hair"]:visible')
+        if await hair_control.count():
+            await hair_control.select_option(hair)
+        goal_control=form.locator('[name="lifeGoal"][value="career"]')
+        if await goal_control.count() and await goal_control.is_visible():
+            await goal_control.check()
+        begin=page.locator('#begin-life:visible')
+        if await begin.count():
+            await begin.click()
+            break
+        next_button=page.locator('[data-onboarding-next]:visible')
+        assert await next_button.count(),'Wizard has no visible next or begin control'
+        await next_button.click()
+    await expect(page.locator('#onboarding-form')).to_have_count(0)
+    await expect(page.locator('.game-nav')).to_be_visible()
+    profile = (await bootstrap(page))['profile']
+    assert profile['onboardingComplete'] is True
+    assert profile['displayName'] == display_name and profile['appearance']['hair'] == hair
+    assert profile['lifeGoal'] == 'career'
+
+
+async def activate_home_object(page, action):
+    legacy = page.locator(f'[data-world-action="{action}"]')
+    if await legacy.count():
+        await legacy.click()
+        return
+    point = page.locator(f'[data-world-target$="-{action}"]').first
+    await expect(point).to_have_count(1)
+    # Real accessible keyboard activation follows the same walk-to-object path.
+    # It also works when a cutaway room marker starts outside the camera viewport.
+    await point.focus()
+    await page.keyboard.press('Enter')
+
+
 async def register(page, username, display_name, hair):
     await page.goto(BASE, wait_until='domcontentloaded')
     await page.locator('[name="displayName"]').fill(display_name)
@@ -126,7 +168,7 @@ async def register(page, username, display_name, hair):
     await page.locator('[name="password"]').fill(PASSWORD)
     await page.locator('[name="hair"]').select_option(hair)
     await page.locator('.auth-submit').click()
-    await expect(page.locator('.game-nav')).to_be_visible()
+    await complete_resident_wizard(page, display_name, hair)
     state = await bootstrap(page)
     assert state['authenticated'] and state['profile']['appearance']['hair'] == hair
     return state['profile']
@@ -211,19 +253,19 @@ async def main():
                     async def home_objects():
                         await a.locator('.game-nav [data-view="world"]').click()
                         before = (await bootstrap(a))['profile']
-                        await a.locator('[data-world-action="sleep"]').click()
+                        await activate_home_object(a, 'sleep')
                         await expect(a.locator('#sheet-title')).to_have_text('Get some rest')
                         await a.locator('#confirm-interaction').click()
                         await expect(a.locator('.sheet')).to_have_count(0)
                         after = (await bootstrap(a))['profile']
                         assert after['energy'] > before['energy'] or after['stress'] < before['stress'], 'Rest must improve energy or stress'
                         before_shower = (await bootstrap(a))['profile']
-                        await a.locator('[data-world-action="shower"]').click()
+                        await activate_home_object(a, 'shower')
                         await a.locator('#confirm-interaction').click()
                         await expect(a.locator('.sheet')).to_have_count(0)
                         before = (await bootstrap(a))['profile']
                         assert before['hygiene'] > before_shower['hygiene'], 'Shower must improve hygiene'
-                        await a.locator('[data-world-action="eat"]').click()
+                        await activate_home_object(a, 'eat')
                         advertised = await a.locator('.sheet .detail-line strong').inner_text()
                         await a.locator('#confirm-interaction').click()
                         await expect(a.locator('.sheet')).to_have_count(0)
@@ -338,7 +380,7 @@ async def main():
                     async def job_tasks_and_reward():
                         await close_phone(a)
                         await a.locator('.game-nav [data-view="world"]').click()
-                        await a.locator('[data-world-action="leave-home"]').click()
+                        await a.locator('#world-door').click()
                         await wait_state(a, lambda s:s['profile']['location']['kind']=='public')
                         await a.locator('.game-nav [data-view="work"]').click()
                         await a.locator('[data-job="restaurant-host"]').click()
@@ -408,9 +450,7 @@ async def main():
                         await expect(a.locator('.trip-banner')).to_be_visible()
                         await a.reload(wait_until='domcontentloaded')
                         await expect(a.locator('.trip-banner')).to_be_visible()
-                        await expect(a.locator('[data-arrive]')).to_be_enabled(timeout=20000)
-                        await a.locator('[data-arrive]').click()
-                        arrived=await wait_state(a, lambda s:s['profile']['district']=='wuse-ii-a07' and not s['profile'].get('activeTrip'))
+                        arrived=await wait_state(a, lambda s:s['profile']['district']=='wuse-ii-a07' and not s['profile'].get('activeTrip'), timeout=25)
                         assert arrived['profile']['location']['kind']=='public'
                         await expect(a.locator('.scene-heading')).to_contain_text('Wuse II')
                         assert 'okrika' in (await a.locator('#world-scene').inner_text()).lower()
@@ -418,9 +458,7 @@ async def main():
                         await expect(a.locator('#travel-form')).to_be_visible()
                         await a.locator('#travel-form [type="submit"]').click()
                         await expect(a.locator('.trip-banner')).to_be_visible()
-                        await expect(a.locator('[data-arrive]')).to_be_enabled(timeout=20000)
-                        await a.locator('[data-arrive]').click()
-                        await wait_state(a, lambda s:s['profile']['location']['kind']=='home' and s['profile']['district']=='garki-i')
+                        await wait_state(a, lambda s:s['profile']['location']['kind']=='home' and s['profile']['district']=='garki-i', timeout=25)
                         await a.reload(wait_until='domcontentloaded')
                         await expect(a.locator('.scene-heading')).to_contain_text('Garki starter studio')
                         map_requests=[r for r in qa.network if 'openstreetmap' in r['url'] or 'overpass-api' in r['url']]

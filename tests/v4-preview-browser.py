@@ -44,7 +44,7 @@ async def share(page,qa):
     import base64
     raw=base64.b64decode((await img.get_attribute('src')).split(',')[1]);assert raw[:8]==b'\x89PNG\r\n\x1a\n' and len(raw)<=512*1024
     (v.ART/'preview-owned-home.png').write_bytes(raw)
-    caption='My own home, made my way in this browser.';await page.locator('#ph-shareCaption').fill(caption);await page.locator('[data-ph-action="home-share-okrika"]').click()
+    caption='My own home, made my way in this browser.';await page.locator('#ph-shareCaption').fill(caption);await page.locator('[data-ph-action="home-share-social"]').click()
     await expect(page.locator('#ph-socialText')).to_have_value(caption);await page.locator('[data-ph-form="social-compose"] [type="submit"]').click()
     await expect(page.locator('.ph-social-card').filter(has_text=caption)).to_be_visible();await expect(page.locator('.ph-social-local')).to_contain_text('Local preview')
     await qa.screenshot(page,'preview-own-local-home-post');await v.game.close_phone(page);await v.reload(page);await v.game.open_phone(page,'social')

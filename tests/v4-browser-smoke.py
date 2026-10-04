@@ -185,7 +185,7 @@ async def home_share(owner,guest,qa):
     (ART/'actual-owned-home.png').write_bytes(raw)
     caption='My sage walls, dark oak floors and new reading nook. Abuja small small.'
     await owner.locator('#ph-shareCaption').fill(caption);await qa.screenshot(owner,'main-phone-home-share')
-    await owner.locator('[data-ph-action="home-share-okrika"]').click();await expect(owner.locator('#ph-socialText')).to_have_value(caption)
+    await owner.locator('[data-ph-action="home-share-social"]').click();await expect(owner.locator('#ph-socialText')).to_have_value(caption)
     edited=caption+' Come through.';await owner.locator('#ph-socialText').fill(edited)
     await owner.locator('[data-ph-form="social-compose"] [type="submit"]').click();await expect(owner.locator('.ph-social-card').filter(has_text=edited)).to_be_visible()
     await game.open_phone(guest,'social');await expect(guest.locator('.ph-social-card').filter(has_text=edited)).to_be_visible()

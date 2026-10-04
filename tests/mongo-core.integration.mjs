@@ -81,6 +81,45 @@ integration('Mongo session rotation, revocation, expiration and password resets 
   f.advance(31*86400000);assert.equal(await f.store.session(f.ada.token),null);
 });
 
+integration('Mongo email verification persists hashed tokens, requires password for changes and consumes tokens once', async t => {
+  const f = await fixture(t), id = f.bello.residentId, deliveries = [];
+  const auth = new MongoAuthStore({ ...f.connection, clock: () => f.now, deliverEmailVerification: async payload => deliveries.push(payload) });
+  const before = await auth.emailStatus(id);
+  assert.equal(before.emailVerified, false);
+  await auth.requestEmailVerification(id);
+  const first = deliveries.at(-1), record = await f.connection.db.collection('email_verifications').findOne({ residentId: id });
+  assert.equal(record._id, hashToken(first.token));
+  assert.equal(JSON.stringify(record).includes(first.token), false);
+  const reconnected = new MongoAuthStore({ ...f.connection, clock: () => f.now });
+  await reconnected.verifyEmail({ token: first.token });
+  assert.equal((await auth.emailStatus(id)).emailVerified, true);
+  await rejectCode(auth.verifyEmail({ token: first.token }), 'invalid_verification');
+  const email = `changed_${crypto.randomBytes(6).toString('hex')}@example.test`;
+  await rejectCode(auth.requestEmailVerification(id, { email, password: 'wrong-password' }), 'invalid_credentials');
+  await auth.requestEmailVerification(id, { email, password: 'secure-test-password' });
+  assert.equal((await auth.emailStatus(id)).email, before.email);
+  await auth.verifyEmail({ token: deliveries.at(-1).token });
+  assert.equal((await auth.emailStatus(id)).email, email);
+  assert.equal((await auth.login({ email, password: 'secure-test-password' })).residentId, id);
+  await auth.requestEmailVerification(id, { email: `expired_${email}`, password: 'secure-test-password' });
+  const expired = deliveries.at(-1).token;
+  f.advance(24 * 60 * 60 * 1000 + 1);
+  await rejectCode(auth.verifyEmail({ token: expired }), 'invalid_verification');
+  assert.equal((await auth.emailStatus(id)).email, email);
+  await auth.requestEmailVerification(id, { email: `revoked_${email}`, password: 'secure-test-password' });
+  const revoked = deliveries.at(-1).token;
+  await auth.logoutAll(id);
+  await rejectCode(auth.verifyEmail({ token: revoked }), 'invalid_verification');
+});
+
+integration('Mongo failed email delivery revokes the undelivered verification token', async t => {
+  const f = await fixture(t), id = f.bello.residentId;
+  const auth = new MongoAuthStore({ ...f.connection, clock: () => f.now, deliverEmailVerification: async () => { throw new Error('provider unavailable'); } });
+  assert.deepEqual(await auth.requestEmailVerification(id), { ok: true });
+  assert.equal(await f.connection.db.collection('email_verifications').countDocuments({ residentId: id }), 0);
+  assert.equal((await auth.emailStatus(id)).emailVerified, false);
+});
+
 integration('Mongo system resale credits the server buyback value once and clears normalized possessions',async t=>{
   const f=await fixture(t),id=f.ada.residentId,plant=catalog.find(item=>item.id==='plant');await f.store.action(id,'purchase',{itemId:plant.id,idempotencyKey:key()});await f.store.action(id,'place-furniture',{itemId:plant.id,x:.4,y:.5});await f.store.action(id,'store-furniture',{itemId:plant.id});
   const before=(await f.store.profile(id)).wallet,payload={itemId:plant.id,amount:999999999,idempotencyKey:key()},sold=await Promise.all(Array.from({length:3},()=>f.store.action(id,'sell-item',payload)));assert.equal(sold[0].sale.amount,Math.floor(plant.price/2));assert.equal((await f.store.profile(id)).wallet,before+Math.floor(plant.price/2));assert.equal(await f.connection.db.collection('inventory').countDocuments({residentId:id,itemId:plant.id}),0);const p=await f.store.profile(id);assert.equal(p.furnitureLayout[plant.id],undefined);assert.ok(!p.storedFurniture.includes(plant.id));assert.equal(await f.connection.db.collection('ledger').countDocuments({residentId:id,type:'sell-item'}),1);

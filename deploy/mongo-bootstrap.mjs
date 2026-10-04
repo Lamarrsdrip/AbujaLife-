@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import {MongoClient} from 'mongodb';
-import {ensureMongoSchema, MONGO_COLLECTIONS} from '../src/server/mongo/database.mjs';
+import {ensureMongoSchema, MONGO_COLLECTIONS, MONGO_APPEND_ONLY_COLLECTIONS} from '../src/server/mongo/database.mjs';
 
 const database = process.env.MONGODB_DATABASE || 'abujalife_prod';
 const host = process.env.MONGODB_HOST || 'mongo:27017';
@@ -30,7 +30,7 @@ try {
   // contract as the server. No wildcard write privilege is granted.
   const privileges = MONGO_COLLECTIONS.map(collection => ({
     resource: {db: database, collection},
-    actions: ['ledger','wallet_transfers'].includes(collection) ? ['find','insert','listIndexes'] : collection === 'schema_versions' ? ['find','insert','remove','listIndexes'] : ['find','insert','update','remove','listIndexes']
+    actions: MONGO_APPEND_ONLY_COLLECTIONS.includes(collection) ? ['find','insert','listIndexes'] : collection === 'schema_versions' ? ['find','insert','remove','listIndexes'] : ['find','insert','update','remove','listIndexes']
   }));
   const existingRole = await db.command({rolesInfo: 'abujalife_runtime'});
   await db.command({[existingRole.roles.length ? 'updateRole' : 'createRole']: 'abujalife_runtime', privileges, roles: []});

@@ -1,146 +1,147 @@
-# AbujaLife production deployment
+# AbujaLife production operations
 
-Deploy the genuine static frontend on **Hostinger shared hosting at `https://abujacity.life`**. Run the separate **Node 24 API at `https://api.abujacity.life`** on the VPS with its own authenticated MongoDB replica set and database **`abujalife_prod`**. Production starts only with working MongoDB, schema/index readiness and transaction support; it has no SQLite or local-preview fallback.
-
-This document supersedes the earlier single-origin SQLite hosting plan. The legacy account-free browser preview remains a separate, explicitly local-save artifact; do not upload its ZIP as the production frontend.
-
-## Access and current status
-
-The authorized read-only SSH target is `Administrator@173.212.249.202`, port 22. The coding environment has no `~/.ssh/id_ed25519` key. Its global SSH configuration initially had invalid permissions; a single corrected `ssh -F /dev/null` BatchMode attempt returned **connection refused**, exit 255. No remote authentication, inspection or modifications occurred. No Okrika checkout exists at the workspace top level, and remote Okrika services, database names, ports, volumes and proxy configuration could not be inspected.
-
-Hostinger hPanel must be opened in the owner's own browser. There is no authenticated Hostinger connector or browser-control tool here. Official Hostinger help pages returned proxy CONNECT 403. These facts block live deployment and public-domain acceptance; a completed source package does not prove public hosting, DNS or certificate issuance. Do not put passwords, private SSH keys or payment secrets into chat or Git.
-
-Local infrastructure acceptance on 4 October 2026 passed: **36 authenticated Mongo integration tests and 12 production HTTP tests**, plus actual Docker API startup as UID 1000, selection of recorded immutable images, encrypted consistent backup, corrupted-archive rejection before writes, complete snapshot restore that removes collections created after the backup, and successful API restart with account, session, wallet and administrator state preserved. Isolated deployment recovery checks also verified that a stopped prior API still requires a backup, failed backups prevent startup/migrations, and a Compose startup failure attempts the prior image without recording success. These checks used disposable local infrastructure, not the live VPS or public domains. CI execution and public DNS, certificates and Hostinger behaviour remain unverified.
-
-Before remote deployment, establish a reachable authenticated SSH session using the owner's authorized key and inspect the existing services and reverse proxy read-only. Confirm the operating system, Docker/Compose versions, free loopback port, storage, authoritative DNS and how Okrika is currently exposed. Use dedicated AbujaLife directories, Docker project, networks, volumes, users and database. None of these scripts changes an Okrika repository, database, DNS name or proxy automatically.
-
-## Topology and ownership
+The production domain is **https://abujacity.life**, confirmed in the owner’s Hostinger account. Hostinger serves the static game and `/admin/`. The Windows VPS **173.212.249.202** runs the isolated API and private database. These instructions replace the earlier cloud handoff’s Linux/Docker assumptions. See PRODUCTION_ACCEPTANCE.md for observed live results and outstanding gates.
 
 ```mermaid
 flowchart TD
-  Web[Players: abujacity.life on Hostinger] --> Edge[HTTPS api.abujacity.life: VPS reverse proxy]
-  Apps[iOS / Android clients] --> Edge
-  Edge --> API[Private Node API and authenticated realtime]
-  API --> DB[(Isolated private MongoDB: abujalife_prod)]
-  DB --> Backup[Encrypted scheduled backups]
-  Backup -. Configure separate destination .-> Offsite[Off-server storage]
+  Web[Hostinger: abujacity.life] --> Proxy[Caddy: HTTPS api.abujacity.life]
+  Mobile[iOS / Android clients] --> Proxy
+  Proxy --> API[LocalService Node API: 127.0.0.1:18787]
+  API --> Mongo[(Authenticated MongoDB: 127.0.0.1:27017)]
+  Mongo --> Backups[Encrypted daily VPS backups]
+  Backups --> Mac[Scheduled encrypted SSH pull to owner Mac]
 ```
 
-| Component | Location | Public surface |
-| --- | --- | --- |
-| Production frontend | Hostinger domain document root | `abujacity.life`, static files only |
-| Production API | Dedicated VPS Docker service `api` | `api.abujacity.life`, through the existing HTTPS reverse proxy |
-| MongoDB 8 | Dedicated private Docker network and volumes | No published database port |
-| Mongo bootstrap | Short-lived privileged ops container | No public port |
-| Backup/restore | Explicit short-lived ops containers | No public port; encrypted protected host files |
+## Isolation and existing infrastructure
 
-The API listens on container port 3000 and binds only to host loopback port 18787 by default. Check that port on the actual VPS before using it. MongoDB uses the single-member replica set `abujalife`, which enables transactions but provides **no redundant failover**. The current API/SSE deployment is a single process; this configuration does not certify millions of concurrent players or horizontal fanout.
+Okrika’s Hostinger backend uses its existing authenticated `okrika` MongoDB replica set on VPS port **27018**, restricted by its existing firewall rule to Hostinger’s backend address. Okrika White Studio runs at `127.0.0.1:8091` behind `white-ai.okrika.store`. Its Windows tasks are `Okrika-Caddy` and `Okrika-White-AI`. AbujaLife does not modify their data, secrets, service, ports, tasks or firewall rules. Never stop/rebind/block 27018 as part of AbujaLife operations.
 
-The default Compose project is `abujalife-prod`. Mongo volumes and application data belong exclusively to this project. The API filesystem is read-only; its Node process drops to UID/GID 1000 after reading mounted secrets. Containers restart automatically and Docker rotates JSON logs at 10 MB across five files. Do not point the API at any shared Okrika database or mount its files.
+The existing proxy is `C:\Caddy\caddy.exe`, configuration `C:\Caddy\Caddyfile`, running as SYSTEM through `Okrika-Caddy`. AbujaLife adds one API hostname after validating the full configuration. The original file is retained as `Caddyfile.before-abujalife-TIMESTAMP`. The proxy is reloaded in place.
 
-## Build, validate and package
+AbujaLife resources:
 
-Use the repository's production infrastructure branch and Node 24 or later:
+| Resource | Actual configuration |
+| --- | --- |
+| Root | `C:\services\abujalife` |
+| Immutable releases | `releases\REVISION-DIGEST` under that root |
+| Runtime configuration | `shared\windows.json` |
+| Runtime provider configuration | `shared\providers.json`, optional and private |
+| Secrets | `shared\.secrets`, generated only on server |
+| Active / previous release | `shared\state\current.json`, `previous.json` |
+| Supervisor control/status | `shared\run\api-control.json`, `supervisor-state.json` |
+| API task | `AbujaLife-API`, LocalService, startup recovery and supervised child restart |
+| Mongo service | `AbujaLifeMongoDB`, automatic startup and service recovery |
+| Backup task | `AbujaLife-Backup`, SYSTEM, daily 03:15 server local time |
+| Backup lock recovery | `AbujaLife-Mongo-LockGuard`, every five minutes |
+| API ports | loopback 18787; loopback candidate 18788 during deployment |
+| Mongo port / database / replica set | loopback 27017 / `abujalife_prod` / `abujalife` |
+| Public AbujaLife surface | VPS 80 redirects to HTTPS 443; existing SSH 22 for administration |
+| Redis | Not used; authenticated SSE realtime in one API process |
+
+The VPS has other pre-existing management/application services. AbujaLife’s firewall change blocks only its private ports 27017, 18787 and 18788. Do not disable Windows Firewall or modify another project’s access to reduce the apparent port list.
+
+## Build, release and deployment
+
+Development remains `git pull`, `npm ci`, `npm run dev`, using Node 24 or newer. Production code is promoted to `main` only after QA and CI. The static build obtains exactly two public variables: `PUBLIC_WEB_URL` and `API_PUBLIC_URL`. It includes no server code, database URI, payment secrets or private environment files.
+
+On the Mac, from a clean validated checkout:
 
 ```bash
 npm ci --ignore-scripts
-npm run build
 npm run qa
-npm run qa:infra
+npm run build
+node deploy/package-release.mjs /PRIVATE_OUTPUT/abujalife-production-api.tar.gz
+python3 deploy/package-frontend.py /PRIVATE_OUTPUT/abujacity-production-frontend.zip
 ```
 
-`qa:infra` runs `node deploy/test-production.mjs`. Docker must be available. It creates a random **disposable** Compose project and secrets outside the checkout, boots real authenticated MongoDB, applies the privileged schema/roles, runs all actual Mongo integration tests and production HTTP tests, starts the actual API image as UID 1000, and checks a consistent encrypted backup, corruption rejection, restore and account/session/wallet/admin persistence. It removes only its own fixture containers, volumes, images, relay and temporary credentials, preserving the failure exit status. It never accepts an existing production URI.
+The source archive includes QA fixtures and source scripts so the Windows release can run deterministic installation, application QA and production build. Local preview code is private QA input; the genuine production frontend is always `dist/`. Archives contain SHA-256 manifests and the committed revision. Private files, databases, backups, secrets, dependencies and Git history are excluded. `deploy/verify-release.mjs` validates every packaged file. Dirty releases are refused for production promotion.
 
-In this cloud environment the Docker build needed the configured network proxy's DNS mapping and its supplied trusted CA certificate. The test runner passes them as standard Docker build proxy arguments and an ephemeral BuildKit CA secret. TLS certificate checks remain enabled. Normal VPS builds need ordinary verified HTTPS access to the package registry and image registries; no rendering API or account token is needed.
+Copy a verified source archive using the authorized Mac SSH key, unpack it into an isolated staging directory under the AbujaLife root, then run from an Administrator PowerShell session:
 
-Allow enough local Docker disk space. This cloud's VFS storage driver duplicates image layers, so accumulated unused build cache exhausted the filesystem during a rerun. Removing only unused build cache freed about 11 GB without touching the running shared Mongo service or its volumes; the complete subsequent infrastructure run passed. Do not prune application volumes or live containers to make space.
-
-After checks pass and the exact source is committed, create distinct packages:
-
-```bash
-node deploy/package-release.mjs /tmp/abujalife-production-api.tar.gz
-python deploy/package-frontend.py /tmp/abujacity-production-frontend.zip
+```powershell
+$env:ABUJALIFE_WINDOWS_ROOT = 'C:\services\abujalife'
+.\deploy\windows\deploy.ps1 -SourceDirectory 'C:\services\abujalife\staging\RELEASE'
 ```
 
-The API archive includes every public deployment helper, Dockerfile and source file needed to build and operate the server. The frontend ZIP contains the genuine `dist/` output, public runtime configuration, install assets, `/admin/` shell and `.htaccess`; it contains no server sources or credentials. Both include file-level SHA-256 metadata and adjacent whole-archive checksums. Secrets, `.env`, databases, backups, local progress and Git history are excluded. Verify checksums and the recorded revision before uploading. `RELEASE.json` marks uncommitted source explicitly; the deployment helper refuses such a release by default.
+The first deployment also runs `deploy\windows\initialize.ps1` with explicit Node/mongod/database-tools paths and the actual HTTPS origins. This generates separate Mongo root/application/backup passwords, replica-set keyfile, stable payment configuration encryption key and backup encryption key without printing them. It installs only the dedicated Mongo service and AbujaLife tasks. Do not regenerate or lose stable keys on updates.
 
-## Initialize the dedicated VPS stack
+Deployment verifies source hashes, installs with `npm ci`, runs `npm run qa` and `npm run build`, obtains a validated pre-update backup, applies schema/index changes, and starts a candidate on private 18788. Only after readiness does it switch the protected release pointer and gracefully reload the API. Failed validation preserves the running API. Failed activation restores the prior software pointer; it does not discard player data or reverse database changes. Releases must remain compatible with their preceding database schema.
 
-These steps require a Linux VPS with Docker Engine, Docker Compose and Node 24 available to the operator. They have not been executed on the inaccessible live VPS. Extract a verified API archive into an immutable release directory, such as `/opt/abujalife/releases/RELEASE_ID`, and keep private configuration outside that code directory:
+GitHub CI runs Linux QA/build/isolated Docker Mongo infrastructure checks and Windows QA/build/PowerShell parsing. The Docker stack remains a tested alternative; it is not the actual Windows VPS runtime.
 
-```bash
-node deploy/init-env.mjs /opt/abujalife/shared
-export ABUJALIFE_DEPLOY_ENV_FILE=/opt/abujalife/shared/.env
-node deploy/verify-release.mjs
-node deploy/deploy.mjs
-```
+## Configuration, authentication and data
 
-The initializer creates private 0600 files under a 0700 `.secrets` directory and preserves every existing secret. It generates the Mongo root, application and backup passwords, replica-set keyfile, application URI, stable payment encryption key and separate backup encryption key. It prints filenames only. The generated `.env` contains host controls and protected directory paths, not passwords. Choose an unused `ABUJALIFE_API_LOOPBACK_PORT` there after inspecting the VPS.
+`shared\windows.json` stores public origins, ports, runtime paths and retention settings. `shared\.secrets` stores private values. The API receives only necessary AbujaLife variables; unrelated Windows machine credentials are excluded. Provider values must never be passed into the frontend build. LocalService can read only the application Mongo password and configuration encryption key, immutable code/configuration, and write its own logs/runtime status. It cannot read the bootstrap or backup credentials.
 
-The bootstrap identity initializes the replica set, validators and unique/TTL indexes, then creates the dedicated `abujalife_app` user. Its custom role grants normal row operations only on explicit `abujalife_prod` collections. **Ledger and wallet-transfer records permit find/insert plus metadata-only listIndexes; update, delete and DDL are denied.** The application cannot read Okrika or another database. The backup identity can read only this database and briefly lock/unlock this isolated instance for a consistent snapshot; it has no application role-management authority. Root credentials are used only for initialization or an explicit restore.
+Runtime variable names: `NODE_ENV`, `HOST`, `PORT`, `MONGODB_URI`, `MONGODB_DATABASE`, `PUBLIC_WEB_URL`, `API_PUBLIC_URL`, `CORS_ORIGINS`, `TRUST_PROXY`, `ABUJALIFE_CONFIG_KEY`, and optional `RESEND_API_KEY`, `EMAIL_FROM`. The process derives their values from protected server configuration. `ABUJALIFE_ADMIN_USERNAME` is not used to grant a future matching account access.
 
-`deploy.mjs` verifies release hashes, checks configuration, builds immutable image tags, takes a pre-update encrypted backup, applies the bootstrap/migrations and starts only this stack. It checks actual Mongo API readiness before recording success. If the new API fails and a prior release record exists, it attempts the prior immutable API image; it does **not** reverse database migrations or silently restore older player data. First-deployment failure stops the API and records no successful release. Keep the previous release and backups until public acceptance passes. Avoid `docker compose down -v`; that deletes the game's volumes.
+Authentication uses persistent, hashed opaque session tokens and HttpOnly Secure host-only cookies. No JWT signing key is required by this implementation. Passwords are salted scrypt hashes. Sessions can be listed, revoked individually or invalidated across devices. Email verification/reset tokens are hashed, expire, are single-use, and are removed from browser history before processing. Email delivery is disabled while its provider is unconfigured.
 
-For later operational commands, use `node deploy/compose.mjs` from the deployed code directory with `ABUJALIFE_DEPLOY_ENV_FILE` still pointing to the shared configuration. It selects the dedicated Compose project and the exact successfully deployed image tags and port from the protected release record. Backup and restore wrappers use that record too; they do not assume a mutable `:local` image exists.
+Mongo authentication is enabled with a dedicated private replica set. The application role permits access only to enumerated `abujalife_prod` collections. Wallet ledger, transfer, idempotency, receipt and audit collections are insert/read only; mutation and DDL are denied to the app. Schema validators and unique/pagination/lookup/TTL indexes are bootstrapped using the privileged identity. TTL applies to ephemeral sessions, presence and expiring tokens, not player progress. Accounts, wallets, purchases, inventory, homes, jobs, vehicles, social relationships, conversations and messages persist in separate collections or bounded domain records.
 
-## HTTPS API and DNS without replacing Okrika
+The server chooses prices, ownership, income and balances. Credits/transfers use Mongo transactions and unique references. Demo top-ups are disabled in production. Flutterwave grants require server/provider verification; `verified: true` is never fulfillment evidence. Apple/Google verification endpoints fail closed until real platform adapters exist. Native store purchases remain unavailable rather than accepting fake receipts.
 
-Point the **API subdomain A record** `api.abujacity.life` to the verified VPS IPv4 address. Add an AAAA record only if the VPS actually has working IPv6. Keep the root `abujacity.life` attached to Hostinger's frontend and preserve its unrelated email/DNS records. Make changes at the authoritative DNS provider, which may differ from the domain seller.
+Realtime is authenticated **Server-Sent Events**, with REST for client actions, presence, messaging, typing, delivered/read state, notifications and events. Caddy flushes streams immediately. The API bounds connections and event/request rates; it does not poll Mongo every second. Redis is unnecessary for this single-process release. Multiple API replicas will require shared fanout/presence infrastructure before horizontal scaling.
 
-The normal deployment does not start a new port-80/443 proxy. After inspecting and backing up the live Okrika proxy, integrate only the AbujaLife API virtual host. `deploy/caddy-api.snippet` proxies the new API hostname to checked loopback port 18787 with immediate SSE flushing. Adjust that port if configured differently. Validate the existing proxy's complete configuration and reload it using its established procedure; do not replace its full configuration.
+## DNS, HTTPS and Hostinger
 
-The optional Compose profile `standalone-edge` runs a dedicated Caddy service for an otherwise free server. Use it only after proving ports 80/443 are unoccupied and this will not disturb Okrika. Its `deploy/Caddyfile` serves **only `api.abujacity.life`** and obtains/renews certificates when DNS and inbound ports permit. Do not start this profile on top of an existing proxy. Caddy preserves the public host, signals HTTPS for Secure cookies and flushes SSE. `TRUST_PROXY=1` relies on the API remaining private behind that controlled proxy.
+Hostinger is authoritative through `horizon.dns-parking.com` and `orbit.dns-parking.com`. Root web A records are managed by Hostinger hosting/CDN; `www` is a CNAME to `abujacity.life`. The API A record is `api → 173.212.249.202`, TTL 300, with no unverified AAAA. Okrika DNS remains unchanged.
 
-## Upload the production frontend to Hostinger
+Upload/extract `abujacity-production-frontend.zip` into the **abujacity.life-specific `public_html`**, confirmed through hPanel. Preserve the current files before replacing a release. Do not use another website’s root. `.htaccess` sets MIME types, public-only caching, SPA/admin deep-route rewrites, HTTPS/canonical redirects and browser security headers. `/api` on Hostinger returns 404. Runtime config, HTML and service worker are not cached; the worker caches only public static assets.
 
-Log in to [Hostinger hPanel](https://hpanel.hostinger.com/) in your own browser. Select the website attached to `abujacity.life`, preserve any existing site, and upload/extract **`abujacity-production-frontend.zip` into that domain's actual document root**. Confirm the directory in hPanel instead of assuming which website owns a `public_html` folder. The ZIP has files at its root, so it must not add an extra path segment.
-
-Enable the frontend's managed HTTPS certificate and HTTPS redirect. `runtime-config.js` exposes only `PUBLIC_WEB_URL` and `API_PUBLIC_URL`. All account, economy, social, admin and payment requests go to the real API with credentialed CORS; the exact frontend origin is allowlisted. Runtime config, HTML, service worker and the admin shell are not cached; fingerprinted public chunks can be cached long term. The service worker caches public app assets only, never private API responses, messages or money state. `/api` on the frontend returns 404 instead of pretending to be a backend.
-
-Account creation currently needs no email verification. Signup and login are real persistent Mongo accounts. Password reset delivery needs a future configured mail-provider adapter and is unavailable while none is configured. A user-facing Home Screen helper observes browser support and a reminder cooldown; iPhone Safari uses Share → Add to Home Screen. The site cannot force an operating-system install dialog. Installed mode stops reminders.
-
-## Administrator and optional Flutterwave
-
-Register the intended owner through the actual production frontend first. Grant that **existing** resident from the private server console:
+Hostinger manages frontend TLS/renewal. Caddy obtains and renews the API certificate automatically in its existing SYSTEM certificate store. Its HTTP listener handles ACME and HTTPS redirects; no Node/Mongo port is public. Do not start a second 80/443 proxy. Check TLS without disabling certificate validation.
 
 ```bash
-node deploy/compose.mjs exec api node deploy/admin-bootstrap.mjs --username YOUR_EXISTING_USERNAME
-```
-
-The helper uses Mongo transactions and writes an audit entry. It never creates an account or lets a future matching username inherit power. Then open `https://abujacity.life/admin/` as that resident. The public shell contains no privileged state; API roles and permissions authorize each operation.
-
-Enter Flutterwave credentials in the dashboard. The stable private `ABUJALIFE_CONFIG_KEY` protects stored credentials and pending-order verification secrets; do not rotate or lose it across releases/restores. Start with provider **test** mode and verify a real provider test transaction before live checkout. An independently verified exact provider reference, transaction ID, successful status, NGN amount, currency and resident ownership are required before one atomic credit. The frontend never supplies authoritative balances or successful-payment claims. No live merchant or live payment was configured during development.
-
-## Consistent encrypted backups and restores
-
-Run from a compatible release using the same private deployment environment:
-
-```bash
-export ABUJALIFE_DEPLOY_ENV_FILE=/opt/abujalife/shared/.env
-node deploy/backup-run.mjs
-```
-
-The dedicated backup identity briefly blocks writes on **this isolated Mongo instance**, dumps only `abujalife_prod`, releases the lock, then encrypts the archive with authenticated **AES-256-GCM**. This yields a consistent multi-collection snapshot without dumping another database. Large archives take longer; schedule accordingly and confirm write-lock release if a backup process is abruptly killed. The API may queue writes during that brief lock.
-
-`BACKUP_RETENTION_DAYS` controls local retention. Optional `BACKUP_OFFSERVER_TARGET=user@host:/absolute/path` and `BACKUP_OFFSERVER_KEY_FILE=/private/key/path` enable actual SCP upload to a separate machine with strict known-host checking. Preconfigure its trusted host key and permissions. A failed configured upload fails the run and prevents retention deletion. The receipt reports **not-configured** when no separate host exists; local backups do not count as off-server protection. Remote retention is the separate host's policy. Keep the encryption key and deployment secrets safely outside both the Git checkout and backup archive.
-
-The optional backup service/timer templates schedule 03:15 Abuja time daily, with a short random delay. Review the absolute release path and `/usr/bin/node`, test one backup and restore, configure separate storage, then install/enable these operator-owned units. They are not installed automatically.
-
-To restore, stop only the AbujaLife API, then explicitly confirm the database:
-
-```bash
-node deploy/compose.mjs stop api
-node deploy/restore-run.mjs SELECTED_FILE.abjl.enc --confirm abujalife_prod
-```
-
-Restore authenticates the complete encrypted archive and runs the database tool's archive metadata preflight **before any database modification**, restricts namespaces to `abujalife_prod.*`, and requires a stopped API through the host wrapper. The tool's dry run checks metadata rather than every document; use an authenticated archive produced by a successful backup from this stack. Restore then drops only the exact isolated `abujalife_prod` database and restores the selected snapshot, so newer collections cannot survive an older backup and leave inconsistent money or social state. This deliberately replaces current game data. A failed restore remains offline until a compatible snapshot is restored successfully. Restore the matching private keys/passwords if rebuilding a lost VPS, run privileged schema bootstrap for the known-compatible release, restart API and check accounts, sessions, balances, homes, purchases, messages and administrator roles. Database restore is explicit; a failed software deployment does not automatically discard newer player progress.
-
-## Public launch acceptance
-
-After live hosting is configured, run normal verified HTTPS checks:
-
-```bash
+curl --fail https://api.abujacity.life/health
 node deploy/health-check.mjs https://api.abujacity.life
+curl --fail https://okrika.store/health
+curl --fail https://white-ai.okrika.store/health
 ```
 
-Confirm the frontend root and `/admin/`, manifest, icons, runtime config and real service-worker activation. In two actual browser sessions, register distinct residents, finish appearance setup, refresh/reopen, exchange a real message and one reviewed game-Naira transfer, and verify updates on both devices. Check a room change, consented visit, logout/re-login and backend restart. Check a provider test payment only after credentials are configured. Preserve the existing Okrika application throughout. Public DNS, TLS, actual Hostinger headers/proxy behaviour, physical-device installation, off-server delivery and live merchant operation remain unverified until performed on the real deployment.
+## Operations and incidents
+
+Run from a compatible release under an Administrator PowerShell session:
+
+```powershell
+.\deploy\windows\control.ps1 -Action status
+.\deploy\windows\control.ps1 -Action reload
+.\deploy\windows\control.ps1 -Action stop
+.\deploy\windows\control.ps1 -Action start
+.\deploy\windows\control.ps1 -Action backup
+Get-Content 'C:\services\abujalife\shared\logs\api-*.jsonl' -Tail 50
+```
+
+A reload gracefully closes only AbujaLife connections and restarts its child. `stop` disables only the AbujaLife task for maintenance; `start` re-enables it. If API startup fails, inspect sanitized startup logs, Mongo service status and the release pointer before selecting the preceding compatible release. Do not restart the entire VPS or Okrika to recover AbujaLife.
+
+Application and supervisor logs rotate at 20 MB/daily and retain fourteen days. Backup logs are bounded and retained; Mongo logs rotate during backup. Caddy’s AbujaLife access log is `C:\services\abujalife\logs\access.json`, rotating at 10 MiB, ten files/fourteen days. Logs exclude passwords, tokens, signing keys and message bodies.
+
+## Backups and restore
+
+VPS backups are timestamped AES-256-GCM archives under `shared\backups`, retained **14 days**. The daily backup locks only the dedicated AbujaLife Mongo instance briefly, dumps only `abujalife_prod`, unlocks, encrypts, authenticates the archive and runs `mongorestore --dryRun` before recording success. Concurrent operations and stale process locks are guarded. `latest-backup.json` records checksum, validation and completion time.
+
+The owner Mac pulls the latest validated encrypted archive over strict-host-key SSH every six hours and at login, when awake/online. Copies reside in `~/AbujaLife-backups`, permissions 0700, retained **30 days**. The backup encryption key is separately escrowed there with 0600 permissions; the SSH private key is never copied. Pull validates the ciphertext checksum and GCM authentication without writing plaintext player data. This is a real off-server copy, but its schedule depends on the Mac being available; continuous remote object-storage replication remains a future option.
+
+```bash
+node deploy/macos/install-backup-pull.mjs
+node ~/AbujaLife-backups/pull-backups.mjs ~/AbujaLife-backups
+launchctl print gui/$(id -u)/life.abujacity.backup-pull
+```
+
+For restore, first take an extra current backup if possible, stop only AbujaLife, choose a matching validated encrypted snapshot, and explicitly confirm the database:
+
+```powershell
+.\deploy\windows\control.ps1 -Action stop
+$env:ABUJALIFE_WINDOWS_ROOT = 'C:\services\abujalife'
+& 'C:\Program Files\nodejs\node.exe' .\deploy\windows\restore.mjs 'C:\services\abujalife\shared\backups\SELECTED.abjl.enc' --confirm abujalife_prod
+.\deploy\windows\control.ps1 -Action start
+```
+
+Restore authenticates every byte and validates archive metadata before replacing only `abujalife_prod`; it requires the API stopped and guards concurrent backups. It removes post-snapshot collections to avoid inconsistent money state. Preserve/recover the matching backup/configuration encryption keys. A failed restore remains offline until repaired. Confirm accounts, balances, inventory, homes, jobs, messages and admin roles afterward, then confirm Okrika health.
+
+## Optional provider setup still requiring owner credentials
+
+* **Resend:** dedicated `RESEND_API_KEY` and verified `EMAIL_FROM` in private `shared\providers.json`. Until supplied, verification and password reset emails are unavailable; ordinary persistent signup/login work. Verify the sending domain with Resend DNS records before enabling delivery.
+* **Flutterwave:** dedicated test/live secret key and webhook signing secret through the permission-checked admin configuration, encrypted with `config-key`. Complete a real provider test transaction before live activation. Live payments remain disabled until merchant configuration is supplied.
+* **Apple / Google:** real App Store Server API / Google Play verifier implementations and platform credentials are still required. No fabricated credential names or verifier success are treated as production fulfillment.
+
+Never commit `.env`, provider files, server secrets, QA credentials or database archives. The repository history scan found URI templates and clearly named payment test fixtures, with no identified real credential requiring rotation; this is a targeted scan, not a guarantee against every possible secret format.

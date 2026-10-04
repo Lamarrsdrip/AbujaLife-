@@ -2,10 +2,11 @@ import crypto from 'node:crypto';
 import { MongoClient } from 'mongodb';
 
 export const MONGO_SCHEMA_VERSION = 1;
+export const MONGO_APPEND_ONLY_COLLECTIONS = Object.freeze(['ledger', 'wallet_transfers', 'economy_operations', 'payment_receipts', 'admin_audit', 'wallet_operations']);
 export const MONGO_COLLECTIONS = Object.freeze([
   'schema_versions', 'residents', 'appearances', 'needs', 'progression', 'player_state', 'homes', 'origins',
   'wallets', 'ledger', 'wallet_transfers', 'economy_operations', 'inventory', 'vehicles', 'properties', 'loans', 'gamble_rounds',
-  'challenges', 'sessions', 'password_resets', 'conversations', 'members', 'messages', 'friendships',
+  'challenges', 'sessions', 'password_resets', 'email_verifications', 'conversations', 'members', 'messages', 'friendships',
   'moderation', 'notifications', 'reports', 'invitations', 'events', 'event_rsvps', 'location_messages',
   'social_posts', 'social_likes', 'social_comments', 'home_visit_requests', 'home_visit_sessions', 'follows',
   'community_groups', 'community_members', 'presence_sessions', 'payment_orders', 'payment_config',
@@ -46,6 +47,7 @@ export const MONGO_VALIDATORS = Object.freeze({
   challenges: normalized({ jobId: string, startedAt: timestamp, workDate: string, shiftSlot: string, shiftEndsAt: timestamp, completedAt: nullableTimestamp, cancelledAt: nullableTimestamp }, ['_id', 'residentId', 'jobId', 'startedAt']),
   sessions: normalized({ authEpoch: whole, createdAt: date, expiresAt: date }, ['_id', 'residentId', 'authEpoch', 'createdAt', 'expiresAt']),
   password_resets: normalized({ authEpoch: whole, createdAt: date, expiresAt: date }, ['_id', 'residentId', 'authEpoch', 'createdAt', 'expiresAt']),
+  email_verifications: normalized({ authEpoch: whole, email: string, originalEmail: { bsonType: ['string', 'null'] }, createdAt: date, expiresAt: date }, ['_id', 'residentId', 'authEpoch', 'email', 'originalEmail', 'createdAt', 'expiresAt']),
   conversations: generic({ id: string, kind: { enum: ['dm', 'group', 'community'] }, seq: whole }, ['id', 'kind']),
   members: generic({ conversationId: string, residentId: string, joinSeq: whole, readSeq: whole, deliveredSeq: whole }, ['conversationId', 'residentId']),
   messages: { $jsonSchema: {
@@ -79,6 +81,7 @@ export const MONGO_INDEXES = Object.freeze({
   challenges: [[{ residentId: 1, workDate: 1, completedAt: 1 }, {}], [{ residentId: 1, completedAt: 1, cancelledAt: 1, startedAt: -1 }, {}]],
   sessions: [[{ residentId: 1, authEpoch: 1, createdAt: -1 }, {}], [{ expiresAt: 1 }, { expireAfterSeconds: 0 }]],
   password_resets: [[{ residentId: 1 }, {}], [{ expiresAt: 1 }, { expireAfterSeconds: 0 }]],
+  email_verifications: [[{ residentId: 1 }, { unique: true }], [{ expiresAt: 1 }, { expireAfterSeconds: 0 }]],
   presence_sessions: [[{ residentId: 1, expiresAt: 1 }, {}], [{ expiresAt: 1 }, { expireAfterSeconds: 0 }]]
 });
 
@@ -170,6 +173,10 @@ export async function connectMongo(options = {}) {
   try {
     await client.connect();
     const db = client.db(configuration.database);
+    if (configuration.production) {
+      const authenticated = await db.command({ connectionStatus: 1 });
+      if (!authenticated.authInfo?.authenticatedUsers?.length) throw new MongoConfigurationError('Production MongoDB requires an authenticated dedicated application identity');
+    }
     const hello = await db.command({ hello: 1, maxTimeMS: 5000 });
     if (!hello.setName || hello.maxWireVersion < 7) throw new MongoConfigurationError('MongoDB must run as a replica set with transaction support');
     if (options.initializeSchema) await ensureMongoSchema(db);

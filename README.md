@@ -20,7 +20,7 @@ npm run dev
 
 The server listens on port 8787. `PORT=8791 npm run dev` selects another port. `npm start` starts the Mongo-backed production API and requires its production environment; it does not serve a demo or the static frontend. Backend changes restart the development server automatically; refresh the browser after client changes.
 
-Use the existing checkout. Every cloud task already has an isolated environment; do not create a Git worktree unless explicitly requested.
+Use the existing checkout and preserve local work. The production operations guide describes the owner Mac and Windows VPS deployment.
 
 ## Playable workflow
 
@@ -59,20 +59,17 @@ Production stores accounts, hashed sessions, appearance, player state, needs, pr
 
 The backend validates valuable state in transactions. Authentication uses password hashing with scrypt and random sessions stored as hashes. Production cookies are host-only, Secure and HttpOnly; browser writes use the exact configured frontend origin and credentialed CORS. Server-Sent Events deliver messages to conversation members and nearby activity to the appropriate location zone. Presence privacy and blocking apply to these events.
 
-Production runs a private MongoDB replica set and one Node API/SSE process, with isolated Docker services, health checks and encrypted scheduled backups. Redis is not required for this first deployment. Horizontal realtime fanout, configured email recovery delivery, native payment verification, voice notes/calls, player businesses and civic elections require further implementation. Cursor pagination removes total-content display ceilings without proving capacity for millions of concurrent residents. Social persistence, visit consent and privacy boundaries are documented in [SOCIAL_CONTRACT.md](docs/SOCIAL_CONTRACT.md).
+Production runs a private MongoDB replica set and one Node API/SSE process as isolated native Windows services/tasks, with health checks and encrypted scheduled backups copied to the owner Mac. Redis is not required for this first deployment. Email verification and password recovery are implemented but require Resend credentials. Horizontal realtime fanout, native payment verification, voice notes/calls, player businesses and civic elections require further implementation. Cursor pagination removes total-content display ceilings without proving capacity for millions of concurrent residents. Social persistence, visit consent and privacy boundaries are documented in [SOCIAL_CONTRACT.md](docs/SOCIAL_CONTRACT.md).
 
 ## Administration and payments
 
 The production frontend includes an administrator dashboard at `/admin/` (local development also supports `/admin.html`), with roles, resident search, suspension, report and post moderation, audited wallet adjustments, payment configuration and an audit trail. Admins with finance access can review and confirm a positive player top-up from Residents → Manage; each grant is idempotent and recorded in the wallet ledger and audit trail. First create a real resident, then bind that existing account from the server console:
 
-```bash
-export ABUJALIFE_DEPLOY_ENV_FILE=/opt/abujalife/shared/.env
-node deploy/compose.mjs exec api node deploy/admin-bootstrap.mjs --username EXISTING_RESIDENT_USERNAME
-```
+Use the protected Windows bootstrap command in [PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md). It resolves only an existing resident and grants no future matching username access.
 
 Flutterwave keys are entered in the dashboard and encrypted on the server using `ABUJALIFE_CONFIG_KEY`. Set a stable 32-byte configuration key and the public HTTPS origin before enabling checkout. Provider verification requires an exact successful status, transaction ID, reference, NGN amount and ownership match before an atomic, replay-protected wallet credit. No live merchant was configured or payment attempted during development. Webhook signature compatibility could not be independently confirmed because the provider documentation site was blocked; return and manual verification work separately from webhooks.
 
-Use [PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md) for the current MongoDB/Hostinger architecture, private configuration, administration, deployment and backup/restore commands. [ADMIN_PAYMENTS.md](docs/ADMIN_PAYMENTS.md) records earlier local-development provider tests. The static preview cannot provide shared chat or run a payment backend; the account-free Cloudflare tunnel API was blocked by the current cloud proxy.
+Use [PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md) for the current MongoDB/Hostinger architecture, private configuration, administration, deployment and backup/restore commands. [ADMIN_PAYMENTS.md](docs/ADMIN_PAYMENTS.md) records earlier local-development provider tests. The static preview cannot provide shared chat or run a payment backend. The production browser connects to the VPS API at https://api.abujacity.life.
 
 ## Production build and acceptance
 
@@ -85,7 +82,7 @@ npm run qa:infra
 
 `build` creates the connected Hostinger frontend in `dist/`. `qa:infra` requires Docker and creates its own authenticated private MongoDB fixture, verifies both accounts through the actual API and process restart, builds the real containers, and exercises encrypted backup/restore. It cleans only its own fixture resources. It does not connect to the owner's VPS or validate public hosting.
 
-See [PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md) before deploying and [PRODUCTION_ACCEPTANCE.md](docs/PRODUCTION_ACCEPTANCE.md) for the current checks and outstanding launch gates. The supplied VPS SSH connection was refused and this cloud task cannot use the owner's Mac key or operate their Hostinger browser, so live DNS/HTTPS, Okrika coexistence and hosted acceptance remain pending. Source preparation and local acceptance are separate from that deployment.
+See [PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md) before deploying and [PRODUCTION_ACCEPTANCE.md](docs/PRODUCTION_ACCEPTANCE.md) for the current checks and outstanding launch gates. The owner Mac connects to the actual Windows VPS with its existing SSH key and publishes the frontend through the authenticated Hostinger account. The acceptance record distinguishes live production verification from fixture checks and optional provider limitations.
 
 ## Geography
 

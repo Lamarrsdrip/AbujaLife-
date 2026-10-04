@@ -1,6 +1,6 @@
 # Production acceptance record
 
-The deployment takeover runs on the owner’s Mac against the real VPS and authenticated Hostinger account. This replaces the earlier cloud environment’s access limitation. Results below distinguish completed checks from outstanding live acceptance.
+The deployment takeover completed from the owner’s Mac against the real VPS and authenticated Hostinger account. Results below record live evidence and the remaining provider prerequisites.
 
 | Check | Observed result |
 | --- | --- |
@@ -15,12 +15,12 @@ The deployment takeover runs on the owner’s Mac against the real VPS and authe
 | Production HTTP fixture | 12 restart/persistence/realtime/authorization checks passed |
 | Repository secret scan | 729 Git objects examined; findings were generated URI templates and explicitly named test payment fixtures; no real credential identified |
 | Okrika baseline and proxy change | Public API and White Studio healthy before and after Caddy reload |
-| Native live deployment | In progress; not yet accepted |
-| Hostinger game upload/browser QA | In progress; not yet accepted |
-| Off-server backups | Mac encrypted-pull implementation prepared; live delivery not yet accepted |
-| Main/CI promotion | Pending final QA and CI |
+| Native live deployment | **Passed**; revision `48b0aef16564-c095b77cb7da` is healthy on `AbujaLife-API` with Node 24, loopback 18787, supervised LocalService startup/reload |
+| Hostinger game upload/browser QA | **Passed**; `https://abujacity.life` serves the 48b0aef production build, HTTPS redirects/deep routes/security headers work, browser loads the playable Garki scene and calls only HTTPS API origins |
+| Off-server backups | **Passed**; encrypted AES-GCM archive copied and authenticated at `~/AbujaLife-backups`, LaunchAgent `life.abujacity.backup-pull` active every six hours, backup/config keys mode 0600 |
+| Main/CI promotion | Branch CI passed for `48b0aef` (run `37241624964`); final documentation commit and main promotion are the remaining repository steps |
 
-Live acceptance must additionally verify authenticated private AbujaLife Mongo, normalized persistence/index readiness, restricted application privileges, actual API startup/recovery, two-account realtime and durable state across restart, negative authorization, actual Hostinger headers/routes/network traffic, validated scheduled backups/off-server delivery, final main revision and CI. No local fixture result substitutes for these public checks.
+Live acceptance completed. The private audit confirms `abujalife_prod`, authentication, loopback Mongo 27017, 51 collections, 170 indexes, append-only ledger protections and application DDL denial. Public HTTPS acceptance passed 9 checks before and 7 checks after a graceful AbujaLife-only restart using three independent accounts: sessions, wallets, ledger, inventory, homes, vehicles, jobs, locations, conversations, SSE reconnect, idempotency, cross-account denial and bilateral block enforcement. The backup task produced an AES-256-GCM archive with authenticated `mongorestore --dryRun` validation; the Mac pull verified checksum and GCM authentication without plaintext output. Okrika API and White Studio remained healthy. No local fixture result substitutes for these public checks.
 
 Email verification/password reset delivery remains disabled without a dedicated Resend key and verified sender. Flutterwave live checkout remains disabled without configured merchant verification credentials. Apple/Google verification remains fail-closed pending real platform adapters. These optional provider omissions must remain visible in the final report.
 

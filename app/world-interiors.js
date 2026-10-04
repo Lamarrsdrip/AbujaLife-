@@ -129,10 +129,11 @@ const HOME_META={
 
 function buildHome(profile,id) {
   const property=profile.home?.propertyId||'garki-studio';
-  const key=HOME_META[property]?property:'garki-studio';
+  const layout=profile.home?.layoutId||property;
+  const key=HOME_META[layout]?layout:'garki-studio';
   const dimensions={'garki-studio':[1120,900],'lugbe-flat':[1280,1000],'gwarinpa-apartment':[1450,1100],'jabi-apartment':[1420,1080],'guzape-terrace':[1540,1160],'maitama-villa':[1760,1280]}[key];
   const owned=new Set((Array.isArray(profile.inventory)?profile.inventory:[]).map(v=>typeof v==='string'?v:v.itemId||v.id));
-  const s=sceneBase(...dimensions,id,{name:profile.home?.name||HOME_META[key][0],floor:key==='maitama-villa'||key==='jabi-apartment'?'tile':'oak'});
+  const s=sceneBase(...dimensions,id,{name:profile.home?.name||HOME_META[key][0],floor:['oak','darkoak','tile'].includes(profile.home?.roomStyle?.floor)?profile.home.roomStyle.floor:key==='maitama-villa'||key==='jabi-apartment'?'tile':'oak',accent:({sand:'#e9e0cf',ivory:'#eeeade',sage:'#c4d1bc',clay:'#c9a48f'})[profile.home?.roomStyle?.wall]||'#e9e6d7'});
   s.subtitle=HOME_META[key][1];const sofaColor=owned.has('sofa')?'#b68b6b':'#849b86';
   if(key==='garki-studio') {
     s.window(95,247);s.window(473,220);s.floor(762,145,296,320,'bath');
@@ -196,6 +197,7 @@ function buildHome(profile,id) {
   addOwnedFurniture(s,profile,owned);
   const furnishPoint=[{x:s.spawn.x+114,y:s.spawn.y-2},{x:s.spawn.x-114,y:s.spawn.y-2},{x:s.spawn.x,y:s.spawn.y-74}].find(p=>!s.obstacles.some(b=>p.x>b.x-32&&p.x<b.x+b.w+32&&p.y>b.y-32&&p.y<b.y+b.h+32))||{x:s.spawn.x,y:s.spawn.y};
   s.point('furnish',furnishPoint.x,furnishPoint.y,'Arrange your home','furnish');
+  for(const partition of profile.home?.roomStyle?.partitions||[]){const r=partitionRect(s,partition);s.wall(r.x,r.y,r.w,r.h);s.walls.at(-1).custom=true;s.walls.at(-1).id=partition.id;}
   return s.finish();
 }
 
@@ -230,6 +232,23 @@ const FURNITURE={
 export function furnitureGhost(itemId) {
   const def=FURNITURE[itemId]||FURNITURE.plant;
   return {art:def.art(),width:def.w,height:def.h,upright:!!def.upright};
+}
+
+function partitionRect(scene,partition){
+  const area=scene.furnishingArea||{x:62,y:160,w:scene.width-124,h:scene.height-280};
+  return {x:area.x+partition.x*area.w,y:area.y+partition.y*area.h,w:partition.w*area.w,h:partition.h*area.h};
+}
+export function homeDesignPreservesRoutes(profile,roomStyle){
+  if(!roomStyle||!Array.isArray(roomStyle.partitions))return false;
+  const base=buildHome({...profile,home:{...profile.home,roomStyle:{...roomStyle,partitions:[]}}},'design-route-check');
+  for(const p of roomStyle.partitions){
+    if(!['x','y','w','h'].every(k=>Number.isFinite(p[k]))||p.x<0||p.y<0||p.w<.008||p.h<.008||p.w>1||p.h>1||Math.min(p.w,p.h)>.07||p.x+p.w>1||p.y+p.h>1)return false;
+    const r=partitionRect(base,p),overlaps=(b,pad=12)=>r.x<b.x+b.w+pad&&r.x+r.w>b.x-pad&&r.y<b.y+b.h+pad&&r.y+r.h>b.y-pad;
+    if((base.objects||[]).some(o=>o.solid!==false&&overlaps(o)))return false;
+    if(base.interactables.some(p=>overlaps({x:p.x,y:p.y,w:0,h:0},46))||overlaps({x:base.spawn.x,y:base.spawn.y,w:0,h:0},70))return false;
+    base.obstacles.push(r);
+  }
+  return furniturePlacementPreservesRoutes(base,null);
 }
 
 // Match the playable world's navigation grid. Local clearance alone can leave a
@@ -362,7 +381,7 @@ function cinemaChair(x,y) {return '<desc data-scene-prop="cinema-chair"/>'+group
 function buildVenue(profile,venue,id) {
   const incoming=typeof venue==='string'?{id:venue}:venue||{id:profile.location?.venue};
   const raw={...VENUES.find(v=>v.id===incoming.id),...incoming};
-  const key=raw.type||raw.kind||raw.id||'restaurant';
+  const key=raw.kind==='club'?'club':raw.type||raw.kind||raw.id||'restaurant';
   const type=['restaurant','hotel','gym','cinema','grocery','park','dealership','estate-office','furniture-store','cafe','salon','mosque','church','jabi-lake','club','games-lounge'].find(v=>key===v||String(key).endsWith(`-${v}`)||String(key).startsWith(`${v}-`))||'restaurant';
   const names={restaurant:'The courtyard kitchen',hotel:'Capital House Hotel',gym:'Neighbourhood fitness',cinema:'City cinema',grocery:'Fresh market',park:'The neighbourhood garden',dealership:'Abuja auto gallery','estate-office':'Abuja property studio','furniture-store':'Home & living',cafe:'The Corner Café',salon:'Fresh Studio'};
   const dims={restaurant:[1360,1060],hotel:[1570,1180],gym:[1400,1080],cinema:[1430,1100],grocery:[1400,1080],park:[1560,1150],dealership:[1570,1130],'estate-office':[1390,1050],'furniture-store':[1540,1160],cafe:[1210,990],salon:[1260,1010],mosque:[1480,1140],church:[1450,1190],'jabi-lake':[1760,1290],club:[1530,1190],'games-lounge':[1410,1100]}[type];
@@ -476,15 +495,35 @@ function buildVenue(profile,venue,id) {
     s.pedestrians.push({x:1247,y:304,toX:1247,toY:809},{x:281,y:1005,toX:1028,toY:1005});
     anchors.push({x:1242,y:861},{x:1448,y:1113});
   } else if(type==='club') {
-    s.art.push(rect(63,145,1404,964,'#637779'),rect(371,393,696,455,'#64767a',14));
-    for(let row=0;row<5;row++)for(let col=0;col<7;col++)s.art.push(rect(389+col*95,411+row*82,86,73,['#899598','#8c8094','#828f7b'][(row+col)%3],3));
-    wallSign(s,485,110,'AFTER HOURS','GOOD MUSIC · YOUR PEOPLE');
-    s.object(477,221,486,97,counterArt(486,97,'#4d6064'),{kind:'dj-booth'});
-    for(const x of [355,1004])s.object(x,199,73,135,rect(0,-82,73,210,'#34444a',6)+ellipse(36,-21,23,23,'#566771')+ellipse(36,68,28,28,'#263c42')+ellipse(36,68,13,13,'#677b80'),{kind:'speaker'});
-    s.art.push(path('M365 180L525 823H291Z','#c3b3d7','class="world-club-light" opacity=".3"')+path('M1036 180L1238 823H896Z','#adc4bb','class="world-club-light" opacity=".3"'));
-    s.object(1081,506,264,88,counterArt(264,88));s.object(122,659,175,83,sofaArt(175,83,'#8d7c90'));s.object(1060,883,257,83,sofaArt(257,83,'#899889'));
-    s.pedestrians.push({x:575,y:553,toX:575,toY:553,stationary:true,activity:'dance'},{x:823,y:698,toX:823,toY:698,stationary:true,activity:'dance'},{x:757,y:473,toX:757,toY:473,stationary:true,activity:'dance'});
-    anchors.push({x:720,y:900},{x:1206,y:655});
+    const tokyo=raw.id==='club',cage=raw.id==='club-cage',magic=raw.id==='magic-city',bear=raw.id==='bear-barn';
+    const title=bear?'BEAR BARN':magic?'MAGIC CITY':cage?'CAGE':'TOKYO';
+    const accent=bear?'#8e795c':magic?'#99758f':cage?'#798c98':'#7d8171';
+    s.art.push(rect(63,145,1404,964,bear?`url(#${id}-darkoak)`:'#637779'));
+    wallSign(s,485,110,title,bear?'A GOOD EVENING · GOOD COMPANY':magic?'LIVE PERFORMANCE · LOUNGE':cage?'MUSIC · MOVEMENT':'THE LATE LOUNGE');
+    if(bear){
+      s.floor(63,145,1404,964,'darkoak');s.object(388,244,684,100,counterArt(684,100,'#8d795d'),{kind:'pub-bar'});
+      for(const x of [410,594,778,962])s.object(x,404,64,66,chairArt('#967f61'));
+      for(const [x,y] of [[199,648],[674,648],[1120,648]])s.object(x,y,185,139,tableArt(137,106));
+      s.object(156,930,290,86,sofaArt(290,86,'#957451'));s.object(1080,930,290,86,sofaArt(290,86,'#8b997c'));
+      s.pedestrians.push({x:741,y:208,toX:741,toY:208,stationary:true,activity:'social'},{x:537,y:722,toX:537,toY:722,stationary:true,activity:'social'},{x:1012,y:862,toX:1012,toY:862,stationary:true,activity:'social'});
+      anchors.push({x:727,y:879},{x:1158,y:438});
+    }else{
+      s.rug(371,393,696,455,accent);
+      if(magic){
+        s.object(428,270,650,268,rect(0,0,650,268,'#81667c',17)+rect(12,-20,626,258,'#b68a9d',15),{kind:'performance-stage'});
+        s.object(125,643,213,120,tableArt(165,92));s.object(1162,643,213,120,tableArt(165,92));
+        s.pedestrians.push({x:638,y:401,toX:638,toY:401,stationary:true,activity:'dance',elevation:36},{x:868,y:396,toX:868,toY:396,stationary:true,activity:'dance',elevation:36});
+      }else{
+        s.object(477,221,486,97,counterArt(486,97,tokyo?'#666854':'#4d6064'),{kind:'dj-booth'});
+        s.pedestrians.push({x:720,y:220,toX:720,toY:220,stationary:true,activity:'dj'});
+        if(cage){s.object(366,355,705,38,rect(0,-85,705,10,'#65737a')+rect(0,-85,10,123,'#89949a')+rect(695,-85,10,123,'#89949a'),{solid:false,kind:'lighting-truss'});}
+      }
+      for(const x of [355,1104])s.object(x,199,73,135,rect(0,-82,73,210,'#34444a',6)+ellipse(36,-21,23,23,'#566771')+ellipse(36,68,28,28,'#263c42'),{kind:'speaker'});
+      s.object(1110,880,264,88,counterArt(264,88));s.object(122,879,270,83,sofaArt(270,83,tokyo?'#b69a72':'#8d7c90'),{kind:tokyo?'premium-sofa':'sofa'});
+      if(tokyo){s.object(107,490,230,83,sofaArt(230,83,'#ab9675'),{kind:'premium-sofa'});s.object(1162,490,230,83,sofaArt(230,83,'#ab9675'),{kind:'premium-sofa'});s.label(133,646,'VIP LOUNGE');}
+      s.pedestrians.push({x:510,y:722,toX:510,toY:722,stationary:true,activity:'dance'},{x:908,y:715,toX:908,toY:715,stationary:true,activity:'dance'},{x:740,y:610,toX:740,toY:610,stationary:true,activity:'dance'});
+      anchors.push({x:738,y:905},{x:1233,y:1018});
+    }
   } else if(type==='games-lounge') {
     s.window(128,265);s.window(1000,260);wallSign(s,446,110,'DICE & CHILL','A GOOD EVENING STARTS HERE');
     for(const [x,y] of [[203,341],[858,341]]){

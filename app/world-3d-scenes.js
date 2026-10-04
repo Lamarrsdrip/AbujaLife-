@@ -6,9 +6,10 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
   const group = new T.Group();
   group.name = 'AbujaLife authored 3D environment';
   const geometries = new Map(), materials = new Map(), textures = [];
-  const water = [], movingCars = [];
+  const water = [], movingCars = [], nightBeams=[], clubLights=[];
   const ds = depthScale;
-  const indoor = kind === 'home' || (kind === 'venue' && !['park', 'jabi-lake'].includes(venue?.id));
+  const isClub=venue?.kind==='club'||['club','club-cage','magic-city','bear-barn'].includes(venue?.id);
+  const indoor = kind === 'home' || kind === 'visit' || (kind === 'venue' && !['park', 'jabi-lake'].includes(venue?.id));
   const mat = (color, roughness = .76, metalness = 0, extra = {}) => {
     const key = JSON.stringify([color, roughness, metalness, extra]);
     if (!materials.has(key)) materials.set(key, new T.MeshStandardMaterial({color, roughness, metalness, ...extra}));
@@ -67,9 +68,9 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     texture.wrapS=texture.wrapT=T.RepeatWrapping;textures.push(texture);return texture;
   }
   function floor(parent,x,y,w,h,type='wood',height=0) {
-    const texture=surfaceTexture(type);
+    const texture=surfaceTexture(type==='oak'||type==='darkoak'?'wood':type);
     if(texture)texture.repeat.set(Math.max(1,w/240),Math.max(1,h/240));
-    const material=new T.MeshStandardMaterial({color:'#ffffff',map:texture,roughness:type==='tile'?.4:.86,metalness:0});materials.set(`floor:${materials.size}`,material);
+    const material=new T.MeshStandardMaterial({color:type==='darkoak'?'#796b61':'#ffffff',map:texture,roughness:type==='tile'?.4:.86,metalness:0});materials.set(`floor:${materials.size}`,material);
     return box(parent,x+w/2,height-2,(y+h/2)*ds,w,4,h*ds,material,false,false);
   }
   const wood=mat('#a98761'), darkWood=mat('#6c4d36'), cream=mat('#e9e0cb'), linen=mat('#e6dfd1'), green=mat('#506959'), metal=mat('#485158',.35,.6), glass=mat('#86adb4',.19,.08,{transparent:true,opacity:.43});
@@ -160,6 +161,9 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
         break;
       }
       case 'fridge':box(p,0,67,0,w,132,h,'#bdc7c3',true);box(p,0,97,h*.51,w*.91,52,4,'#d2d8d3',true);box(p,0,35,h*.51,w*.91,64,4,'#d2d8d3',true);box(p,-w*.31,88,h*.57,3,24,3,metal);box(p,-w*.31,38,h*.57,3,26,3,metal);break;
+      case 'performance-stage':{box(p,0,16,0,w,32,h,mat('#665068',.55),true);box(p,0,33,0,w-8,3,h-8,mat('#997385',.45),true);for(const x of [-w*.48,w*.48])box(p,x,75,-h*.46,12,130,12,metal);box(p,0,140,-h*.46,w,10,10,metal);break;}
+      case 'lighting-truss':{for(const x of [-w*.48,w*.48])box(p,x,90,0,9,180,9,metal);box(p,0,181,0,w,9,10,metal);for(let i=0;i<6;i++)box(p,-w*.42+i*w*.17,167,0,20,17,17,mat(i%2?'#779dad':'#9984ad',.4,0,{emissive:i%2?'#4eacc5':'#aa70c8',emissiveIntensity:.6}));break;}
+      case 'pub-bar':{box(p,0,41,0,w,82,h,darkWood,true);box(p,0,84,0,w+10,7,h+10,wood,true);for(let i=0;i<6;i++){cylinder(p,-w*.4+i*w*.16,96,-h*.15,5,18,['#678573','#ac9d64'][i%2],4);cup(p,-w*.4+i*w*.16,92,h*.2);}break;}
       case 'shower': {
         box(p,0,4,0,w,8,h,'#e4e8de');box(p,0,79,-h*.45,w,153,5,'#9bb8ad');box(p,-w*.46,80,0,4,155,h,glass);box(p,w*.46,80,0,4,155,h,glass);box(p,0,80,h*.45,w,153,3,glass);
         cylinder(p,-w*.2,96,-h*.38,2,74,metal);box(p,-w*.13,133,-h*.29,w*.18,3,h*.2,metal);box(p,w*.1,66,h*.49,3,21,3,metal);cylinder(p,0,9,0,6,1,metal);break;
@@ -254,6 +258,7 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     }
     if(offroad){const spare=cylinder(p,-length*.55,50,0,21,14,tire);spare.rotation.z=Math.PI/2;box(p,0,64,-width*.51,length*.78,4,5,chrome);box(p,0,64,width*.51,length*.78,4,5,chrome);}
     if(style==='taxi')box(p,-5,98,0,29,11,20,'#d7c083',true);
+    const beams=new T.Group(),beamMat=new T.MeshBasicMaterial({color:'#fff0b5',transparent:true,opacity:.035,depthWrite:false,side:T.DoubleSide});materials.set(`beams:${materials.size}`,beamMat);for(const z of [-width*.34,width*.34]){const cone=mesh(beams,geo('headlightcone',()=>new T.ConeGeometry(39,170,12,1,true)),beamMat,length/2+85,33,z,false);cone.rotation.z=Math.PI/2;cone.userData.excludeFromBounds=true;}beams.visible=false;if(!modelOnly){p.add(beams);nightBeams.push(beams);}
     p.name=vehicleFor(vehicleId)?.name||style;
     return {group:p,wheels};
   }
@@ -268,22 +273,23 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
   function interiorSet() {
     const outdoor=['park','jabi-lake'].includes(venue?.id);
     floor(group,0,0,layout.width,layout.height,outdoor?'grass':'wood',-4);
-    floor(group,60,140,layout.width-120,layout.height-220,layout.floorMaterial==='oak'||layout.floorMaterial==='darkoak'?'wood':outdoor?'grass':'tile');
+    floor(group,60,140,layout.width-120,layout.height-220,outdoor?'grass':layout.floorMaterial||'tile');
     for(const area of layout.floorAreas||[]) {
       if(area.material==='rug'){
         box(group,area.x+area.w/2,1,(area.y+area.h/2)*ds,area.w,2,area.h*ds,area.color||'#a9a186',false,false);
         box(group,area.x+area.w/2,2,(area.y+area.h/2)*ds,Math.max(1,area.w-14),1,Math.max(1,area.h-14)*ds,mat('#b8ad93',.96),false,false);
-      }else floor(group,area.x,area.y,area.w,area.h,area.material==='oak'||area.material==='darkoak'?'wood':area.material==='pave'?'tile':area.material,1);
+      }else floor(group,area.x,area.y,area.w,area.h,area.material==='pave'?'tile':area.material,1);
     }
     if(!outdoor) {
+      const wallColor=({sand:'#cdbca4',ivory:'#e5e0d6',sage:'#9caf99',clay:'#ba9380'})[profile.home?.roomStyle?.wall]||'#c4b096';
       // Roofless cutaway: full-height rear/partition walls and lowered front sides.
-      box(group,layout.width/2,72,134*ds,layout.width-96,144,13,'#c4b096');
-      box(group,55,69,(layout.height+140)/2*ds,14,138,(layout.height-140)*ds,'#d2bda0');
-      box(group,layout.width-55,33,(layout.height+140)/2*ds,14,66,(layout.height-140)*ds,'#d2bda0');
+      box(group,layout.width/2,72,134*ds,layout.width-96,144,13,wallColor);
+      box(group,55,69,(layout.height+140)/2*ds,14,138,(layout.height-140)*ds,wallColor);
+      box(group,layout.width-55,33,(layout.height+140)/2*ds,14,66,(layout.height-140)*ds,wallColor);
       box(group,layout.width/2,16,(layout.height-83)*ds,layout.width-96,32,13,'#bfaa8c');
       for(const wall of layout.walls||[]) {
         const height=wall.y>layout.height*.55?68:125;
-        box(group,wall.x+wall.w/2,height/2,(wall.y+wall.h/2)*ds,wall.w,height,wall.h*ds,'#cabba5');
+        box(group,wall.x+wall.w/2,height/2,(wall.y+wall.h/2)*ds,wall.w,height,wall.h*ds,wallColor);
         box(group,wall.x+wall.w/2,height+1,(wall.y+wall.h/2)*ds,wall.w+1,3,wall.h*ds+1,'#ede4d3');
       }
       // Framed windows, wall lights, art and skirting keep surfaces lived in.
@@ -310,8 +316,9 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
       for(let i=0;i<8;i++){const x=-172+i*49;const bar=cylinder(rack,x,56,0,2,36,metal);bar.rotation.z=Math.PI/2;for(const d of [-14,14]){const weight=cylinder(rack,x+d,56,0,11,8,'#2c3839');weight.rotation.z=Math.PI/2;}}
     }
     if(venue?.id==='mosque')for(let row=0;row<4;row++)for(let col=0;col<5;col++){box(group,225+col*180,1,(420+row*143)*ds,110,2,105*ds,'#829078');box(group,225+col*180,3,(390+row*143)*ds,77,1,3*ds,'#c6b895');}
-    if(venue?.id==='club'){
-      box(group,layout.width*.5,1,layout.height*.56*ds,430,3,380*ds,mat('#4c485a',.25,.12));
+    if(isClub){
+      for(let i=0;i<(venue?.id==='bear-barn'?1:3);i++){const light=new T.SpotLight(['#a57be1','#64b9d3','#e5bb79'][i],24000,740,.48,.75,1.6);light.position.set(400+i*350,190,280*ds);light.target.position.set(590+i*150,0,620*ds);group.add(light,light.target);clubLights.push(light);}
+      if(venue?.id!=='bear-barn')box(group,layout.width*.5,1,layout.height*.56*ds,430,3,380*ds,mat(venue?.id==='club'?'#404f45':venue?.id==='magic-city'?'#6d4c69':'#41475b',.25,.12));
       for(let i=0;i<8;i++){box(group,layout.width*.34+i*61,6,layout.height*.36*ds,28,3,14,mat(i%2?'#a071a5':'#527b93',.3,0,{emissive:i%2?'#8b4a92':'#4068ae',emissiveIntensity:.5}));}
     }
     if(venue?.id==='jabi-lake') {
@@ -330,7 +337,7 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     const affluent=/maitama|asokoro|guzape|jabi/i.test(profile.district||place?.name||'');
     floor(group,0,0,layout.width,layout.height,'grass',-6);
     floor(group,0,610,layout.width,132,'tile',-1);floor(group,0,1390,layout.width,144,'tile',-1);floor(group,0,2170,layout.width,114,'tile',-1);
-    for(const [y,h] of [[722,252],[1534,234],[2284,234]]) {
+    for(const [y,h] of [[722,252],[1534,234],[2284,234],[3170,234]]) {
       floor(group,0,y,layout.width,h,'road',0);
       for(let x=0;x<layout.width;x+=100)box(group,x+28,1,(y+h/2)*ds,52,1,4*ds,'#d4cbb2',false,false);
       box(group,layout.width/2,2,y*ds,layout.width,3,8*ds,'#d1cab8',false,false);box(group,layout.width/2,2,(y+h)*ds,layout.width,3,8*ds,'#d1cab8',false,false);
@@ -345,7 +352,7 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
       box(p,0,7,b.h*ds/2+6,b.w+30,14,28,'#b9baa8');
       box(p,0,42,b.h*ds/2+2,55,84,4,glass);box(p,0,43,b.h*ds/2+5,3,86,3,cream);
       const rows=height>200?3:height>125?2:1;
-      for(let row=0;row<rows;row++)for(const x of [-b.w*.3,b.w*.3]){box(p,x,60+row*63,b.h*ds/2+2,b.w*.2,37,4,mat('#739899',.25,.08));box(p,x,60+row*63,b.h*ds/2+5,3,38,2,cream);}
+      for(let row=0;row<rows;row++)for(const x of [-b.w*.3,b.w*.3]){box(p,x,60+row*63,b.h*ds/2+2,b.w*.2,37,4,mat('#739899',.25,.08,{emissive:'#e8c48b',emissiveIntensity:0}));box(p,x,60+row*63,b.h*ds/2+5,3,38,2,cream);}
       if(b.name)sign(p,b.name,Math.min(b.w-30,290),35,0,height-20,b.h*ds/2+5);
       if(b.id==='mosque') {const dome=ball(p,0,height+11,0,b.w*.3,70,b.h*ds*.3,'#749180');const minaret=cylinder(p,b.w*.36,height*.85,-b.h*.2*ds,19,height*1.7,'#dcd1b6',17);cylinder(p,b.w*.36,height*1.73,-b.h*.2*ds,27,21,'#729180',15);}
       if(b.id==='church'){box(p,0,height+34,b.h*.12*ds,7,72,7,'#796c52');box(p,0,height+51,b.h*.12*ds,47,7,7,'#796c52');}
@@ -369,7 +376,7 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     group.add(model);
     return {group,dispose(){for(const texture of textures)texture.dispose();}};
   }
-  if(kind==='transit')journeySet();else if(kind==='home'||kind==='venue')interiorSet();else citySet();
+  if(kind==='transit')journeySet();else if(kind==='home'||kind==='visit'||kind==='venue')interiorSet();else citySet();
   let ownCar,parkedCar;
   if(profile.drivingVehicle||profile.activeTrip||profile.inventory?.some(id=>vehicleFor(id))) {
     const ownId=profile.drivingVehicle||profile.activeTrip?.vehicleId||profile.inventory?.find(id=>vehicleFor(id));
@@ -385,11 +392,14 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     car.group.position.set(p.x,0,p.y*ds);car.group.rotation.y=-Math.atan2(Math.sin(angle*Math.PI/180)*ds,Math.cos(angle*Math.PI/180));
     for(const wheel of car.wheels)wheel.rotation.z=moving?-time*9:0;
   }
-  let appliedColor;
+  const glowingMaterials=[...materials.values()].filter(m=>m.emissive&&m.emissive.getHex()!==0).map(material=>({material,day:material.emissiveIntensity}));
+  let appliedColor,lastNight;
   return {
     group,
     playerModel:()=>ownCar?.group,
-    update({elapsed=0,player,angle=0,transport,driving,carColor,parked,trafficPositions=[],trip}) {
+    update({clock,weather,clubOpen,elapsed=0,player,angle=0,transport,driving,carColor,parked,trafficPositions=[],trip}) {
+      const night=!!clock?.isNight;if(night!==lastNight){for(const glow of glowingMaterials)glow.material.emissiveIntensity=night?Math.max(.9,glow.day*5):glow.day;for(const beams of nightBeams)beams.visible=night;lastNight=night;}
+      clubLights.forEach((light,i)=>{light.intensity=clubOpen?21000+Math.sin(elapsed*2+i)*5000:0;light.target.position.set(580+i*180+Math.sin(elapsed*.55+i)*150,0,(630+Math.cos(elapsed*.4+i)*160)*ds);});
       if(carColor&&carColor!==appliedColor) {
         for(const car of [ownCar,parkedCar])if(car)car.group.traverse(o=>{if(o.material?.metalness===.28)o.material.color.set(carColor);});appliedColor=carColor;
       }

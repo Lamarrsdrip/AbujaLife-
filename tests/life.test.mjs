@@ -8,8 +8,8 @@ import { GAME_YEAR_MS, GAME_BILL_PERIOD_MS, VENUES, VENUE_ACTIONS } from '../src
 
 async function fixture(t) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'abujalife-life-'));
-  let now = Date.now();
-  let store = new GameStore({ dataDir, clock: () => now });
+  let now = Date.parse('2026-10-05T10:00:00Z');
+  let store = new GameStore({ dataDir, clock: () => now, originRandomInt:(min,max)=>max===2?1:0 });
   t.after(() => { store.close(); fs.rmSync(dataDir, { recursive: true, force: true }); });
   const { residentId: id } = await store.register({ username: 'life_player', password: 'a-test-password' });
   return {
@@ -38,17 +38,18 @@ test('venues require entry and apply their own prices and bounded needs', async 
   assert.ok(VENUE_ACTIONS.every(activity => VENUES.some(venue => venue.id === activity.venueId)));
 });
 
-test('one earned starter shift unlocks a car and driving still enforces ownership', async t => {
+test('work pays an earned wage and purchased driving still enforces ownership and affordability', async t => {
   const { store, id, advance } = await fixture(t);
-  assert.throws(() => store.action(id, 'purchase', { itemId: 'used-hatchback', price: 0 }), /need more/);
+  assert.throws(() => store.action(id, 'purchase', { itemId: 'compact-car', price: 0 }), /need more/);
   store.action(id, 'take-job', { jobId: 'restaurant-host' });
   store.action(id, 'leave-home');
   assert.throws(() => store.action(id, 'toggle-driving', { vehicleId: 'used-hatchback' }), /Buy this car/);
+  const commute=store.action(id,'travel',{district:jobs['restaurant-host'].district,mode:'bus'}).trip;advance(commute.seconds*1000);store.action(id,'arrive',{tripId:commute.id});const beforeWork=store.profile(id).wallet;
   const { challenge } = store.action(id, 'start-shift');
   advance(2000);
-  store.action(id, 'complete-shift', { challengeId: challenge.id, answers: jobs['restaurant-host'].tasks.map(task => ({ taskId: task.id, optionId: task.answer })) });
+  const earned=store.action(id, 'complete-shift', { challengeId: challenge.id, answers: jobs['restaurant-host'].tasks.map(task => ({ taskId: task.id, optionId: task.answer })) });assert.equal(earned.result.pay,5600);assert.equal(earned.profile.wallet,beforeWork+earned.result.pay);
   const bought = store.action(id, 'purchase', { itemId: 'used-hatchback' }).profile;
-  assert.equal(bought.wallet, 26000 + 5600 - 28000);
+  assert.equal(bought.wallet, earned.profile.wallet - 28000);
   assert.equal(bought.drivingVehicle, null);
   const driving = store.action(id, 'toggle-driving', { vehicleId: 'used-hatchback' }).profile;
   assert.equal(driving.drivingVehicle, 'used-hatchback');
@@ -68,6 +69,7 @@ test('one earned starter shift unlocks a car and driving still enforces ownershi
 
 test('furniture must be owned, placed at home and remain inside the floor plan after restart', async t => {
   const f = await fixture(t);
+  const starting=f.store.profile(f.id).wallet;
   assert.throws(() => f.store.action(f.id, 'place-furniture', { itemId: 'dining-table', x: .5, y: .5 }), /Buy this furniture/);
   f.store.action(f.id, 'purchase', { itemId: 'dining-table' });
   for (const payload of [{ x: -1, y: .5 }, { x: .5, y: 2 }, { x: Infinity, y: .5 }, { x: '.5', y: .5 }, { x: .5, y: .5, rotation: 45 }]) {
@@ -79,15 +81,15 @@ test('furniture must be owned, placed at home and remain inside the floor plan a
   assert.throws(() => f.store.action(f.id, 'place-furniture', { itemId: 'dining-table', x: .5, y: .5 }), /Go home/);
   f.reopen();
   assert.deepEqual(f.store.profile(f.id).furnitureLayout, placed.furnitureLayout);
-  assert.equal(f.store.profile(f.id).wallet, 26000 - 4200);
+  assert.equal(f.store.profile(f.id).wallet, starting - 4200);
 });
 
 test('rent covers a game year while weekly service charges never charge annual rent again', async t => {
   const { store, id, advance } = await fixture(t);
-  const funded = store.profile(id); funded.wallet = 100000; store.save(funded);
+  const starting=store.profile(id).wallet;
   const home = properties.find(property => property.id === 'lugbe-flat');
   const moved = store.action(id, 'move-home', { propertyId: home.id, tenure: 'rent' }).profile;
-  assert.equal(moved.wallet, 100000 - 18000);
+  assert.equal(moved.wallet, starting - 18000);
   assert.equal(moved.home.rentDueAt, moved.rentPaidAt + GAME_YEAR_MS);
   assert.throws(() => store.action(id, 'pay-bills'), /up to date/);
   advance(GAME_BILL_PERIOD_MS);
@@ -103,12 +105,13 @@ test('rent covers a game year while weekly service charges never charge annual r
 
 test('character onboarding persists choices without accepting inventory or life-state forgery', async t => {
   const f = await fixture(t);
+  const starting=f.store.profile(f.id).wallet;
   const profile = f.store.updateProfile(f.id, {
     displayName: 'Amaka', lifeGoal: 'home', onboardingComplete: true,
     appearance: { hair: 'braids', skinTone: 'deep', top: 'ochre' },
     wallet: 9000000, drivingVehicle: 'premium-suv', furnitureLayout: { sofa: { x: 0, y: 0 } }, inventory: ['premium-suv'],
   });
-  assert.equal(profile.wallet, 26000);
+  assert.equal(profile.wallet, starting);
   assert.equal(profile.drivingVehicle, null);
   assert.deepEqual(profile.inventory, []);
   assert.deepEqual(profile.furnitureLayout, {});

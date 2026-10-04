@@ -110,13 +110,14 @@ function character(appearance={}){
   return {root,body,torso,head,arms,legs,neutral};
 }
 export function createCharacterModel(appearance={}) {return character(appearance).root;}
-function animate(rig,{x,y,angle=90,moving=false,phase=0,time=0,activity=null,scale=1}={}){
-  rig.root.position.set(x,0,y/DEPTH);rig.root.scale.setScalar(scale);
+function animate(rig,{x,y,angle=90,moving=false,phase=0,time=0,activity=null,scale=1,elevation=0}={}){
+  rig.root.position.set(x,elevation,y/DEPTH);rig.root.scale.setScalar(scale);
+  if(activity?.object){const o=activity.object;rig.root.position.set(o.x+o.w/2,0,(o.y+o.h/2)/DEPTH);}
   // SVG world angle zero points right; Three local +Z is forward.
   const target=Math.PI/2-angle*Math.PI/180;
   let delta=(target-rig.root.rotation.y+Math.PI*3)%(Math.PI*2)-Math.PI;
   rig.root.rotation.y+=delta*.2;
-  rig.body.rotation.set(0,0,0);rig.torso.rotation.set(0,0,0);rig.head.rotation.set(0,0,0);
+  rig.body.position.set(0,0,0);rig.body.rotation.set(0,0,0);rig.torso.rotation.set(0,0,0);rig.head.rotation.set(0,0,0);
   rig.body.position.y=moving?Math.abs(Math.sin(phase))*1.7:Math.sin(time*2)*.3;
   for(let i=0;i<2;i++){
     const swing=moving?Math.sin(phase+i*Math.PI):0;
@@ -127,7 +128,11 @@ function animate(rig,{x,y,angle=90,moving=false,phase=0,time=0,activity=null,sca
   }
   if(!activity)return;
   const t=activity.elapsed/1000,beat=Math.sin(t*5);
-  if(activity.name==='exercise'){
+  if(activity.name==='exercise'&&activity.object?.kind==='treadmill'){
+    rig.root.position.y=25;rig.root.rotation.y=Math.PI;rig.body.position.y=Math.abs(Math.sin(t*9))*2;rig.legs.forEach((l,i)=>{const swing=Math.sin(t*9+i*Math.PI);l.upper.rotation.x=swing*.55;l.knee.rotation.x=Math.max(0,-swing)*.95;rig.arms[i].shoulder.rotation.x=-swing*.5;rig.arms[i].elbow.rotation.x=-.7;});
+  }else if(activity.name==='exercise'&&activity.object?.kind==='bench-press'){
+    rig.root.rotation.y=0;rig.body.rotation.x=-Math.PI/2;rig.body.position.set(0,39,40);rig.arms.forEach((a,i)=>{a.shoulder.rotation.x=-1.1-Math.sin(t*3)*.3;a.shoulder.rotation.z=i?.5:-.5;a.elbow.rotation.x=-.45;});
+  }else if(activity.name==='exercise'){
     rig.body.position.y=-(1-beat)*3.4;
     rig.arms.forEach((a,i)=>{a.shoulder.rotation.z=(i?1:-1)*(.5+(beat+1)*.46);a.elbow.rotation.x=-.65;});
     rig.legs.forEach(l=>{l.upper.rotation.x=-.16*(1-beat);l.knee.rotation.x=.33*(1-beat);});
@@ -142,8 +147,14 @@ function animate(rig,{x,y,angle=90,moving=false,phase=0,time=0,activity=null,sca
     rig.arms[1].shoulder.rotation.x=-.58-Math.sin(t*3)*.22;rig.arms[1].elbow.rotation.x=-1.4+Math.sin(t*3)*.3;
   }else if(activity.name==='social'){
     rig.arms[1].shoulder.rotation.z=.45+Math.sin(t*3)*.15;rig.arms[1].elbow.rotation.x=-.8;rig.head.rotation.y=Math.sin(t*2)*.12;
+  }else if(activity.name==='sleep'){
+    rig.root.rotation.y=0;rig.body.rotation.x=-Math.PI/2;rig.body.position.set(0,42,45);rig.arms.forEach((a,i)=>{a.shoulder.rotation.z=i?.16:-.16;a.elbow.rotation.x=-.4;});
+  }else if(activity.name==='shower'){
+    rig.root.rotation.y=Math.PI;rig.arms.forEach((a,i)=>{a.shoulder.rotation.x=-1.05+Math.sin(t*2.8+i)*.3;a.elbow.rotation.x=-1.3;});rig.head.rotation.x=.14+Math.sin(t*2)*.06;
+  }else if(activity.name==='dj'){
+    rig.root.rotation.y=0;rig.arms.forEach((a,i)=>{a.shoulder.rotation.x=-.7-Math.sin(t*3+i)*.15;a.elbow.rotation.x=-1.05;});rig.head.rotation.z=Math.sin(t*3)*.08;
   }else if(activity.name==='rest'){
-    rig.body.rotation.x=-.28;rig.body.position.y=-18;rig.legs.forEach(l=>{l.upper.rotation.x=-1.1;l.knee.rotation.x=1.2;});
+    rig.body.rotation.x=-.1;rig.body.position.y=-15;rig.root.rotation.y=0;rig.legs.forEach(l=>{l.upper.rotation.x=-1.1;l.knee.rotation.x=1.2;});
   }else if(activity.name==='walk'){
     rig.legs.forEach((l,i)=>{l.upper.rotation.x=Math.sin(t*8+i*Math.PI)*.4;l.knee.rotation.x=Math.max(0,-Math.sin(t*8+i*Math.PI))*.5;});
   }
@@ -159,30 +170,41 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
   const scene=new THREE.Scene(),camera=new THREE.OrthographicCamera(-500,500,325,-325,1,12000);
   const environment=gameScene?buildThreeEnvironment(THREE,{scene:gameScene,profile,kind,venue,place,depthScale:1/DEPTH}):null;
   if(environment){scene.add(environment.group||environment);container.dataset.environmentRenderer='webgl-3d';container.dataset.environmentObjects=JSON.stringify(gameScene.objects?.map(o=>o.kind)||[]);let count=0;(environment.group||environment).traverse(o=>{if(o.isMesh)count++;});container.dataset.environmentMeshes=String(count);}
-  scene.add(new THREE.HemisphereLight('#fff1d4','#556553',1.65));
+  const ambient=new THREE.HemisphereLight('#fff1d4','#556553',1.65);scene.add(ambient);
   const sun=new THREE.DirectionalLight('#fff5e4',2.2);sun.position.set(-550,1200,650);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-1050;sun.shadow.camera.right=1050;sun.shadow.camera.top=1050;sun.shadow.camera.bottom=-1050;sun.shadow.camera.near=10;sun.shadow.camera.far=3200;sun.shadow.bias=-.00035;sun.shadow.normalBias=.7;sun.shadow.radius=3;scene.add(sun,sun.target);
   const rim=new THREE.DirectionalLight('#ceddec',.75);rim.position.set(300,300,-600);scene.add(rim);
   const own=character(appearance);scene.add(own.root);
   const npcs=pedestrians.map((n,i)=>{const rig=character({skinTone:i%3?'brown':'deep',top:['forest','cream','ochre','navy'][i%4],hair:['crop','braids','afro'][i%3],presentation:i%2?'feminine':'masculine'});scene.add(rig.root);return rig;});
-  const online=neighbours.map(p=>{const rig=character(p.appearance);scene.add(rig.root);return rig;});
+  let online=neighbours.map(p=>{const rig=character(p.appearance);scene.add(rig.root);return rig;});
+  const rainGeometry=new THREE.BufferGeometry(),rainPositions=new Float32Array(180*6);rainGeometry.setAttribute('position',new THREE.BufferAttribute(rainPositions,3));const rainMaterial=new THREE.LineBasicMaterial({color:'#c3d9e8',transparent:true,opacity:.36,depthWrite:false});const rain=new THREE.LineSegments(rainGeometry,rainMaterial);rain.frustumCulled=false;scene.add(rain);
+  const shower=new THREE.Group();const dropMaterial=new THREE.MeshStandardMaterial({color:'#b3e3ea',transparent:true,opacity:.7,roughness:.1,emissive:'#5c9aa7',emissiveIntensity:.2});for(let i=0;i<28;i++)ellipsoid(shower,dropMaterial,0,0,0,.7,2.8,.7,6);scene.add(shower);
+  const isClub=venue?.kind==='club'||['club','club-cage','magic-city','bear-barn'].includes(venue?.id);
+  const indoors=kind==='home'||kind==='visit'||kind==='venue'&&!['park','jabi-lake'].includes(venue?.id);
   let previousWidth=0,previousHeight=0,lost=false,frames=0;
   const lose=()=>{lost=true;container.removeAttribute('data-character-renderer');container.removeAttribute('data-environment-renderer');};renderer.domElement.addEventListener('webglcontextlost',lose);
+  let onlineKey=JSON.stringify(neighbours.map(p=>[p.id,p.appearance]));
   return {
-    draw({player,camera:position,width,height,angle,phase,time,moving,transport,driving,activity,carColor,carStyle,ownVehicle,parked,trafficPositions,trip,npcPositions=[],onlinePositions=[]}){
+    setResidents(people){const key=JSON.stringify(people.map(p=>[p.id,p.appearance]));if(key===onlineKey)return;onlineKey=key;for(const rig of online){scene.remove(rig.root);rig.root.traverse(o=>{o.geometry?.dispose();if(o.material)for(const m of Array.isArray(o.material)?o.material:[o.material])m.dispose();});}online=people.map(p=>{const rig=character(p.appearance);scene.add(rig.root);return rig;});},
+    draw({player,camera:position,width,height,angle,phase,time,moving,transport,driving,activity,clock,weather,clubOpen,carColor,carStyle,ownVehicle,parked,trafficPositions,trip,npcPositions=[],onlinePositions=[]}){
       if(lost)return;
       const rect=container.getBoundingClientRect();
       if(rect.width!==previousWidth||rect.height!==previousHeight){renderer.setSize(rect.width,rect.height,false);previousWidth=rect.width;previousHeight=rect.height;}
       camera.left=-width/2;camera.right=width/2;camera.top=height/2;camera.bottom=-height/2;camera.updateProjectionMatrix();
       camera.position.set(position.x,2200,position.y/DEPTH+2200);camera.lookAt(position.x,0,position.y/DEPTH);
       sun.position.set(position.x-550,1200,position.y/DEPTH+650);sun.target.position.set(position.x,0,position.y/DEPTH);
+      const daylight=clock?.sunlight??1,night=clock?.isNight??false,cloud=weather?.condition==='rain'?.72:weather?.condition==='cloudy'?.84:1;
+      ambient.intensity=(indoors?(isClub&&clubOpen?.92:1.55):.82)+daylight*(indoors?.35:.83)*cloud;ambient.color.set(night?(indoors?'#ecdcc4':'#b8c7e7'):'#fff1d4');ambient.groundColor.set(night?(indoors?'#5d5c54':'#3b4d60'):'#556553');sun.intensity=(night?.26:Math.pow(daylight,.5)*2.2)*cloud;sun.color.set(night?'#96b1e4':daylight<.3?'#edbf91':'#fff5e4');rim.intensity=night?.44:.6;
+      rain.visible=!indoors&&weather?.condition==='rain';if(rain.visible){for(let i=0;i<180;i++){const j=i*6,rx=position.x+((i*137.51+time*28)%width)-width/2,rz=position.y/DEPTH+((i*89.23)%(height/DEPTH))-height/DEPTH/2,ry=410-(i*61.5+time*330)%410;rainPositions.set([rx,ry,rz,rx-1.3,ry+16,rz],j);}rainGeometry.attributes.position.needsUpdate=true;}
       own.root.visible=!transport;animate(own,{...player,angle,phase,time,moving,activity,scale:1.45});
-      npcPositions.forEach((p,i)=>animate(npcs[i],{...p,time,scale:1.28}));
-      onlinePositions.forEach((p,i)=>animate(online[i],{...p,time,scale:1.4}));
-      environment?.update?.({elapsed:time,player,angle,transport,driving,carColor,carStyle,ownVehicle,parked,trafficPositions,trip});
+      npcPositions.forEach((p,i)=>{const club=isClub;npcs[i].root.visible=!club||clubOpen||i===0;animate(npcs[i],{...p,activity:club&&!clubOpen?null:p.activity,time,scale:1.28});});
+      onlinePositions.forEach((p,i)=>{if(online[i])animate(online[i],{...p,time,scale:1.4});});
+      shower.visible=activity?.name==='shower';if(shower.visible){shower.position.copy(own.root.position);shower.children.forEach((drop,i)=>{drop.position.set(Math.sin(i*2.4)*13,165-((i*19+time*98)%151),Math.cos(i*2.4)*15);});}
+      container.dataset.activityPose=activity?.name||'';
+      environment?.update?.({clock,weather,clubOpen,elapsed:time,player,angle,transport,driving,carColor,carStyle,ownVehicle,parked,trafficPositions,trip});
       renderer.render(scene,camera);
       if(++frames%5===0){
         const model=transport?environment?.playerModel?.():own.root;
-        if(model?.visible){const bounds=new THREE.Box3().setFromObject(model),corners=[];for(const x of [bounds.min.x,bounds.max.x])for(const y of [bounds.min.y,bounds.max.y])for(const z of [bounds.min.z,bounds.max.z]){const v=new THREE.Vector3(x,y,z).project(camera);corners.push({x:rect.left+(v.x+1)*rect.width/2,y:rect.top+(1-v.y)*rect.height/2});}const minX=Math.min(...corners.map(p=>p.x)),minY=Math.min(...corners.map(p=>p.y));container.dataset.playerModelBounds=JSON.stringify({x:minX,y:minY,width:Math.max(...corners.map(p=>p.x))-minX,height:Math.max(...corners.map(p=>p.y))-minY});}
+        if(model?.visible){const bounds=new THREE.Box3(),corners=[];model.traverse(part=>{if(part.isMesh&&!part.userData.excludeFromBounds){part.geometry.computeBoundingBox();bounds.union(part.geometry.boundingBox.clone().applyMatrix4(part.matrixWorld));}});for(const x of [bounds.min.x,bounds.max.x])for(const y of [bounds.min.y,bounds.max.y])for(const z of [bounds.min.z,bounds.max.z]){const v=new THREE.Vector3(x,y,z).project(camera);corners.push({x:rect.left+(v.x+1)*rect.width/2,y:rect.top+(1-v.y)*rect.height/2});}const minX=Math.min(...corners.map(p=>p.x)),minY=Math.min(...corners.map(p=>p.y));container.dataset.playerModelBounds=JSON.stringify({x:minX,y:minY,width:Math.max(...corners.map(p=>p.x))-minX,height:Math.max(...corners.map(p=>p.y))-minY});}
       }
     },
     dispose(){renderer.domElement.removeEventListener('webglcontextlost',lose);renderer.domElement.remove();container.removeAttribute('data-character-renderer');container.removeAttribute('data-environment-renderer');environment?.dispose?.();scene.traverse(o=>{o.geometry?.dispose();if(o.material){for(const m of Array.isArray(o.material)?o.material:[o.material])m.dispose();}});renderer.dispose();renderer.forceContextLoss();}

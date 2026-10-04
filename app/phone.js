@@ -2,6 +2,8 @@ import { avatarSVG } from './world.js';
 import { vehicleIllustration } from './vehicle-art.js';
 import { enhanceProductPreviews } from './product-3d.js';
 import { VEHICLE_COLORS } from '../src/shared/vehicles.mjs';
+import { createPhoneBrowser, normalizeCheckoutURL } from './phone-browser.js';
+import { createPhoneSocial, createAdvancingServerClock } from './phone-social.js';
 
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const currency = value => `${Number(value)<0?'-':''}₦${new Intl.NumberFormat('en-NG', { maximumFractionDigits: 0 }).format(Math.abs(Number(value) || 0))}`;
@@ -27,11 +29,15 @@ const paths = {
   arrow:'<path d="m9 5 7 7-7 7"/>', back:'<path d="m15 5-7 7 7 7"/>', close:'<path d="m6 6 12 12M18 6 6 18"/>', plus:'<path d="M12 4v16M4 12h16"/>', send:'<path d="m3 3 19 9-19 9 4-9ZM7 12h15"/>', lock:'<rect x="6" y="10" width="12" height="12" rx="3"/><path d="M8 10V6a4 4 0 0 1 8 0v4"/>', search:'<circle cx="10" cy="10" r="7"/><path d="m15 15 6 6"/>', check:'<path d="m4 12 5 5 11-11"/>', heart:'<path d="M12 21 3 12C-2 6 7 0 12 7c5-7 14-1 9 5Z"/>', signal:'<path d="M3 20v-3M8 20v-7M13 20V9M18 20V4"/>', wifi:'<path d="M2 8a17 17 0 0 1 20 0M5 12a12 12 0 0 1 14 0M9 16a5 5 0 0 1 6 0M12 20h.1"/>', volume:'<path d="m4 9 5 0 5-5v16l-5-5H4ZM18 8a6 6 0 0 1 0 8"/>', globe:'<circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2c-7 7-7 13 0 20 7-7 7-13 0-20"/>', shield:'<path d="m12 2 9 4v7c-1 5-5 8-9 10-4-2-8-5-9-10V6Z"/>', home:'<path d="M2 11 12 3l10 8M5 10v11h14V10M9 21v-7h6v7"/>'
 };
 const icon = (name, extra='') => `<svg class="ph-icon ${extra}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.globe}</svg>`;
+paths.browser=paths.globe;paths.social=paths.heart;paths.xshare=paths.profile;
+paths.x='<path d="m4 3 16 18M20 3 4 21M3 3h5l13 18h-5Z"/>';
+paths.tiktok='<path d="M14 3v13a4 4 0 1 1-4-4M14 3c1 4 3 5 7 5"/>';
 const apps = [
   ['messages','Messages','green'],['contacts','Contacts','sand'],['calls','Calls','green'],['map','Map','blue'],
   ['ride','Ride','ink'],['jobs','Jobs','blue'],['wallet','Wallet','ink'],['property','Property','amber'],
-  ['market','Okrika','orange'],['events','Events','cream'],['profile','Camera','ink'],['friends','Friends','coral'],
-  ['groups','Groups','violet'],['notifications','Activity','coral'],['settings','Settings','silver']
+  ['market','Marketplace','orange'],['events','Events','cream'],['profile','Camera','ink'],['friends','Friends','coral'],
+  ['groups','Groups','violet'],['social','Okrika','orange'],['browser','Browser','blue'],['x','X','ink'],
+  ['tiktok','TikTok','ink'],['xshare','Xshare','coral'],['notifications','Activity','coral'],['settings','Settings','silver']
 ];
 
 function portrait(resident, className='') {
@@ -44,10 +50,12 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
   const drafts=new Map(), threadDrafts=new Map(), knownResidents=new Map(), vehicleRequests=new Map();
   let accountId=null;
   let walletData=null, walletLoading=false, walletError='', walletSequence=0, pendingWallet=null, walletReceipt=null;
+  let paymentConfig=null, paymentLoading=false, paymentError='', checkout=null;
+  let residentResults=null, residentCursor=null, residentLoading=false, residentSequence=0, residentSearchTimer, messageCursor=null, olderLoading=false;
   const isBrowserPreview=()=>state().preview?.mode==='browser' || document.documentElement.dataset.preview==='browser';
   const walletProfile=()=>walletData?.profile && walletData.sourceWallet===profile().wallet?walletData.profile:profile();
   const walletMeta=()=>walletData?.walletMeta || state().walletMeta || {};
-  const eligibleRecipients=()=>[...new Map([...friends(),...people()].filter(r=>r?.id && r.id!==profile().id && !(state().blocked || []).includes(r.id)).map(r=>[r.id,r])).values()];
+  const eligibleRecipients=()=>[...new Map([...friends(),...people(),...(residentResults || [])].filter(r=>r?.id && r.id!==profile().id && !(state().blocked || []).includes(r.id)).map(r=>[r.id,r])).values()];
   const makeRequestKey=()=>globalThis.crypto?.randomUUID?.() || `wallet-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const vehicleRequestKey=(action,itemId,color)=>{const key=`${action}:${itemId}:${color}`;if(!vehicleRequests.has(key))vehicleRequests.set(key,makeRequestKey());return vehicleRequests.get(key);};
   let travelQuote=null, quoteLoading=false, quoteError='', quoteSequence=0;
@@ -56,7 +64,7 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
   const profile=()=>state().profile || {};
   const people=()=>entries(state().people);
   const friends=()=>entries(state().friends).map(r=>r.resident || r.profile || (typeof r==='string'?people().find(p=>p.id===r):r)).filter(Boolean);
-  const resident=id=>{const r=people().find(r=>r.id===id) || friends().find(r=>r.id===id) || knownResidents.get(id) || (id===profile().id?profile():null);return (state().blocked || []).includes(id) && r?{...r,online:false,district:null,location:null}:r;};
+  const resident=id=>{const r=people().find(r=>r.id===id) || friends().find(r=>r.id===id) || knownResidents.get(id) || social.findResident(id) || (id===profile().id?profile():null);return (state().blocked || []).includes(id) && r?{...r,online:false,district:null,location:null}:r;};
   const place=id=>entries(state().atlas).find(r=>r.id===id);
   const locationLabel=()=>profile().activeTrip?'On the road':profile().location?.kind==='home'?'At home':profile().location?.kind==='venue'?(entries(state().venues).find(v=>v.id===profile().location.venue)?.name || 'Inside a venue'):profile().drivingVehicle?'Driving your car':'Out in the city';
   const ownsCar=()=>entries(state().catalog).some(i=>i.category==='vehicle'&&(profile().inventory || []).includes(i.id));
@@ -65,7 +73,7 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
   const pendingInvites=()=>entries(state().invitations).filter(i=>(i.to===profile().id || i.toId===profile().id) && i.status==='pending');
   const requests=()=>entries(state().friendRequests).filter(r=>(r.to===profile().id || r.toId===profile().id) && r.status==='pending');
   const noticeCount=()=>entries(state().notifications).filter(n=>!n.read && !n.readAt).length + pendingInvites().length;
-  const appTitle=()=>({home:'',thread:conversationName(thread),person:resident(selected)?.displayName || 'Resident',compose:'New message',newgroup:'New group',invite:'Invite a resident',report:'Report',event:'Event',newevent:'Create event',item:'Okrika Marketplace',homeproperty:'Property',blocked:'Blocked residents',muted:'Muted residents',profile:'Camera & profile',notifications:'Activity',ride:'Ride & transport',market:'Okrika Marketplace',wallet:'Naira wallet',topup:'Add Naira',transfer:'Send Naira',transferform:'Send Naira',walletreview:'Review',walletreceipt:'Receipt'}[screen] || apps.find(a=>a[0]===screen)?.[1] || 'Phone');
+  const appTitle=()=>({home:'',thread:conversationName(thread),person:resident(selected)?.displayName || 'Resident',compose:'New message',newgroup:'New group',invite:'Invite a resident',report:'Report',event:'Event',newevent:'Create event',item:'Okrika Marketplace',homeproperty:'Property',blocked:'Blocked residents',muted:'Muted residents',profile:'Camera & profile',notifications:'Activity',ride:'Ride & transport',market:'Okrika Marketplace',wallet:'Naira wallet',topup:'Add Naira',transfer:'Send Naira',transferform:'Send Naira',walletreview:'Review',walletreceipt:'Receipt',paymentcheckout:'Hosted checkout',socialcompose:'Share a moment',socialpost:'Okrika conversation',socialstatuses:'24-hour statuses',socialstatus:'Status'}[screen] || apps.find(a=>a[0]===screen)?.[1] || 'Phone');
   const conversationName=c=>c?.kind==='group'?c.name || 'Group':c?.members?.filter(m=>(m.id || m.residentId)!==profile().id).map(m=>m.displayName || resident(m.id || m.residentId)?.displayName || 'Resident').join(', ') || c?.name || 'Conversation';
   const badge=id=>id==='messages'?unread():id==='notifications'?noticeCount():id==='friends'?requests().length:0;
   const nameById=id=>resident(id)?.displayName || 'Resident';
@@ -76,25 +84,33 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
   const match=r=>!search || `${r.displayName || ''} ${r.username || ''} ${r.name || ''} ${r.title || ''}`.toLowerCase().includes(search.toLowerCase());
   const draft=(key,fallback='')=>drafts.get(key) ?? fallback;
   const field=(name,label,value='',type='text',attrs='')=>`<label class="ph-field"><span>${esc(label)}</span><input id="ph-${name}" name="${name}" type="${type}" value="${esc(draft(name,value))}" ${attrs}></label>`;
+  const browser=createPhoneBrowser({getAccountId:()=>profile().id,render:()=>render({browserRefresh:true}),toast,esc,icon,button});
+  const serverNow=createAdvancingServerClock({getServerTime:()=>state().serverTime});
+  const social=createPhoneSocial({getProfile:profile,getNow:serverNow,isPreview:isBrowserPreview,api,navigate,render,toast,esc,icon,button,headline,portrait,dateTime,makeRequestKey});
   const districtOptions=selectedId=>entries(state().atlas).map(p=>`<option value="${esc(p.id)}" ${p.id===selectedId?'selected':''}>${esc(p.name)}${p.kind==='town'?' · FCT town':''}</option>`).join('');
   function captureInputs() {
+    browser.capture(root);social.capture(root);
     root.querySelectorAll('input[name],textarea[name],select[name]').forEach(el=>{ if(el.type!=='checkbox' && (el.type!=='radio' || el.checked)) {drafts.set(el.name,el.value);if(el.name==='message' && thread?.id)threadDrafts.set(thread.id,el.value);} });
   }
   function syncAccount() {
-    const next=profile().id || null;if(next===accountId)return;accountId=next;locked=true;screen='home';history=[];selected=null;thread=null;messages=[];typing=null;incoming=null;drafts.clear();threadDrafts.clear();knownResidents.clear();vehicleRequests.clear();groupMembers.clear();travelQuote=null;quoteError='';quoteLoading=false;requestSequence++;quoteSequence++;walletSequence++;walletData=null;walletLoading=false;walletError='';pendingWallet=null;walletReceipt=null;root.innerHTML='';
+    const next=profile().id || null;if(next===accountId)return;accountId=next;locked=true;screen='home';history=[];selected=null;thread=null;messages=[];typing=null;incoming=null;drafts.clear();threadDrafts.clear();knownResidents.clear();vehicleRequests.clear();groupMembers.clear();travelQuote=null;quoteError='';quoteLoading=false;requestSequence++;quoteSequence++;walletSequence++;walletData=null;walletLoading=false;walletError='';pendingWallet=null;walletReceipt=null;paymentConfig=null;paymentLoading=false;paymentError='';checkout=null;residentResults=null;residentCursor=null;residentSequence++;messageCursor=null;browser.reset();social.reset();root.innerHTML='';
   }
-  function render() {
+  function render({browserRefresh=false}={}) {
     syncAccount();
+    serverNow();
     if(!profile().id){opened=false;document.body.classList.remove('phone-is-open');}
-    for(const r of [...people(),...friends(),...conversations().flatMap(c=>c.members || [])])if(r?.id)knownResidents.set(r.id,r);
+    for(const r of [...people(),...friends(),...(residentResults || []),...conversations().flatMap(c=>c.members || [])])if(r?.id)knownResidents.set(r.id,r);
     if(!opened) { root.innerHTML=''; root.hidden=true; return; }
     captureInputs();
+    // Keep an embedded website alive when resident presence or messages refresh.
+    if(!browserRefresh && !locked && screen==='browser' && root.querySelector('.ph-browser'))return;
     const active=root.contains(document.activeElement)?document.activeElement:null;
     const focusedId=active?.id, start=active?.selectionStart, end=active?.selectionEnd;
     const scroll=root.querySelector('.ph-scroll'), scrollTop=scroll?.scrollTop || 0, atBottom=scroll && scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight<80;
     root.hidden=false;
     root.innerHTML=`<div class="ph-backdrop" data-ph-action="dismiss"><section class="ph-device" role="dialog" aria-modal="true" aria-labelledby="ph-device-name"><span class="ph-hardware ph-action-button" aria-hidden="true"></span><button class="ph-hardware ph-volume" data-ph-action="sound" aria-label="${profile().settings?.soundEnabled===false?'Enable':'Mute'} phone sounds"></button><button class="ph-hardware ph-power" data-ph-action="lock" aria-label="Lock phone"></button><div class="ph-screen ${locked?'ph-locked':screen==='home'?'ph-home':'ph-app'}"><div class="ph-wallpaper"><i></i><i></i><i></i><i></i><i></i><span></span></div><div class="ph-statusbar"><span class="ph-clock">${timeOnly(new Date())}</span><span class="ph-status-icons">${icon('signal')}${icon('wifi')}<span class="ph-battery" aria-label="Virtual phone"></span></span></div><button class="ph-island ${incoming?'ph-island-active':''}" data-ph-action="${incoming?'incoming':'home'}" aria-label="${incoming?'Open incoming activity':'Go to phone home'}">${incoming?`${icon('messages')}<span>${esc(incoming.name || 'New activity')}</span>`:'<i></i>'}</button>${locked?lockScreen():screen==='home'?homeScreen():appScreen()}<button class="ph-home-indicator" data-ph-action="${locked?'unlock':'home'}" aria-label="${locked?'Unlock phone':'Go to phone home'}"></button></div><div class="ph-device-caption"><span id="ph-device-name">iPhone 18 Pro Max</span><button data-ph-action="close" aria-label="Put your phone away">Put away ${icon('close')}</button></div>${busy?'<div class="ph-working" role="status">Working…</div>':''}</section></div>`;
     enhanceProductPreviews(root);
+    if(!locked && screen==='browser')browser.afterRender(root);
     const nextScroll=root.querySelector('.ph-scroll');
     if(nextScroll) nextScroll.scrollTop=screen==='thread' && atBottom?nextScroll.scrollHeight:scrollTop;
     const restore=focusedId && root.querySelector(`#${CSS.escape(focusedId)}`);
@@ -109,11 +125,19 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
     return `<div class="ph-home-content"><div class="ph-widget-row"><button class="ph-widget ph-place-widget" data-ph-action="app" data-app="map"><small>${icon('map')} NOW IN</small><strong>${esc(place(profile().district)?.name || 'Abuja')}</strong><span>${esc(locationLabel())}</span></button><button class="ph-widget ph-wallet-widget" data-ph-action="app" data-app="wallet"><small>NAIRA BALANCE</small><strong>${currency(profile().wallet)}</strong><span>Naira (NGN) ${icon('arrow')}</span></button></div><div class="ph-app-grid">${apps.map(a=>appIcon(...a)).join('')}</div><div class="ph-page-dots"><i></i><span>AbujaLife</span></div><div class="ph-dock">${appIcon('calls','Calls','green')}${appIcon('messages','Messages','green')}${appIcon('map','Map','blue')}${appIcon('profile','Camera','ink')}</div></div>`;
   }
   function appScreen() {
-    return `<div class="ph-app-content"><header class="ph-app-header"><button data-ph-action="back" class="ph-back" aria-label="Back">${icon('back')}<span>${history.length?'Back':'Home'}</span></button><strong>${esc(appTitle())}</strong><button class="ph-header-close" data-ph-action="close" aria-label="Put phone away">${icon('close')}</button></header><div class="ph-scroll ${screen==='thread'?'ph-thread-scroll':''}">${content()}</div>${screen==='thread'?chatComposer():''}</div>`;
+    return `<div class="ph-app-content"><header class="ph-app-header"><button data-ph-action="back" class="ph-back" aria-label="Back">${icon('back')}<span>${history.length?'Back':'Home'}</span></button><strong>${esc(appTitle())}</strong><button class="ph-header-close" data-ph-action="close" aria-label="Put phone away">${icon('close')}</button></header><div class="ph-scroll ${screen==='thread'?'ph-thread-scroll':screen==='browser'?'ph-browser-scroll':''}">${content()}</div>${screen==='thread'?chatComposer():''}</div>`;
   }
   function content() {
+    if(['social','socialcompose','socialpost','socialstatuses','socialstatus','xshare'].includes(screen))return social.markup(screen,selected);
+    if(screen==='browser')return browser.markup();
+    if(screen==='paymentcheckout')return paymentCheckoutScreen();
+    if(screen==='x' || screen==='tiktok')return officialSiteScreen(screen);
     const views={messages:messagesScreen,thread:threadScreen,compose:composeScreen,contacts:contactsScreen,person:personScreen,friends:friendsScreen,groups:groupsScreen,newgroup:newGroupScreen,notifications:notificationsScreen,wallet:walletScreen,topup:topupScreen,transfer:transferScreen,transferform:transferFormScreen,walletreview:walletReviewScreen,walletreceipt:walletReceiptScreen,jobs:jobsScreen,map:mapScreen,ride:rideScreen,property:propertyScreen,homeproperty:propertyDetail,market:marketScreen,item:itemScreen,events:eventsScreen,event:eventScreen,newevent:newEventScreen,profile:profileScreen,settings:settingsScreen,blocked:moderationList,muted:moderationList,invite:inviteScreen,report:reportScreen,calls:callsScreen};
     return (views[screen] || (()=>empty('globe','Choose an app')))();
+  }
+  function officialSiteScreen(app) {
+    const x=app==='x',name=x?'X':'TikTok',url=x?'https://x.com/':'https://www.tiktok.com/';
+    return `${headline('OFFICIAL WEBSITE',name,x?'Follow the conversations you care about.':'Discover videos on the official TikTok website.')}<div class="ph-official-site"><span class="ph-official-mark">${x?'𝕏':'♪'}</span><strong>${esc(new URL(url).hostname)}</strong><p>${name} restricts embedded browsing. Continue on its official website in a new tab to browse or sign in.</p><a class="ph-button wide" href="${url}" target="_blank" rel="noopener noreferrer">Open ${name} ↗</a></div>${x?button('Share my Abuja home','app','data-app="xshare"','secondary wide'):''}<p class="ph-quiet-note">Your account stays with ${name}. AbujaLife does not read your login or post for you.</p>`;
   }
   function conversationRow(c) {
     const other=c.members?.find(m=>(m.id || m.residentId)!==profile().id), last=c.lastMessage;
@@ -123,15 +147,16 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
     const rows=conversations().filter(c=>match({name:conversationName(c)}));
     return `${headline('STAY CLOSE','Messages')}<div class="ph-toolbar">${searchField('Search conversations')}<button class="ph-square" data-ph-action="compose" aria-label="Compose message">${icon('plus')}</button></div><div class="ph-list">${rows.map(conversationRow).join('') || empty('messages','Your conversations start here','compose','New message')}</div>`;
   }
-  function composeScreen() { const rows=people().filter(r=>r.id!==profile().id).filter(match); return `${headline('A REAL CONNECTION','Who’s on your mind?','Messages go to registered AbujaLife residents.')} ${searchField('Search residents')}<div class="ph-list">${rows.map(r=>residentRow(r,'dm')).join('') || empty('contacts','No residents found')}</div>`; }
+  const residentPager=()=>`${residentLoading?'<p class="ph-quiet-note" role="status">Finding residents…</p>':''}${residentCursor?button('More residents','residents-more',residentLoading?'disabled':'','secondary wide'):''}`;
+  function composeScreen() { const rows=(residentResults || people()).filter(r=>r.id!==profile().id).filter(match); return `${headline('A REAL CONNECTION','Who’s on your mind?','Messages go to registered AbujaLife residents.')} ${searchField('Search residents')}<div class="ph-list">${rows.map(r=>residentRow(r,'dm')).join('') || empty('contacts',residentLoading?'Finding residents…':'No residents found')}</div>${residentPager()}`; }
   function threadScreen() {
     if(!thread) return empty('messages','Opening conversation…');
     const other=thread.members?.find(m=>m.id!==profile().id), group=thread.kind==='group';
-    return `<button class="ph-thread-person" data-ph-action="${group?'noop':'person'}" data-id="${esc(other?.id || '')}">${group?`<span class="ph-group-avatar">${icon('groups')}</span>`:portrait(other)}<span><strong>${esc(conversationName(thread))}</strong><small>${typing?`${esc(typing.displayName || nameById(typing.residentId || typing.userId))} is typing…`:group?`${thread.members?.length || 0} members`:other?.online?'Online now':'Messages stay here when you’re away'}</small></span></button><div class="ph-message-day">${messages.length?dateTime(messages[0].createdAt).split(',')[0]:'Beginning of your conversation'}</div><div class="ph-bubbles">${messages.map(m=>{ const mine=m.senderId===profile().id, receipt=(m.readBy || []).some(id=>id!==profile().id)?'Read':(m.deliveredTo || []).some(id=>id!==profile().id)?'Delivered':'Sent';return `<div class="ph-message ${mine?'mine':''}">${group && !mine?`<small class="ph-message-sender">${esc(nameById(m.senderId))}</small>`:''}<div class="ph-bubble">${esc(m.text).replace(/\n/g,'<br>')}</div><span>${timeOnly(m.createdAt)}${mine?` · ${receipt}`:''}</span></div>`; }).join('')}${typing?'<div class="ph-typing" aria-label="Typing"><i></i><i></i><i></i></div>':''}</div>${!messages.length?'<p class="ph-quiet-note">Say hello. This conversation is shared with real residents.</p>':''}`;
+    return `<button class="ph-thread-person" data-ph-action="${group?'noop':'person'}" data-id="${esc(other?.id || '')}">${group?`<span class="ph-group-avatar">${icon('groups')}</span>`:portrait(other)}<span><strong>${esc(conversationName(thread))}</strong><small>${typing?`${esc(typing.displayName || nameById(typing.residentId || typing.userId))} is typing…`:group?`${thread.members?.length || 0} members`:other?.online?'Online now':'Messages stay here when you’re away'}</small></span></button>${messageCursor?button(olderLoading?'Loading earlier messages…':'Earlier messages','messages-older',olderLoading?'disabled':'','subtle wide'):''}<div class="ph-message-day">${messages.length?dateTime(messages[0].createdAt).split(',')[0]:'Beginning of your conversation'}</div><div class="ph-bubbles">${messages.map(m=>{ const mine=m.senderId===profile().id, receipt=(m.readBy || []).some(id=>id!==profile().id)?'Read':(m.deliveredTo || []).some(id=>id!==profile().id)?'Delivered':'Sent';return `<div class="ph-message ${mine?'mine':''}">${group && !mine?`<small class="ph-message-sender">${esc(nameById(m.senderId))}</small>`:''}<div class="ph-bubble">${esc(m.text).replace(/\n/g,'<br>')}</div><span>${timeOnly(m.createdAt)}${mine?` · ${receipt}`:''}</span></div>`; }).join('')}${typing?'<div class="ph-typing" aria-label="Typing"><i></i><i></i><i></i></div>':''}</div>${!messages.length?'<p class="ph-quiet-note">Say hello. This conversation is shared with real residents.</p>':''}`;
   }
   function chatComposer() {return `<form class="ph-composer" data-ph-form="message"><label class="ph-sr-only" for="ph-message">Message</label><textarea id="ph-message" name="message" rows="1" maxlength="2000" placeholder="Message…">${esc(draft('message'))}</textarea><button type="submit" class="ph-send" aria-label="Send message" ${busy?'disabled':''}>${icon('send')}</button></form>`;}
   function residentRow(r,action='person') {return `<button class="ph-list-row" data-ph-action="${action}" data-id="${esc(r.id)}">${portrait(r)}<span class="ph-row-copy"><strong>${esc(r.displayName || r.username || 'Resident')}</strong><small>${esc(r.online?'Online now':`@${r.username || 'resident'}`)}</small></span>${icon('arrow')}</button>`;}
-  function contactsScreen() {return `${headline('YOUR CITY','Contacts')} ${searchField('Search residents')}<div class="ph-list">${people().filter(r=>r.id!==profile().id).filter(match).map(r=>residentRow(r)).join('') || empty('contacts','Other residents will appear here when they join')}</div>`;}
+  function contactsScreen() {return `${headline('YOUR CITY','Contacts')} ${searchField('Search residents')}<div class="ph-list">${(residentResults || people()).filter(r=>r.id!==profile().id).filter(match).map(r=>residentRow(r)).join('') || empty('contacts',residentLoading?'Finding residents…':'Other residents will appear here when they join')}</div>${residentPager()}`;}
   function friendsScreen() {
     const pending=requests();
     return `${headline('GOOD COMPANY','Friends')} ${pending.length?`<h3 class="ph-section-label">Friend requests · ${pending.length}</h3><div class="ph-list">${pending.map(r=>`<div class="ph-request-row">${portrait(r.resident || resident(r.from))}<span><strong>${esc(r.resident?.displayName || nameById(r.from))}</strong><small>Wants to be your friend</small></span><div>${button('Accept','friend-respond',`data-id="${esc(r.id)}" data-accept="true"`)}${button('Decline','friend-respond',`data-id="${esc(r.id)}" data-accept="false"`,'subtle')}</div></div>`).join('')}</div>`:''}<h3 class="ph-section-label">Your friends · ${friends().length}</h3><div class="ph-list">${friends().map(r=>residentRow(r)).join('') || empty('friends','A city feels better with friends')}</div>${button('Find residents','app','data-app="contacts"','wide')}`;
@@ -154,13 +179,17 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
     return `${headline('YOUR MONEY','Naira wallet')}<div class="ph-bank-card"><div><span>NAIRA</span><small>NGN · GAME MONEY</small></div><small>Naira balance</small><strong>${currency(balance)}</strong><footer><span>${esc(profile().displayName)}</span><span>Everyday account</span></footer></div><div class="ph-wallet-actions">${button(`${icon('plus')} Top up`,'wallet-topup','', 'wallet-primary')}${button(`${icon('send')} Send`,'wallet-send',transferUnavailable?'disabled':'','secondary')}</div><p class="ph-quiet-note">${transferUnavailable?'Chat and transfers connect registered residents in the full game. This preview saves your game money on this device.':'Send Naira to real residents. Your purchases, earnings and transfers appear below.'}</p>${walletError?`<div class="ph-wallet-error" role="alert">${esc(walletError)}${button('Refresh','wallet-refresh','','subtle')}</div>`:''}<div class="ph-ledger-heading"><h3 class="ph-section-label">Recent activity</h3>${walletLoading?'<span class="ph-loading-note" role="status">Updating…</span>':button('Refresh','wallet-refresh','','subtle')}</div><div class="ph-list">${rows.map(t=>{const amount=Number(t.amount || t.delta || 0), credit=amount>0;return `<div class="ph-list-row"><span class="ph-transaction-icon ${credit?'credit':''}">${icon(credit?'plus':'wallet')}</span><span class="ph-row-copy"><strong>${esc(t.reason || t.description || t.label || t.kind || t.type || 'Transaction')}</strong><small>${dateTime(t.createdAt)}</small></span><strong class="ph-amount ${credit?'credit':''}">${credit?'+':''}${currency(amount)}</strong></div>`;}).join('') || empty('wallet','Your saved transactions appear here')}</div>`;
   }
   function topupScreen() {
-    const amounts=walletMeta().topupAmounts || [10000,50000,100000,500000], min=walletMeta().topupMin || 1000,max=walletMeta().topupMax || 1000000;
-    return `${headline('READY FOR YOUR NEXT CHAPTER','Top up Naira','Add free game money to your balance.')}<div class="ph-wallet-summary"><span>Naira balance</span><strong>${currency(walletProfile().wallet)}</strong></div><form class="ph-form ph-wallet-form" data-ph-form="wallet-topup"><div class="ph-amount-options" aria-label="Suggested top-up amounts">${amounts.map(amount=>button(currency(amount),'wallet-amount',`data-amount="${amount}"`,'secondary')).join('')}</div>${field('topupAmount','Amount (NGN)',draft('topupAmount',String(amounts[0])),'number',`required min="${min}" max="${max}" step="1" inputmode="numeric"`)}<p class="ph-quiet-note">Game money only. This top-up is free and cannot be withdrawn as cash.</p><button type="submit" class="ph-button wide" ${busy?'disabled':''}>Review top-up ${icon('arrow')}</button></form>`;
+    if(!isBrowserPreview()) {
+      const min=paymentConfig?.minAmount || 100,max=paymentConfig?.maxAmount || Number.MAX_SAFE_INTEGER,rate=Number(paymentConfig?.creditRate) || 1;
+      return `${headline('MORE ROOM TO PLAY','Buy game credits','Pay through the provider’s secure checkout. Your balance updates after server verification.')}<div class="ph-wallet-summary"><span>Game Naira balance</span><strong>${currency(walletProfile().wallet)}</strong></div>${paymentLoading?'<p class="ph-quiet-note" role="status">Checking payment availability…</p>':''}${paymentConfig?.enabled?`<p class="ph-quiet-note">${esc(paymentConfig.provider || 'Flutterwave')} · ${paymentConfig.mode==='test'?'TEST CHECKOUT · no live payment':'Live checkout'} · ₦1 buys ${rate} game Naira.</p><form class="ph-form ph-wallet-form" data-ph-form="wallet-payment">${field('topupAmount','Payment amount (NGN)',String(min),'number',`required min="${min}" max="${max}" step="1" inputmode="numeric"`)}${field('paymentEmail','Receipt email',profile().email || '','email','required maxlength="254" autocomplete="email"')}<p class="ph-quiet-note">Game credits have no cash value and cannot be withdrawn. Review the amount before paying.</p><button type="submit" class="ph-button wide" ${busy?'disabled':''}>Review payment ${icon('arrow')}</button></form>`:`<p class="ph-wallet-error" role="status">${esc(paymentError || paymentConfig?.reason || 'Payments are not enabled for this game yet.')}</p>${button('Check again','payment-config-refresh','','secondary wide')}`}${checkout?button('Resume pending checkout','payment-resume','','subtle wide'):''}`;
+    }
+    const amounts=walletMeta().topupAmounts || [10000,50000,100000,500000], min=walletMeta().topupMin || 1000,max=Number.MAX_SAFE_INTEGER;
+    return `${headline('LOCAL PREVIEW FUNDS','Top up Naira','Add free game money to play on this device.')}<div class="ph-wallet-summary"><span>Naira balance</span><strong>${currency(walletProfile().wallet)}</strong></div><form class="ph-form ph-wallet-form" data-ph-form="wallet-topup"><div class="ph-amount-options" aria-label="Suggested top-up amounts">${amounts.map(amount=>button(currency(amount),'wallet-amount',`data-amount="${amount}"`,'secondary')).join('')}</div>${field('topupAmount','Amount (NGN)',draft('topupAmount',String(amounts[0])),'number',`required min="${min}" max="${max}" step="1" inputmode="numeric"`)}<p class="ph-quiet-note">Local preview only. These free game funds stay on this device and cannot be withdrawn as cash.</p><button type="submit" class="ph-button wide" ${busy?'disabled':''}>Review top-up ${icon('arrow')}</button></form>`;
   }
   function transferScreen() {
     if(isBrowserPreview() || walletMeta().transferEnabled===false)return `${headline('STAY CONNECTED','Send Naira')}<div class="ph-wallet-summary"><span>Game preview</span><strong>Play on this device</strong></div><p class="ph-quiet-note">Transfers and chat are shared between real, registered residents in the full game. No one else is connected to this browser preview.</p>${button('Back to wallet','app','data-app="wallet"','wide')}`;
-    const recipients=eligibleRecipients().filter(match);
-    return `${headline('SEND TO A RESIDENT','Who’s it for?','Choose their name, then review the amount before sending.')} ${searchField('Search names or usernames')}<div class="ph-list">${recipients.map(r=>residentRow(r,'wallet-recipient')).join('') || empty('contacts','No residents found. Invite a friend to join AbujaLife.')}</div>`;
+    const recipients=(residentResults || eligibleRecipients()).filter(r=>r.id!==profile().id && !(state().blocked || []).includes(r.id)).filter(match);
+    return `${headline('SEND TO A RESIDENT','Who’s it for?','Choose their name, then review the amount before sending.')} ${searchField('Search names or usernames')}<div class="ph-list">${recipients.map(r=>residentRow(r,'wallet-recipient')).join('') || empty('contacts','No residents found. Invite a friend to join AbujaLife.')}</div>${residentPager()}`;
   }
   function transferFormScreen() {
     const recipient=resident(selected);if(!recipient || !eligibleRecipients().some(r=>r.id===selected))return empty('contacts','This resident is unavailable','wallet-home','Back to wallet');
@@ -168,13 +197,20 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
   }
   function walletReviewScreen() {
     if(!pendingWallet)return empty('wallet','Choose an amount first','wallet-home','Back to wallet');
+    if(pendingWallet.kind==='payment')return `${headline('ONE LAST LOOK','Review payment')}<div class="ph-review-card">${icon('wallet')}<strong>${currency(pendingWallet.amount)}</strong><span>Pay ${esc(paymentConfig?.provider || 'Flutterwave')}</span><small>${paymentConfig?.mode==='test'?'Test checkout':'Live checkout'}</small></div><div class="ph-review-details"><div><span>Game credits</span><strong>${currency(pendingWallet.credits)}</strong></div><div><span>Receipt email</span><strong>${esc(pendingWallet.email)}</strong></div></div>${walletError?`<p class="ph-wallet-error" role="alert">${esc(walletError)}</p>`:''}${button(busy?'Opening checkout…':'Continue to secure checkout','wallet-confirm',busy?'disabled':'','wide')}${button('Change details','wallet-edit',busy?'disabled':'','subtle wide')}<p class="ph-quiet-note">The provider handles your card details. Your game balance is credited only after the server verifies payment.</p>`;
     const transfer=pendingWallet.kind==='transfer', recipient=resident(pendingWallet.residentId);
     return `${headline('ONE LAST LOOK',transfer?'Review transfer':'Review top-up')}<div class="ph-review-card">${icon(transfer?'send':'plus')}<strong>${currency(pendingWallet.amount)}</strong><span>${transfer?`To ${esc(recipient?.displayName || pendingWallet.recipientName)}`:'Free game Naira top-up'}</span>${transfer?`<small>@${esc(recipient?.username || pendingWallet.recipientUsername || 'resident')}</small>`:''}</div><div class="ph-review-details"><div><span>Fee</span><strong>${currency(0)}</strong></div><div><span>${transfer?'Total sent':'Added to your balance'}</span><strong>${currency(pendingWallet.amount)}</strong></div>${pendingWallet.note?`<div><span>Note</span><strong>${esc(pendingWallet.note)}</strong></div>`:''}</div>${walletError?`<p class="ph-wallet-error" role="alert">${esc(walletError)}<small>Retrying this request will never charge you twice.</small></p>`:''}${button(walletError?'Try again':transfer?'Confirm & send':'Confirm top-up','wallet-confirm',busy?'disabled':'','wide')}${button('Change details','wallet-edit',busy?'disabled':'','subtle wide')}<p class="ph-quiet-note">${transfer?'Game money is shared with this resident immediately after confirmation.':'Naira for your life in the game. No card details or payment required.'}</p>`;
   }
   function walletReceiptScreen() {
     if(!walletReceipt)return empty('wallet','Your receipt is unavailable','wallet-home','Back to wallet');
     const transfer=walletReceipt.kind==='transfer';
+    if(walletReceipt.kind==='payment')return `<div class="ph-wallet-receipt"><span class="ph-receipt-check">${icon('check')}</span><small>PAYMENT VERIFIED</small><h2>${currency(walletReceipt.credits)}</h2><p>Game credits added to your balance</p><time>${dateTime(walletReceipt.createdAt)}</time></div><div class="ph-review-details"><div><span>Amount paid</span><strong>${currency(walletReceipt.amount)}</strong></div><div><span>Payment reference</span><strong>${esc(walletReceipt.txRef)}</strong></div></div>${button('Done','app','data-app="wallet"','wide')}`;
     return `<div class="ph-wallet-receipt"><span class="ph-receipt-check">${icon('check')}</span><small>${transfer?'TRANSFER COMPLETE':'TOP-UP COMPLETE'}</small><h2>${currency(walletReceipt.amount)}</h2><p>${transfer?`Sent to ${esc(walletReceipt.recipientName)}`:'Added to your Naira balance'}</p><time>${dateTime(walletReceipt.createdAt)}</time></div><div class="ph-wallet-summary"><span>Naira balance</span><strong>${currency(walletProfile().wallet)}</strong></div>${button('Done','app','data-app="wallet"','wide')}`;
+  }
+  function paymentCheckoutScreen() {
+    if(!checkout)return empty('wallet','Choose a payment amount first','wallet-topup','Buy game credits');
+    const checkoutUrl=checkout.checkoutUrl?normalizeCheckoutURL(checkout.checkoutUrl):null;
+    return `${headline('SECURE HOSTED CHECKOUT','Complete your payment','Finish checkout in the provider’s tab, then verify your payment here.')}<div class="ph-wallet-summary"><span>Payment amount</span><strong>${currency(checkout.amount)}</strong></div>${checkout.mode==='test'?'<p class="ph-social-local">Test checkout · no live payment.</p>':''}${checkoutUrl?`<a class="ph-button wide" href="${esc(checkoutUrl)}" target="_blank" rel="noopener noreferrer">Open checkout ↗</a>`:''}<p class="ph-quiet-note">Reference: ${esc(checkout.txRef)}. Closing checkout does not confirm payment.</p><form class="ph-form ph-wallet-form" data-ph-form="payment-verify">${field('paymentTransactionId','Provider transaction ID',checkout.transactionId || '','text','required inputmode="numeric" pattern="[0-9]+" maxlength="24"')}<button type="submit" class="ph-button wide" ${busy?'disabled':''}>${busy?'Verifying…':'Verify payment'}</button></form>${button('Check payment status','payment-status',busy?'disabled':'','secondary wide')}${walletError?`<p class="ph-wallet-error" role="alert">${esc(walletError)}</p>`:''}<p class="ph-quiet-note">Your receipt shows the transaction ID. Credits are added once, after the provider confirms the amount, currency and reference.</p>`;
   }
   function jobsScreen() {
     const current=entries(state().jobs).find(j=>j.id===profile().job);
@@ -223,7 +259,7 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
   function eventsScreen() {return `${headline('MAKE A MOMENT','Events')} ${button(`${icon('plus')} Create an event`,'newevent','','wide')}<div class="ph-list">${entries(state().events).map(e=>`<button class="ph-list-row" data-ph-action="event" data-id="${esc(e.id)}"><span class="ph-event-date"><strong>${new Date(e.startsAt).toLocaleDateString('en-NG',{timeZone:'Africa/Lagos',day:'numeric'})}</strong><small>${new Date(e.startsAt).toLocaleDateString('en-NG',{timeZone:'Africa/Lagos',month:'short'})}</small></span><span class="ph-row-copy"><strong>${esc(e.title)}</strong><small>${esc(place(e.district)?.name || e.district)} · ${timeOnly(e.startsAt)}</small>${(e.attendeeIds || []).includes(profile().id)?'<span class="ph-attending">You’re attending</span>':''}</span>${icon('arrow')}</button>`).join('') || empty('events','Make the first plan in your city')}</div>`;}
   function eventScreen() {const e=entries(state().events).find(e=>e.id===selected);if(!e)return empty('events','Event unavailable');const attending=(e.attendeeIds || []).includes(profile().id);return `${headline(place(e.district)?.name || 'ABUJA',e.title)}<div class="ph-event-time">${icon('events')}<strong>${dateTime(e.startsAt)}</strong></div><p class="ph-detail-text">${esc(e.description || 'A chance to spend time together in the city.')}</p><div class="ph-event-host">Hosted by ${esc(e.host?.displayName || nameById(e.hostId))}</div><small class="ph-quiet-note">${(e.attendeeIds || []).length} resident${(e.attendeeIds || []).length===1?'':'s'} attending</small>${button(attending?'Cancel RSVP':'I’m attending','rsvp',`data-id="${esc(e.id)}" data-value="${!attending}"`,'wide')}${button('View location','navigate',`data-view="map" data-id="${esc(e.district)}"`,'secondary wide')}<p class="ph-quiet-note">An RSVP saves your place. Travel there when it’s time.</p>`;}
   function newEventScreen() {return `${headline('GIVE THE CITY A REASON TO MEET','Create an event')}<form class="ph-form" data-ph-form="event">${field('eventTitle','Event name','','text','required maxlength="80"')}<label class="ph-field"><span>Where</span><select id="ph-eventDistrict" name="eventDistrict">${districtOptions(draft('eventDistrict',profile().district))}</select></label>${field('eventDate','Date & time (Abuja)','','datetime-local','required')}<label class="ph-field"><span>About your event</span><textarea id="ph-eventDescription" name="eventDescription" rows="4" maxlength="500" placeholder="What’s the plan?">${esc(draft('eventDescription'))}</textarea></label><button type="submit" class="ph-button wide">Create event</button></form>`;}
-  function profileScreen() {return `${headline('YOUR SIDE OF THE CITY','Camera & profile')}<div class="ph-camera-view">${portrait(profile(),'ph-camera-portrait')}<span class="ph-camera-corner tl"></span><span class="ph-camera-corner tr"></span><span class="ph-camera-corner bl"></span><span class="ph-camera-corner br"></span><small>RESIDENT PORTRAIT</small></div><div class="ph-profile-name"><strong>${esc(profile().displayName)}</strong><span>@${esc(profile().username)}</span></div>${button('Edit appearance & profile','navigate','data-view="profile"','wide')}<p class="ph-quiet-note">Your resident portrait updates with your appearance. Personal photos and camera capture aren’t available yet.</p>`;}
+  function profileScreen() {return `${headline('YOUR SIDE OF THE CITY','Camera & profile')}<div class="ph-camera-view">${portrait(profile(),'ph-camera-portrait')}<span class="ph-camera-corner tl"></span><span class="ph-camera-corner tr"></span><span class="ph-camera-corner bl"></span><span class="ph-camera-corner br"></span><small>RESIDENT PORTRAIT</small></div><div class="ph-profile-name"><strong>${esc(profile().displayName)}</strong><span>@${esc(profile().username)}</span></div>${button('Edit appearance & profile','navigate','data-view="profile"','wide')}${button('Capture & share my home','app','data-app="xshare"','secondary wide')}<p class="ph-quiet-note">Your portrait follows your saved appearance. Xshare captures your actual home and lets you edit the caption.</p>`;}
   function settingRow(title,ic,action,attrs='',subtitle='',enabled) {return `<button class="ph-setting-row" data-ph-action="${action}" ${attrs}><span class="ph-mini-app silver">${icon(ic)}</span><span><strong>${esc(title)}</strong>${subtitle?`<small>${esc(subtitle)}</small>`:''}</span>${enabled!==undefined?`<i class="ph-switch ${enabled?'on':''}" aria-hidden="true"></i>`:icon('arrow')}</button>`;}
   function settingsScreen() {
     const s=profile().settings || {};
@@ -248,16 +284,70 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
     root.querySelector('.ph-scroll')?.scrollTo(0,0);
     if(next==='ride')void loadTravelQuote();
     if(next==='wallet')void loadWallet();
+    if(next==='topup' && !isBrowserPreview())void loadPayments();
+    if(['contacts','compose','transfer'].includes(next)){residentResults=null;residentCursor=null;void loadResidents();}
+    if(['social','socialstatuses'].includes(next))void social.load();
   }
-  function goBack() {const prev=history.pop();if(prev){screen=prev.screen;selected=prev.selected;search=prev.search;thread=prev.thread;}else screen='home';render();}
+  function goBack() {const prev=history.pop();if(prev){screen=prev.screen;selected=prev.selected;search=prev.search;thread=prev.thread;}else screen='home';if(['contacts','compose','transfer'].includes(screen)){residentResults=null;residentCursor=null;void loadResidents();}render();}
   async function loadWallet({quiet=false}={}) {
     const sequence=++walletSequence, owner=profile().id;walletLoading=true;if(!quiet)walletError='';if(opened)render();
     try {const result=await api('/api/wallet');if(sequence!==walletSequence || profile().id!==owner)return;walletData={...result,sourceWallet:profile().wallet};}
     catch(error){if(sequence===walletSequence && !quiet)walletError=error.message || 'Your balance could not refresh. Please try again.';}
     finally{if(sequence===walletSequence){walletLoading=false;if(opened)render();}}
   }
+  async function loadResidents({more=false}={}) {
+    if(isBrowserPreview())return;
+    const sequence=++residentSequence,owner=profile().id,query=search;residentLoading=true;render();
+    try{const result=await api(`/api/residents?q=${encodeURIComponent(query)}${more && residentCursor?`&cursor=${encodeURIComponent(residentCursor)}`:''}`);if(sequence!==residentSequence || profile().id!==owner || search!==query)return;const rows=result.people || [];residentResults=more?[...new Map([...(residentResults || []),...rows].map(r=>[r.id,r])).values()]:rows;residentCursor=result.nextCursor || null;for(const r of rows)if(r?.id)knownResidents.set(r.id,r);}
+    catch(error){if(sequence===residentSequence && profile().id===owner)toast?.(error.message || 'Residents could not load.');}
+    finally{if(sequence===residentSequence && profile().id===owner){residentLoading=false;render();}}
+  }
+  async function loadOlderMessages() {
+    if(!thread?.id || !messageCursor || olderLoading)return;
+    const id=thread.id,sequence=requestSequence,owner=profile().id,scroll=root.querySelector('.ph-scroll'),height=scroll?.scrollHeight || 0,top=scroll?.scrollTop || 0;olderLoading=true;render();
+    try{const result=await api(`/api/conversations/${encodeURIComponent(id)}/messages?cursor=${encodeURIComponent(messageCursor)}`);if(sequence!==requestSequence || thread?.id!==id || profile().id!==owner)return;messages=[...new Map([...(result.messages || []),...messages].map(m=>[m.id,m])).values()];messageCursor=result.nextCursor || null;}
+    catch(error){if(sequence===requestSequence)toast?.(error.message || 'Earlier messages could not load.');}
+    finally{if(sequence===requestSequence && thread?.id===id){olderLoading=false;render();const next=root.querySelector('.ph-scroll');if(next)next.scrollTop=top+next.scrollHeight-height;}}
+  }
+  const checkoutStorageKey=()=>`abujalife-payment:${profile().id}`;
+  function saveCheckout(){try{if(checkout)localStorage.setItem(checkoutStorageKey(),JSON.stringify(checkout));else localStorage.removeItem(checkoutStorageKey());}catch{}}
+  async function loadPayments() {
+    if(paymentLoading || isBrowserPreview())return;
+    const owner=profile().id;paymentLoading=true;paymentError='';render();
+    try{const result=await api('/api/payments/config');if(profile().id!==owner)return;paymentConfig=result;
+      if(!checkout){try{const saved=JSON.parse(localStorage.getItem(checkoutStorageKey()) || 'null');if(saved?.txRef && typeof saved.txRef==='string'){checkout={...saved,checkoutUrl:saved.checkoutUrl?normalizeCheckoutURL(saved.checkoutUrl):undefined};}}catch{}}
+      const params=new URLSearchParams(location.search),ref=params.get('tx_ref') || params.get('payment_ref');
+      if(ref && ref.length<200){checkout=checkout?.txRef===ref?checkout:{txRef:ref};const id=params.get('transaction_id');if(id && /^\d{1,24}$/.test(id)){checkout.transactionId=id;drafts.set('paymentTransactionId',id);}saveCheckout();}
+      if(checkout?.txRef){const pending=checkout;try{const status=await api(`/api/payments/status?txRef=${encodeURIComponent(pending.txRef)}`);if(profile().id!==owner)return;if(status.payment?.txRef===pending.txRef){const saved=status.payment;checkout={...pending,...saved,transactionId:saved.transactionId || pending.transactionId,checkoutUrl:saved.checkoutUrl?normalizeCheckoutURL(saved.checkoutUrl):undefined};saveCheckout();}}catch(error){if(profile().id===owner){walletError=error.message || 'The pending payment could not load.';if(error.status===404){checkout=null;saveCheckout();}}}}
+    }catch(error){if(profile().id===owner)paymentError=error.message || 'Payment availability could not load.';}
+    finally{if(profile().id===owner){paymentLoading=false;render();}}
+  }
+  async function startCheckout(request) {
+    if(!paymentConfig?.enabled){walletError='Payments are currently unavailable.';render();return;}
+    const owner=profile().id;
+    const popup=window.open('about:blank','_blank');if(popup)popup.opener=null;
+    busy=true;walletError='';render();
+    try{const result=await api('/api/payments/checkout',{method:'POST',body:{amount:request.amount,email:request.email,idempotencyKey:request.idempotencyKey}});if(profile().id!==owner){popup?.close();return;}const saved=result.checkout;if(!saved?.txRef || !saved.checkoutUrl)throw new Error('The provider did not return a checkout link.');const url=normalizeCheckoutURL(saved.checkoutUrl);checkout={...saved,checkoutUrl:url};saveCheckout();if(popup)popup.location.replace(url);else toast?.('Use “Open checkout” to finish payment.');navigate('paymentcheckout');}
+    catch(error){popup?.close();if(profile().id===owner)walletError=error.message || 'Checkout could not start. Your game balance has not changed.';}
+    finally{if(profile().id===owner){busy=false;render();}}
+  }
+  async function verifyPayment(transactionId) {
+    if(busy || !checkout?.txRef)return;
+    const id=String(transactionId || '').trim(),owner=profile().id;if(!/^\d{1,24}$/.test(id)){toast?.('Enter the provider’s numeric transaction ID.');return;}
+    busy=true;walletError='';checkout.transactionId=id;saveCheckout();render();
+    try{const result=await api('/api/payments/verify',{method:'POST',body:{transactionId:id,txRef:checkout.txRef}});if(profile().id!==owner)return;if(result.payment?.status!=='credited'){walletError=`Payment status: ${result.payment?.status || 'pending'}. Your balance has not been credited yet.`;return;}walletReceipt={kind:'payment',...result.payment,createdAt:result.payment.creditedAt || Date.now()};checkout=null;pendingWallet=null;saveCheckout();try{await onUpdate?.();}catch{}await loadWallet({quiet:true});navigate('walletreceipt',null,false);}
+    catch(error){if(profile().id===owner)walletError=error.message || 'Payment could not be verified yet. You can retry safely.';}
+    finally{if(profile().id===owner){busy=false;render();}}
+  }
+  async function checkPaymentStatus() {
+    if(busy || !checkout?.txRef)return;const owner=profile().id;busy=true;walletError='';render();
+    try{const result=await api(`/api/payments/status?txRef=${encodeURIComponent(checkout.txRef)}`);if(profile().id!==owner)return;if(result.payment?.status==='credited'){walletReceipt={kind:'payment',...result.payment,createdAt:result.payment.creditedAt || Date.now()};checkout=null;pendingWallet=null;saveCheckout();try{await onUpdate?.();}catch{}await loadWallet({quiet:true});navigate('walletreceipt',null,false);}else walletError=`Payment is ${result.payment?.status || 'pending'}. Complete checkout, then enter the transaction ID to verify.`;}
+    catch(error){if(profile().id===owner)walletError=error.message;}
+    finally{if(profile().id===owner){busy=false;render();}}
+  }
   async function confirmWallet() {
     if(busy || !pendingWallet)return;
+    if(pendingWallet.kind==='payment'){await startCheckout({...pendingWallet});return;}
     const request={...pendingWallet}, owner=profile().id;busy=true;walletError='';render();
     let saved;
     try {
@@ -284,13 +374,15 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
   }
   async function openThread(id,push=true) {
     const sequence=++requestSequence;
-    captureInputs();const nextDraft=threadDrafts.get(id) || '';const input=root.querySelector('#ph-message');if(input)input.value=nextDraft;thread=conversations().find(c=>c.id===id) || {id,members:[]};messages=[];typing=null;typingSentAt=0;drafts.set('message',nextDraft);navigate('thread',id,push);
-    try {const result=await api(`/api/conversations/${encodeURIComponent(id)}/messages`);if(sequence!==requestSequence)return;thread=result.conversation || thread;messages=result.messages || [];render();root.querySelector('.ph-scroll')?.scrollTo(0,100000);await onUpdate?.();}
+    captureInputs();const nextDraft=threadDrafts.get(id) || '';const input=root.querySelector('#ph-message');if(input)input.value=nextDraft;thread=conversations().find(c=>c.id===id) || {id,members:[]};messages=[];messageCursor=null;olderLoading=false;typing=null;typingSentAt=0;drafts.set('message',nextDraft);navigate('thread',id,push);
+    try {const result=await api(`/api/conversations/${encodeURIComponent(id)}/messages`);if(sequence!==requestSequence)return;thread=result.conversation || thread;messages=result.messages || [];messageCursor=result.nextCursor || null;render();root.querySelector('.ph-scroll')?.scrollTo(0,100000);await onUpdate?.();}
     catch(error){toast?.(error.message);}
   }
   async function startDM(id) { const result=await mutate('/api/conversations',{residentId:id});if(result?.conversation)await openThread(result.conversation.id); }
   async function handleAction(el) {
     const {phAction:action,id,app,view,value,accept,tenure,key,venueId}=el.dataset;
+    if(browser.handleAction(el))return;
+    if(await social.action(el))return;
     if(action==='noop')return;
     if(action==='dismiss' && el!==eventTargetBackdrop)return;
     switch(action) {
@@ -305,6 +397,11 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
       case 'wallet-send':walletError='';busy=true;render();try{await refresh({render:false});navigate('transfer');}catch(error){walletError=error.message;toast?.(error.message);}finally{busy=false;render();}break;
       case 'wallet-home':navigate('wallet');break;
       case 'wallet-refresh':await loadWallet();break;
+      case 'residents-more':await loadResidents({more:true});break;
+      case 'messages-older':await loadOlderMessages();break;
+      case 'payment-config-refresh':await loadPayments();break;
+      case 'payment-resume':navigate('paymentcheckout');break;
+      case 'payment-status':await checkPaymentStatus();break;
       case 'wallet-amount':{const input=root.querySelector('#ph-topupAmount');drafts.set('topupAmount',el.dataset.amount);if(input)input.value=el.dataset.amount;break;}
       case 'wallet-recipient':walletError='';navigate('transferform',id);break;
       case 'wallet-confirm':await confirmWallet();break;
@@ -340,16 +437,27 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
   const onClick=e=>{const el=e.target.closest('[data-ph-action]');if(!el || !root.contains(el))return;eventTargetBackdrop=e.target.classList.contains('ph-backdrop')?e.target:null;void handleAction(el);};
   const onInput=e=>{
     const el=e.target;
+    social.input(el);
     if(el.name && el.type!=='checkbox')drafts.set(el.name,el.value);
-    if(el.name==='search'){search=el.value;render();}
+    if(el.name==='search'){search=el.value;render();if(['contacts','compose','transfer'].includes(screen)){residentSequence++;residentResults=null;residentCursor=null;clearTimeout(residentSearchTimer);residentSearchTimer=setTimeout(()=>void loadResidents(),250);}}
     if(el.name==='message' && thread && Date.now()-typingSentAt>1800){typingSentAt=Date.now();api('/api/typing',{method:'POST',body:{conversationId:thread.id}}).catch(()=>{});}
   };
-  const onChange=e=>{if(e.target.name==='groupMember'){e.target.checked?groupMembers.add(e.target.value):groupMembers.delete(e.target.value);}else if(e.target.name)drafts.set(e.target.name,e.target.value);if(screen==='ride' && ['destination','mode'].includes(e.target.name))void loadTravelQuote();};
+  const onChange=e=>{if(e.target.name==='socialPhoto'){void social.change(e.target);return;}if(e.target.name==='groupMember'){e.target.checked?groupMembers.add(e.target.value):groupMembers.delete(e.target.value);}else if(e.target.name)drafts.set(e.target.name,e.target.value);if(screen==='ride' && ['destination','mode'].includes(e.target.name))void loadTravelQuote();};
   const onSubmit=async e=>{
     const form=e.target.closest('[data-ph-form]');if(!form)return;e.preventDefault();captureInputs();const values=Object.fromEntries(new FormData(form));
+    if(browser.handleSubmit(form,values))return;
+    if(await social.submit(form,values))return;
+    if(form.dataset.phForm==='payment-verify'){await verifyPayment(values.paymentTransactionId);return;}
+    if(form.dataset.phForm==='wallet-payment'){
+      if(busy || !paymentConfig?.enabled || isBrowserPreview())return;
+      const amount=Number(values.topupAmount),min=paymentConfig.minAmount || 100,max=paymentConfig.maxAmount || Number.MAX_SAFE_INTEGER,email=String(values.paymentEmail || '').trim(),credits=Math.round(amount*(Number(paymentConfig.creditRate) || 1));
+      if(!Number.isSafeInteger(amount) || amount<min || amount>max || !Number.isSafeInteger(credits) || !email){toast?.('Choose a valid whole Naira amount and receipt email.');return;}
+      const same=pendingWallet?.kind==='payment' && pendingWallet.amount===amount && pendingWallet.email===email;
+      pendingWallet={kind:'payment',amount,email,credits,idempotencyKey:same?pendingWallet.idempotencyKey:makeRequestKey()};walletError='';navigate('walletreview');return;
+    }
     if(form.dataset.phForm==='wallet-topup' || form.dataset.phForm==='wallet-transfer') {
       if(busy)return;const transfer=form.dataset.phForm==='wallet-transfer', amount=Number(values[transfer?'transferAmount':'topupAmount']);
-      const min=transfer?1:walletMeta().topupMin || 1000,max=transfer?Math.floor(walletProfile().wallet || 0):walletMeta().topupMax || 1000000;
+      const min=transfer?1:walletMeta().topupMin || 1000,max=transfer?Math.floor(walletProfile().wallet || 0):Number.MAX_SAFE_INTEGER;
       if(!Number.isSafeInteger(amount) || amount<min || amount>max){toast?.(`Choose a whole Naira amount between ${currency(min)} and ${currency(max)}.`);return;}
       const recipient=transfer?eligibleRecipients().find(r=>r.id===selected):null;
       if(transfer && (!recipient || isBrowserPreview())){toast?.('Choose a registered resident to receive your transfer.');return;}
@@ -387,10 +495,11 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
     if(e.key==='Enter' && !e.shiftKey && e.target.id==='ph-message'){e.preventDefault();e.target.form?.requestSubmit();}
     if(e.key==='Tab') {const els=[...root.querySelectorAll('button:not([disabled]),input,textarea,select,[tabindex="0"]')].filter(el=>el.getClientRects().length);if(!els.length)return;const first=els[0],last=els.at(-1);if(e.shiftKey && document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey && document.activeElement===last){e.preventDefault();first.focus();}}
   };
-  async function open(app,details={}) {syncAccount();priorFocus=document.activeElement;opened=true;document.body.classList.add('phone-is-open');if(app){locked=false;screen=app;history=[];search='';}render();root.querySelector(locked?'.ph-unlock':screen==='home'?'.ph-app-grid .ph-launcher':'.ph-back')?.focus({preventScroll:true});clockTimer ||= setInterval(()=>{if(opened){const el=root.querySelector('.ph-clock');if(el)el.textContent=timeOnly(new Date());const lockTime=root.querySelector('.ph-lock-time');if(lockTime)lockTime.textContent=timeOnly(new Date());}},1000);if(app==='messages' && details.conversationId)await openThread(details.conversationId);else if(app==='ride')await loadTravelQuote();else if(app==='wallet')await loadWallet();}
+  async function open(app,details={}) {syncAccount();priorFocus=document.activeElement;opened=true;document.body.classList.add('phone-is-open');if(app){locked=false;screen=app;history=[];search='';}render();root.querySelector(locked?'.ph-unlock':screen==='home'?'.ph-app-grid .ph-launcher':'.ph-back')?.focus({preventScroll:true});clockTimer ||= setInterval(()=>{if(opened){const el=root.querySelector('.ph-clock');if(el)el.textContent=timeOnly(new Date());const lockTime=root.querySelector('.ph-lock-time');if(lockTime)lockTime.textContent=timeOnly(new Date());if(['social','socialstatuses','socialstatus'].includes(screen) && Math.floor(serverNow()/1000)%30===0)social.expire();}},1000);if(app==='messages' && details.conversationId)await openThread(details.conversationId);else if(app==='ride')await loadTravelQuote();else if(app==='wallet')await loadWallet();else if(app==='topup' || app==='paymentcheckout')await loadPayments();else if(['contacts','compose','transfer'].includes(app))await loadResidents();else if(['social','socialstatuses'].includes(app))await social.load();}
   function close() {captureInputs();opened=false;document.body.classList.remove('phone-is-open');render();if(priorFocus?.isConnected)priorFocus.focus({preventScroll:true});}
   function sound() {if(profile().settings?.soundEnabled===false)return;try {const Context=window.AudioContext || window.webkitAudioContext;if(!Context)return;const ctx=new Context(), osc=ctx.createOscillator(), gain=ctx.createGain();osc.connect(gain);gain.connect(ctx.destination);osc.type='sine';osc.frequency.setValueAtTime(880,ctx.currentTime);osc.frequency.setValueAtTime(1174,ctx.currentTime+.07);gain.gain.setValueAtTime(.025,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(.0001,ctx.currentTime+.18);osc.start();osc.stop(ctx.currentTime+.2);osc.onended=()=>ctx.close();}catch{}}
   function handleEvent(type,data) {
+    social.handleEvent(type,data);
     if((type==='profile' || type==='notification' && /transfer/i.test(data.notification?.kind || data.kind || '')) && opened && ['wallet','topup','transfer','transferform','walletreview','walletreceipt'].includes(screen))void loadWallet({quiet:true});
     if(type==='typing' && screen==='thread' && (data.conversationId===thread?.id) && (data.residentId || data.userId || data.senderId)!==profile().id){typing=data;clearTimeout(typingTimer);typingTimer=setTimeout(()=>{typing=null;render();},3500);if(opened)render();}
     if(type==='message') {
@@ -403,5 +512,5 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
     if(opened && type!=='typing')render();
   }
   root.hidden=true;root.classList.add('phone-root');root.addEventListener('click',onClick);root.addEventListener('input',onInput);root.addEventListener('change',onChange);root.addEventListener('submit',onSubmit);document.addEventListener('keydown',onKey);
-  return {open,close,render,handleEvent,dispose(){close();clearInterval(clockTimer);clearTimeout(typingTimer);clearTimeout(bannerTimer);root.removeEventListener('click',onClick);root.removeEventListener('input',onInput);root.removeEventListener('change',onChange);root.removeEventListener('submit',onSubmit);document.removeEventListener('keydown',onKey);}};
+  return {open,close,render,handleEvent,dispose(){close();clearInterval(clockTimer);clearTimeout(typingTimer);clearTimeout(bannerTimer);clearTimeout(residentSearchTimer);root.removeEventListener('click',onClick);root.removeEventListener('input',onInput);root.removeEventListener('change',onChange);root.removeEventListener('submit',onSubmit);document.removeEventListener('keydown',onKey);}};
 }

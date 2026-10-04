@@ -1,7 +1,11 @@
 /** Browser-only public preview. This adapter never connects to the game server. */
 import data from './data.mjs';
-import { LIFE_GOALS, GAME_YEAR_MS, GAME_BILL_PERIOD_MS, WALLET_META, INVESTMENT_META, DICE_META, homeBenefits, investmentView, venueFor, venueAvailable, venueActionFor, applyNeedEffects, furniturePlacement, ownsVehicle } from '../src/shared/life.mjs';
+import { LIFE_GOALS, GAME_YEAR_MS, GAME_BILL_PERIOD_MS, WALLET_META, INVESTMENT_META, DICE_META, LOAN_META, homeBenefits, investmentView, loanQuote, loanView, venueFor, venueAvailable, venueActionFor, applyNeedEffects, furniturePlacement, ownsVehicle } from '../src/shared/life.mjs';
 import { vehicleColorFor } from '../src/shared/vehicles.mjs';
+import { ORIGIN_META, createOrigin, originHome } from '../src/shared/origins.mjs';
+import { abujaTime, jobSchedule, clubSchedule, seasonalWeather, JOB_SCHEDULES } from '../src/shared/simulation.mjs';
+import { validateHomeDesign } from '../src/shared/home-design.mjs';
+import { homeDesignPreservesRoutes } from '../app/world-interiors.js';
 
 const STORAGE_KEY = 'abujalife.browser-preview.v1';
 const PLAYER_ID = 'browser-preview';
@@ -23,27 +27,38 @@ class PreviewError extends Error {
 }
 function check(condition, message, status = 400, code) { if (!condition) throw new PreviewError(message, status, code); }
 function unavailable() { throw new PreviewError('Public multiplayer is unavailable in this browser preview. No message, invitation or event was sent.', 503, 'browser_preview_only'); }
+function randomInt(min, max) {
+  const span=max-min;check(Number.isSafeInteger(span)&&span>0&&span<=4294967296,'Choose a valid random range');
+  const value=new Uint32Array(1),ceiling=Math.floor(4294967296/span)*span;
+  do{globalThis.crypto.getRandomValues(value);}while(value[0]>=ceiling);
+  return min+value[0]%span;
+}
+function propertiesFor(profile=state.profile) {return profile.origin?.residence?[...properties,profile.origin.residence]:properties;}
+function propertyFor(profile,propertyId=profile.home.propertyId){return propertiesFor(profile).find(item=>item.id===propertyId);}
 
-function initialState() {
+function initialState({assignOrigin=true}={}) {
   const timestamp = Date.now();
+  const origin=assignOrigin?createOrigin({residentId:PLAYER_ID,now:timestamp,randomInt,properties,atlas:[...atlas.values()]}):null;
+  const home=origin?originHome(origin):{propertyId:'garki-studio',layoutId:'garki-studio',name:'Garki starter studio',district:'garki-i',tenure:'starter'};
+  const wallet=origin?.startingBalance??26000;
   return {
     version: 1,
+    origin,
     profile: {
       id: PLAYER_ID, username: 'preview_resident', displayName: 'Preview resident',
       appearance: { skinTone:'brown', face:'oval', body:'regular', hair:'crop', facialHair:'none', presentation:'neutral', top:'forest', bottom:'charcoal', shoes:'white', accessory:'none' },
-      wallet:26000, energy:82, hunger:72, hygiene:88, social:58, fun:64, stress:12, mood:76, reputation:0,
-      district:'garki-i', location:{kind:'home',district:'garki-i',venue:'home'},
-      home:{propertyId:'garki-studio',name:'Garki starter studio',district:'garki-i',tenure:'starter'},
-      job:null, careerLevel:1, skills:{}, inventory:[], ownedProperties:[],
+      origin,wallet, energy:82, hunger:72, hygiene:88, social:58, fun:64, stress:12, mood:76, reputation:0,
+      district:home.district, location:{kind:'home',district:home.district,venue:'home'},home,
+      job:null, careerLevel:1, skills:{}, inventory:[], ownedProperties:origin?.giftedHome?[home.propertyId]:[],
       onboardingComplete:false, lifeGoal:'explore', drivingVehicle:null, furnitureLayout:{},storedFurniture:[],
-      propertyInvestments:{},vehicleColors:{},gambleHistory:[],lastGambleRound:null,
+      propertyInvestments:{},vehicleColors:{},gambleHistory:[],lastGambleRound:null,loans:[],workDays:{},
       settings:{presenceVisible:false,allowInvites:false,soundEnabled:true},
       activeTrip:null, activeShift:null, completedShifts:0, nextShiftAt:0,
       lastActionAt:timestamp, billsPaidAt:timestamp, rentPaidAt:timestamp, createdAt:timestamp
     },
-    challenge:null, completedChallenges:{},economyOperations:{},
+    challenge:null, completedChallenges:{},economyOperations:{},socialPosts:[],socialComments:[],socialOperations:{},
     notifications:[{id:uid(),kind:'preview',title:'Your browser preview',body:'Explore on your own. Progress saves in this browser; public multiplayer is unavailable.',link:'home',createdAt:timestamp,readAt:null}],
-    transactions:[{id:uid(),amount:26000,reason:'Preview starting balance',createdAt:timestamp}]
+    transactions:[{id:uid(),amount:wallet,reason:'Preview starting balance',createdAt:timestamp}]
   };
 }
 function restore() {
@@ -52,12 +67,13 @@ function restore() {
     if (!raw) return initialState();
     const saved = JSON.parse(raw);
     if (saved.version !== 1 || saved.profile?.id !== PLAYER_ID || !atlas.has(saved.profile.district) || !Number.isSafeInteger(saved.profile.wallet) || saved.profile.wallet < 0) return initialState();
-    const initial = initialState();
+    const initial = initialState({assignOrigin:false});
     const restored = {...initial,...saved,profile:{...initial.profile,...saved.profile}};
+    restored.origin=saved.origin||saved.profile.origin||null;restored.profile.origin=clone(restored.origin);
     restored.profile.appearance = {...initial.profile.appearance,...saved.profile.appearance};
     restored.profile.settings = {...initial.profile.settings,...saved.profile.settings};
     restored.profile.inventory = (saved.profile.inventory || []).filter(id=>catalog.some(item=>item.id===id));
-    restored.profile.ownedProperties = (saved.profile.ownedProperties || []).filter(id=>properties.some(item=>item.id===id));
+    restored.profile.ownedProperties = (saved.profile.ownedProperties || []).filter(id=>propertiesFor(restored.profile).some(item=>item.id===id));
     restored.profile.vehicleColors={};
     for(const [itemId,color] of Object.entries(saved.profile.vehicleColors||{}))if(ownsVehicle(restored.profile,catalog,itemId)&&vehicleColorFor(color))restored.profile.vehicleColors[itemId]=color;
     restored.profile.propertyInvestments={};
@@ -79,29 +95,39 @@ function restore() {
       try {restored.profile.furnitureLayout[itemId]=furniturePlacement(placement);}catch {/* Discard only the invalid placement. */}
     }
     if(restored.profile.location?.kind==='venue'&&!venueFor(restored.profile.location.venue))restored.profile.location={kind:'public',district:restored.profile.district,venue:'neighbourhood'};
+    if(restored.profile.location?.kind==='visit')restored.profile.location={kind:'public',district:restored.profile.district,venue:'neighbourhood'};
     if (restored.profile.job && !Object.hasOwn(allJobs,restored.profile.job)) { restored.profile.job=null; restored.profile.activeShift=null; restored.challenge=null; }
     if (!Array.isArray(restored.notifications) || !Array.isArray(restored.transactions)) return initialState();
     if (restored.challenge && !Object.hasOwn(allJobs,restored.challenge.jobId)) { restored.challenge=null; restored.profile.activeShift=null; }
+    if(restored.challenge&&(!restored.challenge.dateKey||!restored.challenge.expiresAt||restored.challenge.expiresAt<=Date.now())){restored.challenge=null;restored.profile.activeShift=null;}
     if (!restored.completedChallenges || typeof restored.completedChallenges!=='object') restored.completedChallenges={};
     if(!restored.economyOperations||typeof restored.economyOperations!=='object'||Array.isArray(restored.economyOperations))restored.economyOperations={};
+    if(!Array.isArray(restored.profile.loans))restored.profile.loans=[];
+    if(!restored.profile.workDays||typeof restored.profile.workDays!=='object'||Array.isArray(restored.profile.workDays))restored.profile.workDays={};
+    restored.socialPosts=(Array.isArray(saved.socialPosts)?saved.socialPosts:[]).filter(post=>post.userId===PLAYER_ID);
+    restored.socialComments=(Array.isArray(saved.socialComments)?saved.socialComments:[]).filter(comment=>comment.userId===PLAYER_ID);
+    if(!restored.socialOperations||typeof restored.socialOperations!=='object'||Array.isArray(restored.socialOperations))restored.socialOperations={};
     return restored;
   } catch { return initialState(); }
 }
 let state = restore();
 function persist() {
+  state.profile.origin=clone(state.origin);
   try { localStorage.setItem(STORAGE_KEY,JSON.stringify(state)); storageAvailable=true; }
   catch { storageAvailable=false; document.documentElement.dataset.previewStorage='memory'; dispatchEvent(new Event('abujalife:preview-storage-unavailable')); }
 }
 function emit(type, value) { for (const stream of streams) if (stream.readyState===1) stream.dispatchEvent(new MessageEvent(type,{data:JSON.stringify(value)})); }
-function publicJobs() { return Object.fromEntries(Object.entries(allJobs).map(([id,{tasks,...job}])=>[id,job])); }
+function publicJobs() { return Object.fromEntries(Object.entries(allJobs).map(([id,{tasks,...job}])=>[id,{...job,schedule:{...JOB_SCHEDULES[id],timeZone:'Africa/Lagos',maxDailyShifts:2}}])); }
 function challengeView() {
-  if (!state.challenge) return null;
+  if (!state.challenge||state.challenge.expiresAt<=Date.now()) return null;
   const job=allJobs[state.challenge.jobId];
   return {...state.challenge,title:job.title,tasks:(job.tasks||[]).map(({answer,...task})=>clone(task))};
 }
 function bootstrap() {
+  const now=Date.now(),clock=abujaTime(now),workSchedules=Object.fromEntries(Object.keys(allJobs).map(id=>[id,jobSchedule(id,state.profile,now)]));
   return {
-    ...clone(publicData), walletMeta:{...clone(WALLET_META),transferEnabled:false}, jobs:publicJobs(), authenticated:true, profile:clone(state.profile), activeChallenge:challengeView(),
+    ...clone(publicData), walletMeta:{...clone(WALLET_META),transferEnabled:false,topupMode:'preview',demoTopupEnabled:true}, jobs:publicJobs(), authenticated:true, profile:clone(state.profile), activeChallenge:challengeView(),
+    properties:clone(propertiesFor()),originMeta:clone(ORIGIN_META),loanMeta:clone(LOAN_META),loans:loanView(state.profile,now),workSchedule:jobSchedule(state.profile.job,state.profile,now),workSchedules,serverTime:now,clock,weather:seasonalWeather(now),clubSchedule:clubSchedule(now),visit:null,homeVisit:null,homeVisitRequests:[],homeVisitors:[],payments:previewPayments(),admin:{ok:true,role:null,permissions:[],bootstrapConfigured:false},
     people:[],friends:[],friendRequests:[],conversations:[],nearby:[],invitations:[],events:[],blocked:[],muted:[],
     notifications:clone(state.notifications),transactions:clone(state.transactions).slice(-60).reverse(),
     preview:{mode:'browser',multiplayer:false,storage:storageAvailable?'localStorage':'memory'}
@@ -140,7 +166,7 @@ function economyOperation(kind,payload,normalized,mutate) {
   }
   const next=clone(state),profile=next.profile,timestamp=Date.now(),before=profile.wallet;
   const extra=mutate(profile,timestamp,next);
-  check(Number.isSafeInteger(profile.wallet)&&profile.wallet>=0&&profile.wallet<=WALLET_META.maxBalance,'This action would exceed your game wallet limit',409,'wallet_limit');
+  check(Number.isSafeInteger(profile.wallet)&&profile.wallet>=0,'This action cannot be represented as exact whole Naira',409,'numeric_limit');
   profile.lastActionAt=timestamp;
   if(profile.wallet!==before)next.transactions.push({id:uid(),amount:profile.wallet-before,reason:extra.ledgerReason||kind,createdAt:timestamp});
   next.transactions=next.transactions.slice(-100);
@@ -153,10 +179,8 @@ function economyOperation(kind,payload,normalized,mutate) {
 function topup(payload) {
   check(!Object.hasOwn(payload,'verified'),'Real-money payments require a verified payment provider; use a free game top-up',403,'payments_unavailable');
   const amount=payload.amount;
-  check(Number.isSafeInteger(amount)&&amount>=WALLET_META.topupMin&&amount<=WALLET_META.topupMax,`Choose a free game top-up of ₦${WALLET_META.topupMin.toLocaleString()}–₦${WALLET_META.topupMax.toLocaleString()}`,400,'invalid_topup');
+  check(Number.isSafeInteger(amount)&&amount>0,'Choose a positive whole Naira game top-up',400,'invalid_topup');
   return economyOperation('demo-topup',payload,{amount},(profile,timestamp,next)=>{
-    const used=Object.values(next.economyOperations).filter(operation=>operation.kind==='demo-topup'&&operation.createdAt>timestamp-WALLET_META.topupWindowMs).reduce((total,operation)=>total+operation.amount,0);
-    check(used+amount<=WALLET_META.topupDailyLimit,'Your free game top-up limit is ₦20,000,000 in 24 hours',409,'topup_limit');
     profile.wallet+=amount;
     return{topup:{id:uid(),amount,virtual:true,createdAt:timestamp},ledgerReason:'Free game Naira top-up'};
   });
@@ -190,6 +214,7 @@ function investmentAction(name,payload) {
     }
     check(profile.ownedProperties.includes(property.id)&&profile.propertyInvestments[property.id],'You do not own this rental investment',403,'investment_not_owned');
     const investment=investmentView(profile,property,timestamp);
+    check(investment.representable,'This rental income cannot be represented as exact whole Naira',409,'numeric_limit');
     if(name==='collect-rent') {
       check(investment.collectable>0,'Rent is not ready yet; it accrues every minute',409,'rent_not_ready');
       profile.wallet+=investment.collectable;
@@ -205,17 +230,35 @@ function investmentAction(name,payload) {
 }
 function playDice(payload) {
   const stake=payload.stake,choice=payload.choice;
-  check(Number.isSafeInteger(stake)&&stake>=DICE_META.minStake&&stake<=DICE_META.maxStake,'Choose a whole Naira stake of ₦100–₦5,000',400,'invalid_stake');
+  check(Number.isSafeInteger(stake)&&stake>=DICE_META.minStake,'Choose a whole Naira stake of at least ₦100',400,'invalid_stake');
   check(DICE_META.choices.some(item=>item.id===choice),'Choose low (1–3) or high (4–6)',400,'invalid_choice');
   return economyOperation('play-dice',payload,{stake,choice},(profile,timestamp)=>{
     check(!profile.activeTrip&&profile.location.kind==='venue'&&profile.location.venue==='games-lounge','Enter Dice & Chill Lounge before playing',400,'wrong_venue');
     check(profile.wallet>=stake,'You need more Naira for this stake',409,'insufficient_balance');
-    const random=new Uint32Array(1),ceiling=Math.floor(4294967296/6)*6;
-    do{globalThis.crypto.getRandomValues(random);}while(random[0]>=ceiling);
-    const die=random[0]%6+1,won=choice==='low'?die<=3:die>=4,payout=won?stake*DICE_META.payoutMultiplier:0;
+    const die=randomInt(1,7),won=choice==='low'?die<=3:die>=4,payout=won?stake*DICE_META.payoutMultiplier:0;
+    check(Number.isSafeInteger(payout),'This dice payout cannot be represented as exact whole Naira',409,'numeric_limit');
     const round={id:uid(),stake,choice,die,won,payout,net:payout-stake,createdAt:timestamp,virtual:true};profile.wallet+=round.net;
     profile.gambleHistory=[round,...profile.gambleHistory].slice(0,20);profile.lastGambleRound=round;
     return{round,ledgerReason:won?'Dice lounge · win':'Dice lounge · loss'};
+  });
+}
+function loanAction(name,payload) {
+  const amount=payload.amount;check(Number.isSafeInteger(amount)&&amount>0,'Choose a positive whole Naira amount',400,'invalid_amount');
+  if(name==='borrow-loan'){
+    check(payload.consent===true&&payload.consentVersion===LOAN_META.consentVersion,'Read and accept the game loan terms before borrowing',400,'loan_consent_required');
+    let quote;try{quote=loanQuote(amount);}catch(error){throw new PreviewError(error.message,409,'numeric_limit');}
+    return economyOperation(name,payload,{amount,consent:true,consentVersion:LOAN_META.consentVersion},(profile,timestamp)=>{
+      check(!profile.loans.some(loan=>loan.outstanding>0),'Repay your current game loan before borrowing again',409,'active_loan');
+      const loan={id:uid(),lenderId:LOAN_META.id,...quote,outstanding:quote.totalRepayment,repaid:0,borrowedAt:timestamp,dueAt:timestamp+LOAN_META.termMs,consentVersion:LOAN_META.consentVersion,consentedAt:timestamp,virtual:true};
+      profile.wallet+=amount;profile.loans=[loan,...profile.loans.filter(item=>item.outstanding===0).slice(0,49)];return{loan,loans:loanView(profile,timestamp),ledgerReason:'Game loan · borrowed principal'};
+    });
+  }
+  const loanId=payload.loanId;check(typeof loanId==='string'&&loanId.length>0&&loanId.length<=80,'Choose a game loan',400,'invalid_loan');
+  return economyOperation(name,payload,{loanId,amount},(profile,timestamp)=>{
+    const loan=profile.loans.find(item=>item.id===loanId);check(loan,'Game loan not found',404,'loan_not_found');check(loan.outstanding>0,'This game loan has been repaid',409,'loan_repaid');
+    check(amount<=loan.outstanding,'Repay no more than the outstanding amount',400,'invalid_repayment');check(profile.wallet>=amount,'You need more Naira for this repayment',409,'insufficient_balance');
+    profile.wallet-=amount;loan.outstanding-=amount;loan.repaid+=amount;loan.lastRepaidAt=timestamp;if(loan.outstanding===0)loan.repaidAt=timestamp;
+    return{loan,loans:loanView(profile,timestamp),repayment:{id:uid(),loanId,amount,createdAt:timestamp},ledgerReason:'Game loan · repayment'};
   });
 }
 function action(name,payload={}) {
@@ -223,9 +266,11 @@ function action(name,payload={}) {
   if(name==='transfer-naira')throw new PreviewError('Naira transfers connect registered residents in the full game. This browser preview has no shared wallet or other residents.',503,'browser_preview_only');
   if(['buy-investment','collect-rent','sell-investment'].includes(name))return investmentAction(name,payload);
   if(name==='play-dice')return playDice(payload);
+  if(['borrow-loan','repay-loan'].includes(name))return loanAction(name,payload);
   if(payload.idempotencyKey&&(name==='paint-vehicle'||(name==='purchase'&&catalog.some(item=>item.id===payload.itemId&&item.category==='vehicle'))))return vehicleAction(name,payload);
   // Work on a copy so rejected purchases or task submissions leave progress intact.
-  const next=clone(state),profile=next.profile,before=profile.wallet,timestamp=Date.now(),comfort=homeBenefits(profile,properties.find(item=>item.id===profile.home.propertyId));let extra={};
+  const next=clone(state),profile=next.profile,before=profile.wallet,timestamp=Date.now(),comfort=homeBenefits(profile,propertyFor(profile));let extra={};
+  if(name!=='complete-shift'&&next.challenge&&next.challenge.expiresAt<=timestamp){next.challenge=null;profile.activeShift=null;}
   const debit=amount=>{check(Number.isSafeInteger(amount)&&amount>=0,'Invalid cost');check(profile.wallet>=amount,'You need more Naira for this');profile.wallet-=amount;};
   const home=()=>check(profile.location.kind==='home','Go home to use this object');
   const outside=()=>check(profile.location.kind==='public'&&!profile.activeTrip,'Head out into your neighbourhood first');
@@ -253,6 +298,7 @@ function action(name,payload={}) {
       const activity=venueActionFor(payload.activityId);
       check(activity,'Choose an activity from this place');
       check(profile.location.kind==='venue'&&profile.location.venue===activity.venueId,'Enter this place before using its facilities');
+      if(venueFor(activity.venueId)?.kind==='club'&&activity.cost>0)check(clubSchedule(timestamp).isOpen,clubSchedule(timestamp).reason,409,'venue_closed');
       check(!(activity.effects.energy<0)||profile.energy>=-activity.effects.energy,'Rest before doing this activity');
       debit(activity.cost);applyNeedEffects(profile,activity.effects);
       if(activity.skill)profile.skills[activity.skill]=(profile.skills[activity.skill]||0)+1;
@@ -270,6 +316,10 @@ function action(name,payload={}) {
       profile.furnitureLayout||={};profile.furnitureLayout[item.id]=placement;profile.storedFurniture=profile.storedFurniture.filter(id=>id!==item.id);extra.placement={itemId:item.id,...clone(placement)};break;
     }
     case 'store-furniture': {home();const item=catalog.find(item=>item.id===payload.itemId);check(item?.category==='furniture'&&profile.inventory.includes(item.id),'You can store furniture you own');delete profile.furnitureLayout[item.id];if(!profile.storedFurniture.includes(item.id))profile.storedFurniture.push(item.id);extra.storedItemId=item.id;break;}
+    case 'design-home':{
+      home();let roomStyle;try{roomStyle=validateHomeDesign(payload.roomStyle);}catch(error){throw new PreviewError(error.message);}
+      check(homeDesignPreservesRoutes(profile,roomStyle),'Keep the entrance, furnishings and activity routes clear',400,'home_route_blocked');profile.home.roomStyle=roomStyle;extra.roomStyle=clone(roomStyle);break;
+    }
     case 'return-home':case 'travel': {
       const destination=name==='return-home'?profile.home.district:payload.district;
       if(name==='return-home'&&destination===profile.district) { profile.drivingVehicle=null;profile.location={kind:'home',district:profile.district,venue:'home'};break; }
@@ -287,19 +337,26 @@ function action(name,payload={}) {
     case 'start-shift': {
       const job=allJobs[profile.job];check(job,'Choose a job before starting a shift');outside();check(profile.district===job.district,`Travel to ${atlas.get(job.district)?.name||job.district} for your shift`);
       if(next.challenge) { extra.challenge=challengeView();break; }
-      check(timestamp>=profile.nextShiftAt,'Take a moment between shifts',409,'shift_cooldown');check(profile.energy>=job.energy,'Rest before starting another shift');check(Array.isArray(job.tasks)&&job.tasks.length>0,'This job is unavailable in the preview');
-      next.challenge={id:uid(),jobId:profile.job,startedAt:timestamp};profile.activeShift=next.challenge.id;
-      extra.challenge={...next.challenge,title:job.title,tasks:job.tasks.map(({answer,...task})=>clone(task))};break;
+      check(timestamp>=profile.nextShiftAt,'Take a moment between shifts',409,'shift_cooldown');
+      const schedule=jobSchedule(profile.job,profile,timestamp);check(schedule.canStart,schedule.reason,409,schedule.remainingToday===0?'daily_shift_limit':!schedule.isWorkDay||!schedule.isOpen?'workplace_closed':'shift_slot_completed');
+      check(profile.energy>=job.energy,'Rest before starting another shift');check(Array.isArray(job.tasks)&&job.tasks.length>0,'This job is unavailable in the preview');
+      const slot=schedule.slots.find(item=>item.id===schedule.availableSlot);
+      next.challenge={id:uid(),jobId:profile.job,startedAt:timestamp,dateKey:schedule.dateKey,slotId:slot.id,expiresAt:slot.endsAt};profile.activeShift=next.challenge.id;
+      extra.challenge={...next.challenge,title:job.title,tasks:job.tasks.map(({answer,...task})=>clone(task))};extra.workSchedule=schedule;break;
     }
     case 'complete-shift': {
-      if(Object.hasOwn(next.completedChallenges,payload.challengeId||'')) {extra.result=next.completedChallenges[payload.challengeId];break;}
+      if(Object.hasOwn(next.completedChallenges,payload.challengeId||'')) {extra.result=next.completedChallenges[payload.challengeId];extra.workSchedule=jobSchedule(profile.job,profile,timestamp);break;}
       const challenge=next.challenge;check(challenge&&challenge.id===payload.challengeId,'Shift not found');const job=allJobs[challenge.jobId];
-      check(profile.district===job.district&&profile.location.kind==='public','Complete your shift at the workplace');check(timestamp-challenge.startedAt>=1500,'Read the tasks before submitting your shift',409,'shift_too_fast');
-      check(Array.isArray(payload.answers)&&payload.answers.length===job.tasks.length,'Answer each shift task');const answers=new Map(payload.answers.map(answer=>[answer.taskId,answer.optionId]));
+      check(profile.district===job.district&&profile.location.kind==='public','Complete your shift at the workplace');
+      check(timestamp<challenge.expiresAt&&abujaTime(timestamp).dateKey===challenge.dateKey,'This shift has ended; start an available shift',409,'shift_expired');
+      const schedule=jobSchedule(challenge.jobId,profile,timestamp);check(schedule.remainingToday>0,'You have finished today’s two shifts. Come back tomorrow.',409,'daily_shift_limit');check(!schedule.slots.find(slot=>slot.id===challenge.slotId)?.completed,'This shift slot has already been completed',409,'shift_slot_completed');
+      check(timestamp-challenge.startedAt>=1500,'Read the tasks before submitting your shift',409,'shift_too_fast');
+      check(Array.isArray(payload.answers)&&payload.answers.length===job.tasks.length,'Answer each shift task');check(payload.answers.every(answer=>answer&&typeof answer==='object'&&typeof answer.taskId==='string'&&typeof answer.optionId==='string'),'Choose valid shift answers');const answers=new Map(payload.answers.map(answer=>[answer.taskId,answer.optionId]));
       check(answers.size===job.tasks.length&&job.tasks.every(task=>task.options.some(option=>option.id===answers.get(task.id))),'Choose one valid answer for every task');
       const correct=job.tasks.filter(task=>answers.get(task.id)===task.answer).length,pay=Math.round(job.pay*(.4+.6*correct/job.tasks.length));
       profile.wallet+=pay;profile.energy=clamp(profile.energy-job.energy);profile.hunger=clamp(profile.hunger-10);profile.stress=clamp(profile.stress+8);profile.reputation+=correct===job.tasks.length?2:1;profile.completedShifts++;profile.skills[job.skill]=(profile.skills[job.skill]||0)+correct;profile.careerLevel=1+Math.floor(profile.completedShifts/5);profile.activeShift=null;profile.nextShiftAt=timestamp+20000;
-      extra.result={challengeId:challenge.id,pay,correct,total:job.tasks.length,careerLevel:profile.careerLevel};next.completedChallenges[challenge.id]=extra.result;next.challenge=null;
+      const record=profile.workDays[challenge.dateKey]||{completed:0,slots:[]};profile.workDays[challenge.dateKey]={completed:record.completed+1,slots:[...new Set([...record.slots,challenge.slotId])]};profile.workDays=Object.fromEntries(Object.entries(profile.workDays).sort(([a],[b])=>b.localeCompare(a)).slice(0,8));
+      extra.result={challengeId:challenge.id,pay,correct,total:job.tasks.length,careerLevel:profile.careerLevel,dateKey:challenge.dateKey,slotId:challenge.slotId};next.completedChallenges[challenge.id]=extra.result;next.challenge=null;extra.workSchedule=jobSchedule(profile.job,profile,timestamp);
       const old=Object.keys(next.completedChallenges);if(old.length>200)delete next.completedChallenges[old[0]];break;
     }
     case 'work-shift':throw new PreviewError('Start a shift and complete its work tasks to earn your salary');
@@ -307,30 +364,89 @@ function action(name,payload={}) {
     case 'paint-vehicle': {const item=catalog.find(item=>item.id===payload.itemId&&item.category==='vehicle');check(item&&profile.inventory.includes(item.id),'You can repaint a car you own',403,'vehicle_not_owned');check(vehicleColorFor(payload.color)&&item.availableColors.includes(payload.color),'Choose an available car colour');profile.vehicleColors[item.id]=payload.color;extra.item=clone(item);break;}
     case 'equip': {const item=catalog.find(item=>item.id===payload.itemId);check(item?.category==='clothing'&&profile.inventory.includes(item.id),'You can wear clothing you own');profile.appearance[item.slot]=item.value;break;}
     case 'move-home': {
-      const property=properties.find(item=>item.id===payload.propertyId);check(property&&property.tier>0,'Choose a listed home');check(['rent','own'].includes(payload.tenure),'Choose rent or ownership');check(profile.home.propertyId!==property.id||profile.home.tenure!==payload.tenure,'You already live here');
+      const property=propertyFor(profile,payload.propertyId);check(property&&(property.tier>0||property.originHome),'Choose a listed home');check(['rent','own'].includes(payload.tenure),'Choose rent or ownership');check(!property.originHome||payload.tenure==='own','Your starting home is available to move into without rent');check(profile.home.propertyId!==property.id||profile.home.tenure!==payload.tenure,'You already live here');
       check(!(payload.tenure==='rent'&&profile.ownedProperties.includes(property.id)),'You already own this property; choose Move in',409,'already_owned');
-      debit(payload.tenure==='rent'?property.rent:profile.ownedProperties.includes(property.id)?0:property.buy??property.price);if(payload.tenure==='own'&&!profile.ownedProperties.includes(property.id))profile.ownedProperties.push(property.id);
+      debit(property.originHome?0:payload.tenure==='rent'?property.rent:profile.ownedProperties.includes(property.id)?0:property.buy??property.price);if(payload.tenure==='own'&&!profile.ownedProperties.includes(property.id))profile.ownedProperties.push(property.id);
       if(profile.propertyInvestments[property.id]){const investment=investmentView(profile,property,timestamp);profile.wallet+=investment.collectable;extra.settledIncome=investment.collectable;delete profile.propertyInvestments[property.id];}
-      profile.home={propertyId:property.id,name:property.name,district:property.district,tenure:payload.tenure,rentDueAt:payload.tenure==='rent'?timestamp+GAME_YEAR_MS:null};
+      profile.home={propertyId:property.id,layoutId:property.layoutId||property.id,name:property.name,district:property.district,tenure:property.originHome?property.gifted?'own':'starter':payload.tenure,gifted:Boolean(property.gifted),rentDueAt:payload.tenure==='rent'?timestamp+GAME_YEAR_MS:null};
       if(profile.district===property.district){profile.drivingVehicle=null;profile.location={kind:'home',district:profile.district,venue:'home'};}else if(profile.location.kind==='home')profile.location={kind:'public',district:profile.district,venue:'neighbourhood'};profile.billsPaidAt=timestamp;profile.rentPaidAt=timestamp;break;
     }
-    case 'pay-bills': {check(timestamp-profile.billsPaidAt>=GAME_BILL_PERIOD_MS,'Your home bills are up to date');const property=properties.find(item=>item.id===profile.home.propertyId);check(property,'Your home listing is unavailable');const amount=Math.round(property.bills*(100-comfort.billDiscountPercent)/100);debit(amount);profile.billsPaidAt=timestamp;extra.bill={amount,baseAmount:property.bills,discountPercent:comfort.billDiscountPercent};break;}
+    case 'pay-bills': {check(timestamp-profile.billsPaidAt>=GAME_BILL_PERIOD_MS,'Your home bills are up to date');const property=propertyFor(profile);check(property,'Your home listing is unavailable');const amount=Math.round(property.bills*(100-comfort.billDiscountPercent)/100);debit(amount);profile.billsPaidAt=timestamp;extra.bill={amount,baseAmount:property.bills,discountPercent:comfort.billDiscountPercent};break;}
     case 'renew-rent': {
       check(profile.home.tenure==='rent','Only a rented home needs a rent renewal');
-      const property=properties.find(item=>item.id===profile.home.propertyId);check(property,'Your home listing is unavailable');
+      const property=propertyFor(profile);check(property,'Your home listing is unavailable');
       check(timestamp-profile.rentPaidAt>=GAME_YEAR_MS,'Your rent is already paid for this game year');
       debit(property.rent);profile.rentPaidAt=timestamp;profile.home.rentDueAt=timestamp+GAME_YEAR_MS;break;
     }
     default:throw new PreviewError('Unknown preview action');
   }
-  check(Number.isSafeInteger(profile.wallet)&&profile.wallet>=0&&profile.wallet<=WALLET_META.maxBalance,'This action would exceed your game wallet limit',409,'wallet_limit');profile.lastActionAt=timestamp;if(profile.wallet!==before)next.transactions.push({id:uid(),amount:profile.wallet-before,reason:name,createdAt:timestamp});next.transactions=next.transactions.slice(-100);
+  check(Number.isSafeInteger(profile.wallet)&&profile.wallet>=0,'This action cannot be represented as exact whole Naira',409,'numeric_limit');profile.lastActionAt=timestamp;if(profile.wallet!==before)next.transactions.push({id:uid(),amount:profile.wallet-before,reason:name,createdAt:timestamp});next.transactions=next.transactions.slice(-100);
   state=next;persist();queueMicrotask(()=>emit('profile',{profile:clone(state.profile)}));return{ok:true,profile:clone(profile),...extra};
 }
-function handleApi(url,method,body) {
+function localResident(){const {id,username,displayName,appearance,reputation}=state.profile;return{id,username,displayName,appearance:clone(appearance),reputation,online:false,district:null,location:null,local:true};}
+function socialPostView(post){return{...clone(post),resident:localResident(),likes:post.likedByMe?1:0,commentCount:state.socialComments.filter(comment=>comment.postId===post.id).length,local:true};}
+function postAccess(postId){const post=state.socialPosts.find(post=>post.id===postId&&post.userId===PLAYER_ID&&!post.deletedAt&&(!post.expiresAt||post.expiresAt>Date.now()));check(post,'Post is unavailable',404,'post_unavailable');return post;}
+function socialText(value,max,label){check(value===undefined||typeof value==='string',`${label} must be text`);const text=(value||'').trim();check(text.length<=max,`${label} is too long`,413,'content_too_large');return text;}
+function socialKey(key){check(typeof key==='string'&&/^[A-Za-z0-9:_-]{8,128}$/.test(key),'Include a unique idempotency key',400,'idempotency_required');return key;}
+function socialPage(rows,url,field){
+  const requested=url.searchParams.get('limit'),limit=requested===null?20:Number(requested);check(Number.isSafeInteger(limit)&&limit>=1&&limit<=50,'Choose a page size of 1–50');
+  const cursor=url.searchParams.get('cursor');let after=null;
+  if(cursor){try{check(cursor.length<=256,'Invalid page cursor');after=JSON.parse(atob(cursor.replace(/-/g,'+').replace(/_/g,'/')));check(Array.isArray(after)&&after.length===2&&Number.isSafeInteger(after[0])&&typeof after[1]==='string','Invalid page cursor');}catch{throw new PreviewError('Invalid page cursor',400,'invalid_cursor');}}
+  const ordered=rows.filter(row=>!after||row.createdAt<after[0]||(row.createdAt===after[0]&&row.id<after[1])).sort((a,b)=>b.createdAt-a.createdAt||b.id.localeCompare(a.id)),items=ordered.slice(0,limit),last=items.at(-1);
+  const nextCursor=ordered.length>limit?btoa(JSON.stringify([last.createdAt,last.id])).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''):null;
+  return{ok:true,[field]:items.map(row=>field==='comments'?{...clone(row),resident:localResident(),local:true}:socialPostView(row)),nextCursor,serverTime:Date.now(),local:true};
+}
+async function socialImage(value){
+  if(value===undefined||value===null||value==='')return null;
+  check(typeof value==='string'&&value.length<=Math.ceil(524288/3)*4+40,'Use an image smaller than 512 KiB',413,'image_too_large');
+  const match=value.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/);check(match&&match[2].length%4===0,'Upload a PNG, JPEG or WebP image',400,'invalid_image');
+  let decoded;try{decoded=atob(match[2]);}catch{throw new PreviewError('Invalid image encoding',400,'invalid_image');}
+  check(decoded.length<=524288&&btoa(decoded)===match[2],'Invalid image encoding',400,'invalid_image');
+  const bytes=Uint8Array.from(decoded,char=>char.charCodeAt(0));
+  const valid=match[1]==='png'?bytes.length>24&&[137,80,78,71,13,10,26,10].every((byte,i)=>bytes[i]===byte):match[1]==='jpeg'?bytes.length>12&&bytes[0]===255&&bytes[1]===216&&bytes.at(-2)===255&&bytes.at(-1)===217:bytes.length>=30&&decoded.slice(0,4)==='RIFF'&&decoded.slice(8,12)==='WEBP';
+  check(valid,'Invalid image data',400,'invalid_image');
+  try{const bitmap=await createImageBitmap(new Blob([bytes],{type:`image/${match[1]}`})),width=bitmap.width,height=bitmap.height;bitmap.close();check(width>0&&height>0&&width<=4096&&height<=4096&&width*height<=16777216,'Use an image no larger than 4096 pixels per side',413,'image_dimensions');}catch(error){if(error instanceof PreviewError)throw error;throw new PreviewError('Invalid image data',400,'invalid_image');}
+  return value;
+}
+async function socialCreatePost(body){
+  const text=socialText(body.text,4000,'Post'),kind=body.kind??'post',key=socialKey(body.idempotencyKey),imageDataUrl=await socialImage(body.imageDataUrl);
+  check(kind==='post'||kind==='status','Choose a post or 24-hour status');check(text.length||imageDataUrl,'Write something or choose an image');
+  const fingerprint=JSON.stringify({text,imageDataUrl,kind}),prior=Object.hasOwn(state.socialOperations,key)?state.socialOperations[key]:null;
+  if(prior){check(prior.kind==='post'&&prior.fingerprint===fingerprint,'This idempotency key was already used for different content',409,'idempotency_conflict');return{ok:true,post:socialPostView(postAccess(prior.itemId)),replayed:true,local:true};}
+  const next=clone(state),createdAt=Date.now(),post={id:uid(),userId:PLAYER_ID,text,imageDataUrl,kind,createdAt,expiresAt:kind==='status'?createdAt+86400000:null,likedByMe:false};
+  next.socialPosts.push(post);Object.defineProperty(next.socialOperations,key,{value:{kind:'post',fingerprint,itemId:post.id},enumerable:true,writable:true,configurable:true});state=next;persist();const view=socialPostView(post);queueMicrotask(()=>emit('social-post',{post:view}));return{ok:true,post:view,replayed:false,local:true};
+}
+function socialPostAction(postId,kind,method,url,body){
+  if(kind==='delete'&&method==='POST'){
+    const post=state.socialPosts.find(post=>post.id===postId&&post.userId===PLAYER_ID);check(post,'Your post was not found',404,'post_unavailable');const replayed=Boolean(post.deletedAt);
+    if(!replayed){const next=clone(state);next.socialPosts.find(row=>row.id===postId).deletedAt=Date.now();state=next;persist();queueMicrotask(()=>emit('social-delete',{postId}));}return{ok:true,postId,deleted:true,replayed,local:true};
+  }
+  const post=postAccess(postId);
+  if(kind==='comments'&&method==='GET')return socialPage(state.socialComments.filter(comment=>comment.postId===postId&&comment.userId===PLAYER_ID),url,'comments');
+  if(kind==='comments'&&method==='POST'){
+    const text=socialText(body.text,2000,'Comment'),key=socialKey(body.idempotencyKey);check(text.length,'Write a comment first');
+    const fingerprint=JSON.stringify({postId,text}),prior=Object.hasOwn(state.socialOperations,key)?state.socialOperations[key]:null;
+    if(prior){check(prior.kind==='comment'&&prior.fingerprint===fingerprint,'This idempotency key was already used for a different comment',409,'idempotency_conflict');const comment=state.socialComments.find(row=>row.id===prior.itemId);check(comment,'Comment unavailable',404);return{ok:true,comment:{...clone(comment),resident:localResident(),local:true},replayed:true,local:true};}
+    const next=clone(state),comment={id:uid(),postId,userId:PLAYER_ID,text,createdAt:Date.now()};next.socialComments.push(comment);Object.defineProperty(next.socialOperations,key,{value:{kind:'comment',fingerprint,itemId:comment.id},enumerable:true,writable:true,configurable:true});state=next;persist();const view={...clone(comment),resident:localResident(),local:true};queueMicrotask(()=>emit('social-comment',{comment:view}));return{ok:true,comment:view,replayed:false,local:true};
+  }
+  if(kind==='like'&&method==='POST'){const next=clone(state),row=next.socialPosts.find(row=>row.id===postId);row.likedByMe=!row.likedByMe;state=next;persist();const view=socialPostView(row);queueMicrotask(()=>emit('social-post',{post:view}));return{ok:true,post:view,local:true};}
+  throw new PreviewError('Choose a supported post action',404,'preview_not_found');
+}
+function previewPayments(){return{ok:true,enabled:false,provider:'Flutterwave',mode:'preview',currency:'NGN',creditRate:1,reason:'This local browser preview cannot make payments. Free game funds have no cash value.',local:true};}
+async function handleApi(url,method,body) {
   const route=url.pathname;
   if(route==='/api/health'&&method==='GET')return{ok:true,service:'AbujaLife browser preview',storage:storageAvailable?'localStorage':'memory'};
   if(route==='/api/bootstrap'&&method==='GET')return bootstrap();
-  if(route==='/api/wallet'&&method==='GET')return{ok:true,profile:clone(state.profile),transactions:clone(state.transactions).slice(-60).reverse(),walletMeta:{...clone(WALLET_META),transferEnabled:false}};
+  if(route==='/api/wallet'&&method==='GET')return{ok:true,profile:clone(state.profile),transactions:clone(state.transactions).slice(-60).reverse(),walletMeta:{...clone(WALLET_META),transferEnabled:false,topupMode:'preview',demoTopupEnabled:true},loanMeta:clone(LOAN_META),loans:loanView(state.profile,Date.now()),workSchedule:jobSchedule(state.profile.job,state.profile,Date.now())};
+  if(route==='/api/residents'&&method==='GET')return{ok:true,people:[],nextCursor:null,local:true};
+  if(route==='/api/home/visits'&&method==='GET')return{ok:true,requests:[],visitors:[],visit:null,nextRequestsCursor:null,nextVisitorsCursor:null,serverTime:Date.now(),local:true};
+  if(route.startsWith('/api/home/visits/')&&method==='POST')unavailable();
+  if(route==='/api/payments/config'&&method==='GET')return previewPayments();
+  if(route.startsWith('/api/payments/'))throw new PreviewError('Payments are unavailable in the local browser preview. No payment was made.',503,'browser_preview_only');
+  if(route.startsWith('/api/admin/'))throw new PreviewError('Administration requires a connected administrator account.',403,'admin_permission_required');
+  if((route==='/api/social/feed'||route==='/api/social/statuses')&&method==='GET'){const kind=route.endsWith('statuses')?'status':'post';return socialPage(state.socialPosts.filter(post=>post.userId===PLAYER_ID&&post.kind===kind&&!post.deletedAt&&(!post.expiresAt||post.expiresAt>Date.now())),url,kind==='status'?'statuses':'posts');}
+  if(route==='/api/social/posts'&&method==='POST')return socialCreatePost(body);
+  const socialRoute=route.match(/^\/api\/social\/posts\/([^/]+)\/(like|comments|delete)$/);if(socialRoute)return socialPostAction(decodeURIComponent(socialRoute[1]),socialRoute[2],method,url,body);
   if(route==='/api/wallet/topup'&&method==='POST')return action('demo-topup',body);
   if(route==='/api/wallet/transfer'&&method==='POST')throw new PreviewError('Naira transfers connect registered residents in the full game. This browser preview has no shared wallet or other residents.',503,'browser_preview_only');
   if(route==='/api/travel/quote'&&method==='GET')return{ok:true,quote:quote({district:url.searchParams.get('district'),mode:url.searchParams.get('mode')||'bus'})};
@@ -341,7 +457,7 @@ function handleApi(url,method,body) {
     updateAppearance(profile,body.appearance);
     if(body.lifeGoal!==undefined){check(LIFE_GOALS.some(goal=>goal.id===body.lifeGoal),'Choose a listed life goal');profile.lifeGoal=body.lifeGoal;}
     if(body.onboardingComplete!==undefined){check(typeof body.onboardingComplete==='boolean','Choose a valid onboarding state');profile.onboardingComplete=body.onboardingComplete;}
-    if(body.settings&&typeof body.settings==='object')for(const key of ['presenceVisible','allowInvites','soundEnabled'])if(typeof body.settings[key]==='boolean')profile.settings[key]=body.settings[key];
+    if(body.settings&&typeof body.settings==='object')for(const key of ['presenceVisible','allowInvites','soundEnabled','allowHomeVisits','homeVisitsFriendsOnly'])if(typeof body.settings[key]==='boolean')profile.settings[key]=body.settings[key];
     state.profile=profile;persist();queueMicrotask(()=>emit('profile',{profile:clone(profile)}));return{ok:true,profile:clone(profile)};
   }
   if(route==='/api/notifications/read'&&method==='POST'){for(const notice of state.notifications)if(!body.id||notice.id===body.id)notice.readAt=Date.now();persist();return{ok:true,notifications:clone(state.notifications)};}
@@ -363,7 +479,7 @@ globalThis.fetch=async(input,options={})=>{
     const method=(options.method||(input instanceof Request?input.method:'GET')).toUpperCase();let body={};
     const raw=options.body??(input instanceof Request&&method!=='GET'?await input.clone().text():undefined);
     if(raw!==undefined&&raw!==null){try{body=typeof raw==='string'?JSON.parse(raw):raw;}catch{throw new PreviewError('Use valid JSON for this preview action');}check(body&&typeof body==='object'&&!Array.isArray(body),'Use a JSON object for this preview action');}
-    const result=handleApi(url,method,body);return new Response(JSON.stringify(result),{status:200,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});
+    const result=await handleApi(url,method,body);return new Response(JSON.stringify(result),{status:200,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});
   } catch(error) {
     if(error.name==='AbortError')throw error;
     return new Response(JSON.stringify({ok:false,error:error instanceof PreviewError?error.message:'This preview could not complete the action. Try resetting the preview.',code:error.code||'preview_error'}),{status:error.status||500,headers:{'content-type':'application/json; charset=utf-8'}});

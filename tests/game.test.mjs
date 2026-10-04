@@ -7,7 +7,7 @@ import { GameStore, jobs } from '../src/server/gameStore.mjs';
 
 async function fixture(t) {
   const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'abujalife-game-'));
-  let time=Date.now();const store=new GameStore({dataDir,clock:()=>time});
+  let time=Date.parse('2026-10-05T10:00:00Z');const store=new GameStore({dataDir,clock:()=>time,originRandomInt:(min,max)=>max===2?1:0});
   t.after(()=>{store.close();fs.rmSync(dataDir,{recursive:true,force:true});});
   const {residentId}=await store.register({username:'resident',displayName:'Resident',password:'a-test-password'});
   return{store,id:residentId,advance:ms=>{time+=ms;},dataDir};
@@ -31,7 +31,7 @@ test('client verification and payload amounts cannot mint currency',async t=>{
 test('interactive job checks workplace, task answers and reward idempotency',async t=>{
   const {store,id,advance}=await fixture(t);store.action(id,'take-job',{jobId:'restaurant-host'});
   assert.throws(()=>store.action(id,'work-shift'),/work tasks/);assert.throws(()=>store.action(id,'start-shift'),/Head out/);
-  store.action(id,'leave-home');const before=store.profile(id);const {challenge}=store.action(id,'start-shift');
+  store.action(id,'leave-home');assert.throws(()=>store.action(id,'start-shift'),/Travel to Garki/);const {trip}=store.action(id,'travel',{district:jobs['restaurant-host'].district,mode:'bus'});advance(trip.seconds*1000);store.action(id,'arrive',{tripId:trip.id});const before=store.profile(id);const {challenge}=store.action(id,'start-shift');
   assert.equal(challenge.tasks.length,3);assert.ok(challenge.tasks.every(task=>!('answer' in task)));
   const answers=jobs['restaurant-host'].tasks.map(task=>({taskId:task.id,optionId:task.answer}));
   assert.throws(()=>store.action(id,'complete-shift',{challengeId:challenge.id,answers}),/Read the tasks/);
@@ -42,17 +42,17 @@ test('interactive job checks workplace, task answers and reward idempotency',asy
 });
 
 test('travel persists cost and rejects early arrival and invented locations',async t=>{
-  const {store,id,advance}=await fixture(t);assert.throws(()=>store.action(id,'travel',{district:'invented'}),/atlas/);
+  const {store,id,advance}=await fixture(t),starting=store.profile(id).wallet;assert.throws(()=>store.action(id,'travel',{district:'invented'}),/atlas/);
   assert.throws(()=>store.action(id,'travel',{district:'jabi',mode:'walk'}),/choose transport/);
-  const {trip,profile}=store.action(id,'travel',{district:'jabi',mode:'bus'});assert.ok(trip.cost>0);assert.equal(profile.wallet,26000-trip.cost);
+  const {trip,profile}=store.action(id,'travel',{district:'jabi',mode:'bus'});assert.ok(trip.cost>0);assert.equal(profile.wallet,starting-trip.cost);
   assert.throws(()=>store.action(id,'arrive',{tripId:trip.id}),/in progress/);assert.throws(()=>store.action(id,'eat'),/journey/);
   advance(trip.seconds*1000);const after=store.action(id,'arrive',{tripId:trip.id}).profile;assert.equal(after.district,'jabi');assert.equal(after.activeTrip,null);
   assert.throws(()=>store.action(id,'arrive',{tripId:trip.id}),/no longer active/);
 });
 
 test('profile update allowlist prevents balance and progression tampering',async t=>{
-  const {store,id}=await fixture(t);const p=store.updateProfile(id,{wallet:90000000,reputation:999,inventory:['compact-car'],appearance:{hair:'locs'},settings:{presenceVisible:false}});
-  assert.equal(p.wallet,26000);assert.equal(p.reputation,0);assert.deepEqual(p.inventory,[]);assert.equal(p.appearance.hair,'locs');assert.equal(p.settings.presenceVisible,false);
+  const {store,id}=await fixture(t),starting=store.profile(id).wallet;const p=store.updateProfile(id,{wallet:90000000,reputation:999,inventory:['compact-car'],appearance:{hair:'locs'},settings:{presenceVisible:false}});
+  assert.equal(p.wallet,starting);assert.equal(p.reputation,0);assert.deepEqual(p.inventory,[]);assert.equal(p.appearance.hair,'locs');assert.equal(p.settings.presenceVisible,false);
   assert.throws(()=>store.updateProfile(id,{appearance:{hair:'anything'}}),/supported hair/);
 });
 
@@ -85,7 +85,7 @@ test('friend groups, invitations, event RSVPs and reports contain actual residen
   const invitation=store.invite(id,{residentId:other,kind:'home',note:'Come over after work'}).invitation;
   assert.equal(emitted.resident.id,id);assert.equal(invitation.resident.id,other);
   assert.equal(store.respondInvite(other,invitation.id,true).invitations[0].status,'accepted');
-  const event=store.createEvent(id,{title:'Lake walk',district:'jabi',startsAt:Date.now()+3600000,description:'Meet by the lake'}).event;
+  const event=store.createEvent(id,{title:'Lake walk',district:'jabi',startsAt:store.clock()+3600000,description:'Meet by the lake'}).event;
   store.rsvp(other,event.id,true);assert.deepEqual(new Set(store.events(other)[0].attendeeIds),new Set([id,other]));
   const conversation=store.createConversation(id,{residentId:other}).conversation;
   store.moderate(other,'mute',id,true);const count=store.notifications(other).length;
@@ -95,10 +95,10 @@ test('friend groups, invitations, event RSVPs and reports contain actual residen
 });
 
 test('securing a home preserves travel and previously purchased ownership',async t=>{
-  const {store,id}=await fixture(t);const funded=store.profile(id);funded.wallet=1000000;store.save(funded);
+  const {store,id,advance}=await fixture(t);store.topup(id,{amount:900000,idempotencyKey:'home_purchase_funds'});const {trip}=store.action(id,'travel',{district:'garki-i',mode:'bus'});advance(trip.seconds*1000);store.action(id,'arrive',{tripId:trip.id});const starting=store.profile(id);
   const bought=store.action(id,'move-home',{propertyId:'lugbe-flat',tenure:'own'}).profile;
-  assert.equal(bought.wallet,720000);assert.equal(bought.home.district,'lugbe');assert.equal(bought.district,'garki-i');assert.equal(bought.location.kind,'public');assert.deepEqual(bought.ownedProperties,['lugbe-flat']);
+  assert.equal(bought.wallet,starting.wallet-280000);assert.equal(bought.home.district,'lugbe');assert.equal(bought.district,starting.district);assert.equal(bought.location.kind,'public');assert.deepEqual(bought.ownedProperties,['lugbe-flat']);
   assert.throws(()=>store.action(id,'enter-home'),/Travel to your home/);
-  const rental=store.action(id,'move-home',{propertyId:'gwarinpa-apartment',tenure:'rent'}).profile;assert.equal(rental.wallet,682000);assert.equal(rental.district,'garki-i');
+  const rental=store.action(id,'move-home',{propertyId:'gwarinpa-apartment',tenure:'rent'}).profile;assert.equal(rental.wallet,bought.wallet-38000);assert.equal(rental.district,starting.district);
   const returned=store.action(id,'move-home',{propertyId:'lugbe-flat',tenure:'own'}).profile;assert.equal(returned.wallet,rental.wallet);assert.equal(returned.home.propertyId,'lugbe-flat');assert.deepEqual(returned.ownedProperties,['lugbe-flat']);
 });

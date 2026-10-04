@@ -49,8 +49,8 @@ test('every home preserves walking routes with the complete inventory and rotate
   }
 });
 
-test('all sixteen authored venues have walkable routes to their activities and exits',()=>{
-  assert.equal(VENUES.length,16);
+test('all nineteen authored venues have walkable routes to their activities and exits',()=>{
+  assert.equal(VENUES.length,19);
   for(const venue of VENUES){
     const scene=buildInterior({profile:{location:{kind:'venue',venue:venue.id}},venue});
     assert.ok(scene.interactables.some(point=>point.action==='exit-venue'),venue.id);

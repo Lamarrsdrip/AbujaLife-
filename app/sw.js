@@ -1,5 +1,5 @@
-const CACHE='abujalife-3d-v3';
-const SHELL=['/','/index.html','/app.js','/styles.css','/game.css','/premium-pages.css','/phone.js','/phone.css','/vehicle-art.js','/product-3d.js','/world.js','/world.css','/world-city.js','/world-interiors.js','/world-3d.js','/world-3d-scenes.js','/vendor/three.module.js','/map.js','/map.css','/manifest.webmanifest','/icon.svg','/src/shared/atlas.mjs','/src/shared/geography-sources.mjs','/src/shared/life.mjs','/src/shared/vehicles.mjs'];
+const CACHE='abujalife-social-life-v4';
+const SHELL=['/','/index.html','/app.js','/styles.css','/game.css','/premium-pages.css','/life-v4.css','/home-editor.css','/home-editor.js','/home-share.js','/life-panels.js','/phone-browser.js','/phone-social.js','/world-audio.js','/phone.js','/phone.css','/vehicle-art.js','/product-3d.js','/world.js','/world.css','/world-city.js','/world-interiors.js','/world-3d.js','/world-3d-scenes.js','/vendor/three.module.js','/map.js','/map.css','/manifest.webmanifest','/icon.svg','/src/shared/atlas.mjs','/src/shared/geography-sources.mjs','/src/shared/life.mjs','/src/shared/vehicles.mjs','/src/shared/origins.mjs','/src/shared/simulation.mjs','/src/shared/home-design.mjs'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL))));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',event=>{

@@ -4,8 +4,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ABUJA_ATLAS, AREA_COUNCILS, LANDMARKS, ATLAS_META } from '../src/shared/atlas.mjs';
 import { jobs, catalog, properties, transportModes, appearanceOptions, activities } from '../src/server/gameStore.mjs';
-import { VENUES, VENUE_ACTIONS, LIFE_GOALS, ECONOMY_META, WALLET_META, INVESTMENT_META, DICE_META, HOME_UPGRADES } from '../src/shared/life.mjs';
+import { VENUES, VENUE_ACTIONS, LIFE_GOALS, ECONOMY_META, WALLET_META, INVESTMENT_META, DICE_META, LOAN_META, HOME_UPGRADES } from '../src/shared/life.mjs';
 import { VEHICLE_COLORS } from '../src/shared/vehicles.mjs';
+import { ORIGIN_META } from '../src/shared/origins.mjs';
+import { JOB_SCHEDULES } from '../src/shared/simulation.mjs';
+import { HOME_WALL_COLORS, HOME_FLOORS, DEFAULT_HOME_DESIGN, HOME_DESIGN_LIMITS } from '../src/shared/home-design.mjs';
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const repository = path.dirname(directory);
@@ -13,7 +16,8 @@ const repository = path.dirname(directory);
 const data = { atlas:ABUJA_ATLAS, councils:AREA_COUNCILS, landmarks:LANDMARKS,
   atlasMeta:ATLAS_META, jobs, catalog, properties, transportModes, appearanceOptions, activities,
   venues:VENUES, venueActions:VENUE_ACTIONS, lifeGoals:LIFE_GOALS, economyMeta:ECONOMY_META,
-  walletMeta:WALLET_META, investmentMeta:INVESTMENT_META, diceMeta:DICE_META, vehicleColors:VEHICLE_COLORS,homeUpgrades:HOME_UPGRADES };
+  walletMeta:WALLET_META, investmentMeta:INVESTMENT_META, diceMeta:DICE_META, loanMeta:LOAN_META, originMeta:ORIGIN_META, jobSchedules:JOB_SCHEDULES,
+  vehicleColors:VEHICLE_COLORS,homeUpgrades:HOME_UPGRADES,homeDesign:{wallColors:HOME_WALL_COLORS,floors:HOME_FLOORS,defaults:DEFAULT_HOME_DESIGN,limits:HOME_DESIGN_LIMITS} };
 await fs.writeFile(path.join(directory,'data.mjs'), `// Generated public preview catalogue. Rebuild with npm run preview:build.\nexport default ${JSON.stringify(data)};\n`);
 const result = await build({
   absWorkingDir:repository, entryPoints:['preview/runtime.mjs'], bundle:true, write:false,
@@ -49,7 +53,7 @@ for(const [link] of clientHTML.matchAll(/<link\b[^>]*>/gi)) {
   if(href&&href.endsWith('.css'))css+=`\n${await inlineStyles(href.replace(/^\/+/,''))}`;
 }
 if(!includedStyles.size)css=await inlineStyles('styles.css');
-for(const name of (await fs.readdir(appDirectory)).filter(name=>name.endsWith('.css')).sort())css+=`\n${await inlineStyles(name)}`;
+for(const name of (await fs.readdir(appDirectory)).filter(name=>name.endsWith('.css')&&name!=='admin.css').sort())css+=`\n${await inlineStyles(name)}`;
 const html = `<!doctype html>
 <html lang="en">
 <head>
@@ -71,7 +75,7 @@ body:has(.sheet) .preview-launcher,body.phone-is-open .preview-launcher,body:has
 </head>
 <body>
 <button id="preview-info-open" class="preview-launcher" type="button" aria-haspopup="dialog" aria-controls="preview-info">Preview</button>
-<dialog id="preview-info" class="preview-info" aria-labelledby="preview-info-title"><button id="preview-info-close" class="preview-close" aria-label="Close preview information" type="button">×</button><span class="preview-eyebrow">AbujaLife · Browser edition</span><h2 id="preview-info-title">Your city, on this device.</h2><p id="preview-status">No account or payment needed. Your character, purchases and progress save in this browser.</p><p>Naira here is game currency with no cash value. Free top-ups help you try the game. Chat and money transfers connect registered residents in the full game.</p><button id="preview-reset" type="button">Start fresh</button><p class="preview-warning">Starting fresh clears this browser’s game progress.</p></dialog>
+<dialog id="preview-info" class="preview-info" aria-labelledby="preview-info-title"><button id="preview-info-close" class="preview-close" aria-label="Close preview information" type="button">×</button><span class="preview-eyebrow">AbujaLife · Browser edition</span><h2 id="preview-info-title">Your city, on this device.</h2><p id="preview-status">No account or payment needed. Your character, purchases and progress save in this browser.</p><p>New starts receive a random Nepo or Lapo origin. Existing saves keep their progress. Work and club hours follow real Abuja time.</p><p>Arrange your home and capture your own home pictures. Posts, photos and 24-hour statuses in this preview save on this device.</p><p>Naira here is game currency with no cash value. Free top-ups and fictional loans help you try the game. Payments are unavailable here. Shared feeds, home visits, chat and transfers require the connected game.</p><button id="preview-reset" type="button">Start fresh</button><p class="preview-warning">Starting fresh clears this browser’s game progress.</p></dialog>
 <div id="app" class="app-shell"></div><div id="phone-root"></div><div id="sheet-root"></div><div id="toast" role="status" aria-live="polite"></div>
 <script type="module">${script}</script>
 <script>const previewInfo=document.getElementById('preview-info');document.getElementById('preview-info-open').addEventListener('click',()=>{previewInfo.setAttribute('aria-modal','true');previewInfo.showModal();});previewInfo.addEventListener('close',()=>previewInfo.removeAttribute('aria-modal'));document.getElementById('preview-info-close').addEventListener('click',()=>previewInfo.close());previewInfo.addEventListener('click',event=>{if(event.target===previewInfo){const bounds=previewInfo.getBoundingClientRect();if(event.clientX<bounds.left||event.clientX>bounds.right||event.clientY<bounds.top||event.clientY>bounds.bottom)previewInfo.close();}});document.getElementById('preview-reset').addEventListener('click',()=>window.dispatchEvent(new Event('abujalife:reset-preview')));window.addEventListener('abujalife:preview-storage-unavailable',()=>{document.getElementById('preview-status').textContent='This browser cannot save progress. Your game works for this visit; reloading starts fresh.';document.getElementById('preview-info-open').textContent='Preview · unsaved';});</script>

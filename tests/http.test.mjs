@@ -7,7 +7,7 @@ import { once } from 'node:events';
 import { createServer } from '../src/server/http.mjs';
 
 async function start(dataDir) {
-  const server=createServer({dataDir});server.listen(0,'127.0.0.1');await once(server,'listening');
+  const server=createServer({dataDir,clock:()=>Date.parse('2026-10-05T10:00:00Z'),originRandomInt:(min,max)=>max===2?1:0});server.listen(0,'127.0.0.1');await once(server,'listening');
   const url=`http://127.0.0.1:${server.address().port}`;
   const request=async(route,{cookie,body,headers={},method=body===undefined?'GET':'POST'}={})=>{
     const response=await fetch(url+route,{method,headers:{...(cookie?{cookie}:{}),...(body===undefined?{}:{'content-type':'application/json'}),...headers},body:body===undefined?undefined:JSON.stringify(body)});
@@ -18,7 +18,7 @@ async function start(dataDir) {
 
 async function register(request,username) {
   const result=await request('/api/auth/register',{body:{username,displayName:username==='ada'?'Ada':'Bello',password:'test-password-123'}});
-  assert.equal(result.status,201);assert.ok(result.cookie);return{cookie:result.cookie,id:result.data.profile.id};
+  assert.equal(result.status,201);assert.ok(result.cookie);return{cookie:result.cookie,id:result.data.profile.id,startingWallet:result.data.profile.wallet};
 }
 
 test('two real residents persist friendship, messages, unread state and purchases after restart',async t=>{
@@ -35,9 +35,9 @@ test('two real residents persist friendship, messages, unread state and purchase
   state=await app.request('/api/bootstrap',{cookie:bello.cookie});assert.equal(state.data.conversations[0].unread,1);assert.ok(state.data.notifications.some(n=>n.kind==='message'&&!n.readAt));
   const thread=await app.request(`/api/conversations/${conversation.id}/messages`,{cookie:bello.cookie});assert.equal(thread.data.messages[0].text,'Meet at Jabi after work?');assert.ok(thread.data.messages[0].readBy.includes(bello.id));
   state=await app.request('/api/bootstrap',{cookie:bello.cookie});assert.equal(state.data.conversations[0].unread,0);assert.ok(state.data.notifications.filter(n=>n.kind==='message').every(n=>n.readAt));
-  const purchase=await app.request('/api/action',{cookie:ada.cookie,body:{action:'purchase',payload:{itemId:'plant',price:1}}});assert.equal(purchase.data.profile.wallet,23700);
+  const purchase=await app.request('/api/action',{cookie:ada.cookie,body:{action:'purchase',payload:{itemId:'plant',price:1}}});assert.equal(purchase.data.profile.wallet,ada.startingWallet-2300);
   await app.close();app=await start(dataDir);
-  state=await app.request('/api/bootstrap',{cookie:ada.cookie});assert.equal(state.data.authenticated,true);assert.equal(state.data.profile.wallet,23700);assert.deepEqual(state.data.profile.inventory,['plant']);assert.equal(state.data.friends[0].id,bello.id);
+  state=await app.request('/api/bootstrap',{cookie:ada.cookie});assert.equal(state.data.authenticated,true);assert.equal(state.data.profile.wallet,ada.startingWallet-2300);assert.deepEqual(state.data.profile.inventory,['plant']);assert.equal(state.data.friends[0].id,bello.id);
   assert.equal((await app.request(`/api/conversations/${conversation.id}/messages`,{cookie:bello.cookie})).data.messages.length,1);
   const badLogin=await app.request('/api/auth/login',{body:{username:'ada',password:'wrong-password'}});assert.equal(badLogin.status,401);
   const login=await app.request('/api/auth/login',{body:{username:'ada',password:'test-password-123'}});assert.equal(login.data.profile.id,ada.id);
@@ -56,6 +56,7 @@ test('HTTP enforces authentication, same origin, membership and block privacy',a
   assert.equal((await app.request('/api/invitations',{cookie:ada.cookie,body:{residentId:bello.id,kind:'home'}})).status,403);
   const state=(await app.request('/api/bootstrap',{cookie:ada.cookie})).data;assert.ok(state.people.every(p=>p.id!==bello.id));assert.equal(state.conversations.length,0);
   assert.equal((await app.request('/api/action',{cookie:ada.cookie,body:{action:'topup',payload:{verified:true,amount:50000}}})).status,403);
+  const demo=await app.request('/api/wallet/topup',{cookie:ada.cookie,body:{amount:10000,idempotencyKey:'default_demo_disabled'}});assert.equal(demo.status,403);assert.equal(demo.data.code,'provider_required');assert.equal((await app.request('/api/bootstrap',{cookie:ada.cookie})).data.profile.wallet,ada.startingWallet);
   const response=await fetch(app.url+'/src/shared/atlas.mjs');assert.equal(response.status,200);assert.match(response.headers.get('content-type'),/javascript/);
 });
 

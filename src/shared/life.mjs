@@ -14,21 +14,36 @@ export const ECONOMY_META = {
 
 export const WALLET_META = {
   currency: 'NGN', currencyName: 'Naira', currencyCode: 'NGN', balanceLabel: 'Naira balance', virtual: true, gameMoney: true, transferEnabled: true,
-  maxBalance: 100000000, topupMin: 1000, topupMax: 5000000,
-  topupDailyLimit: 20000000, topupWindowMs: 86400000,
+  uncapped: true, maxSafeInteger: Number.MAX_SAFE_INTEGER, topupMin: 1,
   topupAmounts: [1000, 10000, 50000, 250000, 1000000, 5000000],
   topupLabel: 'Free game top-up', description: 'Game Naira has no cash value. Top-ups are free virtual funds; there is no payment or withdrawal.',
 };
 export const INVESTMENT_META = {
-  virtual: true, periodMs: 60000, incomeBasisPoints: 20, maxAccruedPeriods: 60,
+  virtual: true, periodMs: 60000, incomeBasisPoints: 20, uncappedAccrual: true,
   sellCooldownMs: 60000, resaleBasisPoints: 9000,
-  description: 'Simulated rent accrues every real minute, up to 60 minutes. These are game returns, not property prices or investment forecasts.',
+  description: 'Simulated rent accrues every real minute without an accrual ceiling. These are game returns, not property prices or investment forecasts.',
 };
 export const DICE_META = {
-  virtual: true, minStake: 100, maxStake: 5000, payoutMultiplier: 2,
+  virtual: true, minStake: 100, uncappedStake: true, payoutMultiplier: 2,
   choices: [{ id: 'low', name: 'Low · 1–3' }, { id: 'high', name: 'High · 4–6' }],
   description: 'A fair six-sided die. Match your half to receive twice your stake; otherwise lose your stake. Game Naira only.',
 };
+export const LOAN_META = {
+  id: 'lapo-style', name: 'LAPO-style game loan', virtual: true, optional: true,
+  consentVersion: 'game-loan-v1', feeBasisPoints: 500, termDays: 28, termMs: 28 * 86400000,
+  description: 'Optional fictional game borrowing: a one-time 5% fee, due in 28 real days. Repay any amount early; fees do not compound.',
+  affiliation: 'This simulated game lender has no affiliation with LAPO Microfinance Bank.',
+};
+export function loanQuote(amount) {
+  if (!Number.isSafeInteger(amount) || amount <= 0) throw new RangeError('Choose a positive whole Naira loan amount');
+  const fee = (BigInt(amount) * BigInt(LOAN_META.feeBasisPoints) + 9999n) / 10000n;
+  const total = BigInt(amount) + fee;
+  if (total > BigInt(Number.MAX_SAFE_INTEGER)) throw new RangeError('This loan cannot be represented as exact whole Naira');
+  return { principal: amount, fee: Number(fee), totalRepayment: Number(total), termDays: LOAN_META.termDays };
+}
+export function loanView(profile, now = Date.now()) {
+  return (profile?.loans || []).map(loan => ({ ...loan, overdue: loan.outstanding > 0 && now >= loan.dueAt, canRepay: loan.outstanding > 0 }));
+}
 export const HOME_UPGRADES = [
   { id: 'portable-ac', name: 'Portable air conditioner', category: 'furniture', price: 45000, cost: 45000, description: 'Cool down after a hot Abuja afternoon. Adds 6 energy when sleeping and reduces 6 more stress when relaxing.', effects: { sleepEnergy: 6, relaxStressReduction: 6 } },
   { id: 'power-inverter', name: 'Backup power inverter', category: 'furniture', price: 78000, cost: 78000, description: 'Steady backup power for your home. A fixed game benefit reduces weekly home service bills by 15%.', effects: { billDiscountPercent: 15 } },
@@ -54,8 +69,9 @@ export function investmentView(profile, property, now = Date.now()) {
   if (!investment) return null;
   const incomePerPeriod = investment.incomePerPeriod;
   const periods = Math.max(0, Math.floor((now - investment.lastCollectedAt) / INVESTMENT_META.periodMs));
+  const exactCollectable = BigInt(periods) * BigInt(incomePerPeriod), collectable = Number(exactCollectable);
   return { ...investment, propertyId: property.id,
-    incomePerPeriod, collectable: Math.min(periods, INVESTMENT_META.maxAccruedPeriods) * incomePerPeriod,
+    incomePerPeriod, collectable, collectableExact: exactCollectable.toString(), representable: Number.isSafeInteger(collectable),
     canSellAt: investment.boughtAt + INVESTMENT_META.sellCooldownMs,
     resaleValue: investment.resaleValue,
     nextIncomeAt: investment.lastCollectedAt + INVESTMENT_META.periodMs,
@@ -89,8 +105,15 @@ export const VENUE_ACTIONS = [
   { id: 'church-community', venueId: 'church', name: 'Spend time with the community', cost: 0, duration: 6, animation: 'social', effects: { social: 20, mood: 6 } },
   { id: 'lake-walk', venueId: 'jabi-lake', name: 'Walk by the lake', cost: 0, duration: 7, animation: 'walk', effects: { stress: -22, fun: 20, energy: -4 } },
   { id: 'lake-picnic', venueId: 'jabi-lake', name: 'Lakeside picnic', cost: 1500, duration: 6, animation: 'eat', effects: { hunger: 28, social: 12, fun: 22 } },
-  { id: 'club-dance', venueId: 'club', name: 'Dance to the DJ set', cost: 1800, duration: 8, animation: 'dance', effects: { fun: 35, social: 15, energy: -12, hygiene: -8 } },
-  { id: 'club-refreshment', venueId: 'club', name: 'Water & small chops', cost: 1200, duration: 5, animation: 'eat', effects: { hunger: 20, energy: 8 } },
+  { id: 'club-dance', venueId: 'club', name: 'Tokyo · dance to the DJ set', cost: 8000, duration: 8, animation: 'dance', effects: { fun: 40, social: 20, energy: -12, hygiene: -8 } },
+  { id: 'club-refreshment', venueId: 'club', name: 'Tokyo · refreshments & small chops', cost: 6000, duration: 5, animation: 'eat', effects: { hunger: 25, energy: 8, social: 10 } },
+  { id: 'tokyo-vip', venueId: 'club', name: 'Tokyo · VIP lounge & music', cost: 16000, duration: 7, animation: 'social', effects: { fun: 35, social: 30, stress: -12, energy: -4 } },
+  { id: 'cage-dance', venueId: 'club-cage', name: 'Cage · dance floor', cost: 4000, duration: 8, animation: 'dance', effects: { fun: 35, social: 18, energy: -12, hygiene: -8 } },
+  { id: 'cage-drinks', venueId: 'club-cage', name: 'Cage · drinks & music', cost: 8000, duration: 5, animation: 'eat', effects: { hunger: 18, fun: 20, social: 16, energy: 6 } },
+  { id: 'magic-city-stage', venueId: 'magic-city', name: 'Magic City · stage entertainment', cost: 6000, duration: 8, animation: 'watch', effects: { fun: 40, social: 15, stress: -10, energy: -5 } },
+  { id: 'magic-city-vip', venueId: 'magic-city', name: 'Magic City · VIP lounge', cost: 12000, duration: 7, animation: 'social', effects: { fun: 30, social: 30, stress: -12, energy: -4 } },
+  { id: 'bear-barn-relax', venueId: 'bear-barn', name: 'Bear Barn · unwind with music', cost: 2500, duration: 6, animation: 'social', effects: { fun: 24, social: 20, stress: -16, energy: -3 } },
+  { id: 'bear-barn-drinks', venueId: 'bear-barn', name: 'Bear Barn · drinks & small chops', cost: 4500, duration: 5, animation: 'eat', effects: { hunger: 24, fun: 16, social: 12, energy: 6 } },
 ];
 
 const venue = (id, name, category, description) => ({
@@ -113,9 +136,14 @@ export const VENUES = [
   venue('mosque', 'Neighbourhood Mosque', 'Faith & community', 'A respectful, peaceful space for prayer and community.'),
   venue('church', 'Community Church', 'Faith & community', 'Make time for prayer, reflection and community.'),
   { ...venue('jabi-lake', 'Jabi Lake', 'Outdoors', 'An authored lakeside game setting for walks, picnics and time by the water.'), districts: ['jabi'] },
-  venue('club', 'After Hours Club', 'Nightlife', 'Music, dancing and refreshments in an authored city club.'),
+  { ...venue('club', 'Tokyo', 'Nightlife', 'A premium game club with a DJ floor and VIP lounge. A game interpretation of the name supplied by a player.'), kind: 'club', style: 'premium', settingSource: 'authored-game-scenery', nameSource: 'player-provided', pricesVerified: false },
+  { ...venue('club-cage', 'Cage', 'Nightlife', 'A high-energy game dance club with a drinks bar and music. A game interpretation of the name supplied by a player.'), kind: 'club', style: 'dance', districts: ['wuse-ii-a07'], settingSource: 'authored-game-scenery', nameSource: 'player-provided', pricesVerified: false },
+  { ...venue('magic-city', 'Magic City', 'Nightlife', 'A game stage and lounge with evening entertainment and a VIP corner. A game interpretation of the name supplied by a player.'), kind: 'club', style: 'stage-lounge', districts: ['garki-ii'], settingSource: 'authored-game-scenery', nameSource: 'player-provided', pricesVerified: false },
+  { ...venue('bear-barn', 'Bear Barn', 'Nightlife', 'A relaxed game bar and music lounge for drinks, small chops and conversation. A game interpretation of the name supplied by a player.'), kind: 'club', style: 'casual-bar', districts: ['jabi'], settingSource: 'authored-game-scenery', nameSource: 'player-provided', pricesVerified: false },
   venue('games-lounge', 'Dice & Chill Lounge', 'Games', 'A simple chance game with virtual Naira, plus space to unwind.'),
 ];
+
+export const NIGHTCLUB_IDS = VENUES.filter(place => place.kind === 'club').map(place => place.id);
 
 export const venueFor = id => VENUES.find(venue => venue.id === id) || null;
 export const venueAvailable = (id, district) => { const place = venueFor(id); return Boolean(place && (!place.districts || place.districts.includes(district))); };

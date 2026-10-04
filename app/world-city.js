@@ -42,11 +42,11 @@ function building({id,x,y,w,h,name,tag,wall='#e7dcc1',accent='#4b705d',floors=1,
   return `<g class="city-building" data-world-target="${esc(id)}"><path d="M${x+14} ${y+12}L${x+w+55} ${y+12}L${x+w+68} ${top+14}L${x+w} ${top-13}Z" fill="#38513b1b"/>${rect(x,top,w,h,wall,4)}<path d="M${x+w} ${top}L${x+w+24} ${top+17}V${y+8}L${x+w} ${y}Z" fill="#b9bda4"/><path d="M${x-12} ${top}L${x+9} ${top-27}H${x+w-3}L${x+w+14} ${top}Z" fill="#c4c9b1"/>${rect(x-12,top,w+26,12,'#f1ead2',3)}${upper}${facade}${marquee}${kind==='mosque'?`<path d="M${door-72} ${top}Q${door-70} ${top-94} ${door} ${top-101}Q${door+70} ${top-94} ${door+72} ${top}Z" fill="#a4b392"/><path d="M${door} ${top-101}V${top-125}" stroke="#a49157" stroke-width="4"/><circle cx="${door+1}" cy="${top-128}" r="9" fill="#c6b16c"/><circle cx="${door+5}" cy="${top-132}" r="8" fill="#b4c59a"/><path d="M${x+25} ${top}V${top-132}H${x+51}V${top}" fill="#e9e3cc"/><path d="M${x+21} ${top-131}L${x+38} ${top-157}L${x+55} ${top-131}Z" fill="#809b79"/>`:kind==='church'?`<path d="M${door-51} ${top}L${door} ${top-110}L${door+51} ${top}Z" fill="#9b947b"/><path d="M${door} ${top-144}V${top-107}M${door-12} ${top-131}H${door+12}" stroke="#f2e5c4" stroke-width="6"/>`:kind==='club'?`<path d="M${x+17} ${top+17}H${x+w-17}" stroke="#ddd5f3" stroke-width="4"/><path d="M${x+17} ${top+23}H${x+w-17}" stroke="#8b7696" stroke-width="3"/>`:''}${rect(x+7,y-3,w-14,12,'#eee6cc',2)}<path d="M${door-51} ${y+10}H${door+51}L${door+68} ${y+31}H${door-66}Z" fill="#c1c5af"/><text x="${door}" y="${top-42}" text-anchor="middle" fill="#5e7760" font-size="12" font-weight="600" letter-spacing="3">${esc(tag)}</text>${kind==='restaurant'?`<path d="M${x+8} ${y-121}H${x+w-8}L${x+w+6} ${y-101}H${x-7}Z" fill="#94a77a"/><path d="M${x-7} ${y-101}H${x+w+6}" stroke="#d8ddad" stroke-width="9"/>`:''}</g>`;
 }
 export function buildCity({profile={},place={},id='city',venues=[]}={}) {
- const width=3540,height=3320,interactables=[],obstacles=[];
+ const width=3540,height=4190,interactables=[],obstacles=[];
  const definitions=`<defs><pattern id="${id}-paving" width="66" height="46" patternUnits="userSpaceOnUse"><path d="M0 0H66V46H0Z" fill="none" stroke="#a9b098" stroke-opacity=".26"/></pattern><pattern id="${id}-asphalt" width="17" height="17" patternUnits="userSpaceOnUse"><circle cx="3" cy="4" r=".8" fill="#e6dfbb" opacity=".2"/></pattern></defs>`;
- let art=definitions+rect(0,0,width,height,'#b4c59a')+rect(70,75,3400,3110,'#c9ceb2',70)+rect(80,80,3380,3090,`url(#${id}-paving)`,60);
+ let art=definitions+rect(0,0,width,height,'#b4c59a')+rect(70,75,3400,3980,'#c9ceb2',70)+rect(80,80,3380,3960,`url(#${id}-paving)`,60);
  // Wide boulevards give both cars and residents a continuous navigable route.
- for(const [y,h] of [[722,252],[1534,234],[2284,234]]) {
+ for(const [y,h] of [[722,252],[1534,234],[2284,234],[3170,234]]) {
    art+=rect(0,y,width,h,'#728478')+rect(0,y,width,h,`url(#${id}-asphalt)`)+`<path d="M0 ${y}H${width}M0 ${y+h}H${width}" stroke="#efdfb8" stroke-width="9"/><path d="M0 ${y+51}H${width}M0 ${y+h-50}H${width}" stroke="#b5c4a8" stroke-width="2"/><path d="M0 ${y+h/2}H${width}" stroke="#e8e0b7" stroke-width="3" stroke-dasharray="52 48"/>`;
  }
  art+=rect(1820,0,254,height,'#78897a')+`<path d="M1820 0V${height}M2074 0V${height}" stroke="#eee0bb" stroke-width="8"/><path d="M1947 0V${height}" stroke="#e9dfb7" stroke-width="3" stroke-dasharray="46 45"/>`;
@@ -67,8 +67,11 @@ export function buildCity({profile={},place={},id='city',venues=[]}={}) {
   {id:'salon',x:1335,y:2150,w:360,h:236,name:'Fresh Studio',tag:'A LITTLE MORE YOU',accent:'#856e73',wall:'#ded1c5'},
   {id:'mosque',x:185,y:3030,w:450,h:335,name:'Neighbourhood Mosque',tag:'PRAYER & COMMUNITY',accent:'#577e68',wall:'#eee8d5',kind:'mosque'},
   {id:'church',x:880,y:3030,w:465,h:335,name:'Community Church',tag:'A MOMENT OF PEACE',accent:'#a38c6b',wall:'#eee4cb',kind:'church'},
-  {id:'club',x:2240,y:3030,w:425,h:286,name:'After Hours Club',tag:'FIND YOUR RHYTHM',accent:'#6b6a89',wall:'#b5b4b3',kind:'club'},
-  {id:'games-lounge',x:2840,y:3030,w:440,h:270,name:'Dice & Chill',tag:'GOOD GAMES · GOOD COMPANY',accent:'#647e78',wall:'#dce0cd'}
+  {id:'club',x:2240,y:3030,w:425,h:286,name:'Tokyo',tag:'A LITTLE AFTER DARK',accent:'#6b6a89',wall:'#b5b4b3',kind:'club'},
+  {id:'games-lounge',x:2840,y:3030,w:440,h:270,name:'Dice & Chill',tag:'GOOD GAMES · GOOD COMPANY',accent:'#647e78',wall:'#dce0cd'},
+  {id:'club-cage',x:185,y:3970,w:465,h:300,name:'Cage',tag:'MOVE TO YOUR OWN RHYTHM',accent:'#657185',wall:'#acb3b1',kind:'club'},
+  {id:'magic-city',x:2230,y:3970,w:465,h:315,name:'Magic City',tag:'THE STAGE IS SET',accent:'#8d677a',wall:'#cfb6bc',kind:'club'},
+  {id:'bear-barn',x:2840,y:3970,w:440,h:284,name:'Bear Barn',tag:'YOUR PEOPLE · YOUR EVENING',accent:'#99784e',wall:'#d1bf9f',kind:'restaurant'}
  ];
  for(const spec of specs) {
   if(spec.id!=='home'&&!venues.some(venue=>venue.id===spec.id))continue;

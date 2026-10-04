@@ -18,13 +18,46 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Verify staged chunks
+        shell: bash
+        run: |
+          set -euo pipefail
+          declare -A expected=(
+            [part-00.txt]=614730737a10af2ed4cfa19f0c12bd92415a9441
+            [part-01.txt]=39fbb60d5328edf90e7f731d3a2cd6140941ecc6
+            [part-02.txt]=55c45e8124203afc9fa9adf448cdbb7fcf116d0d
+            [part-03.txt]=fea7fdfab7d326affaaa39b33af75250895778a7
+            [part-04.txt]=9d61961c18d83b10549df2b97f3955439848c1f9
+            [part-05.txt]=e8c18014e4e4870a3985e548ce743aaa8283c0d4
+            [part-06.txt]=c9f1763b71c7783ed664db609a59b4e265cd1167
+            [part-07.txt]=a43d7cdbc316877d8afd2a5d9df2d2f726d713e0
+            [part-08.txt]=8a097bde587b503b4702602765369749f7dc97a4
+            [part-09.txt]=c692593196769fb2e78445f973fa084f650ce6ad
+            [part-10.txt]=9304dd650f1a6975cd48c26fe4ac83855d5811d9
+            [part-11.txt]=e3ee8bc152643894fe14fb5eeeb4763d25d06d7a
+            [part-12.txt]=d26b7c12b6a1697cbde83b0e7d9e5df68eb93b7a
+            [part-13.txt]=cf0a427aa3577dac8d666e80c8467fba934c363f
+            [part-14.txt]=ad0da961d303ee28aa3f8a377dcf34ee20cacab0
+            [part-15.txt]=79b0d15041a952c665688e095a27256d28e0182f
+            [part-16.txt]=d84df98c692e040688676b3c5696c9247e04e7a0
+            [part-17.txt]=a4dae51c18cd69aea98dca55bcaa1091ff28c824
+          )
+          failed=0
+          for name in $(printf '%s\n' "${!expected[@]}" | sort); do
+            path=".bootstrap/$name"
+            actual=$(git hash-object "$path")
+            echo "$name $actual"
+            if [ "$actual" != "${expected[$name]}" ]; then
+              echo "MISMATCH $name expected=${expected[$name]} actual=$actual"
+              failed=1
+            fi
+          done
+          test "$failed" = "0"
+
       - name: Expand AbujaLife source
         shell: bash
         run: |
           set -euo pipefail
-          test -f .bootstrap/part-00.txt
-          count=$(find .bootstrap -name 'part-*.txt' | wc -l | tr -d ' ')
-          test "$count" = "18"
           cat .bootstrap/part-*.txt | base64 --decode > /tmp/AbujaLife.zip
           echo '5f363a19a5d1308bc29103217485a08b7ea554169d945db0272c1c208863b8a4  /tmp/AbujaLife.zip' | sha256sum -c -
           unzip -oq /tmp/AbujaLife.zip -d .

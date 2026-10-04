@@ -18,6 +18,7 @@ const icon = name => {
 
 let data = { profile:null, atlas:[], councils:[], landmarks:[], jobs:{} };
 let view = 'home';
+let scope = 'city';
 let council = 'all';
 let query = '';
 let modal = null;
@@ -31,7 +32,7 @@ async function api(path, opts) {
 }
 const money = n => new Intl.NumberFormat('en-NG',{style:'currency',currency:'NGN',maximumFractionDigits:0}).format(n||0);
 const placeById = id => data.atlas.find(x=>x.id===id);
-const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
 
 function toast(msg){clearTimeout(toastTimer);document.querySelector('.toast')?.remove();const el=document.createElement('div');el.className='toast';el.textContent=msg;document.body.appendChild(el);toastTimer=setTimeout(()=>el.remove(),2450)}
 async function act(action,payload={}){try{const r=await api('/api/action',{method:'POST',body:JSON.stringify({action,payload})});data.profile=r.profile;render();return r.profile}catch(e){toast(e.message)}}
@@ -76,12 +77,14 @@ function home(){
 function needs(p){const arr=[['Energy',p.energy],['Food',p.hunger],['Clean',p.hygiene],['Social',p.social]];return `<section class="needs"><div class="needs-head"><strong>Your day</strong><span>Mood ${p.mood}%</span></div><div class="need-grid">${arr.map(([n,v])=>`<div class="need"><label>${n}</label><div class="bar ${v<35?'low':''}"><i style="width:${v}%"></i></div></div>`).join('')}</div></section>`}
 
 function city(){
-  const filtered=data.atlas.filter(p=>(council==='all'||p.council===council)&&(!query||`${p.name} ${p.vibe} ${p.code||''}`.toLowerCase().includes(query.toLowerCase()))).slice(0,70);
+  const inScope = p => scope==='city' ? p.kind==='fcc-district' : p.kind==='town';
+  const filtered=data.atlas.filter(p=>inScope(p)&&(scope==='city'||council==='all'||p.council===council)&&(!query||`${p.name} ${p.vibe} ${p.code||''}`.toLowerCase().includes(query.toLowerCase()))).slice(0,90);
   return shell(`<main class="screen">
-    <section class="city-hero"><h1>All of Abuja,<br>one life.</h1><p>Move through the planned city, satellite towns and Area Councils. Every place has its own cost, rhythm and opportunities.</p></section>
-    <div class="council-row"><button class="filter-chip ${council==='all'?'active':''}" data-council="all">All FCT</button>${data.councils.map(c=>`<button class="filter-chip ${council===c.id?'active':''}" data-council="${c.id}">${esc(c.short)}</button>`).join('')}</div>
-    <input class="searchbox" id="placeSearch" placeholder="Search Wuse, Kubwa, Kuje, Jabi, Gwagwalada…" value="${esc(query)}" />
-    <h2 class="section-title">${filtered.length} places</h2><p class="section-sub">Searchable world atlas. The FCC phases and satellite towns are game data, not hard-coded scenery.</p>
+    <section class="city-hero"><h1>${scope==='city'?'Abuja City.':'Greater FCT.'}<br>One connected life.</h1><p>${scope==='city'?'The Federal Capital City is the heart of Abuja: its phases, districts, sector centres and everyday neighbourhoods.':'Satellite towns and Area Councils sit outside the FCC core but remain connected to work, family, trade and travel.'}</p></section>
+    <div class="scope-switch"><button class="filter-chip ${scope==='city'?'active':''}" data-scope="city">Abuja City</button><button class="filter-chip ${scope==='fct'?'active':''}" data-scope="fct">Greater FCT</button></div>
+    ${scope==='fct'?`<div class="council-row"><button class="filter-chip ${council==='all'?'active':''}" data-council="all">All councils</button>${data.councils.map(c=>`<button class="filter-chip ${council===c.id?'active':''}" data-council="${c.id}">${esc(c.short)}</button>`).join('')}</div>`:''}
+    <input class="searchbox" id="placeSearch" placeholder="${scope==='city'?'Search Wuse, Garki, Maitama, Jabi, Gwarinpa…':'Search Kubwa, Kuje, Gwagwalada, Bwari, Abaji…'}" value="${esc(query)}" />
+    <h2 class="section-title">${filtered.length} ${scope==='city'?'city places':'FCT places'}</h2><p class="section-sub">${scope==='city'?'FCC geography stays separate from satellite towns so Abuja never becomes a random list of FCT names.':'The wider territory is available for commuting, family, businesses, events and expansion without pretending every FCT town is an Abuja city district.'}</p>
     <div class="place-list">${filtered.map(placeCard).join('')}</div>
   </main>`);
 }
@@ -108,6 +111,7 @@ function render(){
 function bind(){
   document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{view=b.dataset.view;render()});
   document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>act(b.dataset.action));
+  document.querySelectorAll('[data-scope]').forEach(b=>b.onclick=()=>{scope=b.dataset.scope;council='all';query='';render()});
   document.querySelectorAll('[data-council]').forEach(b=>b.onclick=()=>{council=b.dataset.council;render()});
   document.querySelectorAll('[data-travel]').forEach(b=>b.onclick=async()=>{await act('travel',{district:b.dataset.travel});toast(`Arrived in ${placeById(b.dataset.travel)?.name}`)});
   document.querySelectorAll('[data-job]').forEach(b=>b.onclick=async()=>{await act('take-job',{jobId:b.dataset.job});toast('Job accepted')});

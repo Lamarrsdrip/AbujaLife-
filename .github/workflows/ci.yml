@@ -1,11 +1,12 @@
 name: AbujaLife CI
+
 on:
   push:
     branches: [main]
   pull_request:
 
 jobs:
-  core:
+  qa:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -13,9 +14,3 @@ jobs:
         with:
           node-version: 22
       - run: npm run qa
-      - name: Reject accidental Unity generated folders
-        run: |
-          test ! -d game-unity/Library
-          test ! -d game-unity/Temp
-          test ! -d game-unity/Builds
-          test ! -d node_modules

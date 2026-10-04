@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from '../app/vendor/three.module.js';
-import { WORLD_ZOOM, clampWorldZoom, worldViewport, constrainWorldCamera, applyWorldCamera, screenToWorld, worldToScreen } from '../app/world-camera.js';
+import { WORLD_ZOOM, clampWorldZoom, worldViewport, constrainWorldCamera, applyWorldCamera, screenToWorld, worldToScreen, worldGroundMatrix, worldFloorTransform, screenVectorToWorld } from '../app/world-camera.js';
 
 test('mobile neighbourhood framing exposes several streets without depending on device pixel ratio', () => {
   const view = worldViewport({pixelWidth: 358, pixelHeight: 540, sceneWidth: 3540, sceneHeight: 4190});
@@ -65,4 +65,63 @@ test('camera constraints follow roads at close zoom and center rooms when wider 
   assert.deepEqual(constrainWorldCamera({x: 10, y: 10}, {width: 1300, height: 1800}, {width: 1000, height: 800}), {x: 500, y: 400});
   const camera = new THREE.OrthographicCamera(-500, 500, 325, -325, 1, 12000);
   assert.equal(applyWorldCamera(camera, {x: 0, y: 0, width: 0, height: 600}), false);
+});
+
+test('oblique dollhouse floor picking agrees with actual camera rays, SVG floor transforms and screen directions', () => {
+  const camera=new THREE.OrthographicCamera(-500,500,325,-325,1,12000),ray=new THREE.Raycaster(),ground=new THREE.Plane(new THREE.Vector3(0,1,0),0);
+  const bounds={left:11,top:123,width:390,height:510};
+  for(const zoom of [.8,1,1.44,2.5]){
+    const view=worldViewport({pixelWidth:bounds.width,pixelHeight:bounds.height,sceneWidth:3540,sceneHeight:4190,zoom,oblique:true});
+    const center=constrainWorldCamera({x:1710,y:2060},view,{width:3540,height:4190});
+    applyWorldCamera(camera,{...center,...view});
+    const affine=worldFloorTransform(center,view).match(/matrix\(([^)]+)\)/)[1].split(' ').map(Number);
+    for(const point of [{x:1450,y:1820},{x:1820,y:2390},center]){
+      const projected=new THREE.Vector3(point.x,0,point.y*Math.SQRT2).project(camera);
+      const expected=worldToScreen(point,bounds,center,view),picked=screenToWorld(expected,bounds,center,view);
+      const actual={x:bounds.left+(projected.x+1)*bounds.width/2,y:bounds.top+(1-projected.y)*bounds.height/2};
+      assert.ok(Math.hypot(actual.x-expected.x,actual.y-expected.y)<1e-8,'genuine oblique mesh and interactive floor coincide');
+      assert.ok(Math.hypot(point.x-picked.x,point.y-picked.y)<1e-8);
+      const [a,b,c,d,e,f]=affine,svgFloor={x:a*point.x+c*point.y+e,y:b*point.x+d*point.y+f};
+      const svgScreen={x:bounds.left+(svgFloor.x-center.x+view.width/2)/view.width*bounds.width,y:bounds.top+(svgFloor.y-center.y+view.height/2)/view.height*bounds.height};
+      assert.ok(Math.hypot(svgScreen.x-actual.x,svgScreen.y-actual.y)<1e-8,'SVG labels, paths and furnishing ghosts follow the 3D ground');
+      ray.setFromCamera(new THREE.Vector2(projected.x,projected.y),camera);
+      const hit=ray.ray.intersectPlane(ground,new THREE.Vector3());
+      assert.ok(Math.hypot(hit.x-point.x,hit.z/Math.SQRT2-point.y)<1e-8);
+    }
+  }
+  const matrix=worldGroundMatrix(true);
+  for(const input of [{x:1,y:0},{x:0,y:1},{x:-.3,y:.7}]){
+    const world=screenVectorToWorld(input,true);
+    assert.ok(Math.hypot(matrix.a*world.x+matrix.c*world.y-input.x,matrix.b*world.x+matrix.d*world.y-input.y)<1e-9,'joystick directions remain screen relative');
+  }
+});
+
+test('oblique rooms frame every floor corner and full rear wall on phones and desktops',()=>{
+  const camera=new THREE.OrthographicCamera(-500,500,325,-325,1,12000);
+  for(const [width,height]of[[1000,820],[1320,1100],[1640,1230]])for(const [pixelWidth,pixelHeight]of[[390,510],[1200,760]]){
+    const view=worldViewport({pixelWidth,pixelHeight,sceneWidth:width,sceneHeight:height,interior:true,oblique:true}),center=constrainWorldCamera({x:80,y:height-140},view,{width,height});
+    assert.deepEqual(center,{x:width/2,y:height/2});applyWorldCamera(camera,{...center,...view});
+    for(const [x,y,z]of[[0,0,0],[width,0,0],[0,0,height],[width,0,height],[50,176,134],[width-50,176,134]]){
+      const point=new THREE.Vector3(x,y,z*Math.SQRT2).project(camera);
+      assert.ok(Math.abs(point.x)<1&&Math.abs(point.y)<1,'floor and roofless wall remain in the default frame');
+    }
+    const base=new THREE.Vector3(width/2,0,height/2*Math.SQRT2).project(camera),top=new THREE.Vector3(width/2,176,height/2*Math.SQRT2).project(camera);
+    assert.ok((base.y-top.y)*pixelHeight/2<-20,'wall elevation remains visibly tall at whole-room framing');
+  }
+});
+
+test('oblique city follow keeps dealership exits and edge residents inside the real projected viewport',()=>{
+  const camera=new THREE.OrthographicCamera(-500,500,325,-325,1,12000),scene={width:3540,height:4190};
+  const bounds={left:0,top:0,width:390,height:730};
+  for(const zoom of [.8,1,2.5])for(const player of [{x:405,y:1458},{x:32,y:32},{x:3508,y:32},{x:32,y:4158},{x:3508,y:4158}]){
+    const view=worldViewport({pixelWidth:bounds.width,pixelHeight:bounds.height,sceneWidth:scene.width,sceneHeight:scene.height,zoom,oblique:true});
+    const center=constrainWorldCamera({x:player.x,y:player.y-55},view,scene);applyWorldCamera(camera,{...center,...view});
+    for(const height of [0,180]){
+      const projected=new THREE.Vector3(player.x,height,player.y*Math.SQRT2).project(camera);
+      assert.ok(Math.abs(projected.x)<.92&&Math.abs(projected.y)<.92,JSON.stringify({zoom,player,height,center,projected}));
+    }
+    const rendered=worldToScreen(player,bounds,center,view),picked=screenToWorld(rendered,bounds,center,view);
+    assert.ok(Math.hypot(picked.x-player.x,picked.y-player.y)<1e-8,'edge following preserves precise floor picks');
+    assert.ok(rendered.x>20&&rendered.x<bounds.width-20&&rendered.y>20&&rendered.y<bounds.height-20);
+  }
 });

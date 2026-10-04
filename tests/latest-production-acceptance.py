@@ -95,7 +95,12 @@ async def phone_app(page, app):
         await page.locator('.ph-unlock').click()
     else:
         await page.locator('.ph-home-indicator').click()
-    await page.locator(f'.ph-app-grid [data-app="{app}"]').click()
+    launcher=page.locator(f'.ph-app-grid [data-app="{app}"]')
+    page_index=await launcher.evaluate('el=>el.closest("[data-phone-page]")?.dataset.phonePage ?? null')
+    if page_index is not None:
+        await page.locator(f'[data-phone-page-go="{page_index}"]').click()
+        await page.wait_for_function('index=>{const view=document.querySelector(".ph-home-pages"),pages=view?.querySelectorAll("[data-phone-page]");return view&&pages[index]&&Math.abs(view.scrollLeft-(pages[index].offsetLeft-pages[0].offsetLeft))<2;}',arg=int(page_index))
+    await launcher.click()
     await expect(page.locator('.ph-app-header')).to_be_visible()
 
 

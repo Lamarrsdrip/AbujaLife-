@@ -1,5 +1,5 @@
-// Real, locally bundled WebGL character meshes over the authored 2.5D game set.
-// The orthographic ground projection is aligned with the simulation's SVG coordinates.
+// Real, locally bundled WebGL characters and original dollhouse environments.
+// The SVG interaction plane uses the same oblique floor projection as the camera.
 import * as THREE from './vendor/three.module.js';
 import { buildThreeEnvironment, batchRigidMeshes } from './world-3d-scenes.js';
 import { applyWorldCamera } from './world-camera.js';
@@ -170,7 +170,7 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
   const mobile=globalThis.matchMedia?.('(pointer: coarse)').matches||container.clientWidth<600;
   const maxPixelRatio=Math.min(globalThis.devicePixelRatio||1,mobile?1.25:1.75);
   renderer.setPixelRatio(maxPixelRatio);
-  renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.03;renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.1;renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   renderer.setClearColor(0x000000,0);renderer.domElement.className='world-character-layer';renderer.domElement.setAttribute('aria-hidden','true');
   container.append(renderer.domElement);container.dataset.characterRenderer='webgl-3d';
   const scene=new THREE.Scene(),camera=new THREE.OrthographicCamera(-500,500,325,-325,1,12000);
@@ -192,7 +192,7 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
   const groundPlane=new THREE.Plane(new THREE.Vector3(0,1,0),0),pickRay=new THREE.Raycaster(),pickPoint=new THREE.Vector3(),pickNdc=new THREE.Vector2();
   const updateCamera=({x,y,width,height})=>{
     if(![x,y,width,height].every(Number.isFinite)||width<=0||height<=0)return false;
-    viewWidth=width;viewHeight=height;return applyWorldCamera(camera,{x,y,width,height});
+    viewWidth=width;viewHeight=height;return applyWorldCamera(camera,{x,y,width,height,oblique:true});
   };
   const lose=()=>{lost=true;container.removeAttribute('data-character-renderer');container.removeAttribute('data-environment-renderer');};renderer.domElement.addEventListener('webglcontextlost',lose);
   let onlineKey=JSON.stringify(neighbours.map(p=>[p.id,p.appearance]));
@@ -208,9 +208,14 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
       updateCamera({...position,width,height});
       sun.position.set(position.x-550,1200,position.y/DEPTH+650);sun.target.position.set(position.x,0,position.y/DEPTH);
       const daylight=clock?.sunlight??1,night=clock?.isNight??false,cloud=weather?.condition==='rain'?.72:weather?.condition==='cloudy'?.84:1;
-      ambient.intensity=(indoors?(isClub&&clubOpen?.92:1.55):.82)+daylight*(indoors?.35:.83)*cloud;ambient.color.set(night?(indoors?'#ecdcc4':'#b8c7e7'):'#fff1d4');ambient.groundColor.set(night?(indoors?'#5d5c54':'#3b4d60'):'#556553');sun.intensity=(night?.26:Math.pow(daylight,.5)*2.2)*cloud;sun.color.set(night?'#96b1e4':daylight<.3?'#edbf91':'#fff5e4');rim.intensity=night?.44:.6;
+      // Interiors stay practically lit at night. Lower ambient light gives wood,
+      // fabric, wall edges and contact shadows readable depth without more lights.
+      ambient.intensity=indoors?(isClub&&clubOpen?.52:.82):.60+daylight*.72*cloud;
+      ambient.color.set(indoors?'#f6e6ce':night?'#b8c7e7':'#fff1d4');ambient.groundColor.set(indoors?'#6a6256':night?'#3b4d60':'#556553');
+      sun.intensity=indoors?(isClub&&clubOpen?.8:2.55):(night?.42:Math.pow(daylight,.5)*2.2)*cloud;
+      sun.color.set(indoors?'#ffe7c3':night?'#a6bdea':daylight<.3?'#edbf91':'#fff5e4');rim.intensity=indoors?.68:night?.52:.6;
       rain.visible=!indoors&&weather?.condition==='rain';if(rain.visible){for(let i=0;i<180;i++){const j=i*6,rx=position.x+((i*137.51+time*28)%width)-width/2,rz=position.y/DEPTH+((i*89.23)%(height/DEPTH))-height/DEPTH/2,ry=410-(i*61.5+time*330)%410;rainPositions.set([rx,ry,rz,rx-1.3,ry+16,rz],j);}rainGeometry.attributes.position.needsUpdate=true;}
-      own.root.visible=!transport;animate(own,{...player,angle,phase,time,moving,activity,scale:1.45});
+      own.root.visible=!transport;animate(own,{...player,angle,phase,time,moving,activity,scale:1.6});
       npcPositions.forEach((p,i)=>{const club=isClub;npcs[i].root.visible=!club||clubOpen||i===0;animate(npcs[i],{...p,activity:club&&!clubOpen?null:p.activity,time,scale:1.28});});
       onlinePositions.forEach((p,i)=>{if(online[i])animate(online[i],{...p,time,scale:1.4});});
       shower.visible=activity?.name==='shower';if(shower.visible){shower.position.copy(own.root.position);shower.children.forEach((drop,i)=>{drop.position.set(Math.sin(i*2.4)*13,165-((i*19+time*98)%151),Math.cos(i*2.4)*15);});}

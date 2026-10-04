@@ -303,6 +303,29 @@ await test("local venue rides charge the quoted fare and physical walking remain
   assert.equal((await f.request("/api/wallet")).transactions[0].amount, -quote.cost);
 });
 
+await test("Abuja Car exit retains its own street arrival across preview reload and ignores forged home entry", async () => {
+  const f = fixture(), original = (await f.request('/api/bootstrap')).profile;
+  await f.action('leave-home');
+  const { trip } = await f.action('travel', { district: original.district, mode: 'bus', venueId: 'dealership' });
+  f.advance(trip.seconds * 1000);
+  assert.equal((await f.action('arrive', { tripId: trip.id })).profile.location.venue, 'dealership');
+  const exited = (await f.action('exit-venue', { venueId: 'home', exteriorEntry: { venueId: 'home', transitionId: 'forged' } })).profile;
+  assert.equal(exited.location.kind, 'public');
+  assert.equal(exited.location.district, original.district);
+  assert.equal(exited.location.exteriorEntry.venueId, 'dealership');
+  assert.notEqual(exited.location.exteriorEntry.transitionId, 'forged');
+  assert.equal(exited.wallet, original.wallet - trip.cost);
+  const reopened = fixture({ storage: f.storage, time: new Date(f.now()).toISOString() });
+  assert.deepEqual((await reopened.request('/api/bootstrap')).profile.location, exited.location);
+  await reopened.action('enter-venue', { venueId: 'dealership' });
+  const nextExit = (await reopened.action('exit-venue')).profile;
+  assert.notEqual(nextExit.location.exteriorEntry.transitionId, exited.location.exteriorEntry.transitionId);
+  const home = (await reopened.action('return-home', { mode: 'walk' })).profile;
+  assert.equal(home.location.kind, 'home');
+  assert.equal(home.location.exteriorEntry, undefined);
+  assert.equal(home.home.propertyId, original.home.propertyId);
+});
+
 await test("venue transport validates destinations, departure and funds before mutating progress", async () => {
   const f = fixture(), initial = await f.request("/api/bootstrap"), district = initial.profile.district;
   const before = await f.request("/api/wallet");

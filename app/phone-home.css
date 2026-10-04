@@ -1,0 +1,34 @@
+/* A smaller launcher with real swipeable pages and a dock that stays in view. */
+.ph-home-paged{padding:7px 13px 25px;overflow:hidden;gap:0}
+.ph-home-paged .ph-home-pages{position:relative;display:flex;flex:1;min-height:0;width:100%;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;overscroll-behavior-x:contain;scrollbar-width:none;touch-action:pan-x pan-y;-webkit-overflow-scrolling:touch}
+.ph-home-pages::-webkit-scrollbar{display:none}
+.ph-home-page{flex:0 0 100%;width:100%;min-width:0;max-height:100%;padding:3px 3px 9px;overflow-x:hidden;overflow-y:auto;scroll-snap-align:start;scroll-snap-stop:always;scrollbar-width:none;overscroll-behavior-y:contain}
+.ph-home-page::-webkit-scrollbar{display:none}
+.ph-home-paged .ph-widget-row{gap:8px;margin:0 0 25px;display:grid}
+.ph-home-paged .ph-widget{height:87px;padding:12px 10px;border-radius:18px}
+.ph-home-paged .ph-widget strong{font-size:17px;margin-top:11px;line-height:1.16}
+.ph-home-paged .ph-widget small{font-size:8px;letter-spacing:.1em}
+.ph-home-paged .ph-widget>span{font-size:9px}
+.ph-home-paged .ph-app-grid{gap:23px 3px;grid-template-columns:repeat(4,minmax(0,1fr));padding:1px 0 12px}
+.ph-home-paged .ph-app-icon{width:48px;height:48px;border-radius:14px;box-shadow:0 4px 8px #081c2129,inset 0 1px 1px #ffffff40}
+.ph-home-paged .ph-app-icon>.ph-icon{width:27px;height:27px}
+.ph-home-paged .ph-launcher{gap:8px;min-height:72px;padding:0 0 4px}
+.ph-home-paged .ph-app-label{font-size:10px;font-weight:500;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.ph-page-heading{height:87px;display:flex;flex-direction:column;justify-content:center;padding:5px 6px;margin-bottom:25px;color:#f1f7e8}
+.ph-page-heading small{font-size:8px;font-weight:650;letter-spacing:.15em;color:#d9e7c9}
+.ph-page-heading strong{font-size:24px;font-weight:600;line-height:1.15;letter-spacing:-.035em;margin-top:7px}
+.ph-page-heading>span{font-size:10px;color:#d2dfc5;margin-top:7px}
+.ph-home-pagination{position:relative;flex:0 0 44px;display:flex;align-items:center;justify-content:center;gap:10px;margin:3px 0 4px;color:#f8fbf1}
+.ph-page-arrow{display:grid;place-items:center;width:44px;height:44px;background:none;color:#eef7e5;font-size:25px;font-weight:300;line-height:1;padding:0;border-radius:50%}
+.phone-root .ph-page-arrow:disabled{opacity:.22;cursor:default}
+.ph-home-page-dots{display:flex;align-items:center;gap:0}
+.ph-home-page-dot{width:32px;height:44px;display:grid;place-items:center;border-radius:12px;background:transparent;padding:0}
+.ph-home-page-dot i{height:6px;width:6px;border-radius:6px;background:#e5edcf60;transition:width .18s ease,background .18s ease}
+.ph-home-page-dot[aria-current=page] i{width:16px;background:#f1f8df}
+.ph-page-announcement{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.ph-home-paged .ph-dock{flex:none;margin-top:0;padding:10px 6px;border-radius:23px;background:#d9dfc587;box-shadow:inset 0 1px #fff4,0 3px 15px #09271c20}
+.ph-home-paged .ph-dock .ph-launcher{min-height:0;padding:0}
+.ph-home-paged .ph-dock .ph-app-icon{width:47px;height:47px}
+@media(max-width:360px){.ph-home-paged{padding-inline:10px}.ph-home-paged .ph-app-icon{width:44px;height:44px}.ph-home-paged .ph-app-label{font-size:9px}.ph-home-paged .ph-widget{padding-inline:9px}.ph-home-paged .ph-widget strong{font-size:16px}.ph-home-paged .ph-dock .ph-app-icon{width:44px;height:44px}}
+@media(max-height:620px){.ph-home-paged .ph-widget-row{margin-bottom:16px}.ph-home-paged .ph-widget{height:69px;padding-top:9px}.ph-home-paged .ph-widget strong{margin-top:7px;font-size:15px}.ph-page-heading{height:69px;margin-bottom:16px}.ph-page-heading strong{font-size:20px}.ph-home-paged .ph-app-grid{gap:14px 3px}.ph-home-paged .ph-launcher{min-height:65px;gap:6px}.ph-home-paged .ph-dock{padding:8px 6px}.ph-home-pagination{margin-block:0}.ph-home-paged .ph-widget>span{font-size:8px}}
+@media(prefers-reduced-motion:reduce){.ph-home-page-dot i{transition:none}}

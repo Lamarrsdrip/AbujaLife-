@@ -93,6 +93,15 @@
 .ph-3d-product{display:block;position:relative;width:100%;height:100%}.ph-3d-product>img[data-product-3d]{object-fit:contain}
 
 /* Resident stories, real home captures and official website browsing. */
+.ph-backdrop{background:#101a168c;backdrop-filter:blur(7px);padding:42px 24px 66px}
+.ph-device{width:min(320px,calc(100vw - 60px));height:min(676px,calc(100dvh - 128px));border-radius:44px;padding:7px}
+.ph-screen{border-radius:37px}
+.ph-statusbar{flex-basis:46px;padding-inline:19px;font-size:12px}
+.ph-island{top:10px;height:27px;width:89px}
+.ph-island-active{width:150px}
+.ph-device-caption{top:calc(100% + 13px)}
+.phone-root input,.phone-root textarea,.phone-root select{font-size:16px}
+@media(max-height:620px){.ph-backdrop{padding:30px 24px 50px}.ph-device{width:min(320px,calc(100vw - 60px));height:calc(100dvh - 104px)}.ph-statusbar{flex-basis:37px}.ph-island{top:6px;height:25px}.ph-device-caption{top:calc(100% + 11px)}}
 .ph-home-content{overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none}
 .ph-home-content::-webkit-scrollbar{display:none}
 .ph-app-grid,.ph-widget-row,.ph-dock{flex-shrink:0}
@@ -178,3 +187,6 @@
 .ph-browser-blocked strong{font-size:16px;font-weight:600;overflow-wrap:anywhere}
 .ph-browser-blocked p{font-size:11px;line-height:1.7;color:#819273;margin:0}
 @media(max-height:620px){.ph-app-grid{gap:11px 5px}.ph-social-card>header{padding:10px}.ph-browser-frame-host,.ph-browser-frame-host>iframe{min-height:270px}}
+
+/* Keep editable text legible and prevent input-focus magnification on iPhone. */
+.phone-root input,.phone-root select,.phone-root textarea{font-size:16px}

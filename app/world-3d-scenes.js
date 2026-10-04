@@ -109,7 +109,7 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
   function floor(parent,x,y,w,h,type='wood',height=0) {
     const texture=surfaceTexture(type==='oak'||type==='darkoak'?'wood':type);
     if(texture)texture.repeat.set(Math.max(1,w/240),Math.max(1,h/240));
-    const material=new T.MeshStandardMaterial({color:type==='darkoak'?'#796b61':'#ffffff',map:texture,roughness:type==='tile'?.4:.86,metalness:0});materials.set(`floor:${materials.size}`,material);
+    const material=new T.MeshStandardMaterial({color:type==='darkoak'?'#796b61':'#ffffff',map:texture,bumpMap:texture,bumpScale:type==='tile'||type==='bath'?.10:.38,roughness:type==='tile'?.58:.86,metalness:0});materials.set(`floor:${materials.size}`,material);
     return box(parent,x+w/2,height-2,(y+h/2)*ds,w,4,h*ds,material,false,false);
   }
   const wood=mat('#a98761'), darkWood=mat('#6c4d36'), cream=mat('#e9e0cb'), linen=mat('#e6dfd1'), green=mat('#506959'), metal=mat('#485158',.35,.6), glass=mat('#86adb4',.19,.08,{transparent:true,opacity:.43});
@@ -537,8 +537,26 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     p.position.set(item.x+item.w/2,0,(item.y+item.h/2)*ds);p.scale.z=ds;
     p.userData={kind:type,itemId:item.itemId||null};group.add(p);return p;
   }
+  function contactShadows(items) {
+    const solid=items.filter(item=>item.w>15&&item.h>15&&!['rug','lake','lawn','sleeping-mat'].includes(item.kind));
+    if(!solid.length)return;
+    const canvas=document.createElement('canvas');canvas.width=canvas.height=64;const context=canvas.getContext('2d');if(!context)return;
+    const gradient=context.createRadialGradient(32,32,7,32,32,32);gradient.addColorStop(0,'rgba(42,35,26,.27)');gradient.addColorStop(.65,'rgba(42,35,26,.12)');gradient.addColorStop(1,'rgba(42,35,26,0)');context.fillStyle=gradient;context.fillRect(0,0,64,64);
+    const texture=new T.CanvasTexture(canvas);textures.push(texture);
+    const material=new T.MeshBasicMaterial({map:texture,transparent:true,depthWrite:false,toneMapped:false});materials.set('contact-shadows',material);
+    // One instanced draw for the whole room, rather than one extra light or
+    // shadow pass per chair, table, appliance or bed.
+    const geometry=geo('contact-shadow-plane',()=>new T.PlaneGeometry(1,1));
+    const shadows=new T.InstancedMesh(geometry,material,solid.length),matrix=new T.Matrix4(),rotation=new T.Quaternion().setFromAxisAngle(new T.Vector3(1,0,0),-Math.PI/2);
+    solid.forEach((item,index)=>{matrix.compose(new T.Vector3(item.x+item.w/2,2.6,(item.y+item.h/2)*ds),rotation,new T.Vector3(item.w*1.12,item.h*ds*1.12,1));shadows.setMatrixAt(index,matrix);});
+    shadows.name='Soft furniture contact depth';shadows.renderOrder=1;group.add(shadows);
+  }
   function interiorSet() {
     const outdoor=['park','jabi-lake'].includes(venue?.id);
+    if(!outdoor){
+      box(group,layout.width/2,-18,layout.height*ds/2,layout.width+6,24,layout.height*ds+6,'#8f785c',true,false);
+      box(group,layout.width/2,-5,layout.height*ds/2,layout.width+10,4,layout.height*ds+10,'#cfb999',false,false);
+    }
     floor(group,0,0,layout.width,layout.height,outdoor?'grass':'wood',-4);
     floor(group,60,140,layout.width-120,layout.height-220,outdoor?'grass':layout.floorMaterial||'tile');
     for(const area of layout.floorAreas||[]) {
@@ -550,12 +568,15 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     if(!outdoor) {
       const wallColor=({sand:'#cdbca4',ivory:'#e5e0d6',sage:'#9caf99',clay:'#ba9380'})[profile.home?.roomStyle?.wall]||'#c4b096';
       // Roofless cutaway: full-height rear/partition walls and lowered front sides.
-      box(group,layout.width/2,72,134*ds,layout.width-96,144,13,wallColor);
-      box(group,55,69,(layout.height+140)/2*ds,14,138,(layout.height-140)*ds,wallColor);
+      box(group,layout.width/2,88,134*ds,layout.width-96,176,13,wallColor);
+      box(group,55,82,(layout.height+140)/2*ds,14,164,(layout.height-140)*ds,wallColor);
       box(group,layout.width-55,33,(layout.height+140)/2*ds,14,66,(layout.height-140)*ds,wallColor);
       box(group,layout.width/2,16,(layout.height-83)*ds,layout.width-96,32,13,'#bfaa8c');
+      box(group,layout.width/2,177,134*ds,layout.width-94,4,15,'#efe4d1');
+      box(group,layout.width/2,12,143*ds,layout.width-112,6,4,'#a58b6c');
+      box(group,63,12,(layout.height+144)/2*ds,4,6,(layout.height-162)*ds,'#a58b6c');
       for(const wall of layout.walls||[]) {
-        const height=wall.y>layout.height*.55?68:125;
+        const height=wall.y>layout.height*.55?64:142;
         box(group,wall.x+wall.w/2,height/2,(wall.y+wall.h/2)*ds,wall.w,height,wall.h*ds,wallColor);
         box(group,wall.x+wall.w/2,height+1,(wall.y+wall.h/2)*ds,wall.w+1,3,wall.h*ds+1,'#ede4d3');
       }
@@ -578,6 +599,7 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
       const existing=(layout.objects||[]).some(o=>o.itemId===placement.itemId);
       if(!existing)placeObject({...placement,kind:placement.itemId});
     }
+    if(!outdoor)contactShadows([...(layout.objects||[]),...(layout.furniturePlacements||[]).filter(placement=>!(layout.objects||[]).some(object=>object.itemId===placement.itemId))]);
     if(venue?.id==='gym'){
       for(let i=0;i<3;i++){box(group,865+i*114,1,430*ds,82,2,219*ds,['#7e9d99','#b19b76','#a7af8e'][i],true);}
       const rack=new T.Group();rack.position.set(374,0,693*ds);rack.scale.z=ds;group.add(rack);

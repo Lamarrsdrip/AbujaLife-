@@ -95,6 +95,20 @@ integration('Mongo dice outcomes and payouts are server-authoritative and latest
   const persisted=await new MongoGameStore({...f.connection}).profile(id);assert.equal(persisted.lastGambleRound.id,lost.round.id);assert.equal(persisted.gambleHistory[0].id,lost.round.id);const replay=await f.store.action(id,'play-dice',payload);assert.equal(replay.replayed,true);assert.equal(replay.round.id,won.round.id);assert.equal(replay.profile.wallet,100000);assert.equal(await f.connection.db.collection('gamble_rounds').countDocuments({residentId:id}),2);
 });
 
+integration('Mongo Abuja Car exit persists an exact venue transition without moving home or trusting client spawn hints',async t=>{
+  const f=await fixture(t),id=f.ada.residentId,original=await f.store.profile(id);
+  await f.store.action(id,'leave-home');
+  const {trip}=await f.store.action(id,'travel',{district:original.district,mode:'taxi',venueId:'dealership',idempotencyKey:key()});
+  f.advance(trip.seconds*1000);
+  assert.equal((await f.store.action(id,'arrive',{tripId:trip.id})).profile.location.venue,'dealership');
+  const exited=(await f.store.action(id,'exit-venue',{venueId:'home',exteriorEntry:{venueId:'home',transitionId:'forged'}})).profile;
+  assert.equal(exited.location.kind,'public');assert.equal(exited.district,original.district);assert.equal(exited.location.exteriorEntry.venueId,'dealership');assert.notEqual(exited.location.exteriorEntry.transitionId,'forged');assert.equal(exited.wallet,original.wallet-trip.cost);
+  const persisted=await new MongoGameStore({...f.connection}).profile(id);assert.deepEqual(persisted.location,exited.location);assert.equal(persisted.home.propertyId,original.home.propertyId);
+  const row=await f.connection.db.collection('player_state').findOne({residentId:id});assert.deepEqual(row.location,exited.location);
+  await f.store.action(id,'enter-venue',{venueId:'dealership'});const nextExit=(await f.store.action(id,'exit-venue')).profile;assert.notEqual(nextExit.location.exteriorEntry.transitionId,exited.location.exteriorEntry.transitionId);
+  const home=(await f.store.action(id,'return-home',{mode:'walk',idempotencyKey:key()})).profile;assert.equal(home.location.kind,'home');assert.equal(home.location.exteriorEntry,undefined);assert.equal(home.home.propertyId,original.home.propertyId);
+});
+
 async function chatFixture(t){const f=await fixture(t);f.social=new MongoSocialStore(f.store);await f.social.init({ensureIndexes:false});f.social.attachToGame();f.conversationId=(await f.social.createConversation(f.ada.residentId,{residentId:f.bello.residentId})).conversation.id;return f;}
 async function transferSnapshot(f){const ids=[f.ada.residentId,f.bello.residentId],db=f.connection.db;return{
   wallets:await db.collection('wallets').find({residentId:{$in:ids}}).sort({_id:1}).toArray(),

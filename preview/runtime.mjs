@@ -308,7 +308,13 @@ function action(name,payload={}) {
       check(!profile.drivingVehicle,'Park your car before entering');
       profile.location={kind:'venue',district:profile.district,venue:venue.id};extra.venue=clone(venue);break;
     }
-    case 'exit-venue':check(profile.location.kind==='venue','You are already outside');profile.drivingVehicle=null;profile.location={kind:'public',district:profile.district,venue:'neighbourhood'};break;
+    case 'exit-venue': {
+      check(profile.location.kind==='venue','You are already outside');
+      const venueId=profile.location.venue;
+      profile.drivingVehicle=null;
+      profile.location={kind:'public',district:profile.district,venue:'neighbourhood',exteriorEntry:{venueId,transitionId:uid()}};
+      break;
+    }
     case 'venue-action': {
       const activity=venueActionFor(payload.activityId);
       check(activity,'Choose an activity from this place');

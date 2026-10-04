@@ -265,7 +265,13 @@ export class GameStore {
         case 'leave-home':home();p.drivingVehicle=null;p.location={kind:'public',district:p.district,venue:'neighbourhood'};break;
         case 'enter-home':check(p.district===p.home.district,'Travel to your home neighbourhood first');check(!p.drivingVehicle,'Park your car before entering');check(['public','home'].includes(p.location.kind),'Head outside before entering your home');p.location={kind:'home',district:p.district,venue:'home'};break;
         case 'enter-venue':{publicPlace();const venue=venueFor(payload.venueId);check(venue&&venueAvailable(venue.id,p.district),'Choose a place in your neighbourhood');check(!payload.district||payload.district===p.district,'Travel to this neighbourhood first');check(!p.drivingVehicle,'Park your car before entering');p.location={kind:'venue',district:p.district,venue:venue.id};extra.venue=venue;break;}
-        case 'exit-venue':check(p.location.kind==='venue','You are already outside');p.drivingVehicle=null;p.location={kind:'public',district:p.district,venue:'neighbourhood'};break;
+        case 'exit-venue':{
+          check(p.location.kind==='venue','You are already outside');
+          const venueId=p.location.venue;
+          p.drivingVehicle=null;
+          p.location={kind:'public',district:p.district,venue:'neighbourhood',exteriorEntry:{venueId,transitionId:uid()}};
+          break;
+        }
         case 'venue-action':{const activity=venueActionFor(payload.activityId);check(activity,'Choose an activity from this place');check(p.location.kind==='venue'&&p.location.venue===activity.venueId,'Enter this place before using its facilities');if(venueFor(activity.venueId)?.kind==='club'&&activity.cost>0)check(clubSchedule(timestamp).isOpen,clubSchedule(timestamp).reason,409,'venue_closed');check(!(activity.effects.energy<0)||p.energy>=-activity.effects.energy,'Rest before doing this activity');debit(activity.cost);applyNeedEffects(p,activity.effects);if(activity.skill)p.skills[activity.skill]=(p.skills[activity.skill]||0)+1;extra.activity={...activity,startedAt:timestamp};break;}
         case 'toggle-driving':{publicPlace();const vehicleId=payload.vehicleId??null;if(vehicleId===null){p.drivingVehicle=null;break;}check(ownsVehicle(p,catalog,vehicleId),'Buy this car before taking the wheel');p.drivingVehicle=vehicleId;extra.vehicle=catalog.find(item=>item.id===vehicleId);break;}
         case 'place-furniture':{home();const item=catalog.find(item=>item.id===payload.itemId);check(item?.category==='furniture'&&p.inventory.includes(item.id),'Buy this furniture before placing it');let placement;try{placement=furniturePlacement(payload);}catch(error){throw new GameError(error.message);}p.furnitureLayout[item.id]=placement;p.storedFurniture=p.storedFurniture.filter(id=>id!==item.id);extra.placement={itemId:item.id,...placement};break;}

@@ -153,7 +153,7 @@ function renderOnboarding(){
  form.querySelector('[data-onboarding-back]')?.addEventListener('click',()=>{onboardingStep--;renderMain();});
  form.onsubmit=async e=>{e.preventDefault();const values=Object.fromEntries(new FormData(form));if(values.displayName)onboardingDraft.displayName=values.displayName.trim();if(values.lifeGoal)onboardingDraft.lifeGoal=values.lifeGoal;if(onboardingStep<4){onboardingStep++;renderMain();window.scrollTo(0,0);return;}const submit=form.querySelector('[type=submit]');submit.disabled=true;try{await api('/api/profile',{method:'POST',body:{...onboardingDraft,onboardingComplete:true}});onboardingDraft=undefined;onboardingStep=0;view='world';await refresh();toast('How far? Welcome to your Abuja life. Walk to your front door to explore.');}catch(error){root.querySelector('#onboarding-error').textContent=error.message;submit.disabled=false;}};
 }
-function header(){const p=state.profile,atHome=p.location?.kind==='home',homeDisabled=atHome&&view==='world'||!!p.activeTrip||quickHomeNavigating;return `<header class="game-header"><a href="#world" class="wordmark" data-view="world" aria-label="AbujaLife home">${brandMark({compact:true})}</a><span class="header-edition">YOUR CITY. YOUR STORY.</span><button type="button" class="header-home-button" data-quick-home aria-label="${atHome?view==='world'?'You are at your own home':'View your own home':p.activeTrip?'Go home after this journey':'Go to your own home'}" ${homeDisabled?'disabled':''}>${icon('world')}<span>${atHome?'At home':'Home'}</span></button><button class="wallet-button" data-phone="wallet" aria-label="Naira balance, ₦${money(p.wallet)}. Open wallet"><span>Naira balance</span><strong>₦${money(p.wallet)}</strong></button><button class="resident-button" data-view="profile" aria-label="Your resident profile">${avatarSVG(p.appearance,{size:40})}</button></header>`;}
+function header(){const p=state.profile;return `<header class="game-header"><a href="#world" class="wordmark" data-view="world" aria-label="AbujaLife home">${brandMark({compact:true})}</a><span class="header-edition">YOUR CITY. YOUR STORY.</span><button class="wallet-button" data-phone="wallet" aria-label="Naira balance, ₦${money(p.wallet)}. Open wallet"><span>Naira balance</span><strong>₦${money(p.wallet)}</strong></button><button class="resident-button" data-view="profile" aria-label="Your resident profile">${avatarSVG(p.appearance,{size:40})}</button></header>`;}
 function nav(){const unread=list(state.conversations).reduce((n,c)=>n+Number(c.unread||0),0)+list(state.notifications).filter(n=>!n.readAt&&!n.read).length;return `<nav class="game-nav" aria-label="Game navigation"><button data-view="world" class="${view==='world'?'active':''}" ${view==='world'?'aria-current="page"':''}>${icon('world')}<span>Play</span></button><button data-nav-places class="${view==='map'?'active':''}">${icon('map')}<span>Places</span></button><button data-nav-life class="${['work','market','property','profile'].includes(view)?'active':''}">${icon('sun')}<span>My life</span></button><button data-phone="home" class="phone-launch">${icon('phone')}<span>Phone</span>${unread?`<i class="nav-badge">${unread}</i>`:''}</button></nav>`;}
 function renderMain(){
  cleanup?.();cleanup=undefined;if(!state.authenticated){renderAuth();return;}
@@ -162,7 +162,6 @@ function renderMain(){
  root.innerHTML=`<div class="game-shell ${view==='world'?'is-playing':''}">${header()}<main class="game-content view-${view}">${({world:worldMarkup,map:mapMarkup,work:workMarkup,market:marketMarkup,property:propertyMarkup,profile:profileMarkup})[view]()}</main>${nav()}</div>`;
  root.querySelectorAll('[data-view]').forEach(b=>b.onclick=e=>{e.preventDefault();navigate(b.dataset.view);});root.querySelectorAll('[data-phone]').forEach(b=>b.onclick=()=>phone.open(b.dataset.phone==='home'?undefined:b.dataset.phone));
  root.querySelector('[data-nav-places]').onclick=openCityPlaces;root.querySelector('[data-nav-life]').onclick=openLifeMenu;
- root.querySelector('[data-quick-home]').onclick=goHome;
  ({world:bindWorld,map:bindMap,work:bindWork,market:bindMarket,property:bindProperties,profile:bindProfile})[view]();
  enhanceProductPreviews(root);
  void install.refresh();
@@ -195,6 +194,14 @@ function openLifeMenu(){
 function bindWorld(){
  const p=state.profile,owner=state.homeVisit?.ownerHome,renderProfile=p.location?.kind==='visit'&&owner?{...p,home:owner.home,inventory:owner.inventory,furnitureLayout:owner.furnitureLayout,storedFurniture:owner.storedFurniture,canDecorate:false}:p;
  cleanup=renderWorld(document.querySelector('#world-scene'),{profile:renderProfile,place:place(p.district),people:list(state.nearby),serverNow:gameNow(),weather:state.weather,venues:list(state.venues),venueActions:list(state.venueActions),catalog:list(state.catalog),onInteract:interact,onResident:residentSheet,onArrive:tripId=>{if(p.activeTrip&&gameNow()>=Number(p.activeTrip.arrivesAt))return completeTrip(tripId||p.activeTrip.id);}});
+ const sprint=root.querySelector('.world-sprint-button');
+ if(sprint){
+  const atHome=p.location?.kind==='home',row=document.createElement('div'),home=document.createElement('button');
+  row.className='world-action-row';home.type='button';home.className='world-home-shortcut';home.dataset.quickHome='';
+  home.setAttribute('aria-label',atHome?'You are at your own home':'Go to your own home');home.title=atHome?'Your own home':'Head home';
+  home.disabled=atHome||!!p.activeTrip||quickHomeNavigating;home.innerHTML=`${icon('world')}<span>Home</span>`;home.onclick=goHome;
+  sprint.before(row);row.append(home,sprint);
+ }
  if(p.activeTrip)bindTrip(p.activeTrip);
 }
 async function completeTrip(tripId){if(await action('arrive',{tripId})){pendingVenue=undefined;if(state.profile.location?.kind==='home'&&pendingFurnitureItem){const itemId=pendingFurnitureItem;pendingFurnitureItem=undefined;openFurniture(itemId);}toast(currentVenue()?`You’ve arrived at ${currentVenue().name}.`:'You’ve arrived.');}}

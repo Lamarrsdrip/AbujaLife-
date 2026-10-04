@@ -1,0 +1,9 @@
+{
+  "name":"AbujaLife",
+  "short_name":"AbujaLife",
+  "start_url":"/",
+  "display":"standalone",
+  "background_color":"#06170f",
+  "theme_color":"#0f8f5f",
+  "icons":[]
+}

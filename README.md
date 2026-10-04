@@ -1,38 +1,53 @@
 # AbujaLife
 
-**AbujaLife is an original, premium social open-world life game set in Abuja.** This repository is the source-first foundation for one Unity client shipping to iOS, Android and WebGL, plus server-authoritative game/economy services.
+**AbujaLife is a browser-first social life game set across Abuja and the wider FCT.**
 
-The target is not "Lagos Life with Abuja names." The target is a navigable Abuja where a resident can live, work, drive, furnish homes, meet people, build businesses, attend events, participate in a fictional civic layer and discover Okrika's real marketplace without mixing virtual and real money.
+The product direction is deliberately simple: get into the world fast, build a life, earn and spend Abuja Naira, travel across Abuja, work, own homes and businesses, meet people, attend events, and discover Okrika real-world listings without mixing game money with physical commerce.
 
-## What is in this repo
-- `game-unity/` — Unity 6 project source: third-person movement, camera, mobile controls, world streaming, generated Abuja vertical slice, vehicles/traffic, needs, interiors/furniture, phone/marketplace foundations, day/night/weather, performance helpers.
-- `services/core/` — runnable Node 20 game-domain API with authoritative ledger, jobs, inventory, property, vehicles, businesses, social graph, presence, events, fictional Mayor elections, ads and Okrika handoff.
-- `data/abuja/` — 46 encoded Abuja/FCT gameplay areas plus landmarks, roads, transit, jobs, properties, vehicles, businesses, events, NPC archetypes and City Market items.
-- `infra/` — initial production Postgres schema and Docker local dependencies.
-- `docs/` — product, architecture, art pipeline, monetization, Okrika growth loop, Abuja coverage, API and handoff notes.
+## Run locally
 
-## Run QA
 ```bash
+git pull origin main
 npm run qa
+npm run dev
 ```
 
-## Run API
-```bash
-npm run start:api
-# http://localhost:8787/health
+Open:
+
+```text
+http://localhost:8787
 ```
 
-## Generate the Unity code prototype
-Open `game-unity/` in Unity 6, then run:
+No Unity installation is required for normal development or testing.
 
-**AbujaLife → Build → Open World Vertical Slice**
+## Current playable alpha
 
-The generated test world contains code-built Central Area, Wuse II, Jabi, Maitama, Gwarinpa, City Gate and an Aso Rock proxy so movement/streaming/world systems can be tested before final environment art arrives.
+- mobile-first browser game shell
+- starter home scene and resident needs
+- server-authoritative Abuja Naira
+- food / sleep / hygiene / social loop
+- playable job loop and reputation
+- travel across a searchable Abuja/FCT atlas
+- all six FCT Area Councils represented
+- FCC planning phases/sectors represented as geography data
+- satellite towns and communities represented separately from FCC districts
+- in-game phone foundation
+- Okrika real-world marketplace bridge
+- game-money top-up boundary with receipt idempotency tests
+- PWA manifest for installable web delivery
 
-## Reality check
-A believable open-world Abuja needs a professional 3D content pipeline. The generated buildings in this repo are deliberately placeholders; calling them the final realistic Abuja would be dishonest. The architecture is designed so final photogrammetry/modelled roads, structures, foliage, interiors, characters and vehicles replace placeholder art without replacing game systems.
+## Product rule
+
+AbujaLife is **not** a fake 1:1 GTA clone and it is not a list of Abuja names. The complete territory lives in the world atlas; the places players actually enter are built as crafted gameplay scenes with their own visual identity, economy, people, activities and progression. This lets AbujaLife cover the whole FCT without turning into a huge low-quality procedural playground.
+
+## Platforms
+
+The web game is the primary instant-play surface. Native iOS and Android apps will ship from the same browser-first product shell with platform-specific payments, push notifications and store integrations added behind shared server-authoritative game rules.
 
 ## Okrika bridge
-Virtual purchases use Abuja Naira. Physical Okrika items never do. `services/core/src/market.js` and `game-unity/.../CommerceBoundary.cs` enforce that separation in code.
 
-See `docs/BUILD_AND_RELEASE.md` for repo setup and platform build steps.
+Abuja Naira is closed-loop virtual game currency. Real Okrika listings use real-world Okrika checkout. Game currency can never buy a physical Okrika item.
+
+## Quality standard
+
+Every player-facing scene must feel intentionally designed for Abuja. District identity comes from culture, density, roads, architecture, activities, economy and people—not just a label pasted over generic scenery.

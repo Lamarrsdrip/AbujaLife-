@@ -2,6 +2,8 @@
 
 A browser-first social life game set in Abuja and the wider Federal Capital Territory. Create a resident, make a home, work, travel, and stay connected through your in-game phone.
 
+Try the [anonymous browser preview](docs/PREVIEW.md) without an account or API key. Its progress stays on your device; the full server provides shared multiplayer.
+
 ## Develop
 
 Node.js **24 or later** is required for the built-in SQLite database. No Unity, external database, or package service is needed.

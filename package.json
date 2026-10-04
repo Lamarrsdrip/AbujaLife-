@@ -7,7 +7,13 @@
     "dev": "node --watch scripts/dev.mjs",
     "start": "node scripts/dev.mjs --prod",
     "qa": "node scripts/qa.mjs && node --test tests/*.test.mjs",
-    "qa:browser": "python tests/browser-smoke.py"
+    "qa:browser": "python tests/browser-smoke.py",
+    "preview:build": "node preview/build.mjs"
   },
-  "engines": { "node": ">=24" }
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
 }

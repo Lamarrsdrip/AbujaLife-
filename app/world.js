@@ -257,7 +257,7 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
  // Observe only overlay roots. Watching world attributes would schedule work each frame.
  const overlayObserver=typeof MutationObserver!=='undefined'?new MutationObserver(syncPlayback):null;
  overlayObserver?.observe(document.body,{childList:true});
- for(const overlay of document.querySelectorAll('#sheet-root,#phone-root,.home-editor-root'))overlayObserver?.observe(overlay,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden','aria-hidden']});
+ for(const overlay of document.querySelectorAll('#sheet-root,#phone-root,.home-editor-root,dialog'))overlayObserver?.observe(overlay,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden','aria-hidden','aria-modal','open']});
  const visibilityObserver=typeof IntersectionObserver!=='undefined'?new IntersectionObserver(entries=>{inViewport=entries[0]?.isIntersecting!==false;syncPlayback();}):null;
  visibilityObserver?.observe(container);
  const resize=()=>updateViewport();

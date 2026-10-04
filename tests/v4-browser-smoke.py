@@ -115,7 +115,9 @@ async def register(page,url,name,username,qa):
     headings=[]
     for step in range(5):
         form=page.locator('#onboarding-form');headings.append(await form.locator('h1').inner_text())
-        if step==0:await form.locator('[name="displayName"]').fill(name)
+        if step==0:
+            await form.locator('[name="displayName"]').fill(name)
+            await form.locator('[name="presentation"][value="feminine"]').check()
         if step==1:await form.locator('[name="hair"][value="braids"]').locator('xpath=..').click()
         if step==3:await form.locator('[name="lifeGoal"][value="home"]').check()
         if step==4:

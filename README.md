@@ -66,7 +66,8 @@ Production runs a private MongoDB replica set and one Node API/SSE process, with
 The production frontend includes an administrator dashboard at `/admin/` (local development also supports `/admin.html`), with roles, resident search, suspension, report and post moderation, audited wallet adjustments, payment configuration and an audit trail. Admins with finance access can review and confirm a positive player top-up from Residents → Manage; each grant is idempotent and recorded in the wallet ledger and audit trail. First create a real resident, then bind that existing account from the server console:
 
 ```bash
-docker compose --env-file /opt/abujalife/shared/.env -f deploy/compose.yml exec api node deploy/admin-bootstrap.mjs --username EXISTING_RESIDENT_USERNAME
+export ABUJALIFE_DEPLOY_ENV_FILE=/opt/abujalife/shared/.env
+node deploy/compose.mjs exec api node deploy/admin-bootstrap.mjs --username EXISTING_RESIDENT_USERNAME
 ```
 
 Flutterwave keys are entered in the dashboard and encrypted on the server using `ABUJALIFE_CONFIG_KEY`. Set a stable 32-byte configuration key and the public HTTPS origin before enabling checkout. Provider verification requires an exact successful status, transaction ID, reference, NGN amount and ownership match before an atomic, replay-protected wallet credit. No live merchant was configured or payment attempted during development. Webhook signature compatibility could not be independently confirmed because the provider documentation site was blocked; return and manual verification work separately from webhooks.
@@ -84,7 +85,7 @@ npm run qa:infra
 
 `build` creates the connected Hostinger frontend in `dist/`. `qa:infra` requires Docker and creates its own authenticated private MongoDB fixture, verifies both accounts through the actual API and process restart, builds the real containers, and exercises encrypted backup/restore. It cleans only its own fixture resources. It does not connect to the owner's VPS or validate public hosting.
 
-See [PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md) before deploying. The supplied VPS SSH connection was refused and this cloud task cannot use the owner's Mac key or operate their Hostinger browser, so live DNS/HTTPS, Okrika coexistence and hosted acceptance remain pending. Source preparation and local acceptance are separate from that deployment.
+See [PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md) before deploying and [PRODUCTION_ACCEPTANCE.md](docs/PRODUCTION_ACCEPTANCE.md) for the current checks and outstanding launch gates. The supplied VPS SSH connection was refused and this cloud task cannot use the owner's Mac key or operate their Hostinger browser, so live DNS/HTTPS, Okrika coexistence and hosted acceptance remain pending. Source preparation and local acceptance are separate from that deployment.
 
 ## Geography
 

@@ -1,15 +1,12 @@
 {
   "name": "abujalife",
+  "version": "1.0.0-alpha.1",
   "private": true,
-  "version": "0.2.0",
+  "type": "module",
   "scripts": {
-    "test": "npm --prefix services/core test",
-    "start:api": "npm --prefix services/core run start",
-    "dev:api": "npm --prefix services/core run dev",
-    "validate:data": "node tools/validate-data.mjs",
-    "qa": "npm run validate:data && npm test"
+    "dev": "node scripts/dev.mjs",
+    "start": "node scripts/dev.mjs --prod",
+    "qa": "node scripts/qa.mjs && node --test tests/*.test.mjs"
   },
-  "engines": {
-    "node": ">=20"
-  }
+  "engines": { "node": ">=20" }
 }

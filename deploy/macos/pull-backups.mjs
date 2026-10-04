@@ -20,11 +20,16 @@ const receipt=JSON.parse(command('/usr/bin/ssh',[...sshArguments,'Administrator@
 const name=path.win32.basename(receipt.backup || '');
 if(receipt.ok!==true || receipt.database!=='abujalife_prod' || receipt.encryption!=='AES-256-GCM' || receipt.consistent!==true || receipt.validation!=='authenticated decryption and mongorestore --dryRun' || !/^abujalife-[0-9TZ-]+\.abjl\.enc$/.test(name) || !/^[a-f0-9]{64}$/.test(receipt.sha256 || '') || !Number.isSafeInteger(receipt.bytes) || receipt.bytes<37) throw new Error('The server backup receipt did not pass validation.');
 if(Date.now()-Date.parse(receipt.completedAt)>48*3600000) throw new Error('Server backup is older than 48 hours; inspect the AbujaLife-Backup scheduled task.');
-const escrow=path.join(destination,'backup-key');
-if(!fs.existsSync(escrow)) {
-  command('/usr/bin/scp',[...sshArguments,'Administrator@173.212.249.202:C:/services/abujalife/shared/.secrets/backup-key',escrow]);
-  fs.chmodSync(escrow,0o600);
+// Escrow only AbujaLife recovery keys, never the SSH key. The config key is
+// needed to decrypt provider settings restored from the production database.
+for (const keyName of ['backup-key', 'config-key']) {
+  const keyPath = path.join(destination, keyName);
+  if (!fs.existsSync(keyPath)) {
+    command('/usr/bin/scp', [...sshArguments, 'Administrator@173.212.249.202:C:/services/abujalife/shared/.secrets/' + keyName, keyPath]);
+  }
+  fs.chmodSync(keyPath, 0o600);
 }
+const escrow=path.join(destination,'backup-key');
 const archive=path.join(destination,name), partial=archive+'.partial';
 if(!fs.existsSync(archive)) {
   command('/usr/bin/scp',[...sshArguments,'Administrator@173.212.249.202:C:/services/abujalife/shared/backups/'+name,partial]);

@@ -1,0 +1,49 @@
+name: Bootstrap AbujaLife Source
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.bootstrap/**'
+      - '.github/workflows/bootstrap.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Expand AbujaLife source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f .bootstrap/part-00.txt
+          count=$(find .bootstrap -name 'part-*.txt' | wc -l | tr -d ' ')
+          test "$count" = "18"
+          cat .bootstrap/part-*.txt | base64 --decode > /tmp/AbujaLife.zip
+          echo '5f363a19a5d1308bc29103217485a08b7ea554169d945db0272c1c208863b8a4  /tmp/AbujaLife.zip' | sha256sum -c -
+          unzip -oq /tmp/AbujaLife.zip -d .
+          rm -rf .bootstrap
+          rm -f .github/workflows/bootstrap.yml
+
+      - name: Run repository QA
+        run: npm run qa
+
+      - name: Commit expanded source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'AbujaLife Bootstrap'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'No changes to commit.'
+            exit 0
+          fi
+          git commit -m 'feat: bootstrap AbujaLife open-world foundation'
+          git push origin HEAD:main

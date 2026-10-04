@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "start": "node scripts/dev.mjs --prod",
-    "qa": "node scripts/qa.mjs && node --test tests/*.test.mjs"
+    "qa": "node scripts/qa.mjs && node --check app/app.js && node --check src/server/http.mjs && node --check src/shared/atlas.mjs && node --test tests/*.test.mjs"
   },
   "engines": { "node": ">=20" }
 }

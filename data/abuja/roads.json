@@ -1,0 +1,74 @@
+[
+  {
+    "id": "airport-expressway",
+    "name": "Airport Expressway",
+    "class": "expressway",
+    "speedLimit": 100,
+    "connects": [
+      "airport-corridor",
+      "lugbe",
+      "kukwaba",
+      "central"
+    ]
+  },
+  {
+    "id": "inner-northern",
+    "name": "Inner Northern Expressway",
+    "class": "expressway",
+    "speedLimit": 90,
+    "connects": [
+      "central",
+      "wuse1",
+      "maitama",
+      "katampe"
+    ]
+  },
+  {
+    "id": "outer-northern",
+    "name": "Outer Northern Expressway",
+    "class": "expressway",
+    "speedLimit": 100,
+    "connects": [
+      "kubwa",
+      "dawaki",
+      "katampe",
+      "central"
+    ]
+  },
+  {
+    "id": "inner-southern",
+    "name": "Inner Southern Expressway",
+    "class": "expressway",
+    "speedLimit": 90,
+    "connects": [
+      "central",
+      "garki1",
+      "gudu",
+      "apo"
+    ]
+  },
+  {
+    "id": "northern-parkway",
+    "name": "Northern Parkway",
+    "class": "parkway",
+    "speedLimit": 80,
+    "connects": [
+      "central",
+      "wuse2",
+      "jabi",
+      "kado"
+    ]
+  },
+  {
+    "id": "southern-parkway",
+    "name": "Southern Parkway",
+    "class": "parkway",
+    "speedLimit": 80,
+    "connects": [
+      "central",
+      "garki2",
+      "durumi",
+      "galadimawa"
+    ]
+  }
+]

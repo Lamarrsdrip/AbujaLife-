@@ -1,0 +1,3 @@
+import test from 'node:test'; import assert from 'node:assert/strict';
+import { Ledger } from '../src/economy.js'; import { MemoryStore } from '../src/store.js'; import { completeJobShift } from '../src/jobs.js';
+test('job pays once per cooldown',()=>{const s=new MemoryStore();const p=s.createPlayer();const l=new Ledger();const jobs=[{id:'j',pay:100,cooldownSeconds:60,minReputation:0}];completeJobShift({store:s,ledger:l,jobs,playerId:p.id,jobId:'j',now:100000});assert.equal(l.balance(p.id),100);assert.throws(()=>completeJobShift({store:s,ledger:l,jobs,playerId:p.id,jobId:'j',now:120000}),/not available/);});

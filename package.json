@@ -1,0 +1,15 @@
+{
+  "name": "abujalife",
+  "private": true,
+  "version": "0.2.0",
+  "scripts": {
+    "test": "npm --prefix services/core test",
+    "start:api": "npm --prefix services/core run start",
+    "dev:api": "npm --prefix services/core run dev",
+    "validate:data": "node tools/validate-data.mjs",
+    "qa": "npm run validate:data && npm test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

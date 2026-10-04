@@ -1,0 +1,2 @@
+using NUnit.Framework; using AbujaLife.Marketplace; using AbujaLife.Economy;
+namespace AbujaLife.Tests { public sealed class CoreTests { [Test] public void GameCurrencyNeverPaysPhysicalCommerce(){Assert.False(CommerceBoundary.CanUseGameCurrency("physical"));Assert.True(CommerceBoundary.CanUseGameCurrency("virtual"));} [Test] public void WalletNeverAcceptsNegativeAuthoritativeBalance(){var w=new WalletModel();w.ApplyAuthoritativeBalance(-10);Assert.AreEqual(0,w.Balance);} } }

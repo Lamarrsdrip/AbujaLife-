@@ -1,0 +1,4 @@
+using UnityEngine;
+namespace AbujaLife.Traffic {
+ public sealed class TrafficAgent:MonoBehaviour { public TrafficLane lane; public float acceleration=5; public float turnSharpness=4; int index; float speed; void Update(){if(lane==null||lane.points==null||lane.points.Length<2)return;var target=lane.Point(index);var to=target-transform.position;to.y=0;if(to.magnitude<4f){index=(index+1)%lane.points.Length;return;}float desired=lane.speedLimitKph/3.6f; if(Physics.Raycast(transform.position+Vector3.up*.5f,transform.forward,out _,8f))desired=0;speed=Mathf.MoveTowards(speed,desired,acceleration*Time.deltaTime);transform.rotation=Quaternion.Slerp(transform.rotation,Quaternion.LookRotation(to.normalized),1-Mathf.Exp(-turnSharpness*Time.deltaTime));transform.position+=transform.forward*speed*Time.deltaTime;}}
+}

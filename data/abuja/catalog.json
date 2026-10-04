@@ -1,0 +1,284 @@
+[
+  {
+    "id": "food_jollof",
+    "type": "consumable",
+    "name": "Jollof & Grilled Chicken",
+    "price": 6500,
+    "district": "wuse2",
+    "rarity": "standard",
+    "effects": {
+      "hunger": 35,
+      "energy": 5
+    }
+  },
+  {
+    "id": "food_suya",
+    "type": "consumable",
+    "name": "Suya Plate",
+    "price": 5000,
+    "district": "wuse2",
+    "rarity": "standard",
+    "effects": {
+      "hunger": 35,
+      "energy": 5
+    }
+  },
+  {
+    "id": "food_breakfast",
+    "type": "consumable",
+    "name": "Abuja Breakfast Tray",
+    "price": 8000,
+    "district": "maitama",
+    "rarity": "standard",
+    "effects": {
+      "hunger": 35,
+      "energy": 5
+    }
+  },
+  {
+    "id": "drink_zobo",
+    "type": "consumable",
+    "name": "Cold Zobo",
+    "price": 1800,
+    "district": "garki1",
+    "rarity": "standard",
+    "effects": {
+      "hunger": 35,
+      "energy": 5
+    }
+  },
+  {
+    "id": "fashion_kaftan",
+    "type": "fashion",
+    "name": "Contemporary Kaftan",
+    "price": 48000,
+    "district": "wuse2",
+    "rarity": "standard"
+  },
+  {
+    "id": "fashion_native",
+    "type": "fashion",
+    "name": "Premium Native Set",
+    "price": 92000,
+    "district": "wuse2",
+    "rarity": "standard"
+  },
+  {
+    "id": "fashion_street",
+    "type": "fashion",
+    "name": "Abuja Street Set",
+    "price": 62000,
+    "district": "wuse2",
+    "rarity": "standard"
+  },
+  {
+    "id": "fashion_corporate",
+    "type": "fashion",
+    "name": "Executive Office Set",
+    "price": 120000,
+    "district": "central",
+    "rarity": "standard"
+  },
+  {
+    "id": "fashion_evening",
+    "type": "fashion",
+    "name": "Evening Social Set",
+    "price": 180000,
+    "district": "jabi",
+    "rarity": "standard"
+  },
+  {
+    "id": "furn_sofa",
+    "type": "furniture",
+    "name": "Nova 3-Seat Sofa",
+    "price": 185000,
+    "district": "wuse2",
+    "rarity": "standard"
+  },
+  {
+    "id": "furn_bed",
+    "type": "furniture",
+    "name": "Onyx Platform Bed",
+    "price": 240000,
+    "district": "garki2",
+    "rarity": "standard"
+  },
+  {
+    "id": "furn_dining",
+    "type": "furniture",
+    "name": "Six-Seat Dining Set",
+    "price": 310000,
+    "district": "jabi",
+    "rarity": "standard"
+  },
+  {
+    "id": "furn_tv",
+    "type": "furniture",
+    "name": "75-inch Smart TV",
+    "price": 780000,
+    "district": "wuse2",
+    "rarity": "premium"
+  },
+  {
+    "id": "furn_console",
+    "type": "furniture",
+    "name": "Game Console Setup",
+    "price": 520000,
+    "district": "jabi",
+    "rarity": "standard"
+  },
+  {
+    "id": "furn_fridge",
+    "type": "furniture",
+    "name": "Double Door Fridge",
+    "price": 610000,
+    "district": "garki2",
+    "rarity": "standard"
+  },
+  {
+    "id": "furn_washer",
+    "type": "furniture",
+    "name": "Washer Dryer",
+    "price": 440000,
+    "district": "garki2",
+    "rarity": "standard"
+  },
+  {
+    "id": "decor_aso",
+    "type": "furniture",
+    "name": "Aso Horizon Print",
+    "price": 95000,
+    "district": "central",
+    "rarity": "standard"
+  },
+  {
+    "id": "decor_rug",
+    "type": "furniture",
+    "name": "Handwoven Statement Rug",
+    "price": 130000,
+    "district": "wuse2",
+    "rarity": "standard"
+  },
+  {
+    "id": "decor_plant",
+    "type": "furniture",
+    "name": "Indoor Palm",
+    "price": 35000,
+    "district": "jabi",
+    "rarity": "standard"
+  },
+  {
+    "id": "phone_std",
+    "type": "device",
+    "name": "Abuja Phone Standard",
+    "price": 260000,
+    "district": "wuse2",
+    "rarity": "standard"
+  },
+  {
+    "id": "phone_pro",
+    "type": "device",
+    "name": "Abuja Phone Pro",
+    "price": 720000,
+    "district": "maitama",
+    "rarity": "premium"
+  },
+  {
+    "id": "laptop_01",
+    "type": "device",
+    "name": "Creator Laptop",
+    "price": 1200000,
+    "district": "jabi",
+    "rarity": "premium"
+  },
+  {
+    "id": "vehicle_compact-01",
+    "type": "vehicle",
+    "name": "Kora Compact",
+    "price": 2400000,
+    "district": "gudu",
+    "rarity": "standard",
+    "vehicleId": "compact-01"
+  },
+  {
+    "id": "vehicle_sedan-01",
+    "type": "vehicle",
+    "name": "Aero Sedan",
+    "price": 6800000,
+    "district": "gudu",
+    "rarity": "standard",
+    "vehicleId": "sedan-01"
+  },
+  {
+    "id": "vehicle_sedan-02",
+    "type": "vehicle",
+    "name": "Executive Saloon",
+    "price": 12500000,
+    "district": "gudu",
+    "rarity": "standard",
+    "vehicleId": "sedan-02"
+  },
+  {
+    "id": "vehicle_suv-01",
+    "type": "vehicle",
+    "name": "Atlas SUV",
+    "price": 19500000,
+    "district": "maitama",
+    "rarity": "standard",
+    "vehicleId": "suv-01"
+  },
+  {
+    "id": "vehicle_suv-02",
+    "type": "vehicle",
+    "name": "Summit Luxury SUV",
+    "price": 42000000,
+    "district": "maitama",
+    "rarity": "premium",
+    "vehicleId": "suv-02"
+  },
+  {
+    "id": "vehicle_pickup-01",
+    "type": "vehicle",
+    "name": "Workhorse Pickup",
+    "price": 14500000,
+    "district": "gudu",
+    "rarity": "standard",
+    "vehicleId": "pickup-01"
+  },
+  {
+    "id": "vehicle_bike-01",
+    "type": "vehicle",
+    "name": "Metro Bike",
+    "price": 1800000,
+    "district": "gudu",
+    "rarity": "standard",
+    "vehicleId": "bike-01"
+  },
+  {
+    "id": "vehicle_bike-02",
+    "type": "vehicle",
+    "name": "Courier Bike",
+    "price": 2200000,
+    "district": "gudu",
+    "rarity": "standard",
+    "vehicleId": "bike-02"
+  },
+  {
+    "id": "vehicle_ev-01",
+    "type": "vehicle",
+    "name": "Nova EV",
+    "price": 28000000,
+    "district": "gudu",
+    "rarity": "premium",
+    "vehicleId": "ev-01"
+  },
+  {
+    "id": "vehicle_sport-01",
+    "type": "vehicle",
+    "name": "Veloce GT",
+    "price": 65000000,
+    "district": "gudu",
+    "rarity": "premium",
+    "vehicleId": "sport-01"
+  }
+]

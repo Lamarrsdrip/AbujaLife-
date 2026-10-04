@@ -1,0 +1,72 @@
+[
+  {
+    "id": "starter-wuse-studio",
+    "name": "Wuse Starter Studio",
+    "district": "wuse1",
+    "type": "studio",
+    "rent": 180000,
+    "buy": 0,
+    "slots": 12,
+    "tier": 1
+  },
+  {
+    "id": "garki-flat",
+    "name": "Garki Two-Bed Flat",
+    "district": "garki2",
+    "type": "apartment",
+    "rent": 350000,
+    "buy": 28000000,
+    "slots": 22,
+    "tier": 2
+  },
+  {
+    "id": "gwarinpa-terrace",
+    "name": "Gwarinpa Terrace",
+    "district": "gwarinpa1",
+    "type": "terrace",
+    "rent": 620000,
+    "buy": 72000000,
+    "slots": 34,
+    "tier": 3
+  },
+  {
+    "id": "jabi-lake-apartment",
+    "name": "Jabi Lake Apartment",
+    "district": "jabi",
+    "type": "apartment",
+    "rent": 900000,
+    "buy": 125000000,
+    "slots": 28,
+    "tier": 4
+  },
+  {
+    "id": "guzape-duplex",
+    "name": "Guzape Duplex",
+    "district": "guzape",
+    "type": "duplex",
+    "rent": 1400000,
+    "buy": 240000000,
+    "slots": 46,
+    "tier": 4
+  },
+  {
+    "id": "maitama-villa",
+    "name": "Maitama Villa",
+    "district": "maitama",
+    "type": "villa",
+    "rent": 3200000,
+    "buy": 650000000,
+    "slots": 72,
+    "tier": 5
+  },
+  {
+    "id": "asokoro-estate",
+    "name": "Asokoro Estate Home",
+    "district": "asokoro",
+    "type": "villa",
+    "rent": 3600000,
+    "buy": 780000000,
+    "slots": 80,
+    "tier": 5
+  }
+]

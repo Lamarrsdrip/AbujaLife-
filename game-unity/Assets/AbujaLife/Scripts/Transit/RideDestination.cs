@@ -1,0 +1,2 @@
+using UnityEngine; using AbujaLife.Interaction;
+namespace AbujaLife.Transit { public sealed class RideDestination:MonoBehaviour,IInteractable { public string districtId; public string label="Travel"; public Transform arrival; public Transform player; public string Prompt=>label; public bool CanInteract=>player&&arrival; public void Interact(){var cc=player.GetComponent<CharacterController>();if(cc)cc.enabled=false;player.SetPositionAndRotation(arrival.position,arrival.rotation);if(cc)cc.enabled=true;} } }

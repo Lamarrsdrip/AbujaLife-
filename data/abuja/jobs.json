@@ -1,0 +1,222 @@
+[
+  {
+    "id": "ride_driver",
+    "name": "Ride Driver",
+    "district": "wuse2",
+    "pay": 18000,
+    "cooldownSeconds": 120,
+    "minReputation": 0,
+    "gameplay": "pick up passengers and drive cleanly through live traffic",
+    "skill": "driving"
+  },
+  {
+    "id": "delivery_rider",
+    "name": "Delivery Rider",
+    "district": "garki1",
+    "pay": 14500,
+    "cooldownSeconds": 100,
+    "minReputation": 0,
+    "gameplay": "collect parcels and route through traffic before deadline",
+    "skill": "driving"
+  },
+  {
+    "id": "cafe_shift",
+    "name": "Cafe Shift",
+    "district": "jabi",
+    "pay": 12500,
+    "cooldownSeconds": 90,
+    "minReputation": 0,
+    "gameplay": "take orders and serve tables during rush",
+    "skill": "service"
+  },
+  {
+    "id": "restaurant_server",
+    "name": "Restaurant Server",
+    "district": "wuse2",
+    "pay": 15000,
+    "cooldownSeconds": 100,
+    "minReputation": 0,
+    "gameplay": "seat guests, deliver orders and handle rush",
+    "skill": "service"
+  },
+  {
+    "id": "barber_stylist",
+    "name": "Barber / Stylist",
+    "district": "wuse2",
+    "pay": 17000,
+    "cooldownSeconds": 120,
+    "minReputation": 2,
+    "gameplay": "perform timed style requests on NPC clients",
+    "skill": "style"
+  },
+  {
+    "id": "retail_assistant",
+    "name": "Retail Assistant",
+    "district": "utako",
+    "pay": 13000,
+    "cooldownSeconds": 90,
+    "minReputation": 0,
+    "gameplay": "stock shelves, serve shoppers and prevent queues",
+    "skill": "service"
+  },
+  {
+    "id": "market_trader",
+    "name": "Market Trader",
+    "district": "garki1",
+    "pay": 16000,
+    "cooldownSeconds": 120,
+    "minReputation": 0,
+    "gameplay": "buy low, price stock and sell to NPC demand",
+    "skill": "commerce"
+  },
+  {
+    "id": "mechanic",
+    "name": "Auto Mechanic",
+    "district": "gudu",
+    "pay": 22000,
+    "cooldownSeconds": 150,
+    "minReputation": 4,
+    "gameplay": "diagnose and repair vehicle faults",
+    "skill": "mechanic"
+  },
+  {
+    "id": "car_wash",
+    "name": "Car Wash Attendant",
+    "district": "gudu",
+    "pay": 12000,
+    "cooldownSeconds": 80,
+    "minReputation": 0,
+    "gameplay": "clean vehicles against a quality timer",
+    "skill": "service"
+  },
+  {
+    "id": "security_shift",
+    "name": "Private Security",
+    "district": "maitama",
+    "pay": 21000,
+    "cooldownSeconds": 150,
+    "minReputation": 5,
+    "gameplay": "patrol checkpoints and respond to incidents",
+    "skill": "awareness"
+  },
+  {
+    "id": "office_assistant",
+    "name": "Office Assistant",
+    "district": "central",
+    "pay": 19000,
+    "cooldownSeconds": 140,
+    "minReputation": 2,
+    "gameplay": "complete office errands and scheduling tasks",
+    "skill": "office"
+  },
+  {
+    "id": "bank_analyst",
+    "name": "Bank Analyst",
+    "district": "central",
+    "pay": 36000,
+    "cooldownSeconds": 210,
+    "minReputation": 12,
+    "gameplay": "process simulated client cases accurately",
+    "skill": "office"
+  },
+  {
+    "id": "property_agent",
+    "name": "Property Agent",
+    "district": "maitama",
+    "pay": 42000,
+    "cooldownSeconds": 240,
+    "minReputation": 12,
+    "gameplay": "show properties and close matching tasks",
+    "skill": "sales"
+  },
+  {
+    "id": "event_host",
+    "name": "Event Host",
+    "district": "jabi",
+    "pay": 25000,
+    "cooldownSeconds": 180,
+    "minReputation": 6,
+    "gameplay": "manage guest flow and event objectives",
+    "skill": "social"
+  },
+  {
+    "id": "photographer",
+    "name": "City Photographer",
+    "district": "central",
+    "pay": 22000,
+    "cooldownSeconds": 140,
+    "minReputation": 4,
+    "gameplay": "capture requested landmarks and street-life shots",
+    "skill": "creative"
+  },
+  {
+    "id": "fitness_trainer",
+    "name": "Fitness Trainer",
+    "district": "maitama",
+    "pay": 23000,
+    "cooldownSeconds": 160,
+    "minReputation": 5,
+    "gameplay": "coach NPC workouts and maintain streaks",
+    "skill": "fitness"
+  },
+  {
+    "id": "construction_crew",
+    "name": "Construction Crew",
+    "district": "mbora",
+    "pay": 26000,
+    "cooldownSeconds": 180,
+    "minReputation": 3,
+    "gameplay": "complete site tasks and safety checks",
+    "skill": "manual"
+  },
+  {
+    "id": "airport_ground",
+    "name": "Airport Ground Crew",
+    "district": "airport-corridor",
+    "pay": 28000,
+    "cooldownSeconds": 180,
+    "minReputation": 6,
+    "gameplay": "coordinate baggage and turnaround objectives",
+    "skill": "logistics"
+  },
+  {
+    "id": "bus_driver",
+    "name": "City Bus Driver",
+    "district": "utako",
+    "pay": 25000,
+    "cooldownSeconds": 180,
+    "minReputation": 5,
+    "gameplay": "follow route, stop accuracy and passenger comfort",
+    "skill": "driving"
+  },
+  {
+    "id": "content_creator",
+    "name": "Content Creator",
+    "district": "wuse2",
+    "pay": 18000,
+    "cooldownSeconds": 180,
+    "minReputation": 3,
+    "gameplay": "shoot city challenges and grow fictional followers",
+    "skill": "creative"
+  },
+  {
+    "id": "startup_operator",
+    "name": "Startup Operator",
+    "district": "jabi",
+    "pay": 48000,
+    "cooldownSeconds": 300,
+    "minReputation": 18,
+    "gameplay": "manage timed product/business decisions",
+    "skill": "business"
+  },
+  {
+    "id": "civil_engineer",
+    "name": "Project Engineer",
+    "district": "central",
+    "pay": 52000,
+    "cooldownSeconds": 300,
+    "minReputation": 20,
+    "gameplay": "inspect city projects and resolve engineering scenarios",
+    "skill": "technical"
+  }
+]

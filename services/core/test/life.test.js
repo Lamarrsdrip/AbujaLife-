@@ -1,0 +1,2 @@
+import test from 'node:test'; import assert from 'node:assert/strict'; import { performLifeAction, applyNeedDecay } from '../src/life.js';
+test('life needs remain bounded',()=>{const n=performLifeAction({hunger:90,energy:90,hygiene:90,social:90},'eat');assert.equal(n.hunger,100);const d=applyNeedDecay({hunger:10,energy:10,hygiene:10,social:10},1000);assert.deepEqual(d,{hunger:0,energy:0,hygiene:0,social:0});});

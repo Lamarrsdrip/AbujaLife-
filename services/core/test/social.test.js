@@ -1,0 +1,2 @@
+import test from 'node:test'; import assert from 'node:assert/strict'; import { MemoryStore } from '../src/store.js'; import { sendMessage } from '../src/social.js';
+test('messaging validates participants and content',()=>{const s=new MemoryStore();const a=s.createPlayer();const b=s.createPlayer();const m=sendMessage({store:s,from:a.id,to:b.id,text:'Meet at Jabi?'});assert.equal(m.text,'Meet at Jabi?');assert.throws(()=>sendMessage({store:s,from:a.id,to:b.id,text:'   '}),/Message/);});

@@ -1,0 +1,134 @@
+[
+  {
+    "id": "biz-cafe",
+    "name": "Cafe",
+    "category": "food",
+    "startupCost": 2500000,
+    "districts": [
+      "wuse2",
+      "jabi",
+      "garki2"
+    ],
+    "revenuePerCycle": [
+      30000,
+      110000
+    ]
+  },
+  {
+    "id": "biz-lounge",
+    "name": "Lounge",
+    "category": "nightlife",
+    "startupCost": 12000000,
+    "districts": [
+      "wuse2",
+      "jabi"
+    ],
+    "revenuePerCycle": [
+      120000,
+      500000
+    ]
+  },
+  {
+    "id": "biz-barber",
+    "name": "Barber & Beauty Studio",
+    "category": "services",
+    "startupCost": 4500000,
+    "districts": [
+      "wuse2",
+      "garki1",
+      "gwarinpa1"
+    ],
+    "revenuePerCycle": [
+      45000,
+      180000
+    ]
+  },
+  {
+    "id": "biz-carwash",
+    "name": "Car Wash",
+    "category": "auto",
+    "startupCost": 6000000,
+    "districts": [
+      "gudu",
+      "utako",
+      "lugbe"
+    ],
+    "revenuePerCycle": [
+      50000,
+      220000
+    ]
+  },
+  {
+    "id": "biz-autoshop",
+    "name": "Auto Workshop",
+    "category": "auto",
+    "startupCost": 18000000,
+    "districts": [
+      "gudu",
+      "airport-corridor"
+    ],
+    "revenuePerCycle": [
+      120000,
+      650000
+    ]
+  },
+  {
+    "id": "biz-fashion",
+    "name": "Fashion Store",
+    "category": "retail",
+    "startupCost": 9000000,
+    "districts": [
+      "wuse2",
+      "jabi",
+      "central"
+    ],
+    "revenuePerCycle": [
+      80000,
+      420000
+    ]
+  },
+  {
+    "id": "biz-property",
+    "name": "Property Agency",
+    "category": "property",
+    "startupCost": 25000000,
+    "districts": [
+      "maitama",
+      "central",
+      "jahi"
+    ],
+    "revenuePerCycle": [
+      160000,
+      900000
+    ]
+  },
+  {
+    "id": "biz-logistics",
+    "name": "Delivery & Logistics",
+    "category": "logistics",
+    "startupCost": 14000000,
+    "districts": [
+      "utako",
+      "lugbe",
+      "airport-corridor"
+    ],
+    "revenuePerCycle": [
+      100000,
+      520000
+    ]
+  },
+  {
+    "id": "biz-media",
+    "name": "Media Studio",
+    "category": "creative",
+    "startupCost": 11000000,
+    "districts": [
+      "wuse2",
+      "jabi"
+    ],
+    "revenuePerCycle": [
+      75000,
+      400000
+    ]
+  }
+]

@@ -1,0 +1,102 @@
+[
+  {
+    "id": "compact-01",
+    "name": "Kora Compact",
+    "class": "car",
+    "price": 2400000,
+    "topSpeed": 0.78,
+    "acceleration": 0.82,
+    "efficiency": 0.92,
+    "fuelCapacity": 60
+  },
+  {
+    "id": "sedan-01",
+    "name": "Aero Sedan",
+    "class": "car",
+    "price": 6800000,
+    "topSpeed": 0.82,
+    "acceleration": 0.86,
+    "efficiency": 0.8,
+    "fuelCapacity": 60
+  },
+  {
+    "id": "sedan-02",
+    "name": "Executive Saloon",
+    "class": "car",
+    "price": 12500000,
+    "topSpeed": 0.86,
+    "acceleration": 0.9,
+    "efficiency": 0.76,
+    "fuelCapacity": 60
+  },
+  {
+    "id": "suv-01",
+    "name": "Atlas SUV",
+    "class": "suv",
+    "price": 19500000,
+    "topSpeed": 0.88,
+    "acceleration": 0.83,
+    "efficiency": 0.72,
+    "fuelCapacity": 60
+  },
+  {
+    "id": "suv-02",
+    "name": "Summit Luxury SUV",
+    "class": "suv",
+    "price": 42000000,
+    "topSpeed": 0.91,
+    "acceleration": 0.86,
+    "efficiency": 0.68,
+    "fuelCapacity": 60
+  },
+  {
+    "id": "pickup-01",
+    "name": "Workhorse Pickup",
+    "class": "pickup",
+    "price": 14500000,
+    "topSpeed": 0.8,
+    "acceleration": 0.72,
+    "efficiency": 0.65,
+    "fuelCapacity": 60
+  },
+  {
+    "id": "bike-01",
+    "name": "Metro Bike",
+    "class": "motorbike",
+    "price": 1800000,
+    "topSpeed": 0.84,
+    "acceleration": 0.95,
+    "efficiency": 0.96,
+    "fuelCapacity": 18
+  },
+  {
+    "id": "bike-02",
+    "name": "Courier Bike",
+    "class": "motorbike",
+    "price": 2200000,
+    "topSpeed": 0.8,
+    "acceleration": 0.93,
+    "efficiency": 0.98,
+    "fuelCapacity": 18
+  },
+  {
+    "id": "ev-01",
+    "name": "Nova EV",
+    "class": "car",
+    "price": 28000000,
+    "topSpeed": 0.92,
+    "acceleration": 0.94,
+    "efficiency": 0.84,
+    "fuelCapacity": 60
+  },
+  {
+    "id": "sport-01",
+    "name": "Veloce GT",
+    "class": "car",
+    "price": 65000000,
+    "topSpeed": 0.98,
+    "acceleration": 1.0,
+    "efficiency": 0.62,
+    "fuelCapacity": 60
+  }
+]

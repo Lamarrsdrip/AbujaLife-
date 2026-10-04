@@ -1,0 +1,2 @@
+import test from 'node:test'; import assert from 'node:assert/strict'; import { createApp } from '../src/app.js';
+test('friend request can be accepted',()=>{const app=createApp();const a=app.store.createPlayer({displayName:'A'}),b=app.store.createPlayer({displayName:'B'});app.requestFriend({store:app.store,from:a.id,to:b.id});const r=app.acceptFriend({store:app.store,playerId:b.id,otherId:a.id});assert.equal(r.status,'friends');assert.equal(app.store.getRelationship(a.id,b.id).status,'friends');assert.equal(app.store.getRelationship(b.id,a.id).status,'friends');});

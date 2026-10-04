@@ -1,0 +1,10 @@
+{
+  "modes": [
+    {"id":"walk","name":"Walk","cost":0,"worldPresence":true},
+    {"id":"ride","name":"Ride","costModel":"distance","worldPresence":true},
+    {"id":"bus","name":"City Bus","costModel":"flat+zone","worldPresence":true},
+    {"id":"rail","name":"Abuja Light Rail","costModel":"station","worldPresence":true},
+    {"id":"own-car","name":"Own Vehicle","costModel":"fuel","worldPresence":true}
+  ],
+  "hubs": ["utako","jabi","central","airport-corridor","kubwa"]
+}

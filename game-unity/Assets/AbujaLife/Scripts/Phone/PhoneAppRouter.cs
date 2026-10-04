@@ -1,0 +1,2 @@
+using System; using System.Collections.Generic; using UnityEngine;
+namespace AbujaLife.Phone { public sealed class PhoneAppRouter:MonoBehaviour { readonly Stack<GameObject> stack=new(); public void Open(GameObject panel){if(stack.Count>0)stack.Peek().SetActive(false);panel.SetActive(true);stack.Push(panel);} public void Back(){if(stack.Count==0)return;stack.Pop().SetActive(false);if(stack.Count>0)stack.Peek().SetActive(true);} public void Home(){while(stack.Count>0)stack.Pop().SetActive(false);} } }

@@ -1,0 +1,144 @@
+[
+  {
+    "id": "aso-rock",
+    "name": "Aso Rock",
+    "district": "asokoro",
+    "kind": "natural",
+    "gameplay": [
+      "photo spot",
+      "hiking-view route",
+      "orientation landmark"
+    ],
+    "realWorldBrandUse": "public landmark; art must be original"
+  },
+  {
+    "id": "millennium-park",
+    "name": "Millennium Park",
+    "district": "maitama",
+    "kind": "park",
+    "gameplay": [
+      "dates",
+      "fitness",
+      "picnic",
+      "events"
+    ]
+  },
+  {
+    "id": "jabi-lake",
+    "name": "Jabi Lake",
+    "district": "jabi",
+    "kind": "waterfront",
+    "gameplay": [
+      "boat activity",
+      "dates",
+      "fitness",
+      "events"
+    ]
+  },
+  {
+    "id": "city-gate",
+    "name": "Abuja City Gate",
+    "district": "airport-corridor",
+    "kind": "monument",
+    "gameplay": [
+      "arrival cinematic",
+      "photo spot",
+      "race checkpoint"
+    ]
+  },
+  {
+    "id": "national-stadium",
+    "name": "Moshood Abiola National Stadium",
+    "district": "kukwaba",
+    "kind": "sport",
+    "gameplay": [
+      "football events",
+      "concerts",
+      "jobs"
+    ]
+  },
+  {
+    "id": "international-conference-centre",
+    "name": "Abuja International Conference Centre",
+    "district": "central",
+    "kind": "civic",
+    "gameplay": [
+      "conference jobs",
+      "events",
+      "business missions"
+    ]
+  },
+  {
+    "id": "national-mosque",
+    "name": "National Mosque",
+    "district": "central",
+    "kind": "landmark",
+    "gameplay": [
+      "orientation",
+      "tourism"
+    ]
+  },
+  {
+    "id": "national-christian-centre",
+    "name": "National Christian Centre",
+    "district": "central",
+    "kind": "landmark",
+    "gameplay": [
+      "orientation",
+      "tourism"
+    ]
+  },
+  {
+    "id": "three-arms-zone",
+    "name": "Three Arms Zone",
+    "district": "central",
+    "kind": "civic",
+    "gameplay": [
+      "tourism route",
+      "city missions"
+    ]
+  },
+  {
+    "id": "lower-usuma",
+    "name": "Lower Usuma Dam",
+    "district": "kagini",
+    "kind": "nature",
+    "gameplay": [
+      "scenic outing",
+      "fishing-style minigame",
+      "photo spot"
+    ]
+  },
+  {
+    "id": "national-childrens-park-zoo",
+    "name": "National Children\u2019s Park & Zoo",
+    "district": "asokoro",
+    "kind": "recreation",
+    "gameplay": [
+      "outing",
+      "photo missions",
+      "events"
+    ]
+  },
+  {
+    "id": "jabi-transport-hub",
+    "name": "Jabi Transport Hub",
+    "district": "jabi",
+    "kind": "transport",
+    "gameplay": [
+      "ride jobs",
+      "bus travel"
+    ]
+  },
+  {
+    "id": "airport",
+    "name": "Nnamdi Azikiwe International Airport",
+    "district": "airport-corridor",
+    "kind": "transport",
+    "gameplay": [
+      "airport jobs",
+      "travel expansion",
+      "rides"
+    ]
+  }
+]

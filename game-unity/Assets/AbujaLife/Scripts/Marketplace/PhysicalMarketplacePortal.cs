@@ -1,0 +1,2 @@
+using UnityEngine; using AbujaLife.Interaction; using AbujaLife.Networking;
+namespace AbujaLife.Marketplace { public sealed class PhysicalMarketplacePortal:MonoBehaviour,IInteractable { public OkrikaBridge bridge; public PlayerSession session; public string districtId="wuse2"; public string Prompt=>"Browse Okrika — real marketplace"; public bool CanInteract=>bridge&&session?.State!=null; public void Interact()=>bridge.Open(session.State.playerId,districtId); } }

@@ -1,2 +1,0 @@
-using UnityEngine;
-namespace AbujaLife.Performance { public sealed class AdaptiveQualityController:MonoBehaviour { public float sampleWindow=3f; public float lowFps=42f, recoverFps=56f; float elapsed; int frames; void Update(){elapsed+=Time.unscaledDeltaTime;frames++;if(elapsed<sampleWindow)return;float fps=frames/elapsed;frames=0;elapsed=0;if(fps<lowFps&&QualitySettings.GetQualityLevel()>0)QualitySettings.DecreaseLevel(true);else if(fps>recoverFps&&QualitySettings.GetQualityLevel()<QualitySettings.names.Length-1)QualitySettings.IncreaseLevel(true);} } }

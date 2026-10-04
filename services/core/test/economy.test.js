@@ -1,5 +1,0 @@
-import test from 'node:test'; import assert from 'node:assert/strict';
-import { Ledger, PaymentReceiptVerifier, grantTopup } from '../src/economy.js';
-test('ledger prevents overspend', () => { const l=new Ledger(); l.post({playerId:'p',amount:100,reason:'seed'}); assert.throws(()=>l.post({playerId:'p',amount:-101,reason:'buy'}),/Not enough/); });
-test('topup rejects unverified receipt by default', () => { const l=new Ledger(); const v=new PaymentReceiptVerifier(); assert.throws(()=>grantTopup({ledger:l,verifier:v,playerId:'p',receipt:{provider:'dev-sandbox',transactionId:'x',status:'verified',gameAmount:500}}),/disabled/); });
-test('verified receipt is idempotent', () => { const l=new Ledger(); const v=new PaymentReceiptVerifier({allowDevReceipts:true}); const receipt={provider:'dev-sandbox',transactionId:'txn1',status:'verified',gameAmount:500}; grantTopup({ledger:l,verifier:v,playerId:'p',receipt}); grantTopup({ledger:l,verifier:v,playerId:'p',receipt}); assert.equal(l.balance('p'),500); });

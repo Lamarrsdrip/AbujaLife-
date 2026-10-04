@@ -1,2 +1,0 @@
-using TMPro; using UnityEngine; using AbujaLife.Interaction;
-namespace AbujaLife.UI { public sealed class ContextHud:MonoBehaviour { public InteractionScanner scanner; public CanvasGroup group; public TMP_Text label; void OnEnable(){scanner.FocusChanged+=OnFocus;} void OnDisable(){scanner.FocusChanged-=OnFocus;} void OnFocus(IInteractable i){bool show=i!=null;group.alpha=show?1:0;group.interactable=show;group.blocksRaycasts=show;if(show)label.text=i.Prompt;} } }

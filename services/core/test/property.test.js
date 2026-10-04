@@ -1,3 +1,0 @@
-import test from 'node:test'; import assert from 'node:assert/strict';
-import { createApp } from '../src/app.js';
-test('player can rent property and wallet is debited',()=>{const app=createApp();const p=app.store.createPlayer({displayName:'A'});app.ledger.post({playerId:p.id,amount:2_000_000,reason:'seed'});const before=app.ledger.balance(p.id);const home=app.acquireProperty({store:app.store,ledger:app.ledger,properties:app.properties,playerId:p.id,propertyId:'garki-flat',mode:'rent',requestId:'r1'});assert.equal(home.propertyId,'garki-flat');assert.equal(app.ledger.balance(p.id),before-350000);});

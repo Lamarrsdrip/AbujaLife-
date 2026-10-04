@@ -1,2 +1,0 @@
-using UnityEngine;
-namespace AbujaLife.Vehicles { public sealed class VehicleInputRouter:MonoBehaviour { public VehicleController vehicle; public bool activeDriver; void Update(){if(!vehicle||!activeDriver)return;float steer=UnityEngine.Input.GetAxis("Horizontal");float throttle=UnityEngine.Input.GetAxis("Vertical");float brake=UnityEngine.Input.GetKey(KeyCode.Space)?1:0;vehicle.SetInput(steer,throttle,brake);} } }

@@ -39,3 +39,32 @@
 .world-sprint-button>span svg{width:19px;height:19px;display:block}.world-interact-button>b svg{width:16px;height:16px;display:block}
 .world-minimap{position:absolute;right:18px;top:68px;width:120px;padding:6px 7px 5px;border-radius:13px;background:#375a42b5;border:1px solid #faf1d157;box-shadow:0 3px 15px #22402a15;backdrop-filter:blur(8px);pointer-events:none}.world-minimap svg{display:block;width:100%;height:76px;background:#b2c49b70;border-radius:7px;overflow:hidden}.world-minimap>span{display:block;text-align:center;margin-top:5px;font-size:5.5px;letter-spacing:.7px;font-weight:700;color:#f2e8c4}.world-preview .world-minimap{display:none}.world-canvas[data-scene-kind=transit] .world-minimap{display:none}
 @media(max-width:600px){.world-minimap{right:13px;top:61px;width:80px;padding:4px;border-radius:9px}.world-minimap svg{height:51px;border-radius:5px}.world-minimap>span{font-size:4px;letter-spacing:.2px;margin-top:3px}.world-motion-status{max-width:calc(100% - 120px);line-height:1.5}}
+/* Quiet game chrome leaves the resident and the road in view. */
+.world-character-layer{position:absolute;inset:0;width:100%;height:100%;z-index:1;pointer-events:none}
+.world-canvas[data-character-renderer="webgl-3d"] .walker-body{visibility:hidden}
+.world-hud,.world-game-controls,.world-minimap,.world-furniture-toolbar{z-index:3}
+.world-location-chip{min-height:31px;padding:8px 11px;border-radius:9px;font-size:10px;gap:8px;background:#fbf7ebdc;box-shadow:0 2px 12px #213c2e0a}
+.world-location-chip>small{display:none}.world-location-chip>i{width:5px;height:5px;box-shadow:none}
+.world-camera-button{width:32px;height:32px;min-height:32px;font-size:23px;border-radius:9px;box-shadow:none;background:#fbf7ebdb}
+.world-minimap{top:61px;width:93px;padding:4px;border-radius:10px;background:#365c47a6;box-shadow:none;border-color:#faf1d144}.world-minimap svg{height:67px;border-radius:6px}.world-minimap>span{display:none}
+.world-motion-status,.world-help,.world-simulation-label{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+.world-motion-status.is-important{width:auto;height:auto;clip-path:none;top:57px;left:20px;max-width:calc(100% - 140px);white-space:normal;background:#fbf5e7e8;padding:8px 11px;border-radius:8px;font-size:10px;z-index:3}
+.world-you-label,.world-npc-label{display:none}.world-player-halo{fill:#fff8d21c;stroke:#fff3ba9c;stroke-width:1.2}
+.world-point-label{opacity:0}.world-point:hover .world-point-label,.world-point:focus .world-point-label,.world-point.is-nearby .world-point-label{opacity:1}.world-point-ring{fill:#fff3be24;stroke:#fff6d6a8;stroke-width:1.2}.world-point-arrow{opacity:.6}
+.world-joystick-caption{display:none}.world-joystick-cross:before,.world-joystick-cross:after{opacity:.28}.world-joystick{background:#f2ebd32e;border-color:#fffff080;box-shadow:inset 0 0 0 9px #fffff50a,0 3px 14px #27463115;backdrop-filter:blur(3px)}
+.world-interact-button{max-width:235px;min-height:41px;border-radius:11px;font-size:10px;box-shadow:0 3px 12px #243f2a14}.world-interact-button:not(.is-ready){opacity:.55}.world-interact-button>b{display:none}.world-actions{gap:10px}.world-sprint-button{width:45px;height:45px;box-shadow:none;background:#f6f0df9e}.world-sprint-button>small{display:none}.world-game-controls{bottom:24px}
+.world-canvas[data-scene-kind="transit"] .world-location-chip{max-width:130px}
+.world-canvas[data-scene-kind="transit"] .world-camera-button{display:none}
+.world-canvas[data-activity="dance"] .world-player-walker .walker-body{animation:world-dance .65s ease-in-out infinite alternate}
+@keyframes world-dance{from{transform:translate(-3px,-2px) rotate(-5deg)}to{transform:translate(3px,-5px) rotate(5deg)}}
+.world-lake-ripple{animation:lake-ripple 5s ease-in-out infinite alternate}.world-club-light{animation:club-light 4s ease-in-out infinite alternate}
+@keyframes lake-ripple{from{opacity:.2}to{opacity:.65}}@keyframes club-light{from{opacity:.14}to{opacity:.38}}
+@media(max-width:600px){.world-location-chip{max-width:calc(100% - 50px);min-height:30px;padding:7px 9px;font-size:9px}.world-minimap{width:65px;top:54px;right:13px}.world-minimap svg{height:47px}.world-game-controls{bottom:21px;left:15px;right:15px}.world-joystick{width:90px;height:90px}.world-joystick-knob{left:28px;top:28px;width:34px;height:34px}.world-joystick-cross:before,.world-joystick-cross:after{left:44px;top:10px;height:69px}.world-interact-button{max-width:175px;min-height:42px}.world-interact-button>span{max-width:150px}.world-sprint-button{width:44px;height:44px}.world-motion-status.is-important{top:55px;max-width:calc(100% - 115px);font-size:9px}}
+@media(prefers-reduced-motion:reduce){.world-lake-ripple,.world-club-light,.world-canvas[data-activity="dance"] .walker-body{animation:none}}
+/* The SVG remains a transparent, keyboard-accessible interaction layer above real 3D scenery. */
+.world-canvas[data-environment-renderer="webgl-3d"] .world-character-layer{z-index:0}
+.world-canvas[data-environment-renderer="webgl-3d"]>.world-scene{position:relative;z-index:1;background:transparent}
+.world-canvas[data-environment-renderer="webgl-3d"] .world-art,.world-canvas[data-environment-renderer="webgl-3d"] .world-traffic,.world-canvas[data-environment-renderer="webgl-3d"] .world-parked-car>.vehicle-figure,.world-canvas[data-environment-renderer="webgl-3d"] .world-player-car{visibility:hidden}
+[data-avatar-renderer="webgl-3d"]{position:relative}[data-avatar-renderer="webgl-3d"]>.resident-avatar{visibility:hidden}.resident-avatar-3d{position:absolute;inset:0;width:100%;height:100%;display:block}
+.world-canvas[data-environment-renderer="webgl-3d"] .world-art{visibility:visible;opacity:0}
+.world-canvas[data-environment-renderer="webgl-3d"] .world-parked-car>.vehicle-figure{visibility:visible;opacity:0}

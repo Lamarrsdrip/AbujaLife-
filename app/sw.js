@@ -1,5 +1,5 @@
-const CACHE='abujalife-playable-v2';
-const SHELL=['/','/index.html','/app.js','/styles.css','/game.css','/phone.js','/phone.css','/world.js','/world.css','/world-city.js','/world-interiors.js','/map.js','/map.css','/manifest.webmanifest','/icon.svg','/src/shared/atlas.mjs','/src/shared/geography-sources.mjs','/src/shared/life.mjs'];
+const CACHE='abujalife-3d-v3';
+const SHELL=['/','/index.html','/app.js','/styles.css','/game.css','/premium-pages.css','/phone.js','/phone.css','/vehicle-art.js','/product-3d.js','/world.js','/world.css','/world-city.js','/world-interiors.js','/world-3d.js','/world-3d-scenes.js','/vendor/three.module.js','/map.js','/map.css','/manifest.webmanifest','/icon.svg','/src/shared/atlas.mjs','/src/shared/geography-sources.mjs','/src/shared/life.mjs','/src/shared/vehicles.mjs'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL))));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',event=>{

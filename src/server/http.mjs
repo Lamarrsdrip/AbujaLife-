@@ -3,7 +3,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ABUJA_ATLAS, AREA_COUNCILS, LANDMARKS, ATLAS_META } from '../shared/atlas.mjs';
-import { VENUES, VENUE_ACTIONS, LIFE_GOALS, ECONOMY_META } from '../shared/life.mjs';
+import { VENUES, VENUE_ACTIONS, LIFE_GOALS, ECONOMY_META, WALLET_META, INVESTMENT_META, DICE_META, HOME_UPGRADES } from '../shared/life.mjs';
+import { VEHICLE_COLORS } from '../shared/vehicles.mjs';
 import { GameStore, GameError, catalog, properties, transportModes, appearanceOptions, activities } from './gameStore.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const appRoot=path.join(root,'app'), sharedRoot=path.join(root,'src/shared');
@@ -26,7 +27,7 @@ export function createServer(options={}) {
   store.emitZone=(sender,event,data)=>{const zone=store.zone(sender);for(const [res,client] of clients)if(store.zone(client.id)===zone&&!store.blocked(sender,client.id))writeEvent(res,event,data);};
   function broadcastPresence(id,previousZone=null){const friends=store.friendIds(id),zone=store.zone(id);for(const [res,client] of clients){if(client.id===id||store.blocked(id,client.id))continue;if(friends.includes(client.id)||store.zone(client.id)===zone||store.zone(client.id)===previousZone)writeEvent(res,'presence',{resident:store.resident(client.id,id)});}}
   function rateLimit(req,kind,limit=90){const key=`${req.socket.remoteAddress}:${kind}`,timestamp=Date.now(),old=limits.get(key),bucket=old&&timestamp-old.at<60000?old:{at:timestamp,count:0};bucket.count++;limits.set(key,bucket);if(bucket.count>limit)throw new GameError('Please wait a moment before trying again',429,'rate_limited');if(limits.size>5000)for(const [key,value] of limits)if(timestamp-value.at>60000)limits.delete(key);}
-  const publicBootstrap=()=>({authenticated:false,atlas:ABUJA_ATLAS,councils:AREA_COUNCILS,landmarks:LANDMARKS,atlasMeta:ATLAS_META,jobs:store.publicJobs(),catalog,properties,events:[],transportModes,appearanceOptions,activities,venues:VENUES,venueActions:VENUE_ACTIONS,lifeGoals:LIFE_GOALS,economyMeta:ECONOMY_META});
+  const publicBootstrap=()=>({authenticated:false,atlas:ABUJA_ATLAS,councils:AREA_COUNCILS,landmarks:LANDMARKS,atlasMeta:ATLAS_META,jobs:store.publicJobs(),catalog,properties,events:[],transportModes,appearanceOptions,activities,venues:VENUES,venueActions:VENUE_ACTIONS,lifeGoals:LIFE_GOALS,economyMeta:ECONOMY_META,walletMeta:WALLET_META,investmentMeta:INVESTMENT_META,diceMeta:DICE_META,vehicleColors:VEHICLE_COLORS,homeUpgrades:HOME_UPGRADES});
   const bootstrap=id=>({...publicBootstrap(),...(id?store.bootstrap(id):{})});
   const server=http.createServer(async(req,res)=>{
     try{
@@ -48,6 +49,9 @@ export function createServer(options={}) {
         if(method==='POST')rateLimit(req,pathname.includes('messages')||pathname.includes('chat')?'messages':'writes',pathname.includes('typing')?180:90);
         const body=method==='POST'?await readBody(req):{};
         if(pathname==='/api/profile'&&method==='POST'){const profile=store.updateProfile(id,body);broadcastPresence(id);return json(res,200,{ok:true,profile});}
+        if(pathname==='/api/wallet'&&method==='GET')return json(res,200,store.wallet(id));
+        if(pathname==='/api/wallet/topup'&&method==='POST')return json(res,200,store.topup(id,body));
+        if(pathname==='/api/wallet/transfer'&&method==='POST')return json(res,200,store.transfer(id,body));
         if(pathname==='/api/action'&&method==='POST'){const oldZone=store.zone(id),result=store.action(id,body.action,body.payload||{});if(store.zone(id)!==oldZone)broadcastPresence(id,oldZone);return json(res,200,result);}
         if(pathname==='/api/presence'&&method==='POST'){lastSeen.set(id,Date.now());broadcastPresence(id);return json(res,200,{ok:true,people:store.people(id),nearby:store.nearby(id)});}
         if(pathname==='/api/travel/quote'&&method==='GET')return json(res,200,{ok:true,quote:store.quoteTravel(id,{district:url.searchParams.get('district'),mode:url.searchParams.get('mode')||'bus'})});

@@ -24,6 +24,9 @@ import uuid
 
 from playwright.async_api import async_playwright, expect
 
+# Software WebGL may need longer than the default 5s to mount a full scene.
+expect.set_options(timeout=20000)
+
 REPO = Path(__file__).resolve().parents[1]
 RUN_ID = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')+'-'+uuid.uuid4().hex[:8]
 ARTIFACTS = Path(os.environ.get('ABUJALIFE_QA_ARTIFACTS', '/workspace/scratch/integration-qa')) / RUN_ID
@@ -70,7 +73,7 @@ class Acceptance:
 
     def watch(self, page, label):
         self.pages.append(page)
-        page.set_default_timeout(10000)
+        page.set_default_timeout(30000)
         page.on('pageerror', lambda error: self.errors.append({'page': label, 'error': str(error)}))
         page.on('console', lambda message: self.errors.append({'page': label, 'console': message.text})
                 if message.type == 'error' and 'openstreetmap' not in message.text else None)
@@ -91,14 +94,14 @@ async def bootstrap(page):
     return await response.json()
 
 
-async def wait_state(page, predicate, timeout=8):
+async def wait_state(page, predicate, timeout=30):
     deadline = time.monotonic()+timeout
     while time.monotonic() < deadline:
         state = await bootstrap(page)
         if predicate(state):
             return state
         await asyncio.sleep(.1)
-    raise AssertionError('Expected authoritative state did not appear before timeout')
+    raise AssertionError(f'Expected authoritative state did not appear within {timeout}s; last profile: {state.get("profile")}')
 
 
 async def close_phone(page):
@@ -127,9 +130,13 @@ async def complete_resident_wizard(page, display_name, hair):
         name_control=form.locator('[name="displayName"]:visible')
         if await name_control.count():
             await name_control.fill(display_name)
-        hair_control=form.locator('select[name="hair"]:visible')
-        if await hair_control.count():
-            await hair_control.select_option(hair)
+        hair_choice=form.locator(f'[name="hair"][value="{hair}"]')
+        if await hair_choice.count():
+            await hair_choice.check()
+        else:
+            hair_control=form.locator('select[name="hair"]:visible')
+            if await hair_control.count():
+                await hair_control.select_option(hair)
         goal_control=form.locator('[name="lifeGoal"][value="career"]')
         if await goal_control.count() and await goal_control.is_visible():
             await goal_control.check()
@@ -166,12 +173,37 @@ async def register(page, username, display_name, hair):
     await page.locator('[name="displayName"]').fill(display_name)
     await page.locator('[name="username"]').fill(username)
     await page.locator('[name="password"]').fill(PASSWORD)
-    await page.locator('[name="hair"]').select_option(hair)
     await page.locator('.auth-submit').click()
     await complete_resident_wizard(page, display_name, hair)
     state = await bootstrap(page)
     assert state['authenticated'] and state['profile']['appearance']['hair'] == hair
     return state['profile']
+
+
+async def navigate(page,view):
+    await close_sheet(page)
+    control=page.locator(f'.game-nav [data-view="{view}"]')
+    if await control.count():
+        await control.click()
+    elif view=='map':
+        await page.locator('[data-nav-places]').click()
+        await page.locator('[data-city-map]').click()
+    else:
+        await page.locator('[data-nav-life]').click()
+        target={'property':'houses'}.get(view,view)
+        await page.locator(f'[data-life="{target}"]').click()
+
+
+async def close_sheet(page):
+    control=page.locator('.sheet [data-close]:visible')
+    if await control.count():
+        await control.first.click()
+
+
+async def open_home_door(page):
+    await close_sheet(page)
+    await page.locator('[data-nav-life]').click()
+    await page.locator('#world-door').click()
 
 
 async def assert_no_overflow(page):
@@ -213,7 +245,7 @@ async def main():
                     raise RuntimeError('Isolated localhost server did not become healthy')
                 async with async_playwright() as playwright:
                     browser = await playwright.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH', '/usr/bin/chromium'),
-                        headless=True, args=['--no-sandbox'])
+                        headless=True, args=['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'])
                     context_a = await browser.new_context(viewport={'width':1440,'height':1000})
                     context_b = await browser.new_context(viewport={'width':390,'height':844}, is_mobile=True, has_touch=True)
                     a, b = await context_a.new_page(), await context_b.new_page()
@@ -238,8 +270,8 @@ async def main():
                         assert state['profile']['id'] == users['a']['id']
                         assert state['profile']['appearance']['hair'] == 'braids'
                         await a.locator('[aria-label="Your resident profile"]').click()
-                        await a.locator('#profile-form [name="hair"]').select_option('locs')
-                        await a.locator('#profile-form [name="top"]').select_option('ochre')
+                        await a.locator('#profile-form [name="hair"][value="locs"]').check()
+                        await a.locator('#profile-form [name="top"][value="ochre"]').check()
                         await a.locator('#profile-form [type="submit"]').click()
                         await wait_state(a, lambda s:s['profile']['appearance']['hair']=='locs')
                         await a.reload(wait_until='domcontentloaded')
@@ -251,7 +283,7 @@ async def main():
                     await qa.check('Authentication and character customization survive reload', persisted_auth_and_appearance)
 
                     async def home_objects():
-                        await a.locator('.game-nav [data-view="world"]').click()
+                        await navigate(a,'world')
                         before = (await bootstrap(a))['profile']
                         await activate_home_object(a, 'sleep')
                         await expect(a.locator('#sheet-title')).to_have_text('Get some rest')
@@ -284,7 +316,7 @@ async def main():
                         await a.locator('.ph-unlock').click()
                         await a.screenshot(path=str(ARTIFACTS/'phone-home-desktop.png'), full_page=True)
                         await a.locator('.ph-app-grid [data-app="wallet"]').click()
-                        await expect(a.locator('.ph-app-header>strong')).to_have_text('Abuja Wallet')
+                        await expect(a.locator('.ph-app-header>strong')).to_have_text('Naira wallet')
                         await a.locator('.ph-back').click()
                         await expect(a.locator('.ph-app-grid')).to_be_visible()
                         await close_phone(a)
@@ -379,10 +411,10 @@ async def main():
 
                     async def job_tasks_and_reward():
                         await close_phone(a)
-                        await a.locator('.game-nav [data-view="world"]').click()
-                        await a.locator('#world-door').click()
+                        await navigate(a,'world')
+                        await open_home_door(a)
                         await wait_state(a, lambda s:s['profile']['location']['kind']=='public')
-                        await a.locator('.game-nav [data-view="work"]').click()
+                        await navigate(a,'work')
                         await a.locator('[data-job="restaurant-host"]').click()
                         await a.locator('[data-take-job="restaurant-host"]').click()
                         await wait_state(a, lambda s:s['profile']['job']=='restaurant-host')
@@ -411,7 +443,7 @@ async def main():
                     async def market_purchase():
                         before = await bootstrap(a)
                         await open_phone(a, 'market')
-                        assert 'Okrika' not in await a.locator('.ph-scroll').inner_text()
+                        await expect(a.locator('.ph-scroll')).to_contain_text('Okrika Marketplace')
                         await a.locator('[data-ph-action="item"][data-id="linen-shirt"]').click()
                         await a.locator('[data-ph-action="purchase"]').click()
                         state = await wait_state(a, lambda s:'linen-shirt' in s['profile']['inventory'])
@@ -424,15 +456,15 @@ async def main():
                         await expect(a.locator('.game-nav')).to_be_visible()
                         state = await bootstrap(a)
                         assert 'linen-shirt' in state['profile']['inventory']
-                        return {'virtualItem':'linen-shirt','charged':4200,'duplicateRejected':True,'persists':True,'okrikaNotMarket':True}
+                        return {'virtualItem':'linen-shirt','charged':4200,'duplicateRejected':True,'persists':True,'okrikaMarketplace':True}
                     await qa.check('Virtual item purchase, authoritative charge, duplicate rejection and persistence', market_purchase)
 
                     async def map_travel_and_return():
                         await close_phone(a)
-                        await a.locator('.game-nav [data-view="map"]').click()
-                        await a.locator('[aria-label="Find a district or town"]').fill('Wuse II')
-                        await a.locator('.abuja-map-place').filter(has_text='Wuse II').first.click()
-                        await expect(a.locator('.abuja-map-selected-info')).to_contain_text('Wuse II')
+                        await navigate(a,'map')
+                        await a.locator('[aria-label="Find a district or town"]').fill('Abaji Town')
+                        await a.locator('.abuja-map-place').filter(has_text='Abaji Town').first.click()
+                        await expect(a.locator('.abuja-map-selected-info')).to_contain_text('Abaji Town')
                         await a.screenshot(path=str(ARTIFACTS/'map-source-status.png'), full_page=True)
                         loaded_tiles = await a.locator('.abuja-map-tile[data-state="loaded"]').count()
                         source_text = await a.locator('.abuja-map-source-state').inner_text()
@@ -448,21 +480,35 @@ async def main():
                         fare = before['wallet']-transit['profile']['wallet']
                         assert quoted_fare == f'₦{fare:,}', {'quotedFare':quoted_fare,'charged':fare}
                         await expect(a.locator('.trip-banner')).to_be_visible()
+                        # Independent server reads avoid discarded page response
+                        # bodies during navigation. A short trip may legitimately
+                        # mature while software 3D remounts after the reload.
+                        trip=transit['profile']['activeTrip']
+                        assert trip['seconds']>=10, 'Use a longer real bus trip so reload exercises the in-progress journey'
+                        saved_before_reload=(await bootstrap(a))['profile']
+                        assert saved_before_reload['activeTrip']['id']==trip['id']
                         await a.reload(wait_until='domcontentloaded')
-                        await expect(a.locator('.trip-banner')).to_be_visible()
-                        arrived=await wait_state(a, lambda s:s['profile']['district']=='wuse-ii-a07' and not s['profile'].get('activeTrip'), timeout=25)
+                        restored=(await bootstrap(a))['profile']
+                        if restored.get('activeTrip'):
+                            assert restored['activeTrip']['id']==trip['id']
+                        else:
+                            assert time.time()*1000>=trip['arrivesAt'], 'A trip cannot arrive before its deadline'
+                            assert restored['district']==trip['destination'] and restored['location']['kind']=='public'
+                        assert restored['wallet']==transit['profile']['wallet'], 'Reload must not charge the fare again'
+                        arrived=await wait_state(a, lambda s:s['profile']['district']=='abaji-town' and not s['profile'].get('activeTrip'), timeout=25)
                         assert arrived['profile']['location']['kind']=='public'
-                        await expect(a.locator('.scene-heading')).to_contain_text('Wuse II')
+                        assert (await bootstrap(a))['profile']['district']=='abaji-town'
+                        await expect(a.locator('#world-scene')).to_contain_text('Abaji Town')
                         assert 'okrika' in (await a.locator('#world-scene').inner_text()).lower()
-                        await a.locator('#world-door').click()
+                        await open_home_door(a)
                         await expect(a.locator('#travel-form')).to_be_visible()
                         await a.locator('#travel-form [type="submit"]').click()
                         await expect(a.locator('.trip-banner')).to_be_visible()
                         await wait_state(a, lambda s:s['profile']['location']['kind']=='home' and s['profile']['district']=='garki-i', timeout=25)
                         await a.reload(wait_until='domcontentloaded')
-                        await expect(a.locator('.scene-heading')).to_contain_text('Garki starter studio')
+                        await expect(a.locator('#world-scene')).to_contain_text('Garki starter studio')
                         map_requests=[r for r in qa.network if 'openstreetmap' in r['url'] or 'overpass-api' in r['url']]
-                        return {'destination':'wuse-ii-a07','travelPersistsAcrossReload':True,'arrivalAndReturnHome':True,'quotedFareMatchesCharge':fare,
+                        return {'destination':'abaji-town','travelPersistsAcrossReload':True,'arrivalAndReturnHome':True,'quotedFareMatchesCharge':fare,
                             'mapSourceAccess':'loaded tiles observed' if loaded_tiles else 'no loaded road tiles; source unavailable or still loading',
                             'loadedRoadTiles':loaded_tiles,'mapFallbackText':source_text,
                             'geographySourceAccuracy':'not independently validated by this browser test'}
@@ -470,9 +516,9 @@ async def main():
 
                     async def browser_back():
                         await close_phone(a)
-                        await a.locator('.game-nav [data-view="world"]').click()
-                        await a.locator('.game-nav [data-view="map"]').click()
-                        await a.locator('.game-nav [data-view="work"]').click()
+                        await navigate(a,'world')
+                        await navigate(a,'map')
+                        await navigate(a,'work')
                         await a.go_back(wait_until='domcontentloaded')
                         await expect(a.locator('#map-root')).to_be_visible()
                         await a.go_back(wait_until='domcontentloaded')
@@ -485,7 +531,7 @@ async def main():
                         for width,height,label in [(320,568,'small-iphone'),(390,844,'iphone'),(430,932,'large-iphone'),(360,800,'android'),(1440,1000,'desktop')]:
                             await close_phone(a)
                             await a.set_viewport_size({'width':width,'height':height})
-                            await a.locator('.game-nav [data-view="world"]').click()
+                            await navigate(a,'world')
                             await assert_no_overflow(a)
                             await a.screenshot(path=str(ARTIFACTS/f'{label}-world.png'),full_page=True)
                             await open_phone(a)
@@ -497,7 +543,7 @@ async def main():
                             await a.locator('.ph-back').click()
                             await expect(a.locator('.ph-app-grid')).to_be_visible()
                             await close_phone(a)
-                            await a.locator('.game-nav [data-view="map"]').click()
+                            await navigate(a,'map')
                             await assert_no_overflow(a)
                             await a.locator('[aria-label="Find a district or town"]').fill('Kuje')
                             await expect(a.locator('.abuja-map-place')).to_contain_text('Kuje')
@@ -516,7 +562,7 @@ async def main():
                         try:
                             await a.reload(wait_until='domcontentloaded')
                             await expect(a.locator('.game-nav')).to_be_visible(timeout=25000)
-                            await a.locator('.game-nav [data-view="world"]').click()
+                            await navigate(a,'world')
                             assert (await bootstrap(a))['authenticated']
                             return {'latencyMs':400,'downloadBytesPerSecond':50000,'usableAfterSeconds':round(time.monotonic()-started,2)}
                         finally:

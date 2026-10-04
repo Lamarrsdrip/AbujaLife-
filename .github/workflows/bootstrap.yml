@@ -66,7 +66,7 @@ jobs:
           echo '5f363a19a5d1308bc29103217485a08b7ea554169d945db0272c1c208863b8a4  /tmp/AbujaLife.zip' | sha256sum -c -
           unzip -oq /tmp/AbujaLife.zip -d .
           rm -rf .bootstrap
-          rm -f .github/workflows/bootstrap.yml
+          rm -f .github/workflows/ci.yml
 
       - name: Run repository QA
         run: npm run qa

@@ -1,0 +1,3 @@
+export function brandMark({compact=false}={}) {
+  return `<span class="brand-lockup${compact?' brand-lockup--compact':''}"><svg class="brand-emblem" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><rect width="64" height="64" rx="16" fill="#173e32"/><path d="M9 39 24 18l10 12 9-9 12 18" fill="none" stroke="#dcad67" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M17 44V34h8v10m7 0V31h8v13m7 0v-8h6v8" fill="none" stroke="#fff2d8" stroke-width="3"/><path d="M13 50h38" stroke="#dcad67" stroke-width="2.5" stroke-linecap="round"/></svg><span class="brand-type"><strong class="brand-name">Abuja<span>Life</span><i></i></strong>${compact?'':'<small class="brand-signature">THE CAPITAL IS YOURS</small>'}</span></span>`;
+}

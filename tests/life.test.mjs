@@ -108,10 +108,11 @@ test('character onboarding persists choices without accepting inventory or life-
   const starting=f.store.profile(f.id).wallet;
   const profile = f.store.updateProfile(f.id, {
     displayName: 'Amaka', lifeGoal: 'home', onboardingComplete: true,
-    appearance: { hair: 'braids', skinTone: 'deep', top: 'ochre' },
+    appearance: { presentation: 'feminine', hair: 'braids', skinTone: 'deep', top: 'ochre' },
     wallet: 9000000, drivingVehicle: 'premium-suv', furnitureLayout: { sofa: { x: 0, y: 0 } }, inventory: ['premium-suv'],
   });
   assert.equal(profile.wallet, starting);
+  assert.equal(profile.appearance.presentation, 'feminine');
   assert.equal(profile.drivingVehicle, null);
   assert.deepEqual(profile.inventory, []);
   assert.deepEqual(profile.furnitureLayout, {});

@@ -1,0 +1,14 @@
+[Unit]
+Description=Encrypted isolated AbujaLife MongoDB backup
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/abujalife/current
+Environment=ABUJALIFE_DEPLOY_ENV_FILE=/opt/abujalife/shared/.env
+ExecStart=/usr/bin/node deploy/backup-run.mjs
+UMask=0077
+
+# Install this operator-owned unit only after choosing the correct absolute
+# release path and verifying one backup/restore and the off-server target.

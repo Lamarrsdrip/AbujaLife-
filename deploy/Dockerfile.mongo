@@ -1,0 +1,5 @@
+FROM mongo:8.0
+COPY deploy/mongo-entrypoint.sh /usr/local/bin/abujalife-mongo-entrypoint.sh
+RUN chmod 755 /usr/local/bin/abujalife-mongo-entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/abujalife-mongo-entrypoint.sh"]
+CMD ["mongod"]

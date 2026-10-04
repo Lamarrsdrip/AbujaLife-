@@ -1,6 +1,6 @@
 /** Browser-only public preview. This adapter never connects to the game server. */
 import data from './data.mjs';
-import { LIFE_GOALS, GAME_YEAR_MS, GAME_BILL_PERIOD_MS, WALLET_META, INVESTMENT_META, DICE_META, LOAN_META, homeBenefits, investmentView, loanQuote, loanView, venueFor, venueAvailable, venueActionFor, applyNeedEffects, furniturePlacement, ownsVehicle } from '../src/shared/life.mjs';
+import { LIFE_GOALS, GAME_YEAR_MS, GAME_BILL_PERIOD_MS, WALLET_META, INVESTMENT_META, DICE_META, LOAN_META, TRANSPORT_MODES, travelPricing, starterHomeSeed, systemResaleValue, homeBenefits, investmentView, loanQuote, loanView, venueFor, venueAvailable, venueActionFor, applyNeedEffects, furniturePlacement, ownsVehicle } from '../src/shared/life.mjs';
 import { vehicleColorFor } from '../src/shared/vehicles.mjs';
 import { ORIGIN_META, createOrigin, originHome } from '../src/shared/origins.mjs';
 import { abujaTime, jobSchedule, clubSchedule, seasonalWeather, JOB_SCHEDULES } from '../src/shared/simulation.mjs';
@@ -39,7 +39,8 @@ function propertyFor(profile,propertyId=profile.home.propertyId){return properti
 function initialState({assignOrigin=true}={}) {
   const timestamp = Date.now();
   const origin=assignOrigin?createOrigin({residentId:PLAYER_ID,now:timestamp,randomInt,properties,atlas:[...atlas.values()]}):null;
-  const home=origin?originHome(origin):{propertyId:'garki-studio',layoutId:'garki-studio',name:'Garki starter studio',district:'garki-i',tenure:'starter'};
+  const seed=origin?starterHomeSeed(origin):{inventory:[],furnitureLayout:{},storedFurniture:[],homeStyle:{}};
+  const home=origin?{...originHome(origin),...seed.homeStyle}:{propertyId:'garki-studio',layoutId:'garki-studio',name:'Garki starter studio',district:'garki-i',tenure:'starter'};
   const wallet=origin?.startingBalance??26000;
   return {
     version: 1,
@@ -49,8 +50,8 @@ function initialState({assignOrigin=true}={}) {
       appearance: { skinTone:'brown', face:'oval', body:'regular', hair:'crop', facialHair:'none', presentation:'neutral', top:'forest', bottom:'charcoal', shoes:'white', accessory:'none' },
       origin,wallet, energy:82, hunger:72, hygiene:88, social:58, fun:64, stress:12, mood:76, reputation:0,
       district:home.district, location:{kind:'home',district:home.district,venue:'home'},home,
-      job:null, careerLevel:1, skills:{}, inventory:[], ownedProperties:origin?.giftedHome?[home.propertyId]:[],
-      onboardingComplete:false, lifeGoal:'explore', drivingVehicle:null, furnitureLayout:{},storedFurniture:[],
+      job:null, careerLevel:1, skills:{}, inventory:seed.inventory, ownedProperties:origin?.giftedHome?[home.propertyId]:[],
+      onboardingComplete:false, lifeGoal:'explore', drivingVehicle:null, furnitureLayout:seed.furnitureLayout,storedFurniture:seed.storedFurniture,
       propertyInvestments:{},vehicleColors:{},gambleHistory:[],lastGambleRound:null,loans:[],workDays:{},
       settings:{presenceVisible:false,allowInvites:false,soundEnabled:true},
       activeTrip:null, activeShift:null, completedShifts:0, nextShiftAt:0,
@@ -140,21 +141,19 @@ function updateAppearance(profile, incoming) {
     check(typeof incoming[key]==='string'&&(!values||values.includes(incoming[key])),`Choose a supported ${key}`);
     if(key==='top'&&!['forest','ochre'].includes(incoming[key])) {
       const item=catalog.find(item=>item.category==='clothing'&&item.slot==='top'&&item.value===incoming[key]);
-      check(item&&profile.inventory.includes(item.id),'Buy this outfit in Okrika Marketplace before wearing it',403,'outfit_not_owned');
+      check(item&&profile.inventory.includes(item.id),'Buy this outfit in Capital Market before wearing it',403,'outfit_not_owned');
     }
     profile.appearance[key]=incoming[key];
   }
 }
 function quote(payload) {
-  const destination=clean(payload.district),mode=clean(payload.mode||'bus',16),profile=state.profile;
+  const destination=clean(payload.district),mode=clean(payload.mode||'bus',16),venueId=payload.venueId==null?null:clean(payload.venueId),profile=state.profile;
   check(atlas.has(destination),'Choose a location from the Abuja atlas');
-  check(['walk','bus','taxi','ride','car'].includes(mode),'Choose a supported transport mode');
+  check(TRANSPORT_MODES.some(item=>item.id===mode),'Choose a supported transport mode');
   check(mode!=='walk'||destination===profile.district,'Walking is available within your neighbourhood; choose transport for this trip');
   check(mode!=='car'||catalog.some(item=>ownsVehicle(profile,catalog,item.id)),'Buy a car before choosing your own vehicle');
-  const same=destination===profile.district,distance=same?0:Math.max(4,Math.round(((atlas.get(destination).commute||35)+(atlas.get(profile.district).commute||35))/3));
-  const cost=same?0:mode==='bus'?250+distance*20:mode==='car'?350+distance*20:mode==='taxi'?650+distance*45:900+distance*45;
-  const seconds=same?1:Math.min(14,Math.max(4,Math.round(distance/(mode==='bus'?2.5:4))));
-  return {destination,mode,cost,seconds};
+  if(venueId!==null)check(venueId&&venueAvailable(venueId,destination),'Choose a place available in your destination neighbourhood');
+  return travelPricing(atlas.get(profile.district),atlas.get(destination),mode,{venueId});
 }
 function economyOperation(kind,payload,normalized,mutate) {
   const key=payload.idempotencyKey;
@@ -261,7 +260,23 @@ function loanAction(name,payload) {
     return{loan,loans:loanView(profile,timestamp),repayment:{id:uid(),loanId,amount,createdAt:timestamp},ledgerReason:'Game loan · repayment'};
   });
 }
+function sellItem(payload={}) {
+  const itemId=clean(payload.itemId),item=catalog.find(item=>item.id===itemId);
+  check(item,'Choose an item from your inventory',400,'invalid_item');
+  return economyOperation('sell-item',payload,{itemId},(profile,timestamp)=>{
+    check(!profile.activeTrip,'Finish your journey before selling items',409,'trip_active');
+    check(profile.inventory.includes(itemId),'You can only sell an item you own',403,'item_not_owned');
+    check(profile.drivingVehicle!==itemId,'Park your car before selling it',409,'vehicle_driving');
+    const amount=systemResaleValue(item);profile.wallet+=amount;
+    profile.inventory=profile.inventory.filter(id=>id!==itemId);delete profile.furnitureLayout[itemId];profile.storedFurniture=profile.storedFurniture.filter(id=>id!==itemId);delete profile.vehicleColors[itemId];
+    if(item.category==='clothing'&&item.slot&&profile.appearance[item.slot]===item.value&&!catalog.some(other=>other.id!==itemId&&profile.inventory.includes(other.id)&&other.category==='clothing'&&other.slot===item.slot&&other.value===item.value)){
+      const defaults={top:'forest',bottom:'charcoal',shoes:'white'};profile.appearance[item.slot]=defaults[item.slot]??profile.appearance[item.slot];
+    }
+    return{sale:{itemId,amount,createdAt:timestamp,virtual:true},item:clone(item),ledgerReason:'System resale · '+item.name};
+  });
+}
 function action(name,payload={}) {
+  if(name==='sell-item')return sellItem(payload);
   if(name==='topup'||name==='demo-topup')return topup(payload);
   if(name==='transfer-naira')throw new PreviewError('Naira transfers connect registered residents in the full game. This browser preview has no shared wallet or other residents.',503,'browser_preview_only');
   if(['buy-investment','collect-rent','sell-investment'].includes(name))return investmentAction(name,payload);
@@ -323,7 +338,9 @@ function action(name,payload={}) {
     case 'return-home':case 'travel': {
       const destination=name==='return-home'?profile.home.district:payload.district;
       if(name==='return-home'&&destination===profile.district) { profile.drivingVehicle=null;profile.location={kind:'home',district:profile.district,venue:'home'};break; }
-      const fare=quote({district:destination,mode:payload.mode});debit(fare.cost);
+      const venueId=name==='travel'&&payload.venueId!=null?clean(payload.venueId):null;
+      if(venueId!==null)outside();
+      const fare=quote({district:destination,mode:payload.mode,venueId});debit(fare.cost);
       const vehicleId=fare.mode==='car'?(ownsVehicle(profile,catalog,profile.drivingVehicle)?profile.drivingVehicle:catalog.find(item=>ownsVehicle(profile,catalog,item.id))?.id):null;
       profile.activeTrip={id:uid(),...fare,vehicleId,arrivesAt:timestamp+fare.seconds*1000,returningHome:name==='return-home'};
       profile.drivingVehicle=null;
@@ -331,7 +348,8 @@ function action(name,payload={}) {
     }
     case 'arrive': {
       const trip=profile.activeTrip;check(trip&&trip.id===payload.tripId,'This journey is no longer active');check(timestamp>=trip.arrivesAt,'Your journey is still in progress',409,'trip_in_progress');
-      profile.district=trip.destination;profile.location={kind:trip.returningHome?'home':'public',district:trip.destination,venue:trip.returningHome?'home':'neighbourhood'};profile.drivingVehicle=!trip.returningHome&&trip.mode==='car'&&ownsVehicle(profile,catalog,trip.vehicleId)?trip.vehicleId:null;profile.activeTrip=null;profile.energy=clamp(profile.energy-3);break;
+      if(trip.venueId)check(venueAvailable(trip.venueId,trip.destination),'This destination is no longer available');
+      profile.district=trip.destination;profile.location={kind:trip.returningHome?'home':trip.venueId?'venue':'public',district:trip.destination,venue:trip.returningHome?'home':trip.venueId||'neighbourhood'};profile.drivingVehicle=!trip.returningHome&&!trip.venueId&&trip.mode==='car'&&ownsVehicle(profile,catalog,trip.vehicleId)?trip.vehicleId:null;profile.activeTrip=null;profile.energy=clamp(profile.energy-3);break;
     }
     case 'take-job':check(typeof payload.jobId==='string'&&Object.hasOwn(allJobs,payload.jobId),'Choose a listed job');check(!next.challenge,'Finish your current shift before switching careers');profile.job=payload.jobId;break;
     case 'start-shift': {
@@ -360,7 +378,7 @@ function action(name,payload={}) {
       const old=Object.keys(next.completedChallenges);if(old.length>200)delete next.completedChallenges[old[0]];break;
     }
     case 'work-shift':throw new PreviewError('Start a shift and complete its work tasks to earn your salary');
-    case 'purchase': {const item=catalog.find(item=>item.id===payload.itemId);check(item,'Choose an item from Okrika Marketplace');check(!profile.inventory.includes(item.id),'You already own this item',409);if(item.category==='vehicle'){const color=payload.color??item.defaultColor;check(vehicleColorFor(color)&&item.availableColors.includes(color),'Choose an available car colour');profile.vehicleColors[item.id]=color;}debit(item.price);profile.inventory.push(item.id);extra.item=clone(item);break;}
+    case 'purchase': {const item=catalog.find(item=>item.id===payload.itemId);check(item,'Choose an item from Capital Market');check(!profile.inventory.includes(item.id),'You already own this item',409);if(item.category==='vehicle'){const color=payload.color??item.defaultColor;check(vehicleColorFor(color)&&item.availableColors.includes(color),'Choose an available car colour');profile.vehicleColors[item.id]=color;}debit(item.price);profile.inventory.push(item.id);extra.item=clone(item);break;}
     case 'paint-vehicle': {const item=catalog.find(item=>item.id===payload.itemId&&item.category==='vehicle');check(item&&profile.inventory.includes(item.id),'You can repaint a car you own',403,'vehicle_not_owned');check(vehicleColorFor(payload.color)&&item.availableColors.includes(payload.color),'Choose an available car colour');profile.vehicleColors[item.id]=payload.color;extra.item=clone(item);break;}
     case 'equip': {const item=catalog.find(item=>item.id===payload.itemId);check(item?.category==='clothing'&&profile.inventory.includes(item.id),'You can wear clothing you own');profile.appearance[item.slot]=item.value;break;}
     case 'move-home': {
@@ -368,7 +386,7 @@ function action(name,payload={}) {
       check(!(payload.tenure==='rent'&&profile.ownedProperties.includes(property.id)),'You already own this property; choose Move in',409,'already_owned');
       debit(property.originHome?0:payload.tenure==='rent'?property.rent:profile.ownedProperties.includes(property.id)?0:property.buy??property.price);if(payload.tenure==='own'&&!profile.ownedProperties.includes(property.id))profile.ownedProperties.push(property.id);
       if(profile.propertyInvestments[property.id]){const investment=investmentView(profile,property,timestamp);profile.wallet+=investment.collectable;extra.settledIncome=investment.collectable;delete profile.propertyInvestments[property.id];}
-      profile.home={propertyId:property.id,layoutId:property.layoutId||property.id,name:property.name,district:property.district,tenure:property.originHome?property.gifted?'own':'starter':payload.tenure,gifted:Boolean(property.gifted),rentDueAt:payload.tenure==='rent'?timestamp+GAME_YEAR_MS:null};
+      const previousHome=profile.home;profile.home={propertyId:property.id,layoutId:property.layoutId||property.id,name:property.name,district:property.district,tenure:property.originHome?property.gifted?'own':'starter':payload.tenure,gifted:Boolean(property.gifted),rentDueAt:payload.tenure==='rent'?timestamp+GAME_YEAR_MS:null,...(previousHome.starterVersion===1?{starterVersion:1,furnishingPreset:previousHome.furnishingPreset}:{}),...(previousHome.roomStyle&&(previousHome.layoutId||previousHome.propertyId)===(property.layoutId||property.id)?{roomStyle:previousHome.roomStyle}:{})};
       if(profile.district===property.district){profile.drivingVehicle=null;profile.location={kind:'home',district:profile.district,venue:'home'};}else if(profile.location.kind==='home')profile.location={kind:'public',district:profile.district,venue:'neighbourhood'};profile.billsPaidAt=timestamp;profile.rentPaidAt=timestamp;break;
     }
     case 'pay-bills': {check(timestamp-profile.billsPaidAt>=GAME_BILL_PERIOD_MS,'Your home bills are up to date');const property=propertyFor(profile);check(property,'Your home listing is unavailable');const amount=Math.round(property.bills*(100-comfort.billDiscountPercent)/100);debit(amount);profile.billsPaidAt=timestamp;extra.bill={amount,baseAmount:property.bills,discountPercent:comfort.billDiscountPercent};break;}
@@ -449,20 +467,21 @@ async function handleApi(url,method,body) {
   const socialRoute=route.match(/^\/api\/social\/posts\/([^/]+)\/(like|comments|delete)$/);if(socialRoute)return socialPostAction(decodeURIComponent(socialRoute[1]),socialRoute[2],method,url,body);
   if(route==='/api/wallet/topup'&&method==='POST')return action('demo-topup',body);
   if(route==='/api/wallet/transfer'&&method==='POST')throw new PreviewError('Naira transfers connect registered residents in the full game. This browser preview has no shared wallet or other residents.',503,'browser_preview_only');
-  if(route==='/api/travel/quote'&&method==='GET')return{ok:true,quote:quote({district:url.searchParams.get('district'),mode:url.searchParams.get('mode')||'bus'})};
+  if(route==='/api/travel/quote'&&method==='GET')return{ok:true,quote:quote({district:url.searchParams.get('district'),mode:url.searchParams.get('mode')||'bus',venueId:url.searchParams.get('venueId')})};
   if(route==='/api/action'&&method==='POST')return action(body.action,body.payload||{});
   if(route==='/api/profile'&&method==='POST') {
     const profile=clone(state.profile);
     if(body.displayName!==undefined){check(clean(body.displayName,40).length>=2,'Display name must have at least two characters');profile.displayName=clean(body.displayName,40);}
     updateAppearance(profile,body.appearance);
     if(body.lifeGoal!==undefined){check(LIFE_GOALS.some(goal=>goal.id===body.lifeGoal),'Choose a listed life goal');profile.lifeGoal=body.lifeGoal;}
-    if(body.onboardingComplete!==undefined){check(typeof body.onboardingComplete==='boolean','Choose a valid onboarding state');profile.onboardingComplete=body.onboardingComplete;}
+    if(body.onboardingComplete!==undefined){check(typeof body.onboardingComplete==='boolean','Choose a valid onboarding state');if(body.onboardingComplete===true&&profile.home.starterVersion===1)check(['feminine','masculine'].includes(profile.appearance.presentation),'Choose Female or Male before starting',400,'gender_required');profile.onboardingComplete=body.onboardingComplete;}
     if(body.settings&&typeof body.settings==='object')for(const key of ['presenceVisible','allowInvites','soundEnabled','allowHomeVisits','homeVisitsFriendsOnly'])if(typeof body.settings[key]==='boolean')profile.settings[key]=body.settings[key];
     state.profile=profile;persist();queueMicrotask(()=>emit('profile',{profile:clone(profile)}));return{ok:true,profile:clone(profile)};
   }
   if(route==='/api/notifications/read'&&method==='POST'){for(const notice of state.notifications)if(!body.id||notice.id===body.id)notice.readAt=Date.now();persist();return{ok:true,notifications:clone(state.notifications)};}
   if(route==='/api/presence'&&method==='POST')return{ok:true,people:[],nearby:[],preview:true};
   if(route==='/api/chat/location'&&method==='GET')return{ok:true,messages:[],preview:true};
+  if(route==='/api/conversations'&&method==='GET')return{...socialPage([],url,'conversations'),preview:true};
   // A preview has no credential session. Sign-out leaves the local preview intact.
   if(route==='/api/auth/logout'&&method==='POST')return{ok:true,authenticated:true,preview:true};
   if(route.startsWith('/api/auth/'))throw new PreviewError('This preview opens without an account. Your progress belongs to this browser only.',400,'browser_preview_only');

@@ -1,7 +1,8 @@
 // Real, locally bundled WebGL character meshes over the authored 2.5D game set.
 // The orthographic ground projection is aligned with the simulation's SVG coordinates.
 import * as THREE from './vendor/three.module.js';
-import { buildThreeEnvironment } from './world-3d-scenes.js';
+import { buildThreeEnvironment, batchRigidMeshes } from './world-3d-scenes.js';
+import { applyWorldCamera } from './world-camera.js';
 
 const DEPTH = Math.SQRT1_2;
 const palette = {
@@ -106,6 +107,9 @@ function character(appearance={}){
     box(head,seam,0,1.25,7,1.6,.45,.5);box(head,seam,-7,1,2.5,.45,.45,9);box(head,seam,7,1,2.5,.45,.45,9);
   }
   root.traverse(part=>{if(part.isMesh){part.castShadow=true;part.receiveShadow=true;}});
+  // Merge pieces within each joint, never across an animated shoulder, knee or head.
+  const joints=[];root.traverse(part=>{if(part.isGroup)joints.push(part);});
+  for(const joint of joints)batchRigidMeshes(THREE,joint,{disposeSources:true});
   const neutral={bodyY:0};
   return {root,body,torso,head,arms,legs,neutral};
 }
@@ -163,7 +167,9 @@ function animate(rig,{x,y,angle=90,moving=false,phase=0,time=0,activity=null,sca
 export function createCharacterRenderer(container,{appearance={},pedestrians=[],neighbours=[],scene:gameScene,profile,kind,venue,place}={}){
   let renderer;
   try{renderer=new THREE.WebGLRenderer({alpha:true,antialias:true,powerPreference:'low-power'});}catch{return null;}
-  renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio||1,1.75));
+  const mobile=globalThis.matchMedia?.('(pointer: coarse)').matches||container.clientWidth<600;
+  const maxPixelRatio=Math.min(globalThis.devicePixelRatio||1,mobile?1.25:1.75);
+  renderer.setPixelRatio(maxPixelRatio);
   renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.03;renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   renderer.setClearColor(0x000000,0);renderer.domElement.className='world-character-layer';renderer.domElement.setAttribute('aria-hidden','true');
   container.append(renderer.domElement);container.dataset.characterRenderer='webgl-3d';
@@ -171,7 +177,7 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
   const environment=gameScene?buildThreeEnvironment(THREE,{scene:gameScene,profile,kind,venue,place,depthScale:1/DEPTH}):null;
   if(environment){scene.add(environment.group||environment);container.dataset.environmentRenderer='webgl-3d';container.dataset.environmentObjects=JSON.stringify(gameScene.objects?.map(o=>o.kind)||[]);let count=0;(environment.group||environment).traverse(o=>{if(o.isMesh)count++;});container.dataset.environmentMeshes=String(count);}
   const ambient=new THREE.HemisphereLight('#fff1d4','#556553',1.65);scene.add(ambient);
-  const sun=new THREE.DirectionalLight('#fff5e4',2.2);sun.position.set(-550,1200,650);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-1050;sun.shadow.camera.right=1050;sun.shadow.camera.top=1050;sun.shadow.camera.bottom=-1050;sun.shadow.camera.near=10;sun.shadow.camera.far=3200;sun.shadow.bias=-.00035;sun.shadow.normalBias=.7;sun.shadow.radius=3;scene.add(sun,sun.target);
+  const sun=new THREE.DirectionalLight('#fff5e4',2.2);sun.position.set(-550,1200,650);sun.castShadow=true;sun.shadow.mapSize.set(mobile?512:1024,mobile?512:1024);sun.shadow.camera.left=-1050;sun.shadow.camera.right=1050;sun.shadow.camera.top=1050;sun.shadow.camera.bottom=-1050;sun.shadow.camera.near=10;sun.shadow.camera.far=3200;sun.shadow.bias=-.00035;sun.shadow.normalBias=.7;sun.shadow.radius=3;scene.add(sun,sun.target);
   const rim=new THREE.DirectionalLight('#ceddec',.75);rim.position.set(300,300,-600);scene.add(rim);
   const own=character(appearance);scene.add(own.root);
   const npcs=pedestrians.map((n,i)=>{const rig=character({skinTone:i%3?'brown':'deep',top:['forest','cream','ochre','navy'][i%4],hair:['crop','braids','afro'][i%3],presentation:i%2?'feminine':'masculine'});scene.add(rig.root);return rig;});
@@ -180,17 +186,26 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
   const shower=new THREE.Group();const dropMaterial=new THREE.MeshStandardMaterial({color:'#b3e3ea',transparent:true,opacity:.7,roughness:.1,emissive:'#5c9aa7',emissiveIntensity:.2});for(let i=0;i<28;i++)ellipsoid(shower,dropMaterial,0,0,0,.7,2.8,.7,6);scene.add(shower);
   const isClub=venue?.kind==='club'||['club','club-cage','magic-city','bear-barn'].includes(venue?.id);
   const indoors=kind==='home'||kind==='visit'||kind==='venue'&&!['park','jabi-lake'].includes(venue?.id);
-  let previousWidth=0,previousHeight=0,lost=false,frames=0;
+  let previousWidth=0,previousHeight=0,lost=false,disposed=false,frames=0,viewWidth=0,viewHeight=0;
+  let qualityStart=performance.now(),qualityFrames=0;
+  const bounds=new THREE.Box3(),partBounds=new THREE.Box3(),projected=new THREE.Vector3();
+  const groundPlane=new THREE.Plane(new THREE.Vector3(0,1,0),0),pickRay=new THREE.Raycaster(),pickPoint=new THREE.Vector3(),pickNdc=new THREE.Vector2();
+  const updateCamera=({x,y,width,height})=>{
+    if(![x,y,width,height].every(Number.isFinite)||width<=0||height<=0)return false;
+    viewWidth=width;viewHeight=height;return applyWorldCamera(camera,{x,y,width,height});
+  };
   const lose=()=>{lost=true;container.removeAttribute('data-character-renderer');container.removeAttribute('data-environment-renderer');};renderer.domElement.addEventListener('webglcontextlost',lose);
   let onlineKey=JSON.stringify(neighbours.map(p=>[p.id,p.appearance]));
   return {
-    setResidents(people){const key=JSON.stringify(people.map(p=>[p.id,p.appearance]));if(key===onlineKey)return;onlineKey=key;for(const rig of online){scene.remove(rig.root);rig.root.traverse(o=>{o.geometry?.dispose();if(o.material)for(const m of Array.isArray(o.material)?o.material:[o.material])m.dispose();});}online=people.map(p=>{const rig=character(p.appearance);scene.add(rig.root);return rig;});},
+    setCameraViewport: updateCamera,
+    screenToGround(clientX,clientY){if(lost||disposed||!viewWidth)return null;const rect=container.getBoundingClientRect();pickNdc.set((clientX-rect.left)/rect.width*2-1,1-(clientY-rect.top)/rect.height*2);pickRay.setFromCamera(pickNdc,camera);return pickRay.ray.intersectPlane(groundPlane,pickPoint)?{x:pickPoint.x,y:pickPoint.z*DEPTH}:null;},
+    projectGround(point){if(lost||disposed||!viewWidth)return null;const rect=container.getBoundingClientRect();projected.set(point.x,0,point.y/DEPTH).project(camera);return {x:rect.left+(projected.x+1)*rect.width/2,y:rect.top+(1-projected.y)*rect.height/2};},
+    setResidents(people){if(disposed)return;const key=JSON.stringify(people.map(p=>[p.id,p.appearance]));if(key===onlineKey)return;onlineKey=key;for(const rig of online){scene.remove(rig.root);rig.root.traverse(o=>{o.geometry?.dispose();if(o.material)for(const m of Array.isArray(o.material)?o.material:[o.material])m.dispose();});}online=people.map(p=>{const rig=character(p.appearance);scene.add(rig.root);return rig;});},
     draw({player,camera:position,width,height,angle,phase,time,moving,transport,driving,activity,clock,weather,clubOpen,carColor,carStyle,ownVehicle,parked,trafficPositions,trip,npcPositions=[],onlinePositions=[]}){
-      if(lost)return;
+      if(lost||disposed)return;
       const rect=container.getBoundingClientRect();
       if(rect.width!==previousWidth||rect.height!==previousHeight){renderer.setSize(rect.width,rect.height,false);previousWidth=rect.width;previousHeight=rect.height;}
-      camera.left=-width/2;camera.right=width/2;camera.top=height/2;camera.bottom=-height/2;camera.updateProjectionMatrix();
-      camera.position.set(position.x,2200,position.y/DEPTH+2200);camera.lookAt(position.x,0,position.y/DEPTH);
+      updateCamera({...position,width,height});
       sun.position.set(position.x-550,1200,position.y/DEPTH+650);sun.target.position.set(position.x,0,position.y/DEPTH);
       const daylight=clock?.sunlight??1,night=clock?.isNight??false,cloud=weather?.condition==='rain'?.72:weather?.condition==='cloudy'?.84:1;
       ambient.intensity=(indoors?(isClub&&clubOpen?.92:1.55):.82)+daylight*(indoors?.35:.83)*cloud;ambient.color.set(night?(indoors?'#ecdcc4':'#b8c7e7'):'#fff1d4');ambient.groundColor.set(night?(indoors?'#5d5c54':'#3b4d60'):'#556553');sun.intensity=(night?.26:Math.pow(daylight,.5)*2.2)*cloud;sun.color.set(night?'#96b1e4':daylight<.3?'#edbf91':'#fff5e4');rim.intensity=night?.44:.6;
@@ -202,12 +217,17 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
       container.dataset.activityPose=activity?.name||'';
       environment?.update?.({clock,weather,clubOpen,elapsed:time,player,angle,transport,driving,carColor,carStyle,ownVehicle,parked,trafficPositions,trip});
       renderer.render(scene,camera);
-      if(++frames%5===0){
+      if(mobile&&++qualityFrames>=20&&performance.now()-qualityStart>=2500){
+        const fps=qualityFrames*1000/(performance.now()-qualityStart);
+        if(fps<28&&renderer.getPixelRatio()>Math.min(maxPixelRatio,1)){renderer.setPixelRatio(Math.min(maxPixelRatio,1));}
+        qualityStart=performance.now();qualityFrames=0;
+      }
+      if(++frames%10===0){
         const model=transport?environment?.playerModel?.():own.root;
-        if(model?.visible){const bounds=new THREE.Box3(),corners=[];model.traverse(part=>{if(part.isMesh&&!part.userData.excludeFromBounds){part.geometry.computeBoundingBox();bounds.union(part.geometry.boundingBox.clone().applyMatrix4(part.matrixWorld));}});for(const x of [bounds.min.x,bounds.max.x])for(const y of [bounds.min.y,bounds.max.y])for(const z of [bounds.min.z,bounds.max.z]){const v=new THREE.Vector3(x,y,z).project(camera);corners.push({x:rect.left+(v.x+1)*rect.width/2,y:rect.top+(1-v.y)*rect.height/2});}const minX=Math.min(...corners.map(p=>p.x)),minY=Math.min(...corners.map(p=>p.y));container.dataset.playerModelBounds=JSON.stringify({x:minX,y:minY,width:Math.max(...corners.map(p=>p.x))-minX,height:Math.max(...corners.map(p=>p.y))-minY});}
+        if(model?.visible){bounds.makeEmpty();model.traverse(part=>{if(part.isMesh&&!part.userData.excludeFromBounds){if(!part.geometry.boundingBox)part.geometry.computeBoundingBox();bounds.union(partBounds.copy(part.geometry.boundingBox).applyMatrix4(part.matrixWorld));}});let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;for(const x of [bounds.min.x,bounds.max.x])for(const y of [bounds.min.y,bounds.max.y])for(const z of [bounds.min.z,bounds.max.z]){projected.set(x,y,z).project(camera);const sx=rect.left+(projected.x+1)*rect.width/2,sy=rect.top+(1-projected.y)*rect.height/2;minX=Math.min(minX,sx);minY=Math.min(minY,sy);maxX=Math.max(maxX,sx);maxY=Math.max(maxY,sy);}container.dataset.playerModelBounds=JSON.stringify({x:minX,y:minY,width:maxX-minX,height:maxY-minY});}
       }
     },
-    dispose(){renderer.domElement.removeEventListener('webglcontextlost',lose);renderer.domElement.remove();container.removeAttribute('data-character-renderer');container.removeAttribute('data-environment-renderer');environment?.dispose?.();scene.traverse(o=>{o.geometry?.dispose();if(o.material){for(const m of Array.isArray(o.material)?o.material:[o.material])m.dispose();}});renderer.dispose();renderer.forceContextLoss();}
+    dispose(){if(disposed)return;disposed=true;renderer.domElement.removeEventListener('webglcontextlost',lose);renderer.domElement.remove();container.removeAttribute('data-character-renderer');container.removeAttribute('data-environment-renderer');environment?.dispose?.();const geometrySet=new Set(),materialSet=new Set();scene.traverse(o=>{if(o.geometry)geometrySet.add(o.geometry);if(o.material)for(const m of Array.isArray(o.material)?o.material:[o.material])materialSet.add(m);});geometrySet.forEach(g=>g.dispose());materialSet.forEach(m=>m.dispose());sun.shadow.map?.dispose();renderer.dispose();renderer.forceContextLoss();}
   };
 }
 

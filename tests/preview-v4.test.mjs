@@ -75,7 +75,7 @@ await test("WebCrypto rejection sampling and one-time durable origins", async ()
   assert.equal(state.profile.home.district, "lugbe");
   assert.equal(state.profile.home.layoutId, "garki-studio");
   assert.equal(state.properties.at(-1).id, state.profile.home.propertyId);
-  assert.equal(state.venues.length, 19);
+  assert.equal(state.venues.length, 20);
   assert.equal(state.clock.timeZone, "Africa/Lagos");
   assert.equal(state.weather.verified, false);
   assert.equal(state.weather.source, "seasonal-simulation");
@@ -226,6 +226,10 @@ await test("local social content is genuine, paginated, replay-safe and expires 
 await test("preview empty directory/visits and unavailable payment/admin APIs never fabricate peers", async () => {
   const f = fixture();
   assert.deepEqual((await f.request("/api/residents?q=anybody")).people, []);
+  const inbox=await f.request('/api/conversations?limit=2');
+  assert.deepEqual(inbox.conversations,[]);assert.equal(inbox.nextCursor,null);assert.equal(inbox.preview,true);
+  await f.request('/api/conversations?limit=51',undefined,400);
+  await f.request('/api/conversations?cursor=broken',undefined,400);
   const visits = await f.request("/api/home/visits");
   assert.deepEqual(visits.requests, []);
   assert.deepEqual(visits.visitors, []);
@@ -255,4 +259,153 @@ await test("legacy adapter saves retain money/home and remain origin-free until 
   assert.equal(fresh.profile.origin.id, "lapo");
   assert.equal(fresh.profile.wallet, 1e5);
   assert.deepEqual(fresh.profile.inventory, []);
+});
+
+await test("local venue rides charge the quoted fare and physical walking remains free", async () => {
+  const f = fixture(), before = await f.request("/api/bootstrap"), district = before.profile.district;
+  assert.ok(before.transportModes.some(mode => mode.id === "bike"));
+  const route = `/api/travel/quote?district=${district}&mode=taxi&venueId=restaurant`;
+  const { quote } = await f.request(route);
+  assert.equal(quote.venueId, "restaurant");
+  assert.equal(quote.cost, 830);
+  assert.equal(quote.seconds, 4);
+  for (const [mode, cost] of [["bus", 330], ["bike", 420], ["ride", 1080]]) {
+    assert.deepEqual((await f.request(`/api/travel/quote?district=${district}&mode=${mode}&venueId=restaurant`)).quote,
+      { destination: district, mode, cost, seconds: 4, venueId: "restaurant" });
+  }
+  assert.equal((await f.request(`/api/travel/quote?district=${district}&mode=walk&venueId=restaurant`)).quote.cost, 0);
+  assert.deepEqual((await f.request("/api/bootstrap")).profile, before.profile);
+  await f.action("leave-home");
+  const walking = await f.action("enter-venue", { venueId: "restaurant" });
+  assert.equal(walking.profile.wallet, before.profile.wallet);
+  assert.equal(walking.profile.activeTrip, null);
+  await f.action("exit-venue");
+  const ride = await f.action("travel", { district, mode: "taxi", venueId: "restaurant", cost: 0, seconds: 0 });
+  assert.equal(ride.trip.venueId, "restaurant");
+  assert.equal(ride.trip.cost, quote.cost);
+  assert.equal(ride.trip.seconds, quote.seconds);
+  assert.equal(ride.profile.wallet, before.profile.wallet - quote.cost);
+  assert.equal(ride.profile.location.kind, "transit");
+  const inTransit = await f.request("/api/wallet");
+  await f.action("travel", { district, mode: "bike", venueId: "cafe" }, 400);
+  assert.equal((await f.action("arrive", { tripId: ride.trip.id }, 409)).code, "trip_in_progress");
+  assert.deepEqual(await f.request("/api/wallet"), inTransit);
+  f.advance(quote.seconds * 1e3 - 1);
+  const nearArrival = await f.request("/api/wallet");
+  assert.equal((await f.action("arrive", { tripId: ride.trip.id }, 409)).code, "trip_in_progress");
+  assert.deepEqual(await f.request("/api/wallet"), nearArrival);
+  f.advance(1);
+  const arrived = await f.action("arrive", { tripId: ride.trip.id });
+  assert.deepEqual(arrived.profile.location, { kind: "venue", district, venue: "restaurant" });
+  assert.equal(arrived.profile.activeTrip, null);
+  assert.equal(arrived.profile.drivingVehicle, null);
+  assert.equal(arrived.profile.wallet, before.profile.wallet - quote.cost);
+  assert.equal((await f.request("/api/wallet")).transactions[0].amount, -quote.cost);
+});
+
+await test("venue transport validates destinations, departure and funds before mutating progress", async () => {
+  const f = fixture(), initial = await f.request("/api/bootstrap"), district = initial.profile.district;
+  const before = await f.request("/api/wallet");
+  await f.action("travel", { district, mode: "bike", venueId: "restaurant" }, 400);
+  assert.deepEqual(await f.request("/api/wallet"), before);
+  await f.action("leave-home");
+  for (const payload of [
+    { district, mode: "bike", venueId: "unknown-place" },
+    { district, mode: "bike", venueId: "" },
+    { district, mode: "taxi", venueId: "jabi-lake" },
+    { district, mode: "car", venueId: "restaurant" },
+    { district: "jabi", mode: "walk", venueId: "jabi-lake" },
+    { district, mode: "unsupported", venueId: "restaurant" }
+  ]) {
+    const wallet = await f.request("/api/wallet");
+    const stored = f.storage.get("abujalife.browser-preview.v1");
+    await f.action("travel", payload, 400);
+    assert.deepEqual(await f.request("/api/wallet"), wallet);
+    assert.equal(f.storage.get("abujalife.browser-preview.v1"), stored);
+  }
+  await f.request(`/api/travel/quote?district=${district}&mode=car&venueId=restaurant`, undefined, 400);
+  await f.request(`/api/travel/quote?district=${district}&mode=bike&venueId=jabi-lake`, undefined, 400);
+  await f.action("enter-venue", { venueId: "restaurant" });
+  const inside = await f.request("/api/wallet");
+  await f.action("travel", { district, mode: "bike", venueId: "cafe" }, 400);
+  assert.deepEqual(await f.request("/api/wallet"), inside);
+  const saved = JSON.parse(f.storage.get("abujalife.browser-preview.v1"));
+  saved.profile.location = { kind: "public", district, venue: "neighbourhood" };
+  saved.profile.wallet = 0;
+  const empty = fixture({ storage: new Map([["abujalife.browser-preview.v1", JSON.stringify(saved)]]) });
+  empty.advance(180e3);
+  const emptyBefore = await empty.request("/api/wallet");
+  await empty.action("travel", { district, mode: "bike", venueId: "restaurant" }, 400);
+  assert.deepEqual(await empty.request("/api/wallet"), emptyBefore);
+});
+
+await test("bike venue trips survive reload, auto-enter across districts and retain the home route", async () => {
+  const f = fixture(), start = (await f.request("/api/bootstrap")).profile;
+  await f.action("leave-home");
+  const { quote } = await f.request("/api/travel/quote?district=jabi&mode=bike&venueId=jabi-lake");
+  const departure = await f.action("travel", { district: "jabi", mode: "bike", venueId: "jabi-lake" });
+  assert.equal(departure.trip.mode, "bike");
+  assert.equal(departure.trip.cost, quote.cost);
+  assert.equal(departure.trip.seconds, quote.seconds);
+  assert.equal(departure.profile.wallet, start.wallet - quote.cost);
+  const reopened = fixture({ storage: f.storage, time: new Date(f.now() + quote.seconds * 1e3).toISOString() });
+  // Validate a persisted target again at arrival, before any progress mutation.
+  const invalidSave = JSON.parse(f.storage.get("abujalife.browser-preview.v1"));
+  invalidSave.profile.activeTrip.venueId = "unknown-place";
+  const invalid = fixture({ storage: new Map([["abujalife.browser-preview.v1", JSON.stringify(invalidSave)]]), time: new Date(f.now() + quote.seconds * 1e3).toISOString() });
+  const invalidBefore = await invalid.request("/api/wallet");
+  await invalid.action("arrive", { tripId: departure.trip.id }, 400);
+  assert.deepEqual(await invalid.request("/api/wallet"), invalidBefore);
+  const arrived = await reopened.action("arrive", { tripId: departure.trip.id });
+  assert.deepEqual(arrived.profile.location, { kind: "venue", district: "jabi", venue: "jabi-lake" });
+  assert.equal(arrived.profile.drivingVehicle, null);
+  const homeQuote = (await reopened.request(`/api/travel/quote?district=${start.home.district}&mode=bike`)).quote;
+  const home = await reopened.action("return-home", { mode: "bike" });
+  assert.equal(home.trip.returningHome, true);
+  assert.equal(home.trip.venueId, undefined);
+  assert.equal(home.trip.cost, homeQuote.cost);
+  reopened.advance(home.trip.seconds * 1e3);
+  const settled = await reopened.action("arrive", { tripId: home.trip.id });
+  assert.deepEqual(settled.profile.location, { kind: "home", district: start.home.district, venue: "home" });
+  assert.equal(settled.profile.wallet, start.wallet - quote.cost - homeQuote.cost);
+});
+
+await test("owned car venue arrival parks while district-only legacy fares and arrivals are preserved", async () => {
+  const f = fixture(), start = (await f.request("/api/bootstrap")).profile, district = start.district;
+  await f.request("/api/wallet/topup", { amount: 1e6, idempotencyKey: key() });
+  await f.action("purchase", { itemId: "compact-car", idempotencyKey: key() });
+  await f.action("leave-home");
+  await f.action("toggle-driving", { vehicleId: "compact-car" });
+  const { quote } = await f.request(`/api/travel/quote?district=${district}&mode=car&venueId=restaurant`);
+  assert.equal(quote.cost, 430);
+  const ride = await f.action("travel", { district, mode: "car", venueId: "restaurant" });
+  assert.equal(ride.trip.vehicleId, "compact-car");
+  assert.equal(ride.trip.cost, quote.cost);
+  f.advance(ride.trip.seconds * 1e3);
+  const parked = await f.action("arrive", { tripId: ride.trip.id });
+  assert.equal(parked.profile.location.venue, "restaurant");
+  assert.equal(parked.profile.drivingVehicle, null);
+  const instant = await f.action("return-home", { mode: "car" });
+  assert.equal(instant.profile.location.kind, "home");
+  assert.equal(instant.trip, undefined);
+  assert.equal(instant.profile.wallet, parked.profile.wallet);
+  for (const mode of ["walk", "bus", "taxi", "ride", "car"]) {
+    assert.deepEqual((await f.request(`/api/travel/quote?district=${district}&mode=${mode}`)).quote, { destination: district, mode, cost: 0, seconds: 1 });
+  }
+  const state = await f.request("/api/bootstrap"), destination = "jabi";
+  const distance = Math.max(4, Math.round(((state.atlas.find(place => place.id === destination).commute || 35) + (state.atlas.find(place => place.id === district).commute || 35)) / 3));
+  const expectedCost = 650 + distance * 45;
+  assert.equal((await f.request(`/api/travel/quote?district=${destination}&mode=taxi`)).quote.cost, expectedCost);
+  // District-only requests retain the existing ability to depart directly from home.
+  const legacy = await f.action("travel", { district: destination, mode: "taxi" });
+  assert.equal(legacy.trip.venueId, undefined);
+  assert.equal(legacy.trip.cost, expectedCost);
+  f.advance(legacy.trip.seconds * 1e3);
+  const arrived = await f.action("arrive", { tripId: legacy.trip.id });
+  assert.deepEqual(arrived.profile.location, { kind: "public", district: destination, venue: "neighbourhood" });
+  const driving = await f.action("travel", { district, mode: "car" });
+  f.advance(driving.trip.seconds * 1e3);
+  const outside = await f.action("arrive", { tripId: driving.trip.id });
+  assert.equal(outside.profile.location.kind, "public");
+  assert.equal(outside.profile.drivingVehicle, "compact-car");
 });

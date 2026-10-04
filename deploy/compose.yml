@@ -1,0 +1,132 @@
+name: abujalife-prod
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+x-ops: &ops
+  image: ${ABUJALIFE_OPS_IMAGE:-abujalife-ops:local}
+  build:
+    context: ..
+    target: ops
+  environment:
+    MONGODB_HOST: mongo:27017
+    MONGODB_DATABASE: abujalife_prod
+    MONGODB_REPLICA_SET: abujalife
+    ABUJALIFE_OPS_DIAGNOSTICS: ${ABUJALIFE_OPS_DIAGNOSTICS:-0}
+  secrets: [mongo-root-password, mongo-app-password, mongo-backup-password, backup-key]
+  networks: [database]
+  logging: *logging
+services:
+  mongo:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.mongo
+    image: ${ABUJALIFE_MONGO_IMAGE:-abujalife-mongo:local}
+    command: ["mongod", "--replSet", "abujalife", "--bind_ip_all", "--keyFile", "/run/abujalife-mongo/keyfile", "--auth"]
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: abujalife_bootstrap
+      MONGO_INITDB_ROOT_PASSWORD_FILE: /run/secrets/mongo-root-password
+    secrets: [mongo-root-password, mongo-keyfile]
+    volumes: ["mongo-data:/data/db", "mongo-config:/data/configdb"]
+    networks: [database]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--host", "mongo", "--eval", "const a=db.getSiblingDB('admin'); if(!a.auth('abujalife_bootstrap',require('fs').readFileSync('/run/secrets/mongo-root-password','utf8').trim()))quit(1); quit(a.runCommand({ping:1}).ok?0:1)"]
+      interval: 5s
+      timeout: 5s
+      start_period: 30s
+      retries: 12
+    stop_grace_period: 60s
+    logging: *logging
+  bootstrap:
+    <<: *ops
+    command: ["node", "deploy/mongo-bootstrap.mjs"]
+    restart: "no"
+    depends_on:
+      mongo:
+        condition: service_healthy
+  api:
+    image: ${ABUJALIFE_API_IMAGE:-abujalife-api:local}
+    build:
+      context: ..
+      target: runtime
+    restart: unless-stopped
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      MONGODB_DATABASE: abujalife_prod
+      MONGODB_URI_FILE: /run/secrets/mongo-app-uri
+      PUBLIC_WEB_URL: https://abujacity.life
+      API_PUBLIC_URL: https://api.abujacity.life
+      CORS_ORIGINS: https://abujacity.life
+      TRUST_PROXY: "1"
+      ABUJALIFE_CONFIG_KEY_FILE: /run/secrets/config-key
+    secrets: [mongo-app-uri, config-key]
+    ports: ["127.0.0.1:${ABUJALIFE_API_LOOPBACK_PORT:-18787}:3000"]
+    networks: [database, web]
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+    stop_grace_period: 30s
+    logging: *logging
+  https:
+    profiles: ["standalone-edge"]
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes: ["./Caddyfile:/etc/caddy/Caddyfile:ro", "caddy-data:/data", "caddy-config:/config"]
+    networks: [web]
+    stop_grace_period: 30s
+    logging: *logging
+  backup:
+    <<: *ops
+    profiles: ["ops"]
+    command: ["node", "deploy/backup.mjs"]
+    volumes: ["${ABUJALIFE_BACKUP_DIR:-./backups}:/backups"]
+    depends_on:
+      mongo:
+        condition: service_healthy
+  restore:
+    <<: *ops
+    profiles: ["ops"]
+    command: ["node", "deploy/restore.mjs"]
+    volumes: ["${ABUJALIFE_BACKUP_DIR:-./backups}:/backups:ro"]
+    depends_on:
+      mongo:
+        condition: service_healthy
+networks:
+  database:
+    internal: true
+  web:
+volumes:
+  mongo-data:
+  mongo-config:
+  caddy-data:
+  caddy-config:
+secrets:
+  mongo-root-password:
+    file: ${ABUJALIFE_SECRETS_DIR:-./.secrets}/mongo-root-password
+  mongo-app-password:
+    file: ${ABUJALIFE_SECRETS_DIR:-./.secrets}/mongo-app-password
+  mongo-backup-password:
+    file: ${ABUJALIFE_SECRETS_DIR:-./.secrets}/mongo-backup-password
+  mongo-keyfile:
+    file: ${ABUJALIFE_SECRETS_DIR:-./.secrets}/mongo-keyfile
+  mongo-app-uri:
+    file: ${ABUJALIFE_SECRETS_DIR:-./.secrets}/mongo-app-uri
+  config-key:
+    file: ${ABUJALIFE_SECRETS_DIR:-./.secrets}/config-key
+  backup-key:
+    file: ${ABUJALIFE_SECRETS_DIR:-./.secrets}/backup-key

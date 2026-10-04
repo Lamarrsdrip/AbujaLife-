@@ -2,7 +2,7 @@ name: AbujaLife CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, infra/abujalife-vps-hostinger-production]
   pull_request:
 
 jobs:
@@ -13,4 +13,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
       - run: npm run qa
+      - run: npm run build
+      - run: npm run qa:infra

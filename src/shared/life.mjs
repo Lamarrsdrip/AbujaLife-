@@ -12,6 +12,45 @@ export const ECONOMY_META = {
   billPeriodDays: 7,
 };
 
+export const TRANSPORT_MODES = [
+  { id: 'walk', name: 'Walk', description: 'Walk to the entrance in your current neighbourhood.' },
+  { id: 'bus', name: 'City bus', description: 'A shared ride across the game city.' },
+  { id: 'taxi', name: 'Taxi', description: 'A direct trip to your destination.' },
+  { id: 'ride', name: 'Ride-hailing', description: 'A car pickup for your journey.' },
+  { id: 'bike', name: 'Bike ride', description: 'A simulated motorbike ride in the game.' },
+  { id: 'car', name: 'Your car', description: 'Drive a vehicle you own.' },
+];
+
+// Only registration uses this seed. Existing homes and purchases are never reseeded.
+export function starterHomeSeed(origin) {
+  const nepo = origin?.id === 'nepo';
+  return {
+    inventory: nepo ? ['bed', 'sofa', 'dining-table', 'fridge'] : [],
+    furnitureLayout: {},
+    storedFurniture: [],
+    homeStyle: { furnishingPreset: nepo ? 'nepo-furnished' : 'lapo-basic', starterVersion: 1 },
+  };
+}
+
+export const SYSTEM_RESALE_META = {
+  virtual: true, buybackBasisPoints: 5000,
+  description: 'The game system buys owned catalog items for 50% of their listed game price.',
+};
+export function systemResaleValue(item) {
+  if (!Number.isSafeInteger(item?.price) || item.price < 0) throw new RangeError('This item has no valid game resale price');
+  return Math.floor(item.price / 2);
+}
+
+// The server validates ownership and venue availability before quoting these game fares.
+// Keep district-only routes compatible; a venue target adds a real local journey.
+export function travelPricing(originPlace, destinationPlace, mode, { venueId = null } = {}) {
+  const same = originPlace.id === destinationPlace.id;
+  const distance = same ? venueId ? 4 : 0 : Math.max(4, Math.round(((destinationPlace.commute || 35) + (originPlace.commute || 35)) / 3));
+  const cost = mode === 'walk' || !distance ? 0 : mode === 'bus' ? 250 + distance * 20 : mode === 'car' ? 350 + distance * 20 : mode === 'taxi' ? 650 + distance * 45 : mode === 'bike' ? 300 + distance * 30 : 900 + distance * 45;
+  const seconds = mode === 'walk' || !distance ? 1 : Math.min(14, Math.max(4, Math.round(distance / (mode === 'bus' ? 2.5 : 4))));
+  return { destination: destinationPlace.id, mode, cost, seconds, ...(venueId ? { venueId } : {}) };
+}
+
 export const WALLET_META = {
   currency: 'NGN', currencyName: 'Naira', currencyCode: 'NGN', balanceLabel: 'Naira balance', virtual: true, gameMoney: true, transferEnabled: true,
   uncapped: true, maxSafeInteger: Number.MAX_SAFE_INTEGER, topupMin: 1,
@@ -128,9 +167,10 @@ export const VENUES = [
   venue('cinema', 'City Screen', 'Entertainment', 'A comfortable local cinema for a break from the working week.'),
   venue('grocery', 'Daily Essentials', 'Shopping', 'Pick up a meal and daily essentials.'),
   venue('park', 'Neighbourhood Garden', 'Outdoors', 'A pocket of green for walking, picnics and downtime.'),
-  venue('dealership', 'Capital Motors', 'Cars', 'Compare virtual vehicles, buy your own car and take the wheel.'),
+  venue('dealership', 'Abuja Car', 'Cars', 'Compare virtual vehicles, buy your own car and take the wheel.'),
   venue('estate-office', 'Abuja Home Finder', 'Homes', 'Compare neighbourhoods, view homes and choose rent or ownership.'),
-  venue('furniture-store', 'Okrika Marketplace', 'Shopping', 'Browse furniture, clothes and home essentials, then arrange your purchases at home.'),
+  venue('furniture-store', 'Capital Market', 'Shopping', 'Browse furniture, clothes and home essentials, then arrange your purchases at home.'),
+  { ...venue('banex', 'Banex Tech Market', 'Tech & shopping', 'Computers, gadgets, repair counters and busy aisles in an original game interpretation of Banex.'), type: 'tech-market', districts: ['wuse-ii-a08'], settingSource: 'authored-game-scenery', nameSource: 'player-provided', pricesVerified: false },
   venue('cafe', 'The Corner Café', 'Food & dining', 'A coffee stop with small chops and a place to unwind.'),
   venue('salon', 'Fresh Studio', 'Personal care', 'Take a little time for grooming and your next look.'),
   venue('mosque', 'Neighbourhood Mosque', 'Faith & community', 'A respectful, peaceful space for prayer and community.'),

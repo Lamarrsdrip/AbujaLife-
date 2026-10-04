@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ABUJA_ATLAS, AREA_COUNCILS, LANDMARKS, ATLAS_META } from '../src/shared/atlas.mjs';
-import { jobs, catalog, properties, transportModes, appearanceOptions, activities } from '../src/server/gameStore.mjs';
+import { jobs, catalog, properties, transportModes, appearanceOptions, activities } from '../src/shared/catalogue.mjs';
 import { VENUES, VENUE_ACTIONS, LIFE_GOALS, ECONOMY_META, WALLET_META, INVESTMENT_META, DICE_META, LOAN_META, HOME_UPGRADES } from '../src/shared/life.mjs';
 import { VEHICLE_COLORS } from '../src/shared/vehicles.mjs';
 import { ORIGIN_META } from '../src/shared/origins.mjs';
@@ -58,7 +58,7 @@ const html = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="theme-color" content="#204b3c">
 <meta name="description" content="Explore the AbujaLife browser preview. No account required.">
 <title>AbujaLife · Preview</title>

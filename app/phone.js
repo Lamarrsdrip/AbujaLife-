@@ -2,6 +2,7 @@ import { avatarSVG } from './world.js';
 import { vehicleIllustration } from './vehicle-art.js';
 import { enhanceProductPreviews } from './product-3d.js';
 import { VEHICLE_COLORS } from '../src/shared/vehicles.mjs';
+import { systemResaleValue } from '../src/shared/life.mjs';
 import { createPhoneBrowser, normalizeCheckoutURL } from './phone-browser.js';
 import { createPhoneSocial, createAdvancingServerClock } from './phone-social.js';
 
@@ -36,7 +37,7 @@ const apps = [
   ['messages','Messages','green'],['contacts','Contacts','sand'],['calls','Calls','green'],['map','Map','blue'],
   ['ride','Ride','ink'],['jobs','Jobs','blue'],['wallet','Wallet','ink'],['property','Property','amber'],
   ['market','Marketplace','orange'],['events','Events','cream'],['profile','Camera','ink'],['friends','Friends','coral'],
-  ['groups','Groups','violet'],['social','Okrika','orange'],['browser','Browser','blue'],['x','X','ink'],
+  ['groups','Groups','violet'],['social','City Circle','orange'],['browser','Browser','blue'],['x','X','ink'],
   ['tiktok','TikTok','ink'],['xshare','Xshare','coral'],['notifications','Activity','coral'],['settings','Settings','silver']
 ];
 
@@ -45,9 +46,39 @@ function portrait(resident, className='') {
   return `<span class="ph-avatar ${className}" aria-label="${esc(resident?.displayName || 'Resident')}">${avatarSVG(resident?.appearance || {},{size:60})}<span class="ph-avatar-fallback">${esc(initials)}</span>${resident?.online?'<i class="ph-online"></i>':''}</span>`;
 }
 
+// Conversation state stays in memory and is scoped to the signed-in resident.
+export function mergePhoneMessages(previous, incoming) {
+  return [...new Map([...previous,...incoming].filter(m=>m?.id).map(m=>[m.id,m])).values()].sort((a,b)=>Number(a.createdAt)-Number(b.createdAt) || String(a.id).localeCompare(String(b.id)));
+}
+export function phoneMessageReceipt(message, ownerId) {
+  return (message.readBy || []).some(id=>id!==ownerId)?'Read':(message.deliveredTo || []).some(id=>id!==ownerId)?'Delivered':'Sent';
+}
+export function phoneUnreadAnchor(messages, unread, ownerId) {
+  const incoming=messages.filter(m=>m.senderId!==ownerId),count=Math.max(0,Math.floor(Number(unread) || 0));
+  return count?incoming[Math.max(0,incoming.length-count)]?.id || null:null;
+}
+export function phoneDMPeer(conversation, ownerId, blocked=[]) {
+  if(conversation?.kind!=='dm' || conversation.members?.length!==2 || !conversation.members.some(m=>(m.id || m.residentId)===ownerId))return null;
+  const peer=conversation.members.find(m=>(m.id || m.residentId)!==ownerId),id=peer?.id || peer?.residentId;
+  return id && !blocked.includes(id)?{...peer,id}:null;
+}
+export function phoneConversationPreview(conversation, ownerId) {
+  const m=conversation.lastMessage;
+  if(m?.transfer)return `${m.transfer.fromId===ownerId?'You sent':'Received'} ${currency(m.transfer.amount)}${m.transfer.note?` · ${m.transfer.note}`:''}`;
+  return typeof m==='string'?m:m?.text?`${m.senderId===ownerId?'You: ':''}${m.text}`:'Say hello';
+}
+const conversationTime=(timestamp, now)=>{
+  if(!timestamp)return '';
+  const date=new Date(timestamp);if(Number.isNaN(date.valueOf()))return '';
+  const day=d=>new Intl.DateTimeFormat('en-GB',{timeZone:'Africa/Lagos',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);
+  return day(date)===day(new Date(now))?timeOnly(timestamp):date.toLocaleDateString('en-NG',{timeZone:'Africa/Lagos',day:'numeric',month:'short'});
+};
+
 export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }) {
   let opened=false, locked=true, screen='home', history=[], selected=null, busy=false, search='', thread=null, messages=[], typing=null, incoming=null, priorFocus=null, requestSequence=0, groupMembers=new Set();
-  const drafts=new Map(), threadDrafts=new Map(), knownResidents=new Map(), vehicleRequests=new Map();
+  const drafts=new Map(), threadDrafts=new Map(), knownResidents=new Map(), vehicleRequests=new Map(), messageOutbox=new Map(), threadScrolls=new Map(),cachedConversations=new Map();
+  let inboxCursor=null,inboxLoading=false,inboxSequence=0,inboxError='';
+  let threadLoading=false,threadError='',unreadAnchor=null,newMessageCount=0,chatTransfer=null,inboxFilter='all',readPending=false;
   let accountId=null;
   let walletData=null, walletLoading=false, walletError='', walletSequence=0, pendingWallet=null, walletReceipt=null;
   let paymentConfig=null, paymentLoading=false, paymentError='', checkout=null;
@@ -56,7 +87,11 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
   const walletProfile=()=>walletData?.profile && walletData.sourceWallet===profile().wallet?walletData.profile:profile();
   const walletMeta=()=>walletData?.walletMeta || state().walletMeta || {};
   const eligibleRecipients=()=>[...new Map([...friends(),...people(),...(residentResults || [])].filter(r=>r?.id && r.id!==profile().id && !(state().blocked || []).includes(r.id)).map(r=>[r.id,r])).values()];
-  const makeRequestKey=()=>globalThis.crypto?.randomUUID?.() || `wallet-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const makeRequestKey=()=>globalThis.crypto?.randomUUID?.() || `phone-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const threadKey=id=>`${profile().id}:${id}`;
+  const pendingMessages=id=>[...messageOutbox.values()].filter(m=>m.ownerId===profile().id && m.conversationId===id);
+  const chatPeer=()=>phoneDMPeer(thread,profile().id,state().blocked || []);
+  const transferRecipient=id=>eligibleRecipients().find(r=>r.id===id) || (chatTransfer?.ownerId===profile().id && chatTransfer.peer.id===id && !(state().blocked || []).includes(id)?chatTransfer.peer:null);
   const vehicleRequestKey=(action,itemId,color)=>{const key=`${action}:${itemId}:${color}`;if(!vehicleRequests.has(key))vehicleRequests.set(key,makeRequestKey());return vehicleRequests.get(key);};
   let travelQuote=null, quoteLoading=false, quoteError='', quoteSequence=0;
   let clockTimer, typingTimer, bannerTimer, typingSentAt=0;
@@ -68,13 +103,13 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
   const place=id=>entries(state().atlas).find(r=>r.id===id);
   const locationLabel=()=>profile().activeTrip?'On the road':profile().location?.kind==='home'?'At home':profile().location?.kind==='venue'?(entries(state().venues).find(v=>v.id===profile().location.venue)?.name || 'Inside a venue'):profile().drivingVehicle?'Driving your car':'Out in the city';
   const ownsCar=()=>entries(state().catalog).some(i=>i.category==='vehicle'&&(profile().inventory || []).includes(i.id));
-  const conversations=()=>entries(state().conversations);
+  const conversations=()=>[...new Map([...cachedConversations.values(),...entries(state().conversations)].map(c=>[c.id,c])).values()].filter(c=>c.kind!=='dm' || !(c.members || []).some(m=>(state().blocked || []).includes(m.id || m.residentId)));
   const unread=()=>conversations().reduce((n,c)=>n+Number(c.unread || 0),0);
   const pendingInvites=()=>entries(state().invitations).filter(i=>(i.to===profile().id || i.toId===profile().id) && i.status==='pending');
   const requests=()=>entries(state().friendRequests).filter(r=>(r.to===profile().id || r.toId===profile().id) && r.status==='pending');
   const noticeCount=()=>entries(state().notifications).filter(n=>!n.read && !n.readAt).length + pendingInvites().length;
-  const appTitle=()=>({home:'',thread:conversationName(thread),person:resident(selected)?.displayName || 'Resident',compose:'New message',newgroup:'New group',invite:'Invite a resident',report:'Report',event:'Event',newevent:'Create event',item:'Okrika Marketplace',homeproperty:'Property',blocked:'Blocked residents',muted:'Muted residents',profile:'Camera & profile',notifications:'Activity',ride:'Ride & transport',market:'Okrika Marketplace',wallet:'Naira wallet',topup:'Add Naira',transfer:'Send Naira',transferform:'Send Naira',walletreview:'Review',walletreceipt:'Receipt',paymentcheckout:'Hosted checkout',socialcompose:'Share a moment',socialpost:'Okrika conversation',socialstatuses:'24-hour statuses',socialstatus:'Status'}[screen] || apps.find(a=>a[0]===screen)?.[1] || 'Phone');
-  const conversationName=c=>c?.kind==='group'?c.name || 'Group':c?.members?.filter(m=>(m.id || m.residentId)!==profile().id).map(m=>m.displayName || resident(m.id || m.residentId)?.displayName || 'Resident').join(', ') || c?.name || 'Conversation';
+  const appTitle=()=>({home:'',thread:conversationName(thread),person:resident(selected)?.displayName || 'Resident',compose:'New message',newgroup:'New group',invite:'Invite a resident',report:'Report',event:'Event',newevent:'Create event',item:'Capital Market',homeproperty:'Property',blocked:'Blocked residents',muted:'Muted residents',profile:'Camera & profile',notifications:'Activity',ride:'Ride & transport',market:'Capital Market',wallet:'Naira wallet',topup:'Add Naira',transfer:'Send Naira',transferform:'Send Naira',walletreview:'Review',walletreceipt:'Receipt',paymentcheckout:'Hosted checkout',socialcompose:'Share a moment',socialpost:'City Circle conversation',socialstatuses:'24-hour statuses',socialstatus:'Status'}[screen] || apps.find(a=>a[0]===screen)?.[1] || 'Phone');
+  const conversationName=c=>c?.kind && c.kind!=='dm'?c.name || 'Group':c?.members?.filter(m=>(m.id || m.residentId)!==profile().id).map(m=>m.displayName || resident(m.id || m.residentId)?.displayName || 'Resident').join(', ') || c?.name || 'Conversation';
   const badge=id=>id==='messages'?unread():id==='notifications'?noticeCount():id==='friends'?requests().length:0;
   const nameById=id=>resident(id)?.displayName || 'Resident';
   const button=(label,action,extra='',kind='')=>`<button type="button" class="ph-button ${kind}" data-ph-action="${action}" ${extra}>${label}</button>`;
@@ -90,29 +125,33 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
   const districtOptions=selectedId=>entries(state().atlas).map(p=>`<option value="${esc(p.id)}" ${p.id===selectedId?'selected':''}>${esc(p.name)}${p.kind==='town'?' · FCT town':''}</option>`).join('');
   function captureInputs() {
     browser.capture(root);social.capture(root);
-    root.querySelectorAll('input[name],textarea[name],select[name]').forEach(el=>{ if(el.type!=='checkbox' && (el.type!=='radio' || el.checked)) {drafts.set(el.name,el.value);if(el.name==='message' && thread?.id)threadDrafts.set(thread.id,el.value);} });
+    root.querySelectorAll('input[name],textarea[name],select[name]').forEach(el=>{ if(el.type!=='checkbox' && (el.type!=='radio' || el.checked)) {drafts.set(el.name,el.value);if(el.name==='message' && screen==='thread' && thread?.id)threadDrafts.set(threadKey(thread.id),el.value);} });
   }
   function syncAccount() {
-    const next=profile().id || null;if(next===accountId)return;accountId=next;locked=true;screen='home';history=[];selected=null;thread=null;messages=[];typing=null;incoming=null;drafts.clear();threadDrafts.clear();knownResidents.clear();vehicleRequests.clear();groupMembers.clear();travelQuote=null;quoteError='';quoteLoading=false;requestSequence++;quoteSequence++;walletSequence++;walletData=null;walletLoading=false;walletError='';pendingWallet=null;walletReceipt=null;paymentConfig=null;paymentLoading=false;paymentError='';checkout=null;residentResults=null;residentCursor=null;residentSequence++;messageCursor=null;browser.reset();social.reset();root.innerHTML='';
+    const next=profile().id || null;if(next===accountId)return;accountId=next;locked=true;screen='home';history=[];selected=null;thread=null;messages=[];typing=null;incoming=null;drafts.clear();threadDrafts.clear();messageOutbox.clear();threadScrolls.clear();cachedConversations.clear();inboxCursor=null;inboxLoading=false;inboxSequence++;inboxError='';threadLoading=false;threadError='';unreadAnchor=null;newMessageCount=0;chatTransfer=null;inboxFilter='all';readPending=false;busy=false;clearTimeout(typingTimer);clearTimeout(bannerTimer);knownResidents.clear();vehicleRequests.clear();groupMembers.clear();travelQuote=null;quoteError='';quoteLoading=false;requestSequence++;quoteSequence++;walletSequence++;walletData=null;walletLoading=false;walletError='';pendingWallet=null;walletReceipt=null;paymentConfig=null;paymentLoading=false;paymentError='';checkout=null;residentResults=null;residentCursor=null;residentSequence++;messageCursor=null;browser.reset();social.reset();root.innerHTML='';
   }
   function render({browserRefresh=false}={}) {
     syncAccount();
     serverNow();
+    if(typing && (state().blocked || []).includes(typing.residentId || typing.userId || typing.senderId)){typing=null;clearTimeout(typingTimer);}
     if(!profile().id){opened=false;document.body.classList.remove('phone-is-open');}
     for(const r of [...people(),...friends(),...(residentResults || []),...conversations().flatMap(c=>c.members || [])])if(r?.id)knownResidents.set(r.id,r);
-    if(!opened) { root.innerHTML=''; root.hidden=true; return; }
+    if(!opened) { root.innerHTML=''; root.hidden=true;root.classList.remove('phone-chat-open');return; }
     captureInputs();
     // Keep an embedded website alive when resident presence or messages refresh.
     if(!browserRefresh && !locked && screen==='browser' && root.querySelector('.ph-browser'))return;
     const active=root.contains(document.activeElement)?document.activeElement:null;
     const focusedId=active?.id, start=active?.selectionStart, end=active?.selectionEnd;
-    const scroll=root.querySelector('.ph-scroll'), scrollTop=scroll?.scrollTop || 0, atBottom=scroll && scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight<80;
+    const scroll=root.querySelector('.ph-scroll'), scrollTop=scroll?.scrollTop || 0, atBottom=scroll && scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight<64;
+    const anchor=screen==='thread' && scroll?[...root.querySelectorAll('[data-message-id]')].find(el=>el.offsetTop+el.offsetHeight>scrollTop):null,anchorOffset=anchor?anchor.offsetTop-scrollTop:null;
     root.hidden=false;
     root.innerHTML=`<div class="ph-backdrop" data-ph-action="dismiss"><section class="ph-device" role="dialog" aria-modal="true" aria-labelledby="ph-device-name"><span class="ph-hardware ph-action-button" aria-hidden="true"></span><button class="ph-hardware ph-volume" data-ph-action="sound" aria-label="${profile().settings?.soundEnabled===false?'Enable':'Mute'} phone sounds"></button><button class="ph-hardware ph-power" data-ph-action="lock" aria-label="Lock phone"></button><div class="ph-screen ${locked?'ph-locked':screen==='home'?'ph-home':'ph-app'}"><div class="ph-wallpaper"><i></i><i></i><i></i><i></i><i></i><span></span></div><div class="ph-statusbar"><span class="ph-clock">${timeOnly(new Date())}</span><span class="ph-status-icons">${icon('signal')}${icon('wifi')}<span class="ph-battery" aria-label="Virtual phone"></span></span></div><button class="ph-island ${incoming?'ph-island-active':''}" data-ph-action="${incoming?'incoming':'home'}" aria-label="${incoming?'Open incoming activity':'Go to phone home'}">${incoming?`${icon('messages')}<span>${esc(incoming.name || 'New activity')}</span>`:'<i></i>'}</button>${locked?lockScreen():screen==='home'?homeScreen():appScreen()}<button class="ph-home-indicator" data-ph-action="${locked?'unlock':'home'}" aria-label="${locked?'Unlock phone':'Go to phone home'}"></button></div><div class="ph-device-caption"><span id="ph-device-name">iPhone 18 Pro Max</span><button data-ph-action="close" aria-label="Put your phone away">Put away ${icon('close')}</button></div>${busy?'<div class="ph-working" role="status">Working…</div>':''}</section></div>`;
     enhanceProductPreviews(root);
     if(!locked && screen==='browser')browser.afterRender(root);
     const nextScroll=root.querySelector('.ph-scroll');
-    if(nextScroll) nextScroll.scrollTop=screen==='thread' && atBottom?nextScroll.scrollHeight:scrollTop;
+    root.classList.toggle('phone-chat-open',!locked && screen==='thread');syncChatViewport();
+    if(nextScroll){const nextAnchor=anchor && root.querySelector(`[data-message-id="${CSS.escape(anchor.dataset.messageId)}"]`);nextScroll.scrollTop=screen==='thread' && atBottom?nextScroll.scrollHeight:nextAnchor && anchorOffset!==null?nextAnchor.offsetTop-anchorOffset:scrollTop;}
+    resizeComposer();
     const restore=focusedId && root.querySelector(`#${CSS.escape(focusedId)}`);
     if(restore) { restore.focus({preventScroll:true}); try {restore.setSelectionRange(start,end);} catch {} }
   }
@@ -125,7 +164,7 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
     return `<div class="ph-home-content"><div class="ph-widget-row"><button class="ph-widget ph-place-widget" data-ph-action="app" data-app="map"><small>${icon('map')} NOW IN</small><strong>${esc(place(profile().district)?.name || 'Abuja')}</strong><span>${esc(locationLabel())}</span></button><button class="ph-widget ph-wallet-widget" data-ph-action="app" data-app="wallet"><small>NAIRA BALANCE</small><strong>${currency(profile().wallet)}</strong><span>Naira (NGN) ${icon('arrow')}</span></button></div><div class="ph-app-grid">${apps.map(a=>appIcon(...a)).join('')}</div><div class="ph-page-dots"><i></i><span>AbujaLife</span></div><div class="ph-dock">${appIcon('calls','Calls','green')}${appIcon('messages','Messages','green')}${appIcon('map','Map','blue')}${appIcon('profile','Camera','ink')}</div></div>`;
   }
   function appScreen() {
-    return `<div class="ph-app-content"><header class="ph-app-header"><button data-ph-action="back" class="ph-back" aria-label="Back">${icon('back')}<span>${history.length?'Back':'Home'}</span></button><strong>${esc(appTitle())}</strong><button class="ph-header-close" data-ph-action="close" aria-label="Put phone away">${icon('close')}</button></header><div class="ph-scroll ${screen==='thread'?'ph-thread-scroll':screen==='browser'?'ph-browser-scroll':''}">${content()}</div>${screen==='thread'?chatComposer():''}</div>`;
+    return `<div class="ph-app-content ${['messages','compose','thread'].includes(screen)?'ph-chat-app':''} ${screen==='thread'?'ph-chat-thread':''}"><header class="ph-app-header"><button data-ph-action="back" class="ph-back" aria-label="Back">${icon('back')}<span>${history.length?'Back':'Home'}</span></button><strong>${esc(appTitle())}</strong><button class="ph-header-close" data-ph-action="close" aria-label="Put phone away">${icon('close')}</button></header><div class="ph-scroll ${screen==='thread'?'ph-thread-scroll':screen==='browser'?'ph-browser-scroll':''}">${content()}</div>${screen==='thread'?`${newMessageCount?`<button class="ph-new-messages" data-ph-action="messages-latest">${newMessageCount} new message${newMessageCount===1?'':'s'} ↓</button>`:''}${chatComposer()}`:''}</div>`;
   }
   function content() {
     if(['social','socialcompose','socialpost','socialstatuses','socialstatus','xshare'].includes(screen))return social.markup(screen,selected);
@@ -140,21 +179,30 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
     return `${headline('OFFICIAL WEBSITE',name,x?'Follow the conversations you care about.':'Discover videos on the official TikTok website.')}<div class="ph-official-site"><span class="ph-official-mark">${x?'𝕏':'♪'}</span><strong>${esc(new URL(url).hostname)}</strong><p>${name} restricts embedded browsing. Continue on its official website in a new tab to browse or sign in.</p><a class="ph-button wide" href="${url}" target="_blank" rel="noopener noreferrer">Open ${name} ↗</a></div>${x?button('Share my Abuja home','app','data-app="xshare"','secondary wide'):''}<p class="ph-quiet-note">Your account stays with ${name}. AbujaLife does not read your login or post for you.</p>`;
   }
   function conversationRow(c) {
-    const other=c.members?.find(m=>(m.id || m.residentId)!==profile().id), last=c.lastMessage;
-    return `<button class="ph-list-row ph-conversation" data-ph-action="thread" data-id="${esc(c.id)}">${c.kind==='group'?`<span class="ph-group-avatar">${icon('groups')}</span>`:portrait(other || resident(c.residentId))}<span class="ph-row-copy"><strong>${esc(conversationName(c))}</strong><small>${esc(typeof last==='string'?last:last?.text || 'Start a conversation')}</small></span><span class="ph-row-end"><time>${timeOnly(last?.createdAt)}</time>${c.unread?`<i class="ph-unread">${c.unread}</i>`:icon('arrow')}</span></button>`;
+    const other=c.members?.find(m=>(m.id || m.residentId)!==profile().id),last=c.lastMessage,body=threadDrafts.get(threadKey(c.id)),count=Math.max(0,Number(c.unread) || 0);
+    return `<button class="ph-list-row ph-conversation ${count?'has-unread':''}" data-ph-action="thread" data-id="${esc(c.id)}" aria-label="${esc(conversationName(c))}${count?`, ${count} unread messages`:''}">${c.kind!=='dm'?`<span class="ph-group-avatar">${icon('groups')}</span>`:portrait(other || resident(c.residentId))}<span class="ph-row-copy"><strong>${esc(conversationName(c))}</strong><small class="${body?'ph-draft-preview':''}">${body?`<b>Draft</b> ${esc(body)}`:esc(phoneConversationPreview(c,profile().id))}</small></span><span class="ph-row-end"><time datetime="${last?.createdAt?new Date(last.createdAt).toISOString():''}">${conversationTime(last?.createdAt,serverNow())}</time>${count?`<i class="ph-unread">${count>99?'99+':count}</i>`:''}</span></button>`;
   }
   function messagesScreen() {
-    const rows=conversations().filter(c=>match({name:conversationName(c)}));
-    return `${headline('STAY CLOSE','Messages')}<div class="ph-toolbar">${searchField('Search conversations')}<button class="ph-square" data-ph-action="compose" aria-label="Compose message">${icon('plus')}</button></div><div class="ph-list">${rows.map(conversationRow).join('') || empty('messages','Your conversations start here','compose','New message')}</div>`;
+    const rows=conversations().filter(c=>(inboxFilter!=='unread' || c.unread>0) && (!search || `${conversationName(c)} ${c.members?.map(m=>m.username || '').join(' ') || ''} ${c.lastMessage?.text || ''}`.toLowerCase().includes(search.toLowerCase()))).sort((a,b)=>(b.lastMessage?.createdAt || 0)-(a.lastMessage?.createdAt || 0));
+    return `<div class="ph-inbox-title"><div><small>YOUR CITY, CONNECTED</small><h2>Messages</h2><p>${unread()?`${unread()} unread message${unread()===1?'':'s'}`:'Pick up where you left off'}</p></div><button class="ph-compose-new" data-ph-action="compose" aria-label="New message">${icon('plus')}<span>New</span></button></div>${searchField('Search names or messages')}<div class="ph-inbox-filters" aria-label="Conversation filters">${[['all','All conversations'],['unread','Unread']].map(([id,label])=>`<button data-ph-action="inbox-filter" data-value="${id}" aria-pressed="${inboxFilter===id}">${label}${id==='unread' && unread()?` <span>${unread()}</span>`:''}</button>`).join('')}</div><div class="ph-list ph-inbox-list">${rows.map(conversationRow).join('') || empty('messages',search?'No matching conversations':inboxFilter==='unread'?'You’re all caught up':'Your next conversation starts here','compose','Find a resident')}</div>${inboxLoading?'<p class="ph-quiet-note" role="status">Refreshing conversations…</p>':''}${inboxError?`<p class="ph-chat-error" role="alert">${esc(inboxError)}${button('Try again','inbox-refresh','','subtle')}</p>`:''}${inboxCursor?button(inboxLoading?'Loading…':'More conversations','inbox-more',inboxLoading?'disabled':'','secondary wide'):''}${search?button('Search registered residents','compose-search','','secondary wide'):''}`;
   }
   const residentPager=()=>`${residentLoading?'<p class="ph-quiet-note" role="status">Finding residents…</p>':''}${residentCursor?button('More residents','residents-more',residentLoading?'disabled':'','secondary wide'):''}`;
-  function composeScreen() { const rows=(residentResults || people()).filter(r=>r.id!==profile().id).filter(match); return `${headline('A REAL CONNECTION','Who’s on your mind?','Messages go to registered AbujaLife residents.')} ${searchField('Search residents')}<div class="ph-list">${rows.map(r=>residentRow(r,'dm')).join('') || empty('contacts',residentLoading?'Finding residents…':'No residents found')}</div>${residentPager()}`; }
-  function threadScreen() {
-    if(!thread) return empty('messages','Opening conversation…');
-    const other=thread.members?.find(m=>m.id!==profile().id), group=thread.kind==='group';
-    return `<button class="ph-thread-person" data-ph-action="${group?'noop':'person'}" data-id="${esc(other?.id || '')}">${group?`<span class="ph-group-avatar">${icon('groups')}</span>`:portrait(other)}<span><strong>${esc(conversationName(thread))}</strong><small>${typing?`${esc(typing.displayName || nameById(typing.residentId || typing.userId))} is typing…`:group?`${thread.members?.length || 0} members`:other?.online?'Online now':'Messages stay here when you’re away'}</small></span></button>${messageCursor?button(olderLoading?'Loading earlier messages…':'Earlier messages','messages-older',olderLoading?'disabled':'','subtle wide'):''}<div class="ph-message-day">${messages.length?dateTime(messages[0].createdAt).split(',')[0]:'Beginning of your conversation'}</div><div class="ph-bubbles">${messages.map(m=>{ const mine=m.senderId===profile().id, receipt=(m.readBy || []).some(id=>id!==profile().id)?'Read':(m.deliveredTo || []).some(id=>id!==profile().id)?'Delivered':'Sent';return `<div class="ph-message ${mine?'mine':''}">${group && !mine?`<small class="ph-message-sender">${esc(nameById(m.senderId))}</small>`:''}<div class="ph-bubble">${esc(m.text).replace(/\n/g,'<br>')}</div><span>${timeOnly(m.createdAt)}${mine?` · ${receipt}`:''}</span></div>`; }).join('')}${typing?'<div class="ph-typing" aria-label="Typing"><i></i><i></i><i></i></div>':''}</div>${!messages.length?'<p class="ph-quiet-note">Say hello. This conversation is shared with real residents.</p>':''}`;
+  function composeScreen() { const rows=(residentResults || people()).filter(r=>r.id!==profile().id && !(state().blocked || []).includes(r.id)).filter(match); return `${headline('NEW CONVERSATION','Find your people','Search a registered resident’s name or username.')} ${searchField('Search residents')}<div class="ph-list">${rows.map(r=>residentRow(r,'dm')).join('') || empty('contacts',residentLoading?'Finding residents…':'No residents found')}</div>${residentPager()}`; }
+  function messageMarkup(m,group) {
+    const mine=m.senderId===profile().id,transfer=m.transfer;
+    const body=transfer?`<div class="ph-transfer-message">${icon('wallet')}<small>${transfer.fromId===profile().id?'YOU SENT NAIRA':'NAIRA RECEIVED'}</small><strong>${currency(transfer.amount)}</strong><span>${transfer.fromId===profile().id?`To ${esc(transfer.recipientName || nameById(transfer.toId))}`:`From ${esc(transfer.senderName || nameById(transfer.fromId))}`}</span>${transfer.note?`<p>${esc(transfer.note)}</p>`:''}<small>Transfer confirmed · No fee</small></div>`:`<div class="ph-bubble">${esc(m.text)}</div>`;
+    return `<div class="ph-message ${mine?'mine':''} ${transfer?'ph-money-message':''}" data-message-id="${esc(m.id)}">${group && !mine?`<small class="ph-message-sender">${esc(nameById(m.senderId))}</small>`:''}${body}<span><time datetime="${new Date(m.createdAt).toISOString()}">${timeOnly(m.createdAt)}</time>${mine?` · <span class="ph-message-receipt">${phoneMessageReceipt(m,profile().id)}</span>`:''}</span></div>`;
   }
-  function chatComposer() {return `<form class="ph-composer" data-ph-form="message"><label class="ph-sr-only" for="ph-message">Message</label><textarea id="ph-message" name="message" rows="1" maxlength="2000" placeholder="Message…">${esc(draft('message'))}</textarea><button type="submit" class="ph-send" aria-label="Send message" ${busy?'disabled':''}>${icon('send')}</button></form>`;}
+  function threadScreen() {
+    if(!thread)return empty('messages','Opening conversation…');
+    const peer=chatPeer(),member=peer || thread.members?.find(m=>(m.id || m.residentId)!==profile().id),other=member && (state().blocked || []).includes(member.id || member.residentId)?{...member,online:false}:member,group=thread.kind!=='dm';
+    let priorDay='';const timeline=messages.map(m=>{const day=new Date(m.createdAt).toLocaleDateString('en-NG',{timeZone:'Africa/Lagos',day:'numeric',month:'long',year:'numeric'}),divider=day!==priorDay?`<div class="ph-message-day">${esc(day)}</div>`:'';priorDay=day;return `${divider}${m.id===unreadAnchor?'<div class="ph-unread-divider" id="ph-unread-anchor">New messages</div>':''}${messageMarkup(m,group)}`;}).join('');
+    return `<div class="ph-thread-profile"><button class="ph-thread-person" data-ph-action="${group?'noop':'person'}" data-id="${esc(other?.id || '')}">${group?`<span class="ph-group-avatar">${icon('groups')}</span>`:portrait(other)}<span><strong>${esc(conversationName(thread))}</strong><small>${typing?`${esc(typing.displayName || nameById(typing.residentId || typing.userId))} is typing…`:group?`${thread.memberCount ?? thread.members?.length ?? 0} members`:other?.username?`@${esc(other.username)}${other.online?' · Online now':''}`:'Private conversation'}</small></span></button>${peer?`<div class="ph-chat-shortcuts">${button(`${icon('home')} Invite over`,'chat-invite',`data-id="${esc(peer.id)}"`,'secondary')}${button(`${icon('map')} Visit them`,'chat-visit',`data-id="${esc(peer.id)}"`,'secondary')}${button(`${icon('wallet')} Send Naira`,'chat-send-money',`data-id="${esc(peer.id)}" ${isBrowserPreview() || walletMeta().transferEnabled===false?'disabled':''}`)}</div>`:''}</div>${threadLoading?'<p class="ph-quiet-note" role="status">Opening conversation…</p>':''}${threadError?`<div class="ph-chat-error" role="alert">${esc(threadError)}${button('Try again','thread',`data-id="${esc(thread.id)}"`,'subtle')}</div>`:''}${messageCursor?button(olderLoading?'Loading earlier messages…':'Earlier messages','messages-older',olderLoading?'disabled':'','subtle wide'):''}<div class="ph-bubbles">${timeline}${pendingMessages(thread.id).map(p=>`<div class="ph-message mine ph-message-pending" data-pending-key="${esc(p.idempotencyKey)}"><div class="ph-bubble">${esc(p.text)}</div><span role="status">${p.status==='sending'?'Sending…':'Not sent'}</span>${p.status==='failed'?`<div class="ph-send-error"><small>${esc(p.error)}</small><button data-ph-action="message-retry" data-key="${esc(p.idempotencyKey)}">Retry send</button></div>`:''}</div>`).join('')}${typing?'<div class="ph-typing" aria-label="Someone is typing"><i></i><i></i><i></i></div>':''}</div>${!messages.length && !threadLoading && !threadError?'<p class="ph-chat-start">Say hello. Make plans. Stay in touch.</p>':''}`;
+  }
+  function chatComposer() {
+    const sending=pendingMessages(thread?.id).some(p=>p.status==='sending');
+    return `<form class="ph-composer" data-ph-form="message"><label class="ph-sr-only" for="ph-message">Message ${esc(conversationName(thread))}</label><textarea id="ph-message" name="message" rows="1" maxlength="2000" enterkeyhint="send" placeholder="Write a message…" ${threadLoading || threadError?'disabled':''}>${esc(threadDrafts.get(threadKey(thread?.id)) ?? draft('message'))}</textarea><button type="submit" class="ph-send" aria-label="${sending?'Sending message':'Send message'}" ${sending || threadLoading || threadError || !draft('message').trim()?'disabled':''}>${icon('send')}</button></form>`;
+  }
   function residentRow(r,action='person') {return `<button class="ph-list-row" data-ph-action="${action}" data-id="${esc(r.id)}">${portrait(r)}<span class="ph-row-copy"><strong>${esc(r.displayName || r.username || 'Resident')}</strong><small>${esc(r.online?'Online now':`@${r.username || 'resident'}`)}</small></span>${icon('arrow')}</button>`;}
   function contactsScreen() {return `${headline('YOUR CITY','Contacts')} ${searchField('Search residents')}<div class="ph-list">${(residentResults || people()).filter(r=>r.id!==profile().id).filter(match).map(r=>residentRow(r)).join('') || empty('contacts',residentLoading?'Finding residents…':'Other residents will appear here when they join')}</div>${residentPager()}`;}
   function friendsScreen() {
@@ -192,8 +240,8 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
     return `${headline('SEND TO A RESIDENT','Who’s it for?','Choose their name, then review the amount before sending.')} ${searchField('Search names or usernames')}<div class="ph-list">${recipients.map(r=>residentRow(r,'wallet-recipient')).join('') || empty('contacts','No residents found. Invite a friend to join AbujaLife.')}</div>${residentPager()}`;
   }
   function transferFormScreen() {
-    const recipient=resident(selected);if(!recipient || !eligibleRecipients().some(r=>r.id===selected))return empty('contacts','This resident is unavailable','wallet-home','Back to wallet');
-    return `${headline('SEND NAIRA','A little goes a long way')}<div class="ph-transfer-person">${portrait(recipient)}<div><strong>${esc(recipient.displayName || recipient.username)}</strong><span>@${esc(recipient.username || 'resident')}</span></div></div><form class="ph-form ph-wallet-form" data-ph-form="wallet-transfer">${field('transferAmount','Amount (NGN)','','number',`required min="1" max="${Math.floor(walletProfile().wallet || 0)}" step="1" inputmode="numeric"`)}${field('transferNote','Note (optional)','','text','maxlength="160" placeholder="What’s it for?"')}<p class="ph-quiet-note">Available: ${currency(walletProfile().wallet)} · No transfer fee.</p><button type="submit" class="ph-button wide" ${busy?'disabled':''}>Review transfer ${icon('arrow')}</button></form>`;
+    const recipient=transferRecipient(selected);if(!recipient || (state().blocked || []).includes(selected))return empty('contacts','This resident is unavailable','wallet-home','Back to wallet');
+    return `${headline('SEND NAIRA','A little goes a long way')}<div class="ph-transfer-person">${portrait(recipient)}<div><strong>${esc(recipient.displayName || recipient.username)}</strong><span>@${esc(recipient.username || 'resident')}</span></div></div><form class="ph-form ph-wallet-form" data-ph-form="wallet-transfer">${chatTransfer?`<div class="ph-chat-amounts">${[1000,10000,100000,1000000,10000000,100000000].map(amount=>button(currency(amount),'chat-money-amount',`data-amount="${amount}" ${amount>Math.floor(walletProfile().wallet || 0)?'disabled':''}`,'secondary')).join('')}${button('Max','chat-money-max','','secondary')}</div>`:''}${field('transferAmount','Amount (NGN)','','number',`required min="1" max="${Math.floor(walletProfile().wallet || 0)}" step="1" inputmode="numeric"`)}${field('transferNote','Note (optional)','','text','maxlength="120" placeholder="What’s it for?"')}<p class="ph-quiet-note">Available: ${currency(walletProfile().wallet)} · No transfer fee.</p><button type="submit" class="ph-button wide" ${busy?'disabled':''}>Review transfer ${icon('arrow')}</button></form>`;
   }
   function walletReviewScreen() {
     if(!pendingWallet)return empty('wallet','Choose an amount first','wallet-home','Back to wallet');
@@ -205,7 +253,7 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
     if(!walletReceipt)return empty('wallet','Your receipt is unavailable','wallet-home','Back to wallet');
     const transfer=walletReceipt.kind==='transfer';
     if(walletReceipt.kind==='payment')return `<div class="ph-wallet-receipt"><span class="ph-receipt-check">${icon('check')}</span><small>PAYMENT VERIFIED</small><h2>${currency(walletReceipt.credits)}</h2><p>Game credits added to your balance</p><time>${dateTime(walletReceipt.createdAt)}</time></div><div class="ph-review-details"><div><span>Amount paid</span><strong>${currency(walletReceipt.amount)}</strong></div><div><span>Payment reference</span><strong>${esc(walletReceipt.txRef)}</strong></div></div>${button('Done','app','data-app="wallet"','wide')}`;
-    return `<div class="ph-wallet-receipt"><span class="ph-receipt-check">${icon('check')}</span><small>${transfer?'TRANSFER COMPLETE':'TOP-UP COMPLETE'}</small><h2>${currency(walletReceipt.amount)}</h2><p>${transfer?`Sent to ${esc(walletReceipt.recipientName)}`:'Added to your Naira balance'}</p><time>${dateTime(walletReceipt.createdAt)}</time></div><div class="ph-wallet-summary"><span>Naira balance</span><strong>${currency(walletProfile().wallet)}</strong></div>${button('Done','app','data-app="wallet"','wide')}`;
+    return `<div class="ph-wallet-receipt"><span class="ph-receipt-check">${icon('check')}</span><small>${transfer?'TRANSFER COMPLETE':'TOP-UP COMPLETE'}</small><h2>${currency(walletReceipt.amount)}</h2><p>${transfer?`Sent to ${esc(walletReceipt.recipientName)}`:'Added to your Naira balance'}</p><time>${dateTime(walletReceipt.createdAt)}</time></div><div class="ph-wallet-summary"><span>Naira balance</span><strong>${currency(walletProfile().wallet)}</strong></div>${walletReceipt.conversationId?button('Back to conversation','chat-return',`data-id="${esc(walletReceipt.conversationId)}"`,'wide'):button('Done','app','data-app="wallet"','wide')}`;
   }
   function paymentCheckoutScreen() {
     if(!checkout)return empty('wallet','Choose a payment amount first','wallet-topup','Buy game credits');
@@ -248,13 +296,13 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
     };
     return (drawings[item.id] || (item.category==='vehicle'?drawings['compact-car']:null))?`<svg class="ph-product-illustration" viewBox="0 0 130 130" role="img" aria-label="${esc(item.name)}">${drawings[item.id] || drawings['compact-car']}</svg>`:icon(item.category==='vehicle'?'ride':item.category==='furniture'?'property':'market');
   }
-  function marketScreen() {return `${headline('MAKE IT YOURS','Okrika Marketplace','Furniture, fashion and cars for your life in Abuja.')} ${searchField('Search Okrika Marketplace')}<div class="ph-market-grid">${entries(state().catalog).filter(match).map(i=>`<button class="ph-product" data-ph-action="item" data-id="${esc(i.id)}"><span class="ph-product-art ${esc(i.kind || i.category || '')}">${productArt(i)}</span><small>${esc(i.category || i.kind || 'VIRTUAL ITEM')}</small><strong>${esc(i.name || i.title)}</strong><span>${currency(i.price || i.cost)}</span></button>`).join('')}</div>`;}
+  function marketScreen() {return `${headline('MAKE IT YOURS','Capital Market','Furniture, fashion and cars for your life in Abuja.')} ${searchField('Search Capital Market')}<div class="ph-market-grid">${entries(state().catalog).filter(match).map(i=>`<button class="ph-product" data-ph-action="item" data-id="${esc(i.id)}"><span class="ph-product-art ${esc(i.kind || i.category || '')}">${productArt(i)}</span><small>${esc(i.category || i.kind || 'VIRTUAL ITEM')}</small><strong>${esc(i.name || i.title)}</strong><span>${currency(i.price || i.cost)}</span></button>`).join('')}</div>`;}
   function itemScreen() {
     const i=entries(state().catalog).find(i=>i.id===selected); if(!i) return empty('market','Item unavailable');
     const own=entries(profile().inventory).some(r=>r.id===i.id || r.itemId===i.id) || (profile().inventory || []).includes?.(i.id);
     const colorId=profile().vehicleColors?.[i.id] || draft(`vehicleColor-${i.id}`,i.defaultColor), selectedColor=VEHICLE_COLORS.find(c=>c.id===colorId);
     const paint=i.category==='vehicle'?`<section class="ph-car-paint"><div><span>Paint colour</span><strong>${esc(selectedColor?.name || 'Choose your colour')}</strong></div><div class="ph-paint-options" aria-label="Car paint colour">${VEHICLE_COLORS.filter(c=>!i.availableColors || i.availableColors.includes(c.id)).map(c=>`<button type="button" class="ph-paint-swatch ${c.id===colorId?'selected':''}" data-ph-action="vehicle-color" data-id="${esc(i.id)}" data-color="${esc(c.id)}" aria-label="${esc(c.name)}" aria-pressed="${c.id===colorId}" ${busy?'disabled':''}><span style="background:${c.hex}"></span>${c.id===colorId?icon('check'):''}</button>`).join('')}</div>${own?'<small>Repaint your owned car for free.</small>':''}</section>`:'';
-    return `<div class="ph-product-art ph-product-large">${productArt(i)}</div>${headline(i.category==='vehicle'?`${i.year || ''} · ${i.brand || 'YOUR NEXT CAR'}`:i.category || i.kind || 'ITEM',i.name || i.title,i.description || 'An item for your life in Abuja.')}<div class="ph-item-price">${currency(i.price || i.cost)}<small>Naira (NGN) · Game price</small></div>${paint}${own?`<div class="ph-success">You own this item.</div>${i.kind==='clothing' || i.category==='clothing'?button('Wear this item','equip',`data-id="${esc(i.id)}"`,'wide'):i.category==='furniture'?button('Arrange in your home','furnish',`data-id="${esc(i.id)}"`,'wide'):i.category==='vehicle'?button(profile().drivingVehicle===i.id?'Get out of your car':profile().location?.kind==='public'?'Take the wheel':'Step outside to drive','drive',`data-id="${esc(i.id)}" ${profile().location?.kind==='public'&&!profile().activeTrip?'':'disabled'}`,'wide'):''}`:button(i.category==='vehicle'?'Buy this car':'Buy this item','purchase',`data-id="${esc(i.id)}" ${profile().wallet<(i.price || i.cost)?'disabled':''}`,'wide')}<p class="ph-quiet-note">${own?'Furniture can be arranged at home. Drive your owned cars outdoors.':profile().wallet<(i.price || i.cost)?'Add Naira in your wallet or complete a shift to afford this item.':'Your purchase is saved to your resident inventory.'}</p>${!own && profile().wallet<(i.price || i.cost)?button('Open Naira wallet','app','data-app="wallet"','secondary wide'):''}`;
+    return `<div class="ph-product-art ph-product-large">${productArt(i)}</div>${headline(i.category==='vehicle'?`${i.year || ''} · ${i.brand || 'YOUR NEXT CAR'}`:i.category || i.kind || 'ITEM',i.name || i.title,i.description || 'An item for your life in Abuja.')}<div class="ph-item-price">${currency(i.price || i.cost)}<small>Naira (NGN) · Game price</small></div>${paint}${own?`<div class="ph-success">You own this item.</div>${i.kind==='clothing' || i.category==='clothing'?button('Wear this item','equip',`data-id="${esc(i.id)}"`,'wide'):i.category==='furniture'?button('Arrange in your home','furnish',`data-id="${esc(i.id)}"`,'wide'):i.category==='vehicle'?button(profile().drivingVehicle===i.id?'Get out of your car':profile().location?.kind==='public'?'Take the wheel':'Step outside to drive','drive',`data-id="${esc(i.id)}" ${profile().location?.kind==='public'&&!profile().activeTrip?'':'disabled'}`,'wide'):''}`:button(i.category==='vehicle'?'Buy this car':'Buy this item','purchase',`data-id="${esc(i.id)}" ${profile().wallet<(i.price || i.cost)?'disabled':''}`,'wide')}<p class="ph-quiet-note">${own?'Furniture can be arranged at home. Drive your owned cars outdoors.':profile().wallet<(i.price || i.cost)?'Add Naira in your wallet or complete a shift to afford this item.':'Your purchase is saved to your resident inventory.'}</p>${own?button(`Sell for ${currency(systemResaleValue(i))}`,'sell-item',`data-id="${esc(i.id)}"`,'secondary wide'):''}${!own && profile().wallet<(i.price || i.cost)?button('Open Naira wallet','app','data-app="wallet"','secondary wide'):''}`;
   }
   function eventsScreen() {return `${headline('MAKE A MOMENT','Events')} ${button(`${icon('plus')} Create an event`,'newevent','','wide')}<div class="ph-list">${entries(state().events).map(e=>`<button class="ph-list-row" data-ph-action="event" data-id="${esc(e.id)}"><span class="ph-event-date"><strong>${new Date(e.startsAt).toLocaleDateString('en-NG',{timeZone:'Africa/Lagos',day:'numeric'})}</strong><small>${new Date(e.startsAt).toLocaleDateString('en-NG',{timeZone:'Africa/Lagos',month:'short'})}</small></span><span class="ph-row-copy"><strong>${esc(e.title)}</strong><small>${esc(place(e.district)?.name || e.district)} · ${timeOnly(e.startsAt)}</small>${(e.attendeeIds || []).includes(profile().id)?'<span class="ph-attending">You’re attending</span>':''}</span>${icon('arrow')}</button>`).join('') || empty('events','Make the first plan in your city')}</div>`;}
   function eventScreen() {const e=entries(state().events).find(e=>e.id===selected);if(!e)return empty('events','Event unavailable');const attending=(e.attendeeIds || []).includes(profile().id);return `${headline(place(e.district)?.name || 'ABUJA',e.title)}<div class="ph-event-time">${icon('events')}<strong>${dateTime(e.startsAt)}</strong></div><p class="ph-detail-text">${esc(e.description || 'A chance to spend time together in the city.')}</p><div class="ph-event-host">Hosted by ${esc(e.host?.displayName || nameById(e.hostId))}</div><small class="ph-quiet-note">${(e.attendeeIds || []).length} resident${(e.attendeeIds || []).length===1?'':'s'} attending</small>${button(attending?'Cancel RSVP':'I’m attending','rsvp',`data-id="${esc(e.id)}" data-value="${!attending}"`,'wide')}${button('View location','navigate',`data-view="map" data-id="${esc(e.district)}"`,'secondary wide')}<p class="ph-quiet-note">An RSVP saves your place. Travel there when it’s time.</p>`;}
@@ -278,17 +326,25 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
     finally {busy=false;render();}
   }
   function navigate(next,selection=null,push=true) {
-    captureInputs();
+    captureInputs();saveThreadScroll();
     if(push && screen!==next)history.push({screen,selected,search,thread});
     screen=next;selected=selection;search='';locked=false;incoming=null;render();
     root.querySelector('.ph-scroll')?.scrollTo(0,0);
     if(next==='ride')void loadTravelQuote();
     if(next==='wallet')void loadWallet();
+    if(next==='messages')void loadConversations();
     if(next==='topup' && !isBrowserPreview())void loadPayments();
     if(['contacts','compose','transfer'].includes(next)){residentResults=null;residentCursor=null;void loadResidents();}
     if(['social','socialstatuses'].includes(next))void social.load();
   }
-  function goBack() {const prev=history.pop();if(prev){screen=prev.screen;selected=prev.selected;search=prev.search;thread=prev.thread;}else screen='home';if(['contacts','compose','transfer'].includes(screen)){residentResults=null;residentCursor=null;void loadResidents();}render();}
+  function goBack() {captureInputs();saveThreadScroll();const prev=history.pop();if(prev){screen=prev.screen;selected=prev.selected;search=prev.search;if(prev.screen==='thread' && prev.thread?.id){void openThread(prev.thread.id,false);return;}thread=prev.thread;}else screen='home';if(['contacts','compose','transfer'].includes(screen)){residentResults=null;residentCursor=null;void loadResidents();}render();}
+  async function loadConversations({more=false}={}) {
+    if(inboxLoading || isBrowserPreview())return;
+    const sequence=++inboxSequence,owner=profile().id;inboxLoading=true;inboxError='';render();
+    try{const result=await api(`/api/conversations${more && inboxCursor?`?cursor=${encodeURIComponent(inboxCursor)}`:''}`);if(sequence!==inboxSequence || profile().id!==owner)return;for(const c of result.conversations || [])cachedConversations.set(c.id,c);inboxCursor=result.nextCursor || null;}
+    catch(error){if(sequence===inboxSequence && profile().id===owner)inboxError=error.message || 'Conversations could not refresh.';}
+    finally{if(sequence===inboxSequence && profile().id===owner){inboxLoading=false;if(opened && screen==='messages')render();}}
+  }
   async function loadWallet({quiet=false}={}) {
     const sequence=++walletSequence, owner=profile().id;walletLoading=true;if(!quiet)walletError='';if(opened)render();
     try {const result=await api('/api/wallet');if(sequence!==walletSequence || profile().id!==owner)return;walletData={...result,sourceWallet:profile().wallet};}
@@ -305,7 +361,7 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
   async function loadOlderMessages() {
     if(!thread?.id || !messageCursor || olderLoading)return;
     const id=thread.id,sequence=requestSequence,owner=profile().id,scroll=root.querySelector('.ph-scroll'),height=scroll?.scrollHeight || 0,top=scroll?.scrollTop || 0;olderLoading=true;render();
-    try{const result=await api(`/api/conversations/${encodeURIComponent(id)}/messages?cursor=${encodeURIComponent(messageCursor)}`);if(sequence!==requestSequence || thread?.id!==id || profile().id!==owner)return;messages=[...new Map([...(result.messages || []),...messages].map(m=>[m.id,m])).values()];messageCursor=result.nextCursor || null;}
+    try{const result=await api(`/api/conversations/${encodeURIComponent(id)}/messages?cursor=${encodeURIComponent(messageCursor)}`);if(sequence!==requestSequence || thread?.id!==id || profile().id!==owner)return;messages=mergePhoneMessages(result.messages || [],messages);messageCursor=result.nextCursor || null;}
     catch(error){if(sequence===requestSequence)toast?.(error.message || 'Earlier messages could not load.');}
     finally{if(sequence===requestSequence && thread?.id===id){olderLoading=false;render();const next=root.querySelector('.ph-scroll');if(next)next.scrollTop=top+next.scrollHeight-height;}}
   }
@@ -351,20 +407,20 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
     const request={...pendingWallet}, owner=profile().id;busy=true;walletError='';render();
     let saved;
     try {
-      const body={amount:request.amount,idempotencyKey:request.idempotencyKey,...(request.kind==='transfer'?{residentId:request.residentId,note:request.note || ''}:{})};
+      const body={amount:request.amount,idempotencyKey:request.idempotencyKey,...(request.kind==='transfer'?{residentId:request.residentId,note:request.note || '',...(request.conversationId?{conversationId:request.conversationId}:{})}:{})};
       saved=await api(`/api/wallet/${request.kind==='transfer'?'transfer':'topup'}`,{method:'POST',body});
     } catch(error) {
       if(profile().id===owner)walletError=error.message || 'We could not confirm this request. Try again.';
     } finally {busy=false;}
     if(profile().id!==owner)return;
     if(!saved){render();return;}
-    walletReceipt={...request,createdAt:Date.now()};pendingWallet=null;screen='walletreceipt';selected=null;history=[{screen:'wallet',selected:null,search:'',thread:null}];
+    walletReceipt={...request,...saved.transfer,createdAt:saved.transfer?.createdAt || saved.transaction?.createdAt || saved.transaction?.at || Date.now()};if(saved.message?.id && saved.message.conversationId===thread?.id)messages=mergePhoneMessages(messages,[saved.message]);pendingWallet=null;screen='walletreceipt';selected=null;history=[{screen:'wallet',selected:null,search:'',thread:null}];
     if(saved.profile)walletData={...walletData,profile:saved.profile,sourceWallet:profile().wallet};
     // The server already confirmed the operation. Refresh failures must not turn a saved transfer into a retry.
     try {await onUpdate?.();}catch{}
     await loadWallet({quiet:true});
     for(const name of ['topupAmount','transferAmount','transferNote']){const input=root.querySelector(`[name="${name}"]`);if(input)input.value='';drafts.delete(name);}
-    navigate('walletreceipt',null,false);
+    if(request.conversationId){chatTransfer=null;history=[];await openThread(request.conversationId,false);toast?.(`${currency(saved.transfer?.amount ?? request.amount)} sent`);}else navigate('walletreceipt',null,false);
   }
   async function loadTravelQuote() {
     if(profile().activeTrip)return;captureInputs();
@@ -372,11 +428,57 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
     quoteLoading=true;travelQuote=null;quoteError='';render();
     try {const result=await api(`/api/travel/quote?district=${encodeURIComponent(destination)}&mode=${encodeURIComponent(mode)}`);if(sequence!==quoteSequence)return;travelQuote=result.quote || null;}catch(error){if(sequence===quoteSequence)quoteError=error.message || 'Your route is unavailable.';}finally{if(sequence===quoteSequence){quoteLoading=false;if(opened && screen==='ride')render();}}
   }
+  function saveThreadScroll() {
+    if(screen!=='thread' || !thread?.id)return;
+    const scroll=root.querySelector('.ph-thread-scroll');if(scroll)threadScrolls.set(threadKey(thread.id),{top:scroll.scrollTop,bottom:scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight<64});
+  }
+  function resizeComposer() {
+    const input=root.querySelector('#ph-message');if(!input)return;
+    input.style.height='auto';input.style.height=`${Math.min(120,Math.max(44,input.scrollHeight || 44))}px`;
+  }
+  function scrollLatest({focus=false,markRead=true}={}) {
+    newMessageCount=0;const scroll=root.querySelector('.ph-thread-scroll');if(scroll)scroll.scrollTop=scroll.scrollHeight;
+    if(markRead)void markThreadRead();
+    render();if(focus)root.querySelector('#ph-message')?.focus({preventScroll:true});
+  }
+  async function markThreadRead() {
+    if(readPending || !opened || screen!=='thread' || !thread?.id || document.hidden)return;
+    const owner=profile().id,id=thread.id;readPending=true;
+    try{await api(`/api/conversations/${encodeURIComponent(id)}/read`,{method:'POST',body:{}});if(profile().id===owner){const c=cachedConversations.get(id);if(c)cachedConversations.set(id,{...c,unread:0});try{await onUpdate?.({render:false});}catch{}}}
+    catch{}finally{if(profile().id===owner)readPending=false;}
+  }
   async function openThread(id,push=true) {
-    const sequence=++requestSequence;
-    captureInputs();const nextDraft=threadDrafts.get(id) || '';const input=root.querySelector('#ph-message');if(input)input.value=nextDraft;thread=conversations().find(c=>c.id===id) || {id,members:[]};messages=[];messageCursor=null;olderLoading=false;typing=null;typingSentAt=0;drafts.set('message',nextDraft);navigate('thread',id,push);
-    try {const result=await api(`/api/conversations/${encodeURIComponent(id)}/messages`);if(sequence!==requestSequence)return;thread=result.conversation || thread;messages=result.messages || [];messageCursor=result.nextCursor || null;render();root.querySelector('.ph-scroll')?.scrollTo(0,100000);await onUpdate?.();}
-    catch(error){toast?.(error.message);}
+    const sequence=++requestSequence,owner=profile().id;
+    captureInputs();saveThreadScroll();
+    if(push && screen==='thread' && thread?.id!==id)history.push({screen,selected,search,thread});
+    const nextDraft=threadDrafts.get(threadKey(id)) || '',saved=threadScrolls.get(threadKey(id)),previousMessages=thread?.id===id?[...messages]:[];
+    const input=root.querySelector('#ph-message');if(input)input.value=nextDraft;
+    thread=conversations().find(c=>c.id===id) || {id,members:[]};const unreadCount=Number(thread.unread) || 0;
+    messages=previousMessages;messageCursor=null;olderLoading=false;typing=null;clearTimeout(typingTimer);typingSentAt=0;threadLoading=true;threadError='';unreadAnchor=null;newMessageCount=0;drafts.set('message',nextDraft);navigate('thread',id,push);
+    try {
+      const result=await api(`/api/conversations/${encodeURIComponent(id)}/messages`);if(sequence!==requestSequence || profile().id!==owner)return;
+      thread=result.conversation || thread;cachedConversations.set(thread.id,thread);for(const r of thread.members || [])if(r.id)knownResidents.set(r.id,r);
+      messages=mergePhoneMessages(messages,result.messages || []);messageCursor=result.nextCursor || null;unreadAnchor=phoneUnreadAnchor(messages,unreadCount,owner);threadLoading=false;render();
+      const scroll=root.querySelector('.ph-thread-scroll'),anchor=root.querySelector('#ph-unread-anchor');
+      if(scroll)scroll.scrollTop=anchor?Math.max(0,anchor.offsetTop-70):saved && !saved.bottom?saved.top:scroll.scrollHeight;
+      try{await onUpdate?.({render:false});}catch{}
+    } catch(error){if(sequence===requestSequence && profile().id===owner){threadLoading=false;threadError=error.message || 'This conversation could not open.';render();}}
+  }
+  async function sendChatMessage(request) {
+    if(request.status==='sending' || request.ownerId!==profile().id)return;
+    request.status='sending';request.error='';render();
+    try {
+      const result=await api(`/api/conversations/${encodeURIComponent(request.conversationId)}/messages`,{method:'POST',body:{text:request.text,idempotencyKey:request.idempotencyKey}});
+      if(profile().id!==request.ownerId)return;
+      if(!result.message?.id)throw new Error('The server did not confirm this message. Retry the same send.');
+      messageOutbox.delete(request.idempotencyKey);
+      if(thread?.id===request.conversationId)messages=mergePhoneMessages(messages,[result.message]);
+      const key=threadKey(request.conversationId),current=threadDrafts.get(key);
+      if(current===request.draftText){threadDrafts.delete(key);if(thread?.id===request.conversationId){drafts.delete('message');const input=root.querySelector('#ph-message');if(input)input.value='';}}
+      try{await onUpdate?.({render:false});}catch{}
+      if(profile().id!==request.ownerId)return;
+      render();if(opened && screen==='thread' && thread?.id===request.conversationId)scrollLatest({focus:true,markRead:false});
+    }catch(error){if(profile().id===request.ownerId){request.status='failed';request.error=error.message || 'Connection interrupted. Retry when you’re ready.';render();}}
   }
   async function startDM(id) { const result=await mutate('/api/conversations',{residentId:id});if(result?.conversation)await openThread(result.conversation.id); }
   async function handleAction(el) {
@@ -394,16 +496,27 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
       case 'app':if(screen==='walletreceipt' && app==='wallet'){history=[];navigate(app,null,false);}else navigate(app);break;
       case 'property-investments':close();onNavigate?.('property',{tab:'investments',source:'phone'});break;
       case 'wallet-topup':walletError='';navigate('topup');break;
-      case 'wallet-send':walletError='';busy=true;render();try{await refresh({render:false});navigate('transfer');}catch(error){walletError=error.message;toast?.(error.message);}finally{busy=false;render();}break;
+      case 'wallet-send':chatTransfer=null;walletError='';busy=true;render();try{await refresh({render:false});navigate('transfer');}catch(error){walletError=error.message;toast?.(error.message);}finally{busy=false;render();}break;
       case 'wallet-home':navigate('wallet');break;
       case 'wallet-refresh':await loadWallet();break;
       case 'residents-more':await loadResidents({more:true});break;
       case 'messages-older':await loadOlderMessages();break;
+      case 'messages-latest':scrollLatest();break;
+      case 'inbox-filter':inboxFilter=value;render();break;
+      case 'inbox-more':await loadConversations({more:true});break;
+      case 'inbox-refresh':await loadConversations();break;
+      case 'compose-search':{const query=search;navigate('compose');search=query;render();void loadResidents();break;}
+      case 'message-retry':{const request=messageOutbox.get(key);if(request)await sendChatMessage(request);break;}
+      case 'chat-invite':if(chatPeer()?.id===id){drafts.set('inviteKind','home');navigate('invite',id);}break;
+      case 'chat-visit':{const peer=chatPeer();if(peer?.id===id){close();onNavigate?.('world',{homeVisits:true,visitResidentId:id,visitSearch:peer.username || peer.displayName,source:'phone'});}break;}
+      case 'chat-send-money':{const peer=chatPeer();if(!peer || peer.id!==id || isBrowserPreview() || walletMeta().transferEnabled===false)break;chatTransfer={ownerId:profile().id,conversationId:thread.id,peer};walletError='';pendingWallet=null;drafts.delete('transferAmount');drafts.delete('transferNote');navigate('transferform',id);await loadWallet({quiet:true});break;}
+      case 'chat-money-amount':case 'chat-money-max':{const amount=action==='chat-money-max'?Math.floor(walletProfile().wallet || 0):Number(el.dataset.amount);if(Number.isSafeInteger(amount) && amount>0 && amount<=Math.floor(walletProfile().wallet || 0)){drafts.set('transferAmount',String(amount));const input=root.querySelector('#ph-transferAmount');if(input)input.value=String(amount);}break;}
+      case 'chat-return':await openThread(id,false);break;
       case 'payment-config-refresh':await loadPayments();break;
       case 'payment-resume':navigate('paymentcheckout');break;
       case 'payment-status':await checkPaymentStatus();break;
       case 'wallet-amount':{const input=root.querySelector('#ph-topupAmount');drafts.set('topupAmount',el.dataset.amount);if(input)input.value=el.dataset.amount;break;}
-      case 'wallet-recipient':walletError='';navigate('transferform',id);break;
+      case 'wallet-recipient':chatTransfer=null;walletError='';navigate('transferform',id);break;
       case 'wallet-confirm':await confirmWallet();break;
       case 'wallet-edit':if(pendingWallet){walletError='';navigate(pendingWallet.kind==='transfer'?'transferform':'topup',pendingWallet.residentId || null,false);}break;
       case 'vehicle-color':{const color=el.dataset.color;const item=entries(state().catalog).find(i=>i.id===id);if(!item || !VEHICLE_COLORS.some(c=>c.id===color))break;drafts.set(`vehicleColor-${id}`,color);if((profile().inventory || []).includes(id)){const result=await mutate('/api/action',{action:'paint-vehicle',payload:{itemId:id,color,idempotencyKey:vehicleRequestKey('paint',id,color)}},'Paint colour updated');if(result)vehicleRequests.delete(`paint:${id}:${color}`);else await refresh().catch(()=>{});}else render();break;}
@@ -425,7 +538,8 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
       case 'notice': { const n=entries(state().notifications).find(n=>n.id===id);await mutate('/api/notifications/read',{id});const convId=n?.conversationId || n?.data?.conversationId || n?.payload?.conversationId || (n?.link?.startsWith('conversation:')?n.link.slice(13):null); if(convId)await openThread(convId);else if(n?.link==='friends' || n?.kind==='friend-request')navigate('friends');else if(n?.eventId)navigate('event',n.eventId);break; }
       case 'invite-respond':await mutate('/api/invitations/respond',{id,accept:accept==='true'},accept==='true'?'Invitation accepted. Travel when you’re ready.':'Invitation declined');break;
       case 'rsvp':await mutate(`/api/events/${encodeURIComponent(id)}/rsvp`,{attending:value==='true'},value==='true'?'Your RSVP is saved':'RSVP cancelled');break;
-      case 'purchase':{const item=entries(state().catalog).find(i=>i.id===id),color=draft(`vehicleColor-${id}`,item?.defaultColor);const result=await mutate('/api/action',{action:'purchase',payload:{itemId:id,...(item?.category==='vehicle'?{color,idempotencyKey:vehicleRequestKey('purchase',id,color)}:{})}},'Item added to your inventory');if(result)vehicleRequests.delete(`purchase:${id}:${color}`);else await refresh().catch(()=>{});break;}
+      case 'purchase':{const item=entries(state().catalog).find(i=>i.id===id),color=draft(`vehicleColor-${id}`,item?.defaultColor);const result=await mutate('/api/action',{action:'purchase',payload:{itemId:id,...(item?.category==='vehicle'?{color,idempotencyKey:vehicleRequestKey('purchase',id,color)}:{})}},'Item added to your inventory');if(result){vehicleRequests.delete(`purchase:${id}:${color}`);if(item?.category==='furniture'){close();onNavigate?.('world',{furnishItemId:id,source:'phone'});}}else await refresh().catch(()=>{});break;}
+      case 'sell-item':close();onNavigate?.('world',{sellItemId:id,source:'phone'});break;
       case 'equip':await mutate('/api/action',{action:'equip',payload:{itemId:id}},'Outfit updated');break;
       case 'furnish':close();onNavigate?.('world',{furnishItemId:id,source:'phone'});break;
       case 'drive':{const r=await mutate('/api/action',{action:'toggle-driving',payload:{vehicleId:profile().drivingVehicle===id?null:id}},profile().drivingVehicle===id?'You are on foot':'You are at the wheel');if(r){close();onNavigate?.('world',{source:'phone'});}break;}
@@ -440,7 +554,7 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
     social.input(el);
     if(el.name && el.type!=='checkbox')drafts.set(el.name,el.value);
     if(el.name==='search'){search=el.value;render();if(['contacts','compose','transfer'].includes(screen)){residentSequence++;residentResults=null;residentCursor=null;clearTimeout(residentSearchTimer);residentSearchTimer=setTimeout(()=>void loadResidents(),250);}}
-    if(el.name==='message' && thread && Date.now()-typingSentAt>1800){typingSentAt=Date.now();api('/api/typing',{method:'POST',body:{conversationId:thread.id}}).catch(()=>{});}
+    if(el.name==='message' && thread && screen==='thread'){threadDrafts.set(threadKey(thread.id),el.value);resizeComposer();const send=root.querySelector('.ph-send');if(send)send.disabled=!el.value.trim() || pendingMessages(thread.id).some(p=>p.status==='sending');if(el.value.trim() && Date.now()-typingSentAt>1800){typingSentAt=Date.now();api('/api/typing',{method:'POST',body:{conversationId:thread.id}}).catch(()=>{});}}
   };
   const onChange=e=>{if(e.target.name==='socialPhoto'){void social.change(e.target);return;}if(e.target.name==='groupMember'){e.target.checked?groupMembers.add(e.target.value):groupMembers.delete(e.target.value);}else if(e.target.name)drafts.set(e.target.name,e.target.value);if(screen==='ride' && ['destination','mode'].includes(e.target.name))void loadTravelQuote();};
   const onSubmit=async e=>{
@@ -459,29 +573,18 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
       if(busy)return;const transfer=form.dataset.phForm==='wallet-transfer', amount=Number(values[transfer?'transferAmount':'topupAmount']);
       const min=transfer?1:walletMeta().topupMin || 1000,max=transfer?Math.floor(walletProfile().wallet || 0):Number.MAX_SAFE_INTEGER;
       if(!Number.isSafeInteger(amount) || amount<min || amount>max){toast?.(`Choose a whole Naira amount between ${currency(min)} and ${currency(max)}.`);return;}
-      const recipient=transfer?eligibleRecipients().find(r=>r.id===selected):null;
+      const recipient=transfer?transferRecipient(selected):null;
       if(transfer && (!recipient || isBrowserPreview())){toast?.('Choose a registered resident to receive your transfer.');return;}
-      const note=(values.transferNote || '').trim().slice(0,160);
-      const same=pendingWallet?.kind===(transfer?'transfer':'topup') && pendingWallet.amount===amount && pendingWallet.residentId===(recipient?.id || undefined) && (pendingWallet.note || '')===note;
-      pendingWallet={kind:transfer?'transfer':'topup',amount,...(recipient?{residentId:recipient.id,recipientName:recipient.displayName || recipient.username,recipientUsername:recipient.username,note}:{}),idempotencyKey:same?pendingWallet.idempotencyKey:makeRequestKey()};
+      const note=(values.transferNote || '').trim().slice(0,120);
+      const same=pendingWallet?.kind===(transfer?'transfer':'topup') && pendingWallet.amount===amount && pendingWallet.residentId===(recipient?.id || undefined) && (pendingWallet.note || '')===note && (pendingWallet.conversationId || null)===(chatTransfer?.conversationId || null);
+      pendingWallet={kind:transfer?'transfer':'topup',amount,...(recipient?{residentId:recipient.id,recipientName:recipient.displayName || recipient.username,recipientUsername:recipient.username,note,...(chatTransfer?.ownerId===profile().id?{conversationId:chatTransfer.conversationId}:{})}:{}),idempotencyKey:same?pendingWallet.idempotencyKey:makeRequestKey()};
       walletError='';navigate('walletreview');return;
     }
     if(form.dataset.phForm==='message') {
-      const submitted=values.message || '', text=submitted.trim();if(!text || !thread || busy)return;
-      const conversationId=thread.id,senderAccount=profile().id;
-      busy=true;render();
-      try {
-        const result=await api(`/api/conversations/${encodeURIComponent(conversationId)}/messages`,{method:'POST',body:{text}});
-        if(profile().id!==senderAccount)return;
-        if(thread?.id===conversationId) {
-          if(result.message && !messages.some(m=>m.id===result.message.id))messages.push(result.message);
-          const input=root.querySelector('#ph-message'),current=input?.value ?? draft('message');
-          if(current===submitted){drafts.delete('message');threadDrafts.delete(conversationId);typingSentAt=0;if(input)input.value='';}
-        } else if(threadDrafts.get(conversationId)===submitted)threadDrafts.delete(conversationId);
-        await onUpdate?.();render();
-        if(opened && screen==='thread' && thread?.id===conversationId){root.querySelector('.ph-scroll')?.scrollTo(0,100000);root.querySelector('#ph-message')?.focus({preventScroll:true});}
-      }catch(error){toast?.(error.message);}finally{busy=false;render();}
-      return;
+      const submitted=String(values.message || ''),text=submitted.trim();if(!text || !thread || threadLoading || threadError || pendingMessages(thread.id).some(p=>p.status==='sending'))return;
+      const existing=pendingMessages(thread.id).find(p=>p.text===text && p.status==='failed');
+      const request=existing || {ownerId:profile().id,conversationId:thread.id,text,draftText:submitted,idempotencyKey:makeRequestKey(),status:'queued',error:''};
+      messageOutbox.set(request.idempotencyKey,request);await sendChatMessage(request);return;
     }
     if(form.dataset.phForm==='group') {if(!groupMembers.size){toast?.('Choose at least one friend.');return;}const r=await mutate('/api/conversations',{kind:'group',name:values.groupName.trim(),memberIds:[...groupMembers]},'Group created');if(r?.conversation)await openThread(r.conversation.id);}
     if(form.dataset.phForm==='travel') {if(!travelQuote || quoteLoading || travelQuote.destination!==values.destination || travelQuote.mode!==(values.mode || 'bus')){await loadTravelQuote();return;}const r=await mutate('/api/action',{action:'travel',payload:{district:values.destination,mode:values.mode || 'bus'}},'Your journey has started');if(r){close();onNavigate?.('world',{source:'phone'});}}
@@ -492,25 +595,37 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
   const onKey=e=>{
     if(!opened)return;
     if(e.key==='Escape'){e.preventDefault();screen!=='home' && !locked?goBack():close();}
-    if(e.key==='Enter' && !e.shiftKey && e.target.id==='ph-message'){e.preventDefault();e.target.form?.requestSubmit();}
+    if(e.key==='Enter' && !e.shiftKey && !e.isComposing && e.target.id==='ph-message'){e.preventDefault();e.target.form?.requestSubmit();}
     if(e.key==='Tab') {const els=[...root.querySelectorAll('button:not([disabled]),input,textarea,select,[tabindex="0"]')].filter(el=>el.getClientRects().length);if(!els.length)return;const first=els[0],last=els.at(-1);if(e.shiftKey && document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey && document.activeElement===last){e.preventDefault();first.focus();}}
   };
-  async function open(app,details={}) {syncAccount();priorFocus=document.activeElement;opened=true;document.body.classList.add('phone-is-open');if(app){locked=false;screen=app;history=[];search='';}render();root.querySelector(locked?'.ph-unlock':screen==='home'?'.ph-app-grid .ph-launcher':'.ph-back')?.focus({preventScroll:true});clockTimer ||= setInterval(()=>{if(opened){const el=root.querySelector('.ph-clock');if(el)el.textContent=timeOnly(new Date());const lockTime=root.querySelector('.ph-lock-time');if(lockTime)lockTime.textContent=timeOnly(new Date());if(['social','socialstatuses','socialstatus'].includes(screen) && Math.floor(serverNow()/1000)%30===0)social.expire();}},1000);if(app==='messages' && details.conversationId)await openThread(details.conversationId);else if(app==='ride')await loadTravelQuote();else if(app==='wallet')await loadWallet();else if(app==='topup' || app==='paymentcheckout')await loadPayments();else if(['contacts','compose','transfer'].includes(app))await loadResidents();else if(['social','socialstatuses'].includes(app))await social.load();}
-  function close() {captureInputs();opened=false;document.body.classList.remove('phone-is-open');render();if(priorFocus?.isConnected)priorFocus.focus({preventScroll:true});}
+  async function open(app,details={}) {syncAccount();priorFocus=document.activeElement;opened=true;document.body.classList.add('phone-is-open');if(app){locked=false;screen=app;history=[];search='';}render();root.querySelector(locked?'.ph-unlock':screen==='home'?'.ph-app-grid .ph-launcher':'.ph-back')?.focus({preventScroll:true});clockTimer ||= setInterval(()=>{if(opened){const el=root.querySelector('.ph-clock');if(el)el.textContent=timeOnly(new Date());const lockTime=root.querySelector('.ph-lock-time');if(lockTime)lockTime.textContent=timeOnly(new Date());if(['social','socialstatuses','socialstatus'].includes(screen) && Math.floor(serverNow()/1000)%30===0)social.expire();}},1000);if(app==='messages' && details.conversationId)await openThread(details.conversationId);else if(app==='messages')await loadConversations();else if(app==='ride')await loadTravelQuote();else if(app==='wallet')await loadWallet();else if(app==='topup' || app==='paymentcheckout')await loadPayments();else if(['contacts','compose','transfer'].includes(app))await loadResidents();else if(['social','socialstatuses'].includes(app))await social.load();}
+  function close() {captureInputs();saveThreadScroll();opened=false;document.body.classList.remove('phone-is-open');render();if(priorFocus?.isConnected)priorFocus.focus({preventScroll:true});}
   function sound() {if(profile().settings?.soundEnabled===false)return;try {const Context=window.AudioContext || window.webkitAudioContext;if(!Context)return;const ctx=new Context(), osc=ctx.createOscillator(), gain=ctx.createGain();osc.connect(gain);gain.connect(ctx.destination);osc.type='sine';osc.frequency.setValueAtTime(880,ctx.currentTime);osc.frequency.setValueAtTime(1174,ctx.currentTime+.07);gain.gain.setValueAtTime(.025,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(.0001,ctx.currentTime+.18);osc.start();osc.stop(ctx.currentTime+.2);osc.onended=()=>ctx.close();}catch{}}
   function handleEvent(type,data) {
+    syncAccount();if(!profile().id)return;
     social.handleEvent(type,data);
     if((type==='profile' || type==='notification' && /transfer/i.test(data.notification?.kind || data.kind || '')) && opened && ['wallet','topup','transfer','transferform','walletreview','walletreceipt'].includes(screen))void loadWallet({quiet:true});
-    if(type==='typing' && screen==='thread' && (data.conversationId===thread?.id) && (data.residentId || data.userId || data.senderId)!==profile().id){typing=data;clearTimeout(typingTimer);typingTimer=setTimeout(()=>{typing=null;render();},3500);if(opened)render();}
-    if(type==='message') {
-      const m=data.message || data;
-      if(m.receipt){if(thread?.id===m.conversationId){messages=messages.map(row=>({...row,...(row.createdAt<=m.readAt?{readBy:[...new Set([...(row.readBy || []),m.residentId])]}:{}),...(row.createdAt<=m.deliveredAt?{deliveredTo:[...new Set([...(row.deliveredTo || []),m.residentId])]}:{})}));if(opened)render();}return;}
-      if(m.conversationId===thread?.id && !messages.some(row=>row.id===m.id)){messages.push(m);typing=null;if(opened && screen==='thread'){render();root.querySelector('.ph-scroll')?.scrollTo(0,100000);api(`/api/conversations/${encodeURIComponent(thread.id)}/read`,{method:'POST',body:{}}).catch(()=>{});}}
-      if(m.senderId && m.senderId!==profile().id && !(opened && screen==='thread' && m.conversationId===thread?.id)){incoming={name:nameById(m.senderId),conversationId:m.conversationId};sound();clearTimeout(bannerTimer);bannerTimer=setTimeout(()=>{incoming=null;if(opened)render();},7000);}
+    if(type==='typing' && screen==='thread' && data.conversationId===thread?.id && (data.residentId || data.userId || data.senderId)!==profile().id && !(state().blocked || []).includes(data.residentId || data.userId || data.senderId)){const expires=Number(data.at || data.createdAt || serverNow())+3500-serverNow();if(expires>0){typing=data;clearTimeout(typingTimer);typingTimer=setTimeout(()=>{typing=null;if(opened)render();},Math.min(3500,expires));if(opened)render();}}
+    if(type==='message' || type==='receipt') {
+      const m=data.message || data;if((state().blocked || []).includes(m.senderId))return;
+      if(m.receipt || type==='receipt' && (m.readAt || m.deliveredAt)){if(thread?.id===m.conversationId){messages=messages.map(row=>({...row,...(row.createdAt<=m.readAt?{readBy:[...new Set([...(row.readBy || []),m.residentId])]}:{}),...(row.createdAt<=m.deliveredAt?{deliveredTo:[...new Set([...(row.deliveredTo || []),m.residentId])]}:{})}));if(opened)render();}return;}
+      if(m.id && m.conversationId===thread?.id){const existed=messages.some(row=>row.id===m.id),scroll=root.querySelector('.ph-thread-scroll'),atBottom=scroll && scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight<64;messages=mergePhoneMessages(messages,[m]);typing=null;clearTimeout(typingTimer);if(opened && screen==='thread'){if(!existed && m.senderId!==profile().id && !atBottom)newMessageCount++;render();if(atBottom && !document.hidden)void markThreadRead();}}
+      if(m.senderId && m.senderId!==profile().id && !(state().blocked || []).includes(m.senderId) && !(state().muted || []).includes(m.senderId) && !(opened && screen==='thread' && m.conversationId===thread?.id)){incoming={name:nameById(m.senderId),conversationId:m.conversationId};sound();clearTimeout(bannerTimer);bannerTimer=setTimeout(()=>{incoming=null;if(opened)render();},7000);}
     }
-    if(type==='notification' || type==='invitation'){const n=data.notification || data.invitation || data;if(type==='notification' && n.link===`conversation:${thread?.id}` && opened && screen==='thread')return;incoming={name:type==='invitation'?'New invitation':n.title || 'New activity',...n};if(type==='invitation' || n.kind!=='message')sound();clearTimeout(bannerTimer);bannerTimer=setTimeout(()=>{incoming=null;if(opened)render();},7000);}
+    if((type==='notification' || type==='invitation') && !(state().muted || []).includes(data.actorId || data.notification?.actorId || data.fromId || data.invitation?.fromId)){const n=data.notification || data.invitation || data;if(type==='notification' && n.link===`conversation:${thread?.id}` && opened && screen==='thread')return;incoming={name:type==='invitation'?'New invitation':n.title || 'New activity',...n};if(type==='invitation' || n.kind!=='message')sound();clearTimeout(bannerTimer);bannerTimer=setTimeout(()=>{incoming=null;if(opened)render();},7000);}
     if(opened && type!=='typing')render();
   }
-  root.hidden=true;root.classList.add('phone-root');root.addEventListener('click',onClick);root.addEventListener('input',onInput);root.addEventListener('change',onChange);root.addEventListener('submit',onSubmit);document.addEventListener('keydown',onKey);
-  return {open,close,render,handleEvent,dispose(){close();clearInterval(clockTimer);clearTimeout(typingTimer);clearTimeout(bannerTimer);clearTimeout(residentSearchTimer);root.removeEventListener('click',onClick);root.removeEventListener('input',onInput);root.removeEventListener('change',onChange);root.removeEventListener('submit',onSubmit);document.removeEventListener('keydown',onKey);}};
+  const onScroll=e=>{
+    if(screen!=='thread' || !e.target.classList?.contains('ph-thread-scroll'))return;
+    saveThreadScroll();const scroll=e.target;
+    if(newMessageCount && scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight<64){newMessageCount=0;void markThreadRead();const indicator=root.querySelector('.ph-new-messages');indicator?.remove();}
+  };
+  function syncChatViewport() {
+    const viewport=window.visualViewport;
+    if(!opened || screen!=='thread' || !viewport){root.style.removeProperty('--ph-chat-viewport-height');root.style.removeProperty('--ph-chat-viewport-top');return;}
+    root.style.setProperty('--ph-chat-viewport-height',`${viewport.height}px`);root.style.setProperty('--ph-chat-viewport-top',`${viewport.offsetTop}px`);
+  }
+  const onViewport=()=>{syncChatViewport();const input=root.querySelector('#ph-message');if(document.activeElement===input)resizeComposer();};
+  root.hidden=true;root.classList.add('phone-root');root.addEventListener('click',onClick);root.addEventListener('input',onInput);root.addEventListener('change',onChange);root.addEventListener('submit',onSubmit);root.addEventListener('scroll',onScroll,true);window.visualViewport?.addEventListener('resize',onViewport);window.visualViewport?.addEventListener('scroll',onViewport);document.addEventListener('keydown',onKey);
+  return {open,close,render,handleEvent,dispose(){close();clearInterval(clockTimer);clearTimeout(typingTimer);clearTimeout(bannerTimer);clearTimeout(residentSearchTimer);root.removeEventListener('click',onClick);root.removeEventListener('input',onInput);root.removeEventListener('change',onChange);root.removeEventListener('submit',onSubmit);root.removeEventListener('scroll',onScroll,true);window.visualViewport?.removeEventListener('resize',onViewport);window.visualViewport?.removeEventListener('scroll',onViewport);document.removeEventListener('keydown',onKey);}};
 }

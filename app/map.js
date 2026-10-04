@@ -15,11 +15,13 @@ const currentId=p=>p?.district||p?.location?.id||p?.location;
  * onSelect receives the atlas record; onTravel receives its id and is allowed to return a Promise.
  * Source points are location reference points, never a claim about player GPS or legal boundaries.
  */
-export function renderMap(container,{atlas=ABUJA_ATLAS,profile={},onTravel,onSelect}={}){
+export function renderMap(container,{atlas=ABUJA_ATLAS,venues=[],profile={},onTravel,onSelect}={}){
   if(!document.querySelector('link[data-abuja-map-styles]')){
     const link=element('link');link.rel='stylesheet';link.href=new URL('./map.css',import.meta.url).href;link.dataset.abujaMapStyles='';document.head.append(link);
   }
   let disposed=false,zoom=12,center={...SETTLEMENT_POINTS.abuja.coordinates},selectedId=currentId(profile),filter='',frame=0,tilesLoaded=0,tilesFailed=0,travelBusy=false,travelError='';
+  const venuePlaces=venues.filter(v=>v.districts?.length).map(v=>({id:`venue:${v.id}`,venueId:v.id,name:v.name,kind:'game-venue',district:v.districts.includes(currentId(profile))?currentId(profile):v.districts[0],vibe:v.description,category:v.category}));
+  const destinations=[...atlas,...venuePlaces];
   const positions=new Map(),requests=new Map(),attempted=new Set(),listeners=[],tiles=new Map();
   for(const place of atlas){if(safeCoordinate(place.coordinates)&&place.coordinateSource?.id)positions.set(place.id,{coordinates:place.coordinates,source:place.coordinateSource});}
   try{const cached=JSON.parse(localStorage.getItem(CACHE_KEY)||'{}');for(const [id,p] of Object.entries(cached))if(atlas.some(a=>a.id===id)&&safeCoordinate(p.coordinates)&&p.source?.id==='openstreetmap'&&Number.isInteger(p.source.osmId)&&['node','way','relation'].includes(p.source.osmType))positions.set(id,p);}catch{}
@@ -37,13 +39,13 @@ export function renderMap(container,{atlas=ABUJA_ATLAS,profile={},onTravel,onSel
   for(const {label,url} of MAP_ATTRIBUTION){const a=element('a','',label);a.href=url;a.target='_blank';a.rel='noopener noreferrer';attribution.append(a,document.createTextNode(' '));}
   viewport.append(tileLayer,markerLayer,controls,compass,sourceState,attribution);
   const panel=element('div','abuja-map-panel'),searchBox=element('div','abuja-map-search');
-  const input=element('input');input.type='search';input.placeholder='Search Abuja & FCT';input.setAttribute('aria-label','Find a district or town');searchBox.append(input);
+  const input=element('input');input.type='search';input.placeholder='Search Abuja & FCT';input.setAttribute('aria-label','Find a district, town or venue');searchBox.append(input);
   const list=element('div','abuja-map-place-list');list.setAttribute('aria-label','Locations');
   const selected=element('div','abuja-map-selected');
   panel.append(searchBox,list,selected);root.append(viewport,panel);container.replaceChildren(root);
   const listen=(target,type,fn,opts)=>{target.addEventListener(type,fn,opts);listeners.push(()=>target.removeEventListener(type,fn,opts));};
-  const selectedPlace=()=>atlas.find(a=>a.id===selectedId);
-  const description=p=>{const kind=p.kind==='town'?'Town / community':p.kind==='fcc-sector'?'Sector centre':'City area';return `${kind} · ${positions.has(p.id)?'sourced map pin':'location catalogue'}`;};
+  const selectedPlace=()=>destinations.find(a=>a.id===selectedId);
+  const description=p=>{if(p.venueId)return `${p.category} · ${atlas.find(a=>a.id===p.district)?.name||'Abuja'}`;const kind=p.kind==='town'?'Town / community':p.kind==='fcc-sector'?'Sector centre':'City area';return `${kind} · ${positions.has(p.id)?'sourced map pin':'location catalogue'}`;};
   function updateSourceState(){
     if(disposed)return;
     tilesLoaded=[...tiles.values()].filter(tile=>tile.dataset.state==='loaded').length;
@@ -56,20 +58,20 @@ export function renderMap(container,{atlas=ABUJA_ATLAS,profile={},onTravel,onSel
   }
   function updateList(){
     const matchRank=p=>{const name=normalize(p.name);return name===filter?0:name.startsWith(filter)?1:name.includes(filter)?2:3;};
-    const result=atlas.filter(p=>!filter||normalize(`${p.name} ${p.vibe||''} ${p.council||''}`).includes(filter));
+    const result=destinations.filter(p=>!filter||normalize(`${p.name} ${p.vibe||''} ${p.council||''}`).includes(filter));
     if(filter)result.sort((a,b)=>matchRank(a)-matchRank(b));
     const fragment=document.createDocumentFragment();
-    const shown=filter?result.slice(0,30):result.filter(p=>positions.has(p.id)||p.id===selectedId).slice(0,12);
+    const shown=filter?result.slice(0,30):result.filter(p=>positions.has(p.id)||p.id===selectedId||p.venueId&&p.district===currentId(profile)).slice(0,12);
     for(const p of shown){const b=element('button','abuja-map-place');b.type='button';b.classList.toggle('is-selected',p.id===selectedId);const name=element('strong','',p.name),detail=element('small','',description(p));b.append(name,detail);b.setAttribute('aria-pressed',String(p.id===selectedId));b.addEventListener('click',()=>selectPlace(p));fragment.append(b);}
     if(!shown.length)fragment.append(element('p','abuja-map-empty',filter?'No places match that search.':'Search for a district or town.'));
     list.replaceChildren(fragment);
     const p=selectedPlace();selected.replaceChildren();
-    if(p){const info=element('div','abuja-map-selected-info');info.append(element('strong','',p.name),element('small','',p.id===currentId(profile)?'Your current area':description(p)));if(!positions.has(p.id))info.append(element('small','abuja-map-pin-note','No precise map pin available yet.'));if(travelError){const error=element('small','abuja-map-pin-note',travelError);error.setAttribute('role','alert');info.append(error);}const b=element('button','abuja-map-travel',travelBusy?'Opening ride…':'Plan a journey');b.type='button';b.disabled=travelBusy||typeof onTravel!=='function'||p.id===currentId(profile);if(p.id===currentId(profile))b.textContent='You are here';b.addEventListener('click',async()=>{if(travelBusy||typeof onTravel!=='function')return;travelBusy=true;travelError='';updateList();try{await onTravel(p.id);}catch{travelError='Journey could not open. Try again.';}finally{if(!disposed){travelBusy=false;updateList();}}});selected.append(info,b);}
+    if(p){const info=element('div','abuja-map-selected-info');info.append(element('strong','',p.name),element('small','',!p.venueId&&p.id===currentId(profile)?'Your current area':description(p)));if(!positions.has(p.id))info.append(element('small','abuja-map-pin-note','No precise map pin available yet.'));if(travelError){const error=element('small','abuja-map-pin-note',travelError);error.setAttribute('role','alert');info.append(error);}const b=element('button','abuja-map-travel',travelBusy?'Opening ride…':'Plan a journey');b.type='button';b.disabled=travelBusy||typeof onTravel!=='function'||!p.venueId&&p.id===currentId(profile);if(!p.venueId&&p.id===currentId(profile))b.textContent='You are here';b.addEventListener('click',async()=>{if(travelBusy||typeof onTravel!=='function')return;travelBusy=true;travelError='';updateList();try{await onTravel(p.venueId?p.district:p.id,p.venueId||null);}catch{travelError='Journey could not open. Try again.';}finally{if(!disposed){travelBusy=false;updateList();}}});selected.append(info,b);}
     else selected.append(element('p','abuja-map-empty','Choose somewhere to go.'));
   }
   function savePosition(id,position){positions.set(id,position);try{const cached={};for(const [key,value]of positions)if(value.source?.id==='openstreetmap')cached[key]=value;localStorage.setItem(CACHE_KEY,JSON.stringify(cached));}catch{}}
   async function locatePlace(place){
-    if(!place||positions.has(place.id)||attempted.has(place.id)||disposed)return;
+    if(!place||place.venueId||positions.has(place.id)||attempted.has(place.id)||disposed)return;
     attempted.add(place.id);
     const aliases=[place.name.replace(/\s+Town$/i,'')];if(place.id.startsWith('wuse-ii'))aliases.push('Wuse 2');if(place.id==='wuse-i')aliases.push('Wuse');if(place.id==='garki-i')aliases.push('Garki');
     const regex=aliases.map(a=>a.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|');

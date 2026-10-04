@@ -19,7 +19,10 @@ async def entry(page,url,qa):
     initial=(await v.game.state(page))['profile'];origin=initial['origin'];assert origin['id'] in ('nepo','lapo') and initial['wallet']==({'nepo':1000000,'lapo':100000}[origin['id']])
     for step in range(5):
         form=page.locator('#onboarding-form');names.append(await form.locator('h1').inner_text())
-        if step==0:await form.locator('[name="displayName"]').fill('Preview Acceptance')
+        if step==0:
+            await form.locator('[name="displayName"]').fill('Preview Acceptance')
+            await expect(form.locator('[name="presentation"]:checked')).to_have_count(0)
+            await form.locator('[name="presentation"][value="feminine"]').check()
         if step==1:await form.locator('[name="hair"][value="locs"]').locator('xpath=..').click()
         if step==3:await form.locator('[name="lifeGoal"][value="home"]').check()
         if step==4:await expect(form).to_contain_text(origin['name']);await qa.screenshot(page,'preview-random-origin')

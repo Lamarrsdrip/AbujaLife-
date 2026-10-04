@@ -39,7 +39,7 @@ test('explicitly stored furniture stays owned and out of the rendered room after
 });
 
 test('every home preserves walking routes with the complete inventory and rotated saved layouts',()=>{
-  assert.equal(furniture.length,18);
+  assert.equal(furniture.length,36);
   assert.equal(properties.length,6);
   for(const home of properties)for(const mode of ['empty','all','rotated']){
     const profile=homeProfile(home.id,{inventory:mode==='empty'?[]:furniture,furnitureLayout:mode==='rotated'?Object.fromEntries(furniture.map((id,i)=>[id,{x:(i%4+1)/5,y:(Math.floor(i/4)+1)/6,rotation:i%2?90:270}])):{}});
@@ -50,7 +50,7 @@ test('every home preserves walking routes with the complete inventory and rotate
 });
 
 test('all nineteen authored venues have walkable routes to their activities and exits',()=>{
-  assert.equal(VENUES.length,19);
+  assert.equal(VENUES.length,20);
   for(const venue of VENUES){
     const scene=buildInterior({profile:{location:{kind:'venue',venue:venue.id}},venue});
     assert.ok(scene.interactables.some(point=>point.action==='exit-venue'),venue.id);

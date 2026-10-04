@@ -1,5 +1,6 @@
 // AbujaLife's authored, walkable cutaway interiors. Coordinates describe the floor,
 // including furniture footprints; raised furniture is drawn above those footprints.
+import { EXTRA_HOME_ITEMS } from '../src/shared/home-items.mjs';
 import { VENUE_ACTIONS, VENUES } from '../src/shared/life.mjs';
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const rect = (x,y,w,h,fill,rx=0,extra='') => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" fill="${fill}" ${extra}/>`;
@@ -127,12 +128,85 @@ const HOME_META={
   'maitama-villa':['Maitama villa','Your own quiet corner · Garden courtyard']
 };
 
+function buildStarterHome(profile,id,key,dimensions,owned) {
+  const bare=profile.home.furnishingPreset==='lapo-basic';
+  const s=sceneBase(...dimensions,id,{name:profile.home.name||HOME_META[key][0],floor:['oak','darkoak','tile'].includes(profile.home?.roomStyle?.floor)?profile.home.roomStyle.floor:bare?'tile':key==='jabi-apartment'||key==='maitama-villa'?'tile':'oak',accent:({sand:'#e9e0cf',ivory:'#eeeade',sage:'#c4d1bc',clay:'#c9a48f'})[profile.home?.roomStyle?.wall]||(bare?'#c9c5b5':'#e9e6d7')});
+  s.subtitle=bare?'A basic room · Build it your way':'A furnished start · Make it your own';
+  let bath;
+  if(key==='garki-studio') {
+    s.window(110,210);s.window(470,190);s.floor(762,145,296,320,'bath');
+    s.wall(747,143,15,324);s.wall(762,466,64);s.wall(944,466,114);
+    bath={x:788,y:190};s.label(805,432,'BATH');
+  } else if(key==='lugbe-flat') {
+    s.window(113,296);s.window(616,228);s.floor(946,144,273,325,'bath');
+    s.wall(543,143,15,397);s.wall(62,530,297);s.wall(476,530,82);s.wall(932,143,15,326);s.wall(947,468,66);s.wall(1126,468,93);
+    bath={x:968,y:188};s.label(95,501,'BEDROOM');
+  } else if(key==='gwarinpa-apartment') {
+    s.window(114,305);s.window(978,275);s.floor(548,145,318,408,'bath');
+    s.wall(529,143,16,416);s.wall(871,143,16,416);s.wall(62,556,287);s.wall(461,556,86);
+    s.wall(547,556,90);s.wall(756,556,133);s.wall(886,556,94);s.wall(1105,556,283);
+    bath={x:582,y:214};s.label(100,518,'BEDROOM');s.label(947,518,'SPARE ROOM');
+  } else if(key==='jabi-apartment') {
+    s.floor(63,146,1294,133,'pave');s.art.push(rect(68,147,1284,31,'#85aaa0'));
+    s.wall(64,284,530);s.wall(748,284,607);s.window(140,355,'lake');s.window(788,404,'lake');
+    s.floor(1054,303,303,278,'bath');s.wall(1039,299,15,286);s.wall(1054,581,62);s.wall(1233,581,124);
+    s.wall(854,664,502);s.wall(843,664,15,63);s.wall(843,856,15,139);
+    bath={x:1080,y:332};s.label(510,234,'LAKE BALCONY');s.label(1095,982,'BEDROOM');
+  } else if(key==='guzape-terrace') {
+    s.window(128,303);s.window(1000,310);s.floor(611,145,306,422,'bath');
+    s.wall(591,143,15,429);s.wall(925,143,15,429);s.wall(62,570,341);s.wall(520,570,88);
+    s.wall(608,570,82);s.wall(805,570,136);s.wall(941,570,148);s.wall(1210,570,268);
+    bath={x:650,y:212};s.label(1135,534,'SPARE ROOM');s.label(176,534,'BEDROOM');
+  } else {
+    s.window(119,307);s.window(997,280);s.window(1380,245);s.floor(583,145,331,417,'bath');s.floor(1274,671,423,523,'pave');
+    s.wall(565,144,15,417);s.wall(922,144,15,417);s.wall(1328,144,15,417);
+    s.wall(62,562,300);s.wall(482,562,99);s.wall(581,562,95);s.wall(798,562,139);
+    s.wall(937,562,132);s.wall(1190,562,154);s.wall(1344,562,78);s.wall(1547,562,149);
+    s.wall(1259,672,15,152);s.wall(1259,965,15,228);
+    bath={x:625,y:205};s.label(1020,518,'SPARE ROOM');s.label(1385,1161,'COURTYARD');
+  }
+  bathroom(s,bath.x,bath.y);
+  s.door(s.width/2);
+  s.furnishingArea={x:62,y:160,w:s.width-124,h:s.height-280};
+  // Free fixtures are plumbing and the basic sleeping mat, never catalog gifts.
+  const needsMat=bare&&!['bed','king-bed'].some(itemId=>owned.has(itemId)&&!profile.storedFurniture?.includes(itemId));
+  if(needsMat) {
+    const mat=shadow(0,0,125,190)+rect(0,0,125,190,'#928c72',4)+rect(5,5,115,180,'#bdb69a',4)+rect(14,13,97,32,'#d8d1b9',6);
+    const position=({'garki-studio':{x:115,y:235},'lugbe-flat':{x:148,y:220},'gwarinpa-apartment':{x:142,y:233},'jabi-apartment':{x:1070,y:715},'guzape-terrace':{x:151,y:241},'maitama-villa':{x:133,y:239}})[key];
+    s.object(position.x,position.y,125,190,mat,{kind:'sleeping-mat'});
+    s.point('sleep',position.x+62,position.y+235,'Rest on your sleeping mat','sleep');
+  }
+  s.point('eat',s.spawn.x-118,s.spawn.y-34,'Get a simple meal','eat');
+  s.point('furnish',s.spawn.x+114,s.spawn.y-2,'Arrange your home','furnish');
+  s.furnitureAnchors=({
+    'garki-studio':[{x:115,y:235},{x:438,y:432},{x:115,y:630},{x:550,y:185}],
+    'lugbe-flat':[{x:148,y:220},{x:143,y:635},{x:826,y:619},{x:587,y:191}],
+    'gwarinpa-apartment':[{x:142,y:233},{x:151,y:668},{x:687,y:765},{x:1020,y:684}],
+    'jabi-apartment':[{x:1070,y:715},{x:212,y:432},{x:211,y:798},{x:653,y:345}],
+    'guzape-terrace':[{x:151,y:241},{x:166,y:697},{x:783,y:780},{x:705,y:718}],
+    'maitama-villa':[{x:133,y:239},{x:175,y:714},{x:968,y:950},{x:873,y:710}],
+  })[key]||[{x:115,y:235},{x:150,y:s.height-430},{x:s.width*.45,y:s.height-425},{x:s.width*.55,y:210}];
+  addOwnedFurniture(s,profile,owned);
+  const pointByFurniture=(placement,action,label)=>{
+    const candidates=[{x:placement.x+placement.w/2,y:placement.y+placement.h+46},{x:placement.x+placement.w+46,y:placement.y+placement.h/2},{x:placement.x-46,y:placement.y+placement.h/2},{x:placement.x+placement.w/2,y:placement.y-46}];
+    const point=candidates.find(p=>p.x>80&&p.x<s.width-80&&p.y>172&&p.y<s.height-115&&!s.obstacles.some(b=>p.x>b.x-24&&p.x<b.x+b.w+24&&p.y>b.y-24&&p.y<b.y+b.h+24));
+    if(point)s.point(action,point.x,point.y,label,action);
+  };
+  const bed=s.furniturePlacements.find(item=>['bed','king-bed'].includes(item.itemId)),sofa=s.furniturePlacements.find(item=>['sofa','premium-sofa'].includes(item.itemId));
+  if(bed)pointByFurniture(bed,'sleep','Sleep in your bed');
+  if(sofa)pointByFurniture(sofa,'relax','Rest on your sofa');
+  if(!s.interactables.some(point=>point.action==='sleep'))s.point('sleep',s.spawn.x,s.spawn.y-95,'Get some rest','sleep');
+  for(const partition of profile.home?.roomStyle?.partitions||[]){const r=partitionRect(s,partition);s.wall(r.x,r.y,r.w,r.h);s.walls.at(-1).custom=true;s.walls.at(-1).id=partition.id;}
+  return s.finish();
+}
+
 function buildHome(profile,id) {
   const property=profile.home?.propertyId||'garki-studio';
   const layout=profile.home?.layoutId||property;
   const key=HOME_META[layout]?layout:'garki-studio';
   const dimensions={'garki-studio':[1120,900],'lugbe-flat':[1280,1000],'gwarinpa-apartment':[1450,1100],'jabi-apartment':[1420,1080],'guzape-terrace':[1540,1160],'maitama-villa':[1760,1280]}[key];
   const owned=new Set((Array.isArray(profile.inventory)?profile.inventory:[]).map(v=>typeof v==='string'?v:v.itemId||v.id));
+  if(profile.home?.starterVersion===1&&['lapo-basic','nepo-furnished'].includes(profile.home.furnishingPreset))return buildStarterHome(profile,id,key,dimensions,owned);
   const s=sceneBase(...dimensions,id,{name:profile.home?.name||HOME_META[key][0],floor:['oak','darkoak','tile'].includes(profile.home?.roomStyle?.floor)?profile.home.roomStyle.floor:key==='maitama-villa'||key==='jabi-apartment'?'tile':'oak',accent:({sand:'#e9e0cf',ivory:'#eeeade',sage:'#c4d1bc',clay:'#c9a48f'})[profile.home?.roomStyle?.wall]||'#e9e6d7'});
   s.subtitle=HOME_META[key][1];const sofaColor=owned.has('sofa')?'#b68b6b':'#849b86';
   if(key==='garki-studio') {
@@ -229,6 +303,27 @@ const FURNITURE={
   rug:{w:224,h:142,solid:false,art:()=>rect(0,0,224,142,'#bda37d',5)+rect(9,9,206,124,'none',3,'stroke="#e3cdab" stroke-width="4"')+path('M22 71L69 26L112 71L156 26L201 71L156 116L112 71L69 116Z','none','stroke="#e4cba8" stroke-width="3" opacity=".6"')},
   tv:{w:146,h:51,art:()=>shadow(0,0,146,51)+rect(0,0,146,51,'#9e8661',4)+rect(8,-87,130,83,'#40554d',4)+rect(14,-81,118,69,'#769790',2)+path('M17-15L66-54L100-27L130-60V-15Z','#acc2ab')+line(74,-3,74,9,'#536c5d',7)+rect(52,9,45,5,'#536c5d',2)}
 };
+function extraFurnitureArt(item){
+  const w=item.width,h=item.depth,c=item.color||'#ae9474';
+  switch(item.modelKind){
+    case 'desk':return deskArt(w,h);
+    case 'bookshelf':return shelfArt(w);
+    case 'wardrobe':return wardrobeArt(w);
+    case 'lounge-chair':case 'office-chair':return chairArt(c);
+    case 'plant':return group(w/2,h*.75,plantArt(1.18));
+    case 'rug':return rect(0,0,w,h,c,5)+rect(9,9,w-18,h-18,'none',3,'stroke="#ded5b9" stroke-width="4"');
+    case 'kitchen':return counterArt(w,h,'#87958a');
+    case 'coffee-table':case 'bedside-table':case 'balcony-bench':return coffeeArt(w,h);
+    case 'washing-machine':return rect(0,-58,w,h+58,'#d6dbd5',6)+rect(7,-48,w-14,17,'#6c7a74',2)+ellipse(w/2,18,w*.32,w*.32,'#788d8d')+ellipse(w/2,18,w*.24,w*.24,'#bacac9');
+    case 'standing-fan':return ellipse(w/2,h*.8,w*.46,8,'#7d8b80')+line(w/2,h*.8,w/2,-42,'#657971',6)+ellipse(w/2,-55,28,28,'#b7c9bf')+ellipse(w/2,-55,23,23,'none','stroke="#658176" stroke-width="3"')+line(w/2-20,-55,w/2+20,-55,'#668776',4)+line(w/2,-75,w/2,-35,'#668776',4);
+    case 'full-length-mirror':return rect(-5,-120,w+10,134,'#92795d',4)+rect(1,-113,w-2,119,'#b4d0ce',2)+path(`M4-104L${w-8}-48V-83L4-111Z`,'#dbe8e1');
+    case 'music-speaker':return rect(0,-80,w,h+80,'#394744',5)+ellipse(w/2,-48,w*.3,w*.3,'#152320')+ellipse(w/2,-8,w*.32,w*.32,'#677d72');
+    case 'microwave':return coffeeArt(w,h)+rect(4,-48,w-8,45,'#c7ceca',4)+rect(10,-41,w*.63,28,'#354b44',2)+ellipse(w-13,-24,4,4,'#708f7d');
+    case 'shoe-rack':return rect(0,-36,w,65,'#9c8361',3)+line(6,-14,w-6,-14,'#d4c3a2',4)+line(6,14,w-6,14,'#d4c3a2',4);
+    default:return rect(0,-55,w,h+55,c,5)+rect(5,-46,w-10,28,'#bdaa8a',2)+rect(5,-9,w-10,28,'#bdaa8a',2)+line(w*.42,-30,w*.58,-30,'#655d4e',3)+line(w*.42,7,w*.58,7,'#655d4e',3);
+  }
+}
+for(const item of EXTRA_HOME_ITEMS)FURNITURE[item.id]={w:item.width,h:item.depth,upright:!!item.upright,solid:item.solid,art:()=>extraFurnitureArt(item)};
 export function furnitureGhost(itemId) {
   const def=FURNITURE[itemId]||FURNITURE.plant;
   return {art:def.art(),width:def.w,height:def.h,upright:!!def.upright};
@@ -353,6 +448,23 @@ function addOwnedFurniture(s,profile,owned) {
 function counterArt(w=330,h=93,color='#719280') {
   return '<desc data-scene-prop="counter"/>'+shadow(0,0,w,h)+rect(0,-12,w,h+12,color,5)+rect(12,13,w-24,h-22,'#a1af90',3)+rect(-6,-29,w+12,48,'#dfd2ae',5)+line(11,3,w-11,3,'#f1e3c5',3)+rect(w-94,-62,54,35,'#435b51',4)+rect(w-90,-57,46,23,'#91b8a8',2)+rect(w-84,-27,35,4,'#485e53',2)+rect(28,-15,40,25,'#eae1c8',2);
 }
+function techStallArt(w,h,kind,label) {
+  let art=shadow(0,0,w,h)+rect(0,-16,w,h+16,'#716f61',3)+rect(8,8,w-16,h-19,'#acac98',2)+rect(-4,-27,w+8,30,'#c9baa0',3);
+  art+=rect(10,-102,w-20,42,'#3c626d',2)+text(w/2,-76,label,12,'#eee7d3','text-anchor="middle" font-weight="600" letter-spacing="1"');
+  const laptop=x=>rect(x-29,-49,58,39,'#293a42',3)+rect(x-24,-44,48,29,'#79a9a7',1)+rect(x-31,-7,62,24,'#abb4b1',2)+rect(x-25,-2,50,12,'#53666a',1)+line(x-20,2,x+20,2,'#9ba9a4',1)+line(x-20,7,x+20,7,'#9ba9a4',1);
+  if(kind==='tech-laptop-stall')for(const x of[w*.19,w*.5,w*.81])art+=laptop(x);
+  else if(kind==='tech-repair-bench'){
+    art+=laptop(w*.22)+rect(w*.49,-7,w*.25,33,'#557a5e',2)+rect(w*.56,1,20,15,'#263d3b')+line(w*.44,3,w*.73,30,'#ad9b65',3)+rect(w*.76,-20,39,38,'#d0a763',3)+rect(w*.79,-14,22,14,'#607f78',1)+path(`M${w*.82} 16Q${w*.92} 52 ${w*.61} 40`,'none','stroke="#3d4d4a" stroke-width="2"');
+  }else if(kind==='tech-accessory-stall'||kind==='tech-parts-shelf'){
+    for(let row=0;row<3;row++)for(let col=0;col<8;col++){const x=18+col*(w-35)/8,y=-44+row*33;art+=rect(x,y,25,28,['#bec1a8','#779e97','#bb976d','#8c9caa'][(row+col)%4],2)+rect(x+5,y+4,15,17,'#3e5354',1);}
+  }else if(kind==='tech-console-stall'){
+    art+=rect(w*.30,-55,w*.40,46,'#263b40',3)+rect(w*.33,-50,w*.34,35,'#79a69b',2)+rect(w*.48,-9,12,17,'#6f7f79')+rect(w*.22,6,w*.38,12,'#b8c3bd',2)+rect(w*.70,-38,25,51,'#d8daca',3);
+    for(const x of[28,w-60])art+=rect(x,-30,33,54,'#3b4848',2)+ellipse(x+16,-13,10,10,'#192d30')+ellipse(x+16,11,7,7,'#71847f');
+  }else{
+    art+=rect(30,-46,66,87,'#c5ccc0',4)+line(40,-29,86,-29,'#5e7674',3)+line(40,-19,86,-19,'#5e7674',3)+rect(w*.40,-20,w*.28,52,'#778b82',3)+rect(w*.45,-9,w*.17,13,'#abd0b1',1)+ellipse(w*.82,-13,30,30,'#93ada1')+line(w*.82,-2,w*.82,48,'#617971',5)+ellipse(w*.82,49,26,8,'#6c8071');
+  }
+  return '<desc data-scene-prop="'+kind+'"/>'+art;
+}
 function wallSign(s,x,y,title,subtitle='') {s.art.push(rect(x-8,y-29,Math.max(185,title.length*13+36),subtitle?71:47,'#f5ecd6',3)+text(x+8,y,title,21,'#3c6555','font-weight="600" letter-spacing="3"')+(subtitle?text(x+9,y+24,subtitle,11,'#8d886b','letter-spacing="2"'):''));}
 function venueActivities(venue) {
   const entries=venue?.activities||venue?.actions||VENUE_ACTIONS.filter(a=>a.venueId===venue?.id||(venue?.actionIds||[]).includes(a.id));
@@ -361,7 +473,8 @@ function venueActivities(venue) {
 function venuePoints(s,venue,anchors,fallbacks=[]) {
   const activities=venueActivities(venue);const points=activities.length?activities:fallbacks.map(([id,name])=>({id,name}));
   const action={'dealership':'dealership','estate-office':'estate-office','furniture-store':'market'}[venue.id];
-  if(action){const p=anchors[0];s.point('browse',p.x,p.y,venue.id==='dealership'?'Find your next car':venue.id==='estate-office'?'Find your next home':'Browse Okrika Marketplace',action,{});return;}
+  if(venue.id==='banex'){anchors.forEach((p,i)=>s.point(`browse-${i}`,p.x,p.y,i===0?'Browse Banex tech':'Browse this tech counter','banex-market',{venueId:'banex'}));return;}
+  if(action){const p=anchors[0];s.point('browse',p.x,p.y,venue.id==='dealership'?'Find your next car':venue.id==='estate-office'?'Find your next home':'Browse Capital Market',action,{});return;}
   points.forEach((a,i)=>{const p=anchors[i%anchors.length];s.point(`activity-${a.id}`,p.x,p.y,a.name||a.label||a.title||'Take part','venue-action',{venueId:venue.id,activityId:a.id});});
 }
 function treadmillArt() {
@@ -382,9 +495,9 @@ function buildVenue(profile,venue,id) {
   const incoming=typeof venue==='string'?{id:venue}:venue||{id:profile.location?.venue};
   const raw={...VENUES.find(v=>v.id===incoming.id),...incoming};
   const key=raw.kind==='club'?'club':raw.type||raw.kind||raw.id||'restaurant';
-  const type=['restaurant','hotel','gym','cinema','grocery','park','dealership','estate-office','furniture-store','cafe','salon','mosque','church','jabi-lake','club','games-lounge'].find(v=>key===v||String(key).endsWith(`-${v}`)||String(key).startsWith(`${v}-`))||'restaurant';
-  const names={restaurant:'The courtyard kitchen',hotel:'Capital House Hotel',gym:'Neighbourhood fitness',cinema:'City cinema',grocery:'Fresh market',park:'The neighbourhood garden',dealership:'Abuja auto gallery','estate-office':'Abuja property studio','furniture-store':'Home & living',cafe:'The Corner Café',salon:'Fresh Studio'};
-  const dims={restaurant:[1360,1060],hotel:[1570,1180],gym:[1400,1080],cinema:[1430,1100],grocery:[1400,1080],park:[1560,1150],dealership:[1570,1130],'estate-office':[1390,1050],'furniture-store':[1540,1160],cafe:[1210,990],salon:[1260,1010],mosque:[1480,1140],church:[1450,1190],'jabi-lake':[1760,1290],club:[1530,1190],'games-lounge':[1410,1100]}[type];
+  const type=['restaurant','hotel','gym','cinema','grocery','park','dealership','estate-office','furniture-store','tech-market','cafe','salon','mosque','church','jabi-lake','club','games-lounge'].find(v=>key===v||String(key).endsWith(`-${v}`)||String(key).startsWith(`${v}-`))||'restaurant';
+  const names={restaurant:'The courtyard kitchen',hotel:'Capital House Hotel',gym:'Neighbourhood fitness',cinema:'City cinema',grocery:'Fresh market',park:'The neighbourhood garden',dealership:'Abuja Car','estate-office':'Abuja property studio','furniture-store':'Home & living',cafe:'The Corner Café',salon:'Fresh Studio'};
+  const dims={restaurant:[1360,1060],hotel:[1570,1180],gym:[1400,1080],cinema:[1430,1100],grocery:[1400,1080],park:[1560,1150],dealership:[1570,1130],'estate-office':[1390,1050],'furniture-store':[1540,1160],'tech-market':[1650,1220],cafe:[1210,990],salon:[1260,1010],mosque:[1480,1140],church:[1450,1190],'jabi-lake':[1760,1290],club:[1530,1190],'games-lounge':[1410,1100]}[type];
   const s=sceneBase(...dims,id,{floor:type==='gym'?'darkoak':type==='park'?'pave':'tile',name:raw.name||names[type]});s.subtitle=raw.description||raw.subtitle||'Step inside. Make a little time for yourself.';
   const anchors=[];let fallbacks=[];
   if(type==='restaurant') {
@@ -436,10 +549,35 @@ function buildVenue(profile,venue,id) {
     for(let i=0;i<22;i++){const x=222+(i*73)%260,y=426+(i*31)%57;s.art.push(ellipse(x,y,5,4,['#d9bd8d','#b58a78','#f0dfb2'][i%3]));}
     wallSign(s,532,111,'A LITTLE GREEN','TAKE YOUR TIME HERE');anchors.push({x:461,y:641},{x:1044,y:653},{x:788,y:870});fallbacks=[['walk','Take a slow walk'],['picnic','Enjoy a picnic'],['relax','Sit in the garden']];
   } else if(type==='dealership') {
-    s.window(151,342);s.window(1059,317);wallSign(s,620,111,'AUTO GALLERY','YOUR NEXT CHAPTER');
+    s.window(151,342);s.window(1059,317);wallSign(s,620,111,'ABUJA CAR','YOUR NEXT CHAPTER');
     for(const [x,y,c] of [[187,306,'#ddd6bd'],[696,306,'#789489'],[187,696,'#b89176'],[696,696,'#c0c8b3']]){s.rug(x-28,y-32,300,195,'#bbc7b0');s.object(x,y,245,127,carArt(c));s.art.push(text(x+120,y+174,'ABUJA COLLECTION',10,'#68806a','letter-spacing="2" text-anchor="middle"'));}
     s.object(1190,410,224,89,counterArt(224,89));s.object(1230,730,82,78,chairArt());s.plant(1451,887,1.2);
     anchors.push({x:487,y:447},{x:997,y:447},{x:1300,y:561},{x:977,y:889});fallbacks=[['browse','Explore the collection'],['buy-car','Buy a city compact'],['test-drive','Take a test drive']];
+  } else if(type==='tech-market') {
+    // An original playable tech arcade. Stacked stock stays on counters and
+    // shelves; the two long aisles and three cross aisles remain clear.
+    wallSign(s,530,111,'BANEX TECH MARKET','COMPUTERS · REPAIRS · GADGETS');
+    s.floor(490,145,140,890,'pave');s.floor(1020,145,100,890,'pave');
+    s.art.push(rect(85,163,1480,17,'#b29f79',2));
+    const stalls=[
+      [110,220,370,145,'tech-laptop-stall','LAPTOPS & SCREENS'],
+      [640,225,365,145,'tech-console-stall','CONSOLES & SOUND'],
+      [1135,220,360,145,'tech-accessory-stall','CABLES & ACCESSORIES'],
+      [110,530,370,145,'tech-repair-bench','REPAIR WORKBENCH'],
+      [640,530,365,145,'tech-laptop-stall','WORK & STUDY SETUPS'],
+      [1135,530,360,145,'tech-power-stall','POWER & COOLING'],
+      [110,840,370,145,'tech-parts-shelf','PARTS & PACKED STOCK'],
+      [1135,840,360,145,'tech-console-stall','GAMING CORNER'],
+    ];
+    for(const[x,y,w,h,kind,label]of stalls){s.object(x,y,w,h,techStallArt(w,h,kind,label),{kind});s.label(x+18,y+h+27,label);}
+    s.label(678,1020,'FIND YOUR NEXT SETUP');
+    s.pedestrians.push(
+      {x:285,y:395,toX:285,toY:395,stationary:true,activity:'social'},
+      {x:1320,y:745,toX:1320,toY:745,stationary:true,activity:'social'},
+      {x:545,y:425,toX:545,toY:980},
+      {x:700,y:1030,toX:1100,toY:1030},
+    );
+    anchors.push({x:825,y:805},{x:285,y:450},{x:825,y:450},{x:1320,y:795});
   } else if(type==='estate-office') {
     s.window(128,273);s.window(998,230);wallSign(s,490,111,'THE PROPERTY STUDIO','FIND YOUR CORNER OF ABUJA');
     s.object(855,346,347,94,counterArt(347,94));s.object(166,338,222,86,deskArt(222,86));s.object(183,525,82,78,chairArt());s.object(332,525,82,78,chairArt());

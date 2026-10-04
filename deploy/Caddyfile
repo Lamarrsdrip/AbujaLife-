@@ -1,0 +1,7 @@
+# Optional standalone edge. Never start over an existing Okrika proxy.
+api.abujacity.life {
+	encode zstd gzip
+	reverse_proxy api:3000 {
+		flush_interval -1
+	}
+}

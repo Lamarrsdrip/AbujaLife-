@@ -4,7 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
 import { ABUJA_ATLAS } from '../shared/atlas.mjs';
-import { LIFE_GOALS, GAME_YEAR_MS, GAME_BILL_PERIOD_MS, WALLET_META, INVESTMENT_META, DICE_META, LOAN_META, HOME_UPGRADES, homeBenefits, investmentView, loanQuote, loanView, venueFor, venueAvailable, venueActionFor, ownsVehicle, applyNeedEffects, furniturePlacement } from '../shared/life.mjs';
+import { LIFE_GOALS, GAME_YEAR_MS, GAME_BILL_PERIOD_MS, WALLET_META, INVESTMENT_META, DICE_META, LOAN_META, HOME_UPGRADES, TRANSPORT_MODES, travelPricing, starterHomeSeed, systemResaleValue, homeBenefits, investmentView, loanView, loanQuote, venueFor, venueAvailable, venueActionFor, ownsVehicle, applyNeedEffects, furniturePlacement } from '../shared/life.mjs';
 import { VEHICLE_CATALOG, vehicleColorFor } from '../shared/vehicles.mjs';
 import { ORIGIN_META, createOrigin, originHome } from '../shared/origins.mjs';
 import { abujaTime, jobSchedule, clubSchedule, JOB_SCHEDULES } from '../shared/simulation.mjs';
@@ -15,78 +15,13 @@ const uid = () => crypto.randomUUID();
 const clean = (value, max = 80) => String(value ?? '').trim().slice(0, max);
 const clamp = n => Math.max(0, Math.min(100, Math.round(n)));
 const locations = new Map(ABUJA_ATLAS.map(place => [place.id, place]));
-export class GameError extends Error {
-  constructor(message, status = 400, code = 'invalid_action') { super(message); this.status = status; this.code = code; }
-}
+import { GameError } from './errors.mjs';
+export { GameError };
 const check = (condition, message, status = 400, code) => { if (!condition) throw new GameError(message, status, code); };
-const task = (id,prompt,options,answer) => ({id,prompt,options:options.map(([id,label])=>({id,label})),answer});
-export const jobs = {
-  'restaurant-host': {id:'restaurant-host',title:'Restaurant host',district:'garki-i',pay:5600,energy:12,skill:'Hospitality',description:'Welcome guests and coordinate service.',tasks:[
-    task('arrival','A party of four arrives. Only a table for two is ready.',[['join','Check whether two tables can be joined'],['split','Seat them apart without asking'],['ignore','Leave them waiting without an update']],'join'),
-    task('allergy','A guest mentions a groundnut allergy.',[['guess','Assume the sauce is safe'],['kitchen','Confirm ingredients and preparation with the kitchen'],['remove','Remove the garnish and serve']],'kitchen'),
-    task('order','One meal is delayed while the rest are ready.',[['update','Give a clear update and coordinate service'],['hide','Avoid the table'],['promise','Promise it is ready without checking']],'update')]},
-  'junior-dev': {id:'junior-dev',title:'Junior developer',district:'wuse-ii-a07',pay:8500,energy:18,skill:'Technology',description:'Triage a customer issue and ship a careful fix.',tasks:[
-    task('reproduce','A customer says checkout fails on mobile. Your first step?',[['reproduce','Reproduce the issue on a mobile viewport'],['rewrite','Rewrite checkout immediately'],['dismiss','Close the report']],'reproduce'),
-    task('money','The browser submits its own account balance.',[['trust','Trust the value'],['server','Calculate balances on the server'],['round','Round the submitted number']],'server'),
-    task('release','Your fix passes locally. Before release?',[['check','Run relevant checks and review the change'],['ship','Skip tests'],['delete','Delete the failing checks']],'check')]},
-  'media-assistant': {id:'media-assistant',title:'Creative assistant',district:'garki-ii',pay:6200,energy:15,skill:'Creative',description:'Prepare and deliver a campaign.',tasks:[
-    task('brief','A client requests an event flyer. What do you confirm?',[['facts','Date, venue, audience and approval contact'],['colour','Only their favourite colour'],['guess','Invent missing details']],'facts'),
-    task('rights','You find a photographer’s image online.',[['copy','Copy it without asking'],['license','Use an image with permission or a suitable licence'],['crop','Crop away the watermark']],'license'),
-    task('delivery','The client approves the final design.',[['source','Deliver agreed formats and keep a versioned copy'],['small','Send only a blurry screenshot'],['edit','Change the approved text']],'source')]},
-  'property-agent': {id:'property-agent',title:'Property assistant',district:'jabi',pay:9800,energy:20,skill:'Sales',description:'Match a home to a resident and verify details.',tasks:[
-    task('needs','A resident wants an apartment. Start with?',[['budget','Their budget, commute and household needs'],['luxury','The highest commission property'],['rush','Ask them to pay before viewing']],'budget'),
-    task('listing','A listing has unclear ownership documents.',[['verify','Verify documentation before recommending it'],['hide','Hide that concern'],['guess','Assume it is fine']],'verify'),
-    task('viewing','The resident asks about service charges.',[['total','Explain rent and all disclosed recurring charges'],['omit','Mention only the rent'],['avoid','Avoid the question']],'total')]},
-  'site-supervisor': {id:'site-supervisor',title:'Site coordinator',district:'guzape',pay:11000,energy:24,skill:'Construction',description:'Coordinate a safe site handover.',tasks:[
-    task('safety','A contractor arrives without protective gear.',[['ppe','Check suitable protection before entering the work zone'],['ignore','Let them start immediately'],['photo','Take a photo and walk away']],'ppe'),
-    task('delivery','A material delivery does not match the order.',[['record','Record the mismatch and confirm with the supplier'],['accept','Accept everything without checking'],['discard','Throw it away']],'record'),
-    task('handover','Before handing over a room, you should?',[['inspect','Inspect the work and record unresolved defects'],['paint','Cover defects with paint'],['sign','Sign without inspecting']],'inspect')]},
-  'bank-teller': {id:'bank-teller',title:'Bank teller',district:'central-area',pay:7800,energy:16,skill:'Finance',description:'Help customers with accurate, secure account transactions.',tasks:[
-    task('identity','A customer requests an account withdrawal. Start with?', [['verify','Verify their identity through the approved procedure'],['skip','Skip verification to shorten the queue'],['ask-pin','Ask them to say their secret PIN aloud']],'verify'),
-    task('difference','The cash count differs from the transaction record.',[['reconcile','Recount and reconcile the record before continuing'],['hide','Hide the difference'],['guess','Change the record to a guessed amount']],'reconcile'),
-    task('privacy','Another customer asks for their neighbour’s balance.',[['private','Protect the account holder’s confidential information'],['share','Read the balance aloud'],['photo','Send a screenshot']],'private')]}
-};
-export const catalog = [
-  {id:'linen-shirt',name:'Linen shirt',category:'clothing',slot:'top',value:'cream',price:4200,description:'An easy neutral shirt for warm afternoons.'},
-  {id:'office-shirt',name:'Office shirt',category:'clothing',slot:'top',value:'navy',price:5800,description:'A clean fit for work and city evenings.'},
-  {id:'traditional-set',name:'Agbada set',category:'clothing',slot:'top',value:'agbada',price:12000,description:'A contemporary traditional outfit.'},
-  {id:'white-trainers',name:'White trainers',category:'clothing',slot:'shoes',value:'white',price:4800,description:'Everyday city footwear.'},
-  {id:'lounge-chair',name:'Lounge chair',category:'furniture',price:7500,description:'A comfortable chair for your living room.'},
-  {id:'plant',name:'Indoor plant',category:'furniture',price:2300,description:'A little green for your home.'},
-  {id:'bookshelf',name:'Bookshelf',category:'furniture',price:6500,description:'A quiet corner to read and unwind.'},
-  {id:'sofa',name:'Two-seat sofa',category:'furniture',price:18000,description:'Room for a visitor and a conversation.'},
-  {id:'dining-table',name:'Dining table',category:'furniture',price:4200,description:'A compact timber table for meals and visitors.'},
-  {id:'bed',name:'Upholstered bed',category:'furniture',price:11000,description:'A comfortable upgrade for your bedroom.'},
-  {id:'fridge',name:'Kitchen fridge',category:'furniture',price:9800,description:'Make the kitchen your own with a full-size fridge.'},
-  {id:'floor-lamp',name:'Floor lamp',category:'furniture',price:3200,description:'Warm light beside your favourite chair.'},
-  {id:'rug',name:'Woven rug',category:'furniture',price:2600,description:'Colour and texture for your living space.'},
-  {id:'tv',name:'Living-room TV',category:'furniture',price:14500,description:'Build a proper entertainment corner.'},
-  ...HOME_UPGRADES,
-  ...VEHICLE_CATALOG
-];
-export const properties = [
-  {id:'garki-studio',name:'Garki starter studio',district:'garki-i',tier:0,rent:0,buy:0,bills:450,description:'A modest furnished studio with a kitchen and bathroom.'},
-  {id:'lugbe-flat',name:'Lugbe one-bedroom',district:'lugbe',tier:1,rent:18000,buy:280000,bills:1200,description:'More space along the airport corridor.'},
-  {id:'gwarinpa-apartment',name:'Gwarinpa apartment',district:'gwarinpa-i',tier:2,rent:38000,buy:620000,bills:2300,description:'A residential base with room for friends.'},
-  {id:'jabi-apartment',name:'Jabi lake-side apartment',district:'jabi',tier:3,rent:62000,buy:980000,bills:3200,description:'A modern apartment close to city life.'},
-  {id:'guzape-terrace',name:'Guzape terrace',district:'guzape',tier:4,rent:115000,buy:2200000,bills:6200,description:'A hillside terrace with a generous living room.'},
-  {id:'maitama-villa',name:'Maitama villa',district:'maitama',tier:5,rent:240000,buy:5800000,bills:11000,description:'A landscaped private compound.'}
-].map(item=>{
-  const plans=[['studio',0,1,32],['flat',1,1,58],['apartment',2,1,105],['apartment',1,1,125],['terrace',2,1,215],['villa',2,1,420]];
-  const [type,bedrooms,bathrooms,areaM2]=plans[item.tier];
-  return {...item,price:item.buy,type,bedrooms,bathrooms,areaM2,rentPeriod:'game year',rentPeriodDays:28,billPeriodDays:7,serviceCharge:item.bills,agencyFee:0,cautionDeposit:0,moveInCost:item.rent,priceLabel:'Game prices',fictional:true,comfortBonus:item.tier>=3?4:0,comfortDescription:item.tier>=3?'Fitted comfort adds 4 sleep energy and 4 relaxation fun.':'Practical starter comfort.',investmentIncome:Math.floor(item.buy*INVESTMENT_META.incomeBasisPoints/10000),investmentResale:Math.floor(item.buy*INVESTMENT_META.resaleBasisPoints/10000),features:[item.tier===0?'Starter furnishings':'Separate living space',item.tier>=2?'Visitor parking':'Street parking',item.tier>=4?'Private compound':'Shared compound',item.tier>=3?'Balcony or terrace':'Practical kitchen'],viewing:{free:true,description:'Inspect the authored floor plan before spending any game Naira.'}};
-});
-export const activities = {eat:{cost:1200,location:'home'},sleep:{cost:0,location:'home'},shower:{cost:0,location:'home'},relax:{cost:0,location:'home'},hangout:{cost:2400,location:'public'},exercise:{cost:800,location:'public'},cinema:{cost:3800,location:'public'}};
-export const transportModes = [
-  {id:'walk',name:'Walk',description:'Within your current neighbourhood.'},
-  {id:'bus',name:'Bus',description:'A lower-cost trip with a longer compressed journey.'},
-  {id:'taxi',name:'Taxi',description:'A direct city trip.'},
-  {id:'ride',name:'Ride-hailing',description:'A direct pickup.'},
-  {id:'car',name:'Your car',description:'Available after buying a virtual vehicle.'}
-];
-export const appearanceOptions = {skinTone:['deep','brown','warm','light'],hair:['crop','locs','afro','braids','bald'],top:['ochre','forest','cream','navy','agbada'],body:['regular','slim','broad'],face:['oval','round','angular'],presentation:['neutral','feminine','masculine'],facialHair:['none','beard'],bottom:['charcoal','denim','cream'],shoes:['white','black'],accessory:['none','glasses']};
+import { jobs, catalog, properties, activities, transportModes, appearanceOptions } from '../shared/catalogue.mjs';
+export { jobs, catalog, properties, activities, transportModes, appearanceOptions };
 const initialAppearance = {skinTone:'brown',face:'oval',body:'regular',hair:'crop',facialHair:'none',presentation:'neutral',top:'forest',bottom:'charcoal',shoes:'white',accessory:'none'};
-function updateAppearance(current, incoming, inventory=[]) { if(incoming&&typeof incoming==='object')for(const [key,values] of Object.entries(appearanceOptions))if(incoming[key]!==undefined){check(values.includes(incoming[key]),`Choose a supported ${key}`);if(key==='top'&&!['forest','ochre'].includes(incoming[key])){const item=catalog.find(item=>item.category==='clothing'&&item.slot==='top'&&item.value===incoming[key]);check(item&&inventory.includes(item.id),'Buy this outfit in Okrika Marketplace before wearing it',403,'outfit_not_owned');}current[key]=incoming[key];}return current; }
+function updateAppearance(current, incoming, inventory=[]) { if(incoming&&typeof incoming==='object')for(const [key,values] of Object.entries(appearanceOptions))if(incoming[key]!==undefined){check(values.includes(incoming[key]),`Choose a supported ${key}`);if(key==='top'&&!['forest','ochre'].includes(incoming[key])){const item=catalog.find(item=>item.category==='clothing'&&item.slot==='top'&&item.value===incoming[key]);check(item&&inventory.includes(item.id),'Buy this outfit in Capital Market before wearing it',403,'outfit_not_owned');}current[key]=incoming[key];}return current; }
 
 export class GameStore {
   constructor({dataDir=process.env.ABUJALIFE_DATA_DIR||path.resolve('.local'),clock=Date.now,originRandomInt=crypto.randomInt}={}) {
@@ -102,6 +37,8 @@ export class GameStore {
       CREATE TABLE IF NOT EXISTS conversations(id TEXT PRIMARY KEY,kind TEXT NOT NULL,name TEXT NOT NULL,created_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS members(conversation_id TEXT NOT NULL REFERENCES conversations(id),resident_id TEXT NOT NULL REFERENCES residents(id),joined_at INTEGER NOT NULL,read_at INTEGER NOT NULL DEFAULT 0,delivered_at INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(conversation_id,resident_id));
       CREATE TABLE IF NOT EXISTS messages(id TEXT PRIMARY KEY,conversation_id TEXT NOT NULL REFERENCES conversations(id),sender_id TEXT NOT NULL REFERENCES residents(id),text TEXT NOT NULL,created_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS message_operations(sender_id TEXT NOT NULL REFERENCES residents(id),operation_key TEXT NOT NULL,fingerprint TEXT NOT NULL,message_id TEXT NOT NULL UNIQUE REFERENCES messages(id),created_at INTEGER NOT NULL,PRIMARY KEY(sender_id,operation_key));
+      CREATE TABLE IF NOT EXISTS message_transfers(message_id TEXT PRIMARY KEY REFERENCES messages(id),transfer_id TEXT NOT NULL UNIQUE,amount INTEGER NOT NULL CHECK(amount>0),note TEXT NOT NULL,from_id TEXT NOT NULL REFERENCES residents(id),to_id TEXT NOT NULL REFERENCES residents(id),created_at INTEGER NOT NULL,sender_name TEXT NOT NULL,recipient_name TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS location_messages(id TEXT PRIMARY KEY,zone TEXT NOT NULL,sender_id TEXT NOT NULL,text TEXT NOT NULL,created_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS notifications(id TEXT PRIMARY KEY,resident_id TEXT NOT NULL,kind TEXT NOT NULL,title TEXT NOT NULL,body TEXT NOT NULL,link TEXT,created_at INTEGER NOT NULL,read_at INTEGER);
       CREATE TABLE IF NOT EXISTS moderation(owner TEXT NOT NULL,target TEXT NOT NULL,kind TEXT NOT NULL,PRIMARY KEY(owner,target,kind));
@@ -131,8 +68,8 @@ export class GameStore {
   async register({username,displayName,password,appearance}) {
     username=clean(username,24).toLowerCase();displayName=clean(displayName,40)||username;check(/^[a-z0-9_]{3,24}$/.test(username),'Use 3–24 letters, numbers or underscores for your username');check(typeof password==='string'&&password.length>=8&&password.length<=128,'Choose a password of 8–128 characters');check(!this.get('SELECT id FROM residents WHERE username=?',username),'That username is already taken',409);
     const salt=crypto.randomBytes(16).toString('hex');const hash=(await scrypt(password,salt,64)).toString('hex');const id=uid(),timestamp=this.clock();
-    const origin=createOrigin({residentId:id,now:timestamp,randomInt:this.originRandomInt,properties,atlas:ABUJA_ATLAS}),home=originHome(origin);
-    const profile={id,username,displayName,origin,appearance:updateAppearance({...initialAppearance},appearance),wallet:origin.startingBalance,energy:82,hunger:72,hygiene:88,social:58,fun:64,stress:12,mood:76,reputation:0,district:home.district,location:{kind:'home',district:home.district,venue:'home'},home,job:null,careerLevel:1,skills:{},inventory:[],ownedProperties:origin.giftedHome?[home.propertyId]:[],propertyInvestments:{},vehicleColors:{},gambleHistory:[],lastGambleRound:null,loans:[],workDays:{},furnitureLayout:{},storedFurniture:[],drivingVehicle:null,onboardingComplete:false,lifeGoal:'explore',settings:{presenceVisible:true,allowInvites:true,soundEnabled:true},activeTrip:null,activeShift:null,completedShifts:0,nextShiftAt:0,lastActionAt:timestamp,billsPaidAt:timestamp,rentPaidAt:timestamp,createdAt:timestamp};
+    const origin=createOrigin({residentId:id,now:timestamp,randomInt:this.originRandomInt,properties,atlas:ABUJA_ATLAS}),seed=starterHomeSeed(origin),home={...originHome(origin),...seed.homeStyle};
+    const profile={id,username,displayName,origin,appearance:updateAppearance({...initialAppearance},appearance),wallet:origin.startingBalance,energy:82,hunger:72,hygiene:88,social:58,fun:64,stress:12,mood:76,reputation:0,district:home.district,location:{kind:'home',district:home.district,venue:'home'},home,job:null,careerLevel:1,skills:{},inventory:seed.inventory,ownedProperties:origin.giftedHome?[home.propertyId]:[],propertyInvestments:{},vehicleColors:{},gambleHistory:[],lastGambleRound:null,loans:[],workDays:{},furnitureLayout:seed.furnitureLayout,storedFurniture:seed.storedFurniture,drivingVehicle:null,onboardingComplete:false,lifeGoal:'explore',settings:{presenceVisible:true,allowInvites:true,soundEnabled:true},activeTrip:null,activeShift:null,completedShifts:0,nextShiftAt:0,lastActionAt:timestamp,billsPaidAt:timestamp,rentPaidAt:timestamp,createdAt:timestamp};
     try{this.transaction(()=>{this.run('INSERT INTO residents VALUES(?,?,?,?,?)',id,username,`${salt}:${hash}`,JSON.stringify(profile),timestamp);this.run('INSERT INTO resident_origins VALUES(?,?,?)',id,JSON.stringify(origin),timestamp);this.run('INSERT INTO ledger VALUES(?,?,?,?,?)',uid(),id,origin.startingBalance,'Resident starting balance',timestamp);});}catch(error){if(error.message.includes('UNIQUE'))throw new GameError('That username is already taken',409);throw error;}
     this.notify(id,'welcome','Welcome home',`Your ${home.name} is ready. Settle in, then explore your neighbourhood.`,'home');return this.createSession(id);
   }
@@ -143,7 +80,7 @@ export class GameStore {
   createSession(residentId){const token=crypto.randomBytes(32).toString('hex');this.run('DELETE FROM sessions WHERE expires_at<?',this.clock());this.run('INSERT INTO sessions VALUES(?,?,?)',this.hashToken(token),residentId,this.clock()+30*86400000);return{residentId,token};}
   session(token){return typeof token==='string'&&token?this.get('SELECT resident_id FROM sessions WHERE hash=? AND expires_at>?',this.hashToken(token),this.clock())?.resident_id||null:null;}
   logout(token){if(token)this.run('DELETE FROM sessions WHERE hash=?',this.hashToken(token));}
-  updateProfile(id,body){const p=this.profile(id);if(body.displayName!==undefined){check(clean(body.displayName,40).length>=2,'Display name must have at least two characters');p.displayName=clean(body.displayName,40);}updateAppearance(p.appearance,body.appearance,p.inventory);if(body.settings&&typeof body.settings==='object')for(const key of ['presenceVisible','allowInvites','soundEnabled','allowHomeVisits','homeVisitsFriendsOnly'])if(typeof body.settings[key]==='boolean')p.settings[key]=body.settings[key];if(body.lifeGoal!==undefined){check(LIFE_GOALS.some(goal=>goal.id===body.lifeGoal),'Choose a listed life goal');p.lifeGoal=body.lifeGoal;}if(body.onboardingComplete!==undefined){check(typeof body.onboardingComplete==='boolean','Choose a valid onboarding state');p.onboardingComplete=body.onboardingComplete;}return this.save(p);}
+  updateProfile(id,body){const p=this.profile(id);if(body.displayName!==undefined){check(clean(body.displayName,40).length>=2,'Display name must have at least two characters');p.displayName=clean(body.displayName,40);}updateAppearance(p.appearance,body.appearance,p.inventory);if(body.settings&&typeof body.settings==='object')for(const key of ['presenceVisible','allowInvites','soundEnabled','allowHomeVisits','homeVisitsFriendsOnly'])if(typeof body.settings[key]==='boolean')p.settings[key]=body.settings[key];if(body.lifeGoal!==undefined){check(LIFE_GOALS.some(goal=>goal.id===body.lifeGoal),'Choose a listed life goal');p.lifeGoal=body.lifeGoal;}if(body.onboardingComplete!==undefined){check(typeof body.onboardingComplete==='boolean','Choose a valid onboarding state');if(body.onboardingComplete===true&&p.home.starterVersion===1)check(['feminine','masculine'].includes(p.appearance.presentation),'Choose Female or Male before starting',400,'gender_required');p.onboardingComplete=body.onboardingComplete;}return this.save(p);}
   decay(p){const mins=Math.min(120,Math.max(0,(this.clock()-p.lastActionAt)/60000));if(mins>1){p.energy=clamp(p.energy-mins*.10);p.hunger=clamp(p.hunger-mins*.12);p.social=clamp(p.social-mins*.05);}}
   publicJobs(){return Object.fromEntries(Object.entries(jobs).map(([id,{tasks,...job}])=>[id,{...job,schedule:{...JOB_SCHEDULES[id],timeZone:'Africa/Lagos',maxDailyShifts:2}}]));}
   workSchedule(id,now=this.clock()) {
@@ -155,11 +92,10 @@ export class GameStore {
   activeChallenge(id){const row=this.get('SELECT * FROM challenges WHERE resident_id=? AND completed_at IS NULL AND cancelled_at IS NULL AND (shift_ends_at IS NULL OR shift_ends_at>?) ORDER BY started_at DESC LIMIT 1',id,this.clock());return row?this.challengeView(row):null;}
   challengeView(row){return{id:row.id,jobId:row.job_id,title:jobs[row.job_id].title,startedAt:row.started_at,dateKey:row.work_date,slotId:row.shift_slot,expiresAt:row.shift_ends_at,tasks:jobs[row.job_id].tasks.map(({answer,...task})=>task)};}
   quoteTravel(id,payload={}) {
-    const p=this.profile(id),destination=clean(payload.district,80),mode=clean(payload.mode||'bus',16);
+    const p=this.profile(id),destination=clean(payload.district,80),mode=clean(payload.mode||'bus',16),venueId=payload.venueId==null?null:clean(payload.venueId,80);
     check(locations.has(destination),'Choose a location from the Abuja atlas');check(transportModes.some(item=>item.id===mode),'Choose a supported transport mode');check(mode!=='walk'||destination===p.district,'Walking is available within your neighbourhood; choose transport for this trip');check(mode!=='car'||catalog.some(item=>ownsVehicle(p,catalog,item.id)),'Buy a car before choosing your own vehicle');
-    const same=destination===p.district,distance=same?0:Math.max(4,Math.round(((locations.get(destination).commute||35)+(locations.get(p.district).commute||35))/3));
-    const cost=same?0:mode==='bus'?250+distance*20:mode==='car'?350+distance*20:mode==='taxi'?650+distance*45:900+distance*45;
-    const seconds=same?1:Math.min(14,Math.max(4,Math.round(distance/(mode==='bus'?2.5:4))));return{destination,mode,cost,seconds};
+    if(venueId!==null)check(venueId&&venueAvailable(venueId,destination),'Choose a place available in your destination neighbourhood');
+    return travelPricing(locations.get(p.district),locations.get(destination),mode,{venueId});
   }
   economyOperation(id,kind,payload,normalized,mutate) {
     const key=payload.idempotencyKey;
@@ -193,26 +129,34 @@ export class GameStore {
     });
   }
   transfer(id,payload={}) {
-    const residentId=payload.residentId,amount=payload.amount,note=clean(payload.note,120);
+    const residentId=payload.residentId,amount=payload.amount,note=clean(payload.note,120),conversationId=payload.conversationId??null;
     let notice;
     check(typeof residentId==='string'&&residentId.length>0&&residentId.length<=80,'Choose a registered resident',400,'invalid_recipient');
     check(residentId!==id,'Choose another resident to send Naira to',400,'self_transfer');
     check(Number.isSafeInteger(amount)&&amount>0,'Enter a positive whole Naira amount',400,'invalid_amount');
-    const result=this.economyOperation(id,'transfer-naira',payload,{residentId,amount,note},(p,timestamp)=>{
+    check(conversationId===null||typeof conversationId==='string'&&conversationId.length>0&&conversationId.length<=80,'Choose the direct conversation for this transfer',400,'transfer_conversation_mismatch');
+    const result=this.economyOperation(id,'transfer-naira',payload,{residentId,amount,note,...(conversationId?{conversationId}:{})},(p,timestamp)=>{
       const recipient=this.profile(residentId);
       check(!this.blocked(id,residentId),'This resident is unavailable',403,'recipient_unavailable');
+      if(conversationId)this.transferConversation(id,residentId,conversationId);
       check(p.wallet>=amount,'You need more Naira for this transfer',409,'insufficient_balance');
       check(Number.isSafeInteger(recipient.wallet+amount),'The recipient balance cannot represent this amount as exact whole Naira',409,'numeric_limit');
       p.wallet-=amount;recipient.wallet+=amount;this.save(recipient);
       const transfer={id:uid(),residentId,recipientName:recipient.displayName,amount,note,createdAt:timestamp,virtual:true};
       this.run('INSERT INTO ledger VALUES(?,?,?,?,?)',uid(),residentId,amount,`Naira from ${p.displayName}${note?` · ${note}`:''}`,timestamp);
       if(!this.muted(residentId,id)){
-        notice={id:uid(),kind:'transfer',title:'Naira received',body:`${p.displayName} sent you ₦${amount.toLocaleString()} in game Naira${note?` · ${note}`:''}.`,link:'wallet',createdAt:timestamp,readAt:null};
+        notice={id:uid(),kind:'transfer',title:'Naira received',body:`${p.displayName} sent you ₦${amount.toLocaleString()} in game Naira${note?` · ${note}`:''}.`,link:conversationId?`conversation:${conversationId}`:'wallet',createdAt:timestamp,readAt:null};
         this.run('INSERT INTO notifications(id,resident_id,kind,title,body,link,created_at,read_at,sender_id) VALUES(?,?,?,?,?,?,?,NULL,?)',notice.id,residentId,notice.kind,notice.title,notice.body,notice.link,timestamp,id);
       }
-      return{transfer,ledgerReason:`Naira to ${recipient.displayName}${note?` · ${note}`:''}`};
+      let message;
+      if(conversationId){
+        const saved=this.insertConversationMessage(id,conversationId,`Sent ₦${amount.toLocaleString()} in game Naira${note?` · ${note}`:''}.`,timestamp);
+        this.run('INSERT INTO message_transfers VALUES(?,?,?,?,?,?,?,?,?)',saved.row.id,transfer.id,amount,note,id,residentId,timestamp,p.displayName,recipient.displayName);
+        message=this.messageView(saved.row);
+      }
+      return{transfer,...(message?{message,receipt:message}:{}),ledgerReason:`Naira to ${recipient.displayName}${note?` · ${note}`:''}`};
     });
-    if(!result.replayed){this.emitUser(residentId,'profile',{profile:this.profile(residentId)});if(notice)this.emitUser(residentId,'notification',notice);}
+    if(!result.replayed){this.emitUser(residentId,'profile',{profile:this.profile(residentId)});if(notice)this.emitUser(residentId,'notification',notice);if(result.message)for(const target of [id,residentId])this.emitUser(target,'message',result.message);}
     return result;
   }
   vehicleAction(id,action,payload={}) {
@@ -298,6 +242,7 @@ export class GameStore {
     });
   }
   action(id,action,payload={}) {
+    if(action==='sell-item')return this.sellItem(id,payload);
     if(action==='topup'||action==='demo-topup')return this.topup(id,payload);
     if(action==='transfer-naira')return this.transfer(id,payload);
     if(['buy-investment','collect-rent','sell-investment'].includes(action))return this.investmentAction(id,action,payload);
@@ -332,11 +277,13 @@ export class GameStore {
         case 'return-home':case 'travel':{
           const destination=action==='return-home'?p.home.district:clean(payload.district,80);check(locations.has(destination),'Choose a location from the Abuja atlas');
           if(destination===p.district&&action==='return-home'){p.drivingVehicle=null;p.location={kind:'home',district:destination,venue:'home'};break;}
-          const {mode,cost,seconds}=this.quoteTravel(id,{district:destination,mode:payload.mode});
+          const venueId=action==='travel'&&payload.venueId!=null?clean(payload.venueId,80):null;
+          if(venueId!==null)publicPlace();
+          const {mode,cost,seconds}=this.quoteTravel(id,{district:destination,mode:payload.mode,venueId});
           const vehicleId=mode==='car'?(ownsVehicle(p,catalog,p.drivingVehicle)?p.drivingVehicle:catalog.find(item=>ownsVehicle(p,catalog,item.id))?.id):null;
-          debit(cost);p.drivingVehicle=null;p.activeTrip={id:uid(),destination,mode,cost,seconds,vehicleId,arrivesAt:timestamp+seconds*1000,returningHome:action==='return-home'};extra.trip=p.activeTrip;p.location={kind:'transit',district:p.district,venue:'journey'};break;
+          debit(cost);p.drivingVehicle=null;p.activeTrip={id:uid(),destination,mode,cost,seconds,vehicleId,...(venueId?{venueId}:{}),arrivesAt:timestamp+seconds*1000,returningHome:action==='return-home'};extra.trip=p.activeTrip;p.location={kind:'transit',district:p.district,venue:'journey'};break;
         }
-        case 'arrive':{const trip=p.activeTrip;check(trip&&trip.id===payload.tripId,'This journey is no longer active');check(timestamp>=trip.arrivesAt,'Your journey is still in progress',409,'trip_in_progress');p.district=trip.destination;p.location={kind:trip.returningHome?'home':'public',district:trip.destination,venue:trip.returningHome?'home':'neighbourhood'};p.drivingVehicle=!trip.returningHome&&trip.mode==='car'&&ownsVehicle(p,catalog,trip.vehicleId)?trip.vehicleId:null;p.activeTrip=null;p.energy=clamp(p.energy-3);break;}
+        case 'arrive':{const trip=p.activeTrip;check(trip&&trip.id===payload.tripId,'This journey is no longer active');check(timestamp>=trip.arrivesAt,'Your journey is still in progress',409,'trip_in_progress');if(trip.venueId)check(venueAvailable(trip.venueId,trip.destination),'This destination is no longer available');p.district=trip.destination;p.location={kind:trip.returningHome?'home':trip.venueId?'venue':'public',district:trip.destination,venue:trip.returningHome?'home':trip.venueId||'neighbourhood'};p.drivingVehicle=!trip.returningHome&&!trip.venueId&&trip.mode==='car'&&ownsVehicle(p,catalog,trip.vehicleId)?trip.vehicleId:null;p.activeTrip=null;p.energy=clamp(p.energy-3);break;}
         case 'take-job':check(typeof payload.jobId==='string'&&Object.hasOwn(jobs,payload.jobId),'Choose a listed job');check(!this.activeChallenge(id),'Finish your current shift before switching careers');p.job=payload.jobId;break;
         case 'start-shift':{
           const job=jobs[p.job];check(job,'Choose a job before starting a shift');publicPlace();check(p.district===job.district,`Travel to ${locations.get(job.district)?.name||job.district} for your shift`);
@@ -361,16 +308,29 @@ export class GameStore {
           extra.workSchedule=this.workSchedule(p,timestamp);p.workDays=Object.fromEntries(Object.entries(p.workDays).sort(([a],[b])=>b.localeCompare(a)).slice(0,8));break;
         }
         case 'work-shift':throw new GameError('Start a shift and complete its work tasks to earn your salary');
-        case 'purchase':{const item=catalog.find(item=>item.id===payload.itemId);check(item,'Choose an item from Okrika Marketplace');check(!p.inventory.includes(item.id),'You already own this item',409);if(item.category==='vehicle'){const color=payload.color??item.defaultColor;check(vehicleColorFor(color)&&item.availableColors.includes(color),'Choose an available car colour');p.vehicleColors[item.id]=color;}debit(item.price);p.inventory.push(item.id);extra.item=item;break;}
+        case 'purchase':{const item=catalog.find(item=>item.id===payload.itemId);check(item,'Choose an item from Capital Market');check(!p.inventory.includes(item.id),'You already own this item',409);if(item.category==='vehicle'){const color=payload.color??item.defaultColor;check(vehicleColorFor(color)&&item.availableColors.includes(color),'Choose an available car colour');p.vehicleColors[item.id]=color;}debit(item.price);p.inventory.push(item.id);extra.item=item;break;}
         case 'paint-vehicle':{const item=catalog.find(item=>item.id===payload.itemId&&item.category==='vehicle');check(item&&p.inventory.includes(item.id),'You can repaint a car you own',403,'vehicle_not_owned');check(vehicleColorFor(payload.color)&&item.availableColors.includes(payload.color),'Choose an available car colour');p.vehicleColors[item.id]=payload.color;extra.item=item;break;}
         case 'equip':{const item=catalog.find(item=>item.id===payload.itemId);check(item?.category==='clothing'&&p.inventory.includes(item.id),'You can wear clothing you own');p.appearance[item.slot]=item.value;break;}
-        case 'move-home':{const property=this.propertyFor(p,payload.propertyId);check(property&&(property.tier>0||property.originHome),'Choose a listed home');check(['rent','own'].includes(payload.tenure),'Choose rent or ownership');check(!property.originHome||payload.tenure==='own','Your starting home is available to move into without rent');check(p.home.propertyId!==property.id||p.home.tenure!==payload.tenure,'You already live here');check(!(payload.tenure==='rent'&&p.ownedProperties.includes(property.id)),'You already own this property; choose Move in',409,'already_owned');debit(property.originHome?0:payload.tenure==='rent'?property.rent:p.ownedProperties.includes(property.id)?0:property.buy);if(payload.tenure==='own'&&!p.ownedProperties.includes(property.id))p.ownedProperties.push(property.id);if(p.propertyInvestments[property.id]){const investment=investmentView(p,property,timestamp);p.wallet+=investment.collectable;extra.settledIncome=investment.collectable;delete p.propertyInvestments[property.id];}p.home={propertyId:property.id,layoutId:property.layoutId||property.id,name:property.name,district:property.district,tenure:property.originHome?property.gifted?'own':'starter':payload.tenure,gifted:Boolean(property.gifted),rentDueAt:payload.tenure==='rent'?timestamp+GAME_YEAR_MS:null};if(p.district===property.district){p.drivingVehicle=null;p.location={kind:'home',district:p.district,venue:'home'};}else if(p.location.kind==='home')p.location={kind:'public',district:p.district,venue:'neighbourhood'};p.billsPaidAt=timestamp;p.rentPaidAt=timestamp;break;}
+        case 'move-home':{const property=this.propertyFor(p,payload.propertyId);check(property&&(property.tier>0||property.originHome),'Choose a listed home');check(['rent','own'].includes(payload.tenure),'Choose rent or ownership');check(!property.originHome||payload.tenure==='own','Your starting home is available to move into without rent');check(p.home.propertyId!==property.id||p.home.tenure!==payload.tenure,'You already live here');check(!(payload.tenure==='rent'&&p.ownedProperties.includes(property.id)),'You already own this property; choose Move in',409,'already_owned');debit(property.originHome?0:payload.tenure==='rent'?property.rent:p.ownedProperties.includes(property.id)?0:property.buy);if(payload.tenure==='own'&&!p.ownedProperties.includes(property.id))p.ownedProperties.push(property.id);if(p.propertyInvestments[property.id]){const investment=investmentView(p,property,timestamp);p.wallet+=investment.collectable;extra.settledIncome=investment.collectable;delete p.propertyInvestments[property.id];}const previousHome=p.home;p.home={propertyId:property.id,layoutId:property.layoutId||property.id,name:property.name,district:property.district,tenure:property.originHome?property.gifted?'own':'starter':payload.tenure,gifted:Boolean(property.gifted),rentDueAt:payload.tenure==='rent'?timestamp+GAME_YEAR_MS:null,...(previousHome.starterVersion===1?{starterVersion:1,furnishingPreset:previousHome.furnishingPreset}:{}),...(previousHome.roomStyle&&(previousHome.layoutId||previousHome.propertyId)===(property.layoutId||property.id)?{roomStyle:previousHome.roomStyle}:{})};if(p.district===property.district){p.drivingVehicle=null;p.location={kind:'home',district:p.district,venue:'home'};}else if(p.location.kind==='home')p.location={kind:'public',district:p.district,venue:'neighbourhood'};p.billsPaidAt=timestamp;p.rentPaidAt=timestamp;break;}
         case 'pay-bills':{check(timestamp-p.billsPaidAt>=GAME_BILL_PERIOD_MS,'Your home bills are up to date');const property=this.propertyFor(p);check(property,'Home property not found',404);const amount=Math.round(property.bills*(100-comfort.billDiscountPercent)/100);debit(amount);p.billsPaidAt=timestamp;extra.bill={amount,baseAmount:property.bills,discountPercent:comfort.billDiscountPercent};break;}
         case 'renew-rent':{check(p.home.tenure==='rent','Your home is not rented');check(timestamp-p.rentPaidAt>=GAME_YEAR_MS,'Your rent is already paid for this game year');const property=this.propertyFor(p);check(property,'Home property not found',404);debit(property.rent);p.rentPaidAt=timestamp;p.home.rentDueAt=timestamp+GAME_YEAR_MS;break;}
         default:throw new GameError('Unknown action');
       }
       check(Number.isSafeInteger(p.wallet)&&p.wallet>=0,'This action cannot be represented as exact whole Naira',409,'numeric_limit');p.lastActionAt=timestamp;this.save(p);if(p.wallet!==before)this.run('INSERT INTO ledger VALUES(?,?,?,?,?)',uid(),id,p.wallet-before,action,timestamp);return{ok:true,profile:p,...extra};
     });this.emitUser(id,'profile',{profile:result.profile});return result;
+  }
+  sellItem(id,payload={}) {
+    const itemId=clean(payload.itemId,80),item=catalog.find(item=>item.id===itemId);
+    check(item,'Choose an item from your inventory',400,'invalid_item');
+    return this.economyOperation(id,'sell-item',payload,{itemId},(p,timestamp)=>{
+      check(!p.activeTrip,'Finish your journey before selling items',409,'trip_active');
+      check(p.inventory.includes(itemId),'You can only sell an item you own',403,'item_not_owned');
+      check(p.drivingVehicle!==itemId,'Park your car before selling it',409,'vehicle_driving');
+      const amount=systemResaleValue(item);p.wallet+=amount;
+      p.inventory=p.inventory.filter(id=>id!==itemId);delete p.furnitureLayout[itemId];p.storedFurniture=p.storedFurniture.filter(id=>id!==itemId);delete p.vehicleColors[itemId];
+      if(item.category==='clothing'&&item.slot&&p.appearance[item.slot]===item.value&&!catalog.some(other=>other.id!==itemId&&p.inventory.includes(other.id)&&other.category==='clothing'&&other.slot===item.slot&&other.value===item.value))p.appearance[item.slot]=initialAppearance[item.slot]??p.appearance[item.slot];
+      return{sale:{itemId,amount,createdAt:timestamp,virtual:true},item,ledgerReason:'System resale · '+item.name};
+    });
   }
   blocked(a,b){return Boolean(this.get("SELECT 1 FROM moderation WHERE kind='block' AND ((owner=? AND target=?) OR (owner=? AND target=?))",a,b,b,a));}
   muted(a,b){return Boolean(this.get("SELECT 1 FROM moderation WHERE kind='mute' AND owner=? AND target=?",a,b));}
@@ -391,11 +351,67 @@ export class GameStore {
   conversation(id,conversationId){const me=this.conversationAccess(id,conversationId),row=this.get('SELECT * FROM conversations WHERE id=?',conversationId),members=this.all('SELECT resident_id FROM members WHERE conversation_id=?',conversationId).map(row=>this.resident(id,row.resident_id));const visible="NOT EXISTS(SELECT 1 FROM moderation d WHERE d.kind='block' AND ((d.owner=? AND d.target=m.sender_id) OR (d.owner=m.sender_id AND d.target=?)))";const last=this.get(`SELECT m.* FROM messages m WHERE m.conversation_id=? AND ${visible} ORDER BY m.created_at DESC,m.id DESC LIMIT 1`,conversationId,id,id),unread=this.get(`SELECT count(*) n FROM messages m WHERE m.conversation_id=? AND m.sender_id<>? AND m.created_at>? AND ${visible}`,conversationId,id,me.read_at,id,id).n;return{id:row.id,kind:row.kind,name:row.kind==='dm'?(members.find(member=>member.id!==id)?.displayName||'Conversation'):row.name,members,unread,lastMessage:last?this.messageView(last):null};}
   conversations(id){return this.all('SELECT conversation_id FROM members WHERE resident_id=? ORDER BY joined_at DESC',id).map(row=>this.conversation(id,row.conversation_id)).filter(c=>c.kind!=='dm'||!c.members.some(member=>member.id!==id&&this.blocked(id,member.id)));}
   createConversation(id,body){const kind=body.kind==='group'?'group':'dm';let targets;if(kind==='dm'){const target=clean(body.residentId,80);check(target!==id,'Choose another resident');this.profile(target);check(!this.blocked(id,target),'This resident is unavailable',403);targets=[target];const existing=this.get("SELECT c.id FROM conversations c JOIN members a ON a.conversation_id=c.id JOIN members b ON b.conversation_id=c.id WHERE c.kind='dm' AND a.resident_id=? AND b.resident_id=?",id,target);if(existing)return{ok:true,conversation:this.conversation(id,existing.id)};}else{check(Array.isArray(body.memberIds)&&body.memberIds.length>=1,'Choose friends for your group');targets=[...new Set(body.memberIds)].filter(target=>target!==id);check(targets.length>0,'Choose another friend');const friends=new Set(this.friendIds(id));check(targets.every(target=>friends.has(target)),'Group members must be accepted friends');check(clean(body.name,60).length>=2,'Give your group a name');}const conversationId=uid(),timestamp=this.clock();this.transaction(()=>{this.run('INSERT INTO conversations VALUES(?,?,?,?)',conversationId,kind,kind==='group'?clean(body.name,60):'',timestamp);for(const target of [id,...targets])this.run('INSERT INTO members(conversation_id,resident_id,joined_at) VALUES(?,?,?)',conversationId,target,timestamp);});if(kind==='group')for(const target of targets)this.notify(target,'group','New group',`${this.profile(id).displayName} added you to ${clean(body.name,60)}.`,`conversation:${conversationId}`,id);return{ok:true,conversation:this.conversation(id,conversationId)};}
-  messageView(row){const members=this.all('SELECT * FROM members WHERE conversation_id=?',row.conversation_id);return{id:row.id,conversationId:row.conversation_id,senderId:row.sender_id,text:row.text,createdAt:row.created_at,deliveredTo:members.filter(m=>m.resident_id!==row.sender_id&&m.delivered_at>=row.created_at).map(m=>m.resident_id),readBy:members.filter(m=>m.resident_id!==row.sender_id&&m.read_at>=row.created_at).map(m=>m.resident_id)};}
+  messageView(row){
+    const members=this.all('SELECT * FROM members WHERE conversation_id=?',row.conversation_id),receipt=this.get('SELECT * FROM message_transfers WHERE message_id=?',row.id);
+    const transfer=receipt?{id:receipt.transfer_id,amount:receipt.amount,note:receipt.note,fromId:receipt.from_id,toId:receipt.to_id,from:receipt.from_id,to:receipt.to_id,senderId:receipt.from_id,recipientId:receipt.to_id,createdAt:receipt.created_at,senderName:receipt.sender_name,recipientName:receipt.recipient_name,virtual:true,currency:'game-naira'}:null;
+    return{id:row.id,conversationId:row.conversation_id,senderId:row.sender_id,kind:transfer?'transfer':'text',text:row.text,createdAt:row.created_at,...(transfer?{transferId:transfer.id,transfer}:{}),deliveredTo:members.filter(m=>m.resident_id!==row.sender_id&&m.delivered_at>=row.created_at).map(m=>m.resident_id),readBy:members.filter(m=>m.resident_id!==row.sender_id&&m.read_at>=row.created_at).map(m=>m.resident_id)};
+  }
   messages(id,conversationId){this.conversationAccess(id,conversationId);this.readConversation(id,conversationId);const rows=this.all('SELECT * FROM messages WHERE conversation_id=? ORDER BY created_at DESC,id DESC LIMIT 100',conversationId).reverse().filter(row=>!this.blocked(id,row.sender_id));return{ok:true,conversation:this.conversation(id,conversationId),messages:rows.map(row=>this.messageView(row))};}
-  sendMessage(id,conversationId,text){this.conversationAccess(id,conversationId);text=clean(text,4000);check(text.length>0,'Write a message first');const members=this.all('SELECT resident_id FROM members WHERE conversation_id=?',conversationId).map(row=>row.resident_id),row=this.get('SELECT kind FROM conversations WHERE id=?',conversationId);check(row.kind!=='dm'||members.every(target=>target===id||!this.blocked(id,target)),'This conversation is unavailable',403);const latest=this.get('SELECT MAX(created_at) last FROM messages WHERE conversation_id=?',conversationId).last||0;const lastRead=this.get('SELECT MAX(read_at) last FROM members WHERE conversation_id=?',conversationId).last||0;const timestamp=Math.max(this.clock(),latest+1,lastRead+1),message={id:uid(),conversation_id:conversationId,sender_id:id,text,created_at:timestamp};this.run('INSERT INTO messages VALUES(?,?,?,?,?)',message.id,conversationId,id,text,timestamp);this.run('UPDATE members SET read_at=?,delivered_at=? WHERE resident_id=? AND conversation_id=?',timestamp,timestamp,id,conversationId);for(const target of members)if(target!==id&&!this.blocked(id,target)&&this.isOnline(target))this.run('UPDATE members SET delivered_at=? WHERE resident_id=? AND conversation_id=?',timestamp,target,conversationId);const view=this.messageView(message);for(const target of members)if(!this.blocked(id,target)){this.emitUser(target,'message',view);if(target!==id)this.notify(target,'message',this.profile(id).displayName,text.slice(0,140),`conversation:${conversationId}`,id);}return{ok:true,message:view};}
+  transferConversation(id,residentId,conversationId){
+    this.conversationAccess(id,conversationId);
+    const conversation=this.get('SELECT kind FROM conversations WHERE id=?',conversationId),members=this.all('SELECT resident_id FROM members WHERE conversation_id=?',conversationId).map(row=>row.resident_id);
+    check(conversation?.kind==='dm'&&members.length===2&&members.includes(id)&&members.includes(residentId),'Choose the direct conversation with this recipient',400,'transfer_conversation_mismatch');
+  }
+  insertConversationMessage(id,conversationId,text,at=this.clock()){
+    const members=this.all('SELECT resident_id FROM members WHERE conversation_id=?',conversationId).map(row=>row.resident_id),latest=this.get('SELECT MAX(created_at) last FROM messages WHERE conversation_id=?',conversationId).last||0,lastRead=this.get('SELECT MAX(read_at) last FROM members WHERE conversation_id=?',conversationId).last||0;
+    const timestamp=Math.max(at,latest+1,lastRead+1),row={id:uid(),conversation_id:conversationId,sender_id:id,text,created_at:timestamp};
+    this.run('INSERT INTO messages VALUES(?,?,?,?,?)',row.id,conversationId,id,text,timestamp);
+    this.run('UPDATE members SET read_at=?,delivered_at=? WHERE resident_id=? AND conversation_id=?',timestamp,timestamp,id,conversationId);
+    for(const target of members)if(target!==id&&!this.blocked(id,target)&&this.isOnline(target))this.run('UPDATE members SET delivered_at=? WHERE resident_id=? AND conversation_id=?',timestamp,target,conversationId);
+    return{row,members};
+  }
+  sendMessage(id,conversationId,input,body={}){
+    if(input&&typeof input==='object'){body=input;input=input.text;}
+    this.conversationAccess(id,conversationId);
+    const text=clean(input,4000);check(text.length>0,'Write a message first');
+    const key=body.idempotencyKey;check(key===undefined||typeof key==='string'&&/^[A-Za-z0-9_-]{8,100}$/.test(key),'Use a valid message idempotency key',400,'idempotency_required');
+    const fingerprint=JSON.stringify({conversationId,text}),notices=[];let members=[],replayed=false;
+    const message=this.transaction(()=>{
+      const conversation=this.get('SELECT kind FROM conversations WHERE id=?',conversationId),targets=this.all('SELECT resident_id FROM members WHERE conversation_id=?',conversationId).map(row=>row.resident_id);
+      check(conversation.kind!=='dm'||targets.every(target=>target===id||!this.blocked(id,target)),'This conversation is unavailable',403);
+      if(key!==undefined){const prior=this.get('SELECT * FROM message_operations WHERE sender_id=? AND operation_key=?',id,key);if(prior){check(prior.fingerprint===fingerprint,'This message key was already used for different content',409,'idempotency_conflict');replayed=true;return this.messageView(this.get('SELECT * FROM messages WHERE id=?',prior.message_id));}}
+      const saved=this.insertConversationMessage(id,conversationId,text);members=saved.members;
+      if(key!==undefined)this.run('INSERT INTO message_operations VALUES(?,?,?,?,?)',id,key,fingerprint,saved.row.id,saved.row.created_at);
+      for(const target of members)if(target!==id&&!this.blocked(id,target)&&!this.muted(target,id)){
+        const notice={id:uid(),kind:'message',title:this.profile(id).displayName,body:text.slice(0,140),link:`conversation:${conversationId}`,createdAt:saved.row.created_at,readAt:null};
+        this.run('INSERT INTO notifications(id,resident_id,kind,title,body,link,created_at,read_at,sender_id) VALUES(?,?,?,?,?,?,?,NULL,?)',notice.id,target,notice.kind,notice.title,notice.body,notice.link,notice.createdAt,id);notices.push({target,notice});
+      }
+      return this.messageView(saved.row);
+    });
+    if(!replayed){for(const target of members)if(!this.blocked(id,target))this.emitUser(target,'message',message);for(const{target,notice}of notices)this.emitUser(target,'notification',notice);}
+    return{ok:true,message,replayed};
+  }
   readConversation(id,conversationId){this.conversationAccess(id,conversationId);const latest=this.get('SELECT MAX(created_at) last FROM messages WHERE conversation_id=?',conversationId).last||0;const timestamp=Math.max(this.clock(),latest);this.run('UPDATE members SET read_at=?,delivered_at=? WHERE resident_id=? AND conversation_id=?',timestamp,timestamp,id,conversationId);const receipt={conversationId,residentId:id,readAt:timestamp,receipt:true};for(const member of this.all('SELECT resident_id FROM members WHERE conversation_id=?',conversationId))if(!this.blocked(id,member.resident_id))this.emitUser(member.resident_id,'message',receipt);this.run('UPDATE notifications SET read_at=? WHERE resident_id=? AND link=? AND read_at IS NULL',timestamp,id,`conversation:${conversationId}`);return{ok:true};}
-  delivered(id){for(const row of this.all('SELECT conversation_id FROM members WHERE resident_id=?',id)){const latest=this.get('SELECT MAX(created_at) last FROM messages WHERE conversation_id=?',row.conversation_id).last||0;const timestamp=Math.max(this.clock(),latest);this.run('UPDATE members SET delivered_at=? WHERE resident_id=? AND conversation_id=?',timestamp,id,row.conversation_id);for(const member of this.all('SELECT resident_id FROM members WHERE conversation_id=?',row.conversation_id))if(member.resident_id!==id&&!this.blocked(id,member.resident_id))this.emitUser(member.resident_id,'message',{conversationId:row.conversation_id,residentId:id,deliveredAt:timestamp,receipt:true});}}
+  delivered(id,conversationId,body={}){
+    if(conversationId===undefined){for(const row of this.all('SELECT conversation_id FROM members WHERE resident_id=?',id)){const latest=this.get('SELECT MAX(created_at) last FROM messages WHERE conversation_id=?',row.conversation_id).last||0;const timestamp=Math.max(this.clock(),latest);this.run('UPDATE members SET delivered_at=MAX(delivered_at,?) WHERE resident_id=? AND conversation_id=?',timestamp,id,row.conversation_id);for(const member of this.all('SELECT resident_id FROM members WHERE conversation_id=?',row.conversation_id))if(member.resident_id!==id&&!this.blocked(id,member.resident_id))this.emitUser(member.resident_id,'message',{conversationId:row.conversation_id,residentId:id,deliveredAt:timestamp,receipt:true});}return{ok:true};}
+    const me=this.conversationAccess(id,conversationId),conversation=this.get('SELECT kind FROM conversations WHERE id=?',conversationId),members=this.all('SELECT resident_id FROM members WHERE conversation_id=?',conversationId).map(row=>row.resident_id);
+    check(conversation.kind!=='dm'||members.every(target=>target===id||!this.blocked(id,target)),'This conversation is unavailable',403);
+    const latest=this.get('SELECT MAX(created_at) last,count(*) count FROM messages WHERE conversation_id=?',conversationId),last=latest.last||0,requested=[];
+    if(body.uptoMessageId!==undefined){
+      check(typeof body.uptoMessageId==='string'&&body.uptoMessageId.length>0&&body.uptoMessageId.length<=80,'Invalid receipt watermark',400,'invalid_receipt_watermark');
+      const row=this.get('SELECT sender_id,created_at FROM messages WHERE conversation_id=? AND id=?',conversationId,body.uptoMessageId);
+      check(row&&!this.blocked(id,row.sender_id),'Invalid receipt watermark',400,'invalid_receipt_watermark');requested.push(row.created_at);
+    }
+    if(body.createdAt!==undefined){check(Number.isSafeInteger(body.createdAt)&&body.createdAt>=0&&body.createdAt<=last,'Invalid receipt watermark',400,'invalid_receipt_watermark');requested.push(body.createdAt);}
+    if(body.uptoSeq!==undefined){
+      check(Number.isSafeInteger(body.uptoSeq)&&body.uptoSeq>=0&&body.uptoSeq<=latest.count,'Invalid receipt watermark',400,'invalid_receipt_watermark');
+      const row=body.uptoSeq===0?null:this.get('SELECT created_at FROM messages WHERE conversation_id=? ORDER BY created_at,id LIMIT 1 OFFSET ?',conversationId,body.uptoSeq-1);requested.push(row?.created_at||0);
+    }
+    check(requested.every(value=>value===requested[0]),'Receipt watermarks must refer to the same message',400,'invalid_receipt_watermark');
+    const timestamp=Math.max(me.delivered_at,requested.length?requested[0]:last);
+    if(timestamp>me.delivered_at){this.run('UPDATE members SET delivered_at=MAX(delivered_at,?) WHERE resident_id=? AND conversation_id=?',timestamp,id,conversationId);for(const target of members)if(target!==id&&!this.blocked(id,target))this.emitUser(target,'message',{conversationId,residentId:id,deliveredAt:timestamp,receipt:true});}
+    return{ok:true,conversationId,deliveredAt:timestamp};
+  }
   zone(id){const p=this.profile(id);return p.location.kind==='home'?`home:${id}`:p.location.kind==='visit'?`home:${p.location.ownerId}`:p.location.kind==='venue'?`venue:${p.district}:${p.location.venue}`:p.location.kind==='public'?`district:${p.district}`:`transit:${id}`;}
   locationMessages(id){return{ok:true,messages:this.all('SELECT * FROM location_messages WHERE zone=? ORDER BY created_at DESC,id DESC LIMIT 60',this.zone(id)).reverse().filter(row=>!this.blocked(id,row.sender_id)).map(row=>({id:row.id,senderId:row.sender_id,resident:this.resident(id,row.sender_id),text:row.text,createdAt:row.created_at,zone:row.zone}))};}
   sendLocationMessage(id,text){check(['public','home','visit','venue'].includes(this.profile(id).location.kind),'Local chat is unavailable during a journey');text=clean(text,2000);check(text.length>0,'Write a message first');const message={id:uid(),senderId:id,resident:this.resident(id,id),text,createdAt:this.clock(),zone:this.zone(id)};this.run('INSERT INTO location_messages VALUES(?,?,?,?,?)',message.id,message.zone,id,text,message.createdAt);this.emitZone(id,'location-chat',message);return{ok:true,message};}

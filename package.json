@@ -5,13 +5,17 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch scripts/dev.mjs",
-    "start": "node scripts/dev.mjs --prod",
+    "start": "node src/server/production.mjs",
     "qa": "node scripts/qa.mjs && node --test tests/*.test.mjs",
     "qa:browser": "python tests/browser-smoke.py",
     "assets:build": "node scripts/vendor-three.mjs",
     "preview:build": "node scripts/vendor-three.mjs && node preview/build.mjs",
     "qa:gameplay": "python tests/gameplay-smoke.py",
-    "qa:premium": "python tests/premium-smoke.py"
+    "qa:premium": "python tests/premium-smoke.py",
+    "build": "node scripts/build-production.mjs",
+    "qa:production": "node tests/production-integration.mjs",
+    "qa:mongo": "node --test tests/mongo-*.integration.mjs",
+    "qa:infra": "node deploy/test-production.mjs"
   },
   "engines": {
     "node": ">=24"
@@ -19,5 +23,8 @@
   "devDependencies": {
     "esbuild": "0.28.2",
     "three": "0.180.0"
+  },
+  "dependencies": {
+    "mongodb": "6.21.0"
   }
 }

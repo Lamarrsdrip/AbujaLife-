@@ -1,0 +1,30 @@
+.world-canvas{position:relative;width:100%;overflow:hidden;border-radius:18px;background:#d6d8c6;isolation:isolate;line-height:0}
+.world-scene{display:block;width:100%;height:auto;aspect-ratio:1200/780;min-height:300px;overflow:visible;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.world-scene text{user-select:none}
+.world-object,.world-other{cursor:pointer;outline:none;-webkit-tap-highlight-color:transparent}
+.world-hit{fill:transparent;stroke:transparent;stroke-width:3;pointer-events:all}
+.world-object:hover>.world-hit,.world-object:focus-visible>.world-hit,.world-other:hover>.world-hit,.world-other:focus-visible>.world-hit{stroke:#f5eed6;fill:#f5eed6;fill-opacity:.07;stroke-dasharray:4 5}
+.world-affordance{opacity:0;pointer-events:none;transition:opacity .16s ease,transform .16s ease}
+.world-affordance rect{fill:#304b3c;stroke:#e8e4cc;stroke-width:1;filter:drop-shadow(0 3px 4px #273b2b22)}
+.world-affordance text{fill:#f9f1da;font-size:16px;font-weight:600;letter-spacing:.2px}
+.world-object:hover>.world-affordance,.world-object:focus-visible>.world-affordance{opacity:1}
+.world-object:active>.world-hit{fill:#f2e5b4;fill-opacity:.17}
+.world-key{position:absolute;left:17px;right:17px;bottom:15px;display:flex;align-items:center;gap:7px;color:#344e3d;font-size:11px;font-weight:650;line-height:1.2;pointer-events:none;letter-spacing:.2px}
+.world-key-dot{width:6px;height:6px;border-radius:50%;background:#42654d}
+.world-key-hint{margin-left:auto;color:#344e3dbb;font-size:10px;font-weight:500}
+.world-etched{font-size:13px;fill:#6e725b;letter-spacing:1px}
+.resident-avatar{display:block;height:auto;overflow:visible}
+.resident-avatar-full{max-height:240px}
+.world-resident .resident-figure{animation:resident-idle 5.6s ease-in-out infinite;transform-origin:100px 260px}
+.world-other:nth-of-type(2n) .resident-figure{animation-delay:-2.7s}
+.resident-name{pointer-events:none;filter:drop-shadow(0 2px 2px #26392a13)}
+.world-leaves{animation:world-leaves 9s ease-in-out infinite;transform-origin:0 -90px}
+.world-water{animation:water-light 7s ease-in-out infinite alternate}
+@keyframes resident-idle{0%,100%{transform:translateY(0) rotate(-.4deg)}50%{transform:translateY(-1.5px) rotate(.4deg)}}
+@keyframes world-leaves{0%,100%{transform:rotate(0)}50%{transform:rotate(.7deg)}}
+@keyframes water-light{from{opacity:.3}to{opacity:.53}}
+@media(max-width:600px){.world-canvas{border-radius:13px}.world-scene{min-height:285px;aspect-ratio:1.38;object-fit:cover}.world-key{left:12px;right:12px;bottom:10px;font-size:10px}.world-key-hint{font-size:9px}.world-affordance text{font-size:20px}.world-affordance rect{stroke-width:2}}
+@media(prefers-reduced-motion:reduce){.world-resident .resident-figure,.world-leaves,.world-water{animation:none}.world-affordance{transition:none}}
+
+#world-scene.world-canvas .world-key{display:none}
+#world-scene .world-portrait{min-height:440px;height:auto;aspect-ratio:auto}

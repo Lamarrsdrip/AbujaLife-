@@ -1,15 +1,17 @@
+import { GEOGRAPHY_SOURCES, SETTLEMENT_POINTS } from './geography-sources.mjs';
+
 export const AREA_COUNCILS = [
-  ['amac','Abuja Municipal','AMAC','city'],['bwari','Bwari','Bwari','hills'],['gwagwalada','Gwagwalada','Gwagwalada','campus'],['kuje','Kuje','Kuje','green'],['kwali','Kwali','Kwali','market'],['abaji','Abaji','Abaji','heritage']
-].map(([id,name,short,tone])=>({id,name,short,tone}));
+  ['amac','Abuja Municipal Area Council','AMAC','city'],['bwari','Bwari','Bwari','hills'],['gwagwalada','Gwagwalada','Gwagwalada','campus'],['kuje','Kuje','Kuje','green'],['kwali','Kwali','Kwali','market'],['abaji','Abaji','Abaji','heritage']
+].map(([id,name,short,tone])=>({id,name,short,tone,kind:'area-council',territory:'fct',verification:'official-source-pending'}));
 
 const phaseDefaults = {
   I:{rent:'high',commute:12}, II:{rent:'high',commute:17}, III:{rent:'medium',commute:25}, IV:{rent:'low',commute:42}, V:{rent:'low',commute:38}
 };
-const fcc=(id,name,phase,code,vibe='planned Abuja district')=>({id,name,council:'amac',kind:'fcc-district',phase,code,vibe,rent:phaseDefaults[phase].rent,commute:phaseDefaults[phase].commute,tags:[]});
-const town=(id,name,council,vibe,commute)=>({id,name,council,kind:'town',phase:null,code:null,vibe,rent:'varied',commute,tags:[]});
+const fcc=(id,name,phase,code,vibe='planned Abuja district')=>({id,name,council:null,territory:'fct',city:'fcc',kind:id.startsWith('sector-')?'fcc-sector':'fcc-district',phase:null,code:null,legacyAssertions:{phase,code,council:'amac'},verification:'official-source-pending',vibe,rent:phaseDefaults[phase].rent,commute:phaseDefaults[phase].commute,tags:[]});
+const town=(id,name,council,vibe,commute)=>({id,name,council,territory:'fct',city:id,kind:'town',phase:null,code:null,verification:'official-source-pending',vibe,rent:'varied',commute,tags:[],...(SETTLEMENT_POINTS[id]?{coordinates:SETTLEMENT_POINTS[id].coordinates,coordinateSource:SETTLEMENT_POINTS[id].source}: {})});
 
 const phase1=[
- ['central-area','Central Area','A00','government + business'],['garki-i','Garki I','A01','established mixed-use'],['wuse-i','Wuse I','A02','commerce + residential'],['garki-ii','Garki II','A03','dense everyday Abuja'],['asokoro','Asokoro','A04','diplomatic + premium residential'],['maitama','Maitama','A05','premium residential + diplomatic'],['maitama-ii','Maitama II','A06','premium expansion'],['wuse-ii-a07','Wuse II','A07','nightlife + restaurants + offices'],['wuse-ii-a08','Wuse II North','A08','retail + residential'],['guzape','Guzape','A09','hillside modern residential'],['maitama-extension','Maitama Extension',null,'premium expansion'],['asokoro-extension','Asokoro Extension',null,'premium expansion']
+ ['central-area','Central Area','A00','government + business'],['garki-i','Garki I','A01','established mixed-use'],['wuse-i','Wuse I','A02','commerce + residential'],['garki-ii','Garki II','A03','dense everyday Abuja'],['asokoro','Asokoro','A04','diplomatic + premium residential'],['maitama','Maitama','A05','premium residential + diplomatic'],['maitama-ii','Maitama II','A06','premium expansion'],['wuse-ii-a07','Wuse II','A07','nightlife + restaurants + offices'],['wuse-ii-a08','Wuse II','A08','retail + residential'],['guzape','Guzape','A09','hillside modern residential'],['maitama-extension','Maitama Extension',null,'premium expansion'],['asokoro-extension','Asokoro Extension',null,'premium expansion']
 ].map(([id,n,c,v])=>fcc(id,n,'I',c,v));
 
 const phase2=[
@@ -36,8 +38,21 @@ export const SATELLITE_TOWNS=[
 ];
 
 export const LANDMARKS=[
- ['aso-rock','Aso Rock','central-area','nature'],['national-mosque','National Mosque','central-area','civic'],['national-christian-centre','National Christian Centre','central-area','civic'],['national-assembly','National Assembly','central-area','civic'],['supreme-court','Supreme Court','central-area','civic'],['eagle-square','Eagle Square','central-area','event'],['millennium-park','Millennium Park','maitama','park'],['jabi-lake','Jabi Lake','jabi','recreation'],['jabi-lake-mall','Jabi Lake Mall','jabi','shopping'],['wuse-market','Wuse Market','wuse-i','market'],['utako-motor-park','Utako Motor Park','utako','transport'],['national-stadium','Moshood Abiola National Stadium','kukwaba','sport'],['international-conference-centre','International Conference Centre','central-area','event'],['city-gate','Abuja City Gate','kukwaba','civic'],['airport','Nnamdi Azikiwe International Airport','kyami','transport'],['rail-hub','Abuja Metro / Idu rail hub','idu-sabo','transport']
-].map(([id,name,district,type])=>({id,name,district,type}));
+ ['aso-rock','Aso Rock',null,'nature'],['national-mosque','National Mosque','central-area','civic'],['national-christian-centre','National Christian Centre','central-area','civic'],['national-assembly','National Assembly','central-area','civic'],['supreme-court','Supreme Court','central-area','civic'],['eagle-square','Eagle Square','central-area','event'],['millennium-park','Millennium Park','maitama','park'],['jabi-lake','Jabi Lake','jabi','recreation'],['jabi-lake-mall','Jabi Lake Mall','jabi','shopping'],['wuse-market','Wuse Market','wuse-i','market'],['utako-motor-park','Utako Motor Park','utako','transport'],['national-stadium','Moshood Abiola National Stadium','kukwaba','sport'],['international-conference-centre','International Conference Centre','central-area','event'],['city-gate','Abuja City Gate','kukwaba','civic'],['airport','Nnamdi Azikiwe International Airport',null,'transport'],['rail-hub','Idu Rail Station',null,'transport'],['abuja-metro-station','Abuja Metro Station',null,'transport']
+].map(([id,name,district,type])=>({id,name,district,type,territory:'fct',kind:'landmark',verification:'official-source-pending'}));
 
 export const ABUJA_ATLAS=[...FCC_DISTRICTS,...SATELLITE_TOWNS];
-export const ATLAS_META={title:'Abuja / FCT World Atlas',sourceModel:'FCTA/FCDA cadastral phases + Area Council/satellite-town coverage',councilCount:AREA_COUNCILS.length,locationCount:ABUJA_ATLAS.length,landmarkCount:LANDMARKS.length,note:'Formal FCC districts and commonly-used satellite towns are kept as different geography types so the game does not invent Abuja classifications.'};
+export const GEOGRAPHY_HIERARCHY=['territory','area-council','city-or-town','district-or-sector','neighbourhood','road-corridor','venue'];
+export const ATLAS_META={
+  title:'Abuja / FCT World Atlas',
+  sourceModel:'Legacy location catalogue; source-backed GeoNames settlement points; official district and council verification pending',
+  councilCount:AREA_COUNCILS.length,
+  locationCount:ABUJA_ATLAS.length,
+  landmarkCount:LANDMARKS.length,
+  sources:GEOGRAPHY_SOURCES,
+  hierarchy:GEOGRAPHY_HIERARCHY,
+  focus:SETTLEMENT_POINTS.abuja,
+  verifiedCoordinateCount:Object.values(SETTLEMENT_POINTS).length,
+  officialGeographyComplete:false,
+  note:'FCC districts, sector centres and satellite towns have separate record types. Legacy cadastral codes, phases and council assignments are retained as unverified assertions for source review, not official boundaries.'
+};

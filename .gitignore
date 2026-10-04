@@ -9,3 +9,4 @@ Thumbs.db
 .cache/
 dist/
 build/
+.local/

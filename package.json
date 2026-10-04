@@ -1,12 +1,13 @@
 {
   "name": "abujalife",
-  "version": "1.0.0-alpha.1",
+  "version": "1.0.0-alpha.2",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node scripts/dev.mjs",
+    "dev": "node --watch scripts/dev.mjs",
     "start": "node scripts/dev.mjs --prod",
-    "qa": "node scripts/qa.mjs && node --check app/app.js && node --check src/server/http.mjs && node --check src/shared/atlas.mjs && node --test tests/*.test.mjs"
+    "qa": "node scripts/qa.mjs && node --test tests/*.test.mjs",
+    "qa:browser": "python tests/browser-smoke.py"
   },
-  "engines": { "node": ">=20" }
+  "engines": { "node": ">=24" }
 }

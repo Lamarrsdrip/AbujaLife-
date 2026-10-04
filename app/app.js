@@ -1,125 +1,136 @@
-const icon = name => {
-  const map = {
-    home:'<path d="M3 11 12 4l9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
-    city:'<path d="M4 21V9l5-3v15M9 21V3l6 3v15M15 21V10l5-3v14M2 21h20"/>',
-    brief:'<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V4h8v3M3 12h18"/>',
-    phone:'<rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 18h4"/>',
-    bag:'<path d="M5 8h14l1 13H4zM9 8V6a3 3 0 0 1 6 0v2"/>',
-    map:'<path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3zM9 3v15M15 6v15"/>',
-    car:'<path d="M5 17h14l-1-6-2-3H8l-2 3zM7 17v2M17 17v2M6 13h12"/>',
-    user:'<circle cx="12" cy="8" r="4"/><path d="M4 21c1-5 4-7 8-7s7 2 8 7"/>',
-    msg:'<path d="M4 4h16v12H8l-4 4z"/>',
-    wallet:'<rect x="3" y="6" width="18" height="13" rx="3"/><path d="M15 10h6v5h-6a2 2 0 1 1 0-5"/>',
-    gear:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/>',
-    people:'<circle cx="8" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M2 20c1-5 3-7 6-7s6 2 7 7M14 14c3 0 5 2 6 6"/>'
-  };
-  return `<svg viewBox="0 0 24 24" aria-hidden="true">${map[name]||map.home}</svg>`;
-};
+import { createPhone } from './phone.js';
+import { renderWorld, avatarSVG } from './world.js';
+import { renderMap } from './map.js';
 
-let data = { profile:null, atlas:[], councils:[], landmarks:[], jobs:{} };
-let view = 'home';
-let scope = 'city';
-let council = 'all';
-let query = '';
-let modal = null;
-let toastTimer;
+const root = document.querySelector('#app');
+const sheetRoot = document.querySelector('#sheet-root');
+let state = { authenticated:false }, view = location.hash.slice(1)||'world', cleanup, stream, refreshTimer, busy=false;
+let authMode='register', selectedJob, marketFilter='all', chatMessages=[], chatOpen=false;
+let draft={skinTone:'brown',hair:'crop',top:'forest',bottom:'charcoal',shoes:'white',body:'regular',face:'oval',presentation:'neutral',facialHair:'none',accessory:'none'};
+const esc = value => String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const money = n => new Intl.NumberFormat('en-NG',{maximumFractionDigits:0}).format(Number(n||0));
+const list = value => Array.isArray(value)?value:Object.entries(value||{}).map(([id,item])=>({id,...item}));
+const place = id => state.atlas?.find(p=>p.id===id);
+const paths={world:'<path d="m3 10 9-7 9 7v11h-6v-8H9v8H3z"/>',map:'<path d="m3 5 6-2 6 3 6-2v16l-6 2-6-3-6 2zM9 3v16M15 6v16"/>',work:'<rect x="3" y="7" width="18" height="14" rx="2"/><path d="M8 7V3h8v4M3 12h18M10 12v3h4v-3"/>',phone:'<rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 18h4M10 5h4"/>',profile:'<circle cx="12" cy="8" r="4"/><path d="M4 21c0-5 3-8 8-8s8 3 8 8"/>',arrow:'<path d="M5 12h14m-6-6 6 6-6 6"/>',chat:'<path d="M3 4h18v13H9l-6 4zM7 9h10M7 13h6"/>',close:'<path d="m6 6 12 12M6 18 18 6"/>',check:'<path d="m5 12 4 4 10-10"/>',sun:'<circle cx="12" cy="12" r="4"/><path d="M12 1v2M12 21v2M1 12h2M21 12h2M4 4l2 2M18 18l2 2M4 20l2-2M18 6l2-2"/>'};
+const icon = name => `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round">${paths[name]||paths.world}</svg>`;
 
-async function api(path, opts) {
-  const res = await fetch(path,{headers:{'content-type':'application/json'},...opts});
-  const body = await res.json();
-  if (!res.ok || body.ok === false) throw new Error(body.error || 'Something went wrong');
-  return body;
+async function api(path,options={}) {
+ const opts={...options,headers:{...options.headers}};
+ if(opts.body!==undefined&&typeof opts.body!=='string')opts.body=JSON.stringify(opts.body);
+ if(opts.body!==undefined)opts.headers['content-type']='application/json';
+ const response=await fetch(path,{...opts,signal:opts.signal||AbortSignal.timeout(15000)}),body=await response.json();
+ if(!response.ok||body.ok===false){const error=new Error(body.error||'Please try again.');error.status=response.status;error.code=body.code;throw error;}
+ return body;
 }
-const money = n => new Intl.NumberFormat('en-NG',{style:'currency',currency:'NGN',maximumFractionDigits:0}).format(n||0);
-const placeById = id => data.atlas.find(x=>x.id===id);
-const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
-
-function toast(msg){clearTimeout(toastTimer);document.querySelector('.toast')?.remove();const el=document.createElement('div');el.className='toast';el.textContent=msg;document.body.appendChild(el);toastTimer=setTimeout(()=>el.remove(),2450)}
-async function act(action,payload={}){try{const r=await api('/api/action',{method:'POST',body:JSON.stringify({action,payload})});data.profile=r.profile;render();return r.profile}catch(e){toast(e.message)}}
-
-function shell(content){
-  const p=data.profile||{}; const loc=placeById(p.district);
-  return `<div class="phone-frame">
-    <header class="topbar">
-      <div class="brand"><div class="brand-mark"></div><span>AbujaLife</span></div>
-      <div class="city-chip"><i class="live-dot"></i><span>${esc(loc?.name||'Abuja')}</span></div>
-    </header>
-    ${content}
-    <nav class="bottom-nav">
-      ${nav('home','Home','home')}${nav('city','City','city')}${nav('work','Work','brief')}${nav('phone','Phone','phone')}${nav('okrika','Okrika','bag')}
-    </nav>
-    ${modalMarkup()}
-  </div>`;
+function toast(message){const el=document.querySelector('#toast');el.textContent=message;el.classList.add('visible');clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.classList.remove('visible'),4000);}
+async function refresh({render=true}={}){state=await api('/api/bootstrap');if(render)renderMain();phone.render();return state;}
+const phone=createPhone({root:document.querySelector('#phone-root'),getState:()=>state,api,onUpdate:refresh,onNavigate:navigate,toast});
+function navigate(destination,details={}){
+ if(!['world','map','work','market','property','profile'].includes(destination))destination='world';
+ if(details.jobId)selectedJob=details.jobId;
+ phone.close();closeSheet();view=destination;
+ if(location.hash!==`#${view}`)history.pushState({view},'',`#${view}`);
+ renderMain();
 }
-function nav(id,label,ic){return `<button class="nav-btn ${view===id?'active':''}" data-view="${id}">${icon(ic)}<span>${label}</span></button>`}
-
-function home(){
-  const p=data.profile; const loc=placeById(p.district);
-  const now=new Date();
-  return shell(`<main class="screen">
-    <div class="hero-strip">
-      <div><div class="time">${now.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</div><div class="weather">Abuja • warm daylight • your day is moving</div></div>
-      <div class="wallet"><div><small>Abuja Naira</small><strong>${money(p.wallet)}</strong></div><button class="plus" data-modal="topup">+</button></div>
-    </div>
-    <section class="world-card">
-      <div class="skyline"></div>
-      <div class="location-pill">${esc(loc?.name||'Abuja')}<small>${esc(p.home)} • Reputation ${p.reputation}</small></div>
-      <div class="room"><div class="floor"></div><div class="wall-a"></div><div class="wall-b"></div><div class="window"></div><div class="rug"></div><div class="bed"></div><div class="sofa"></div><div class="table"></div><div class="kitchen"></div><div class="plant"></div><div class="tv"></div></div>
-      <div class="avatar-wrap"><div class="avatar"><div class="hair"></div><div class="head"></div><div class="body"></div><div class="leg l"><div class="shoe"></div></div><div class="leg r"><div class="shoe"></div></div></div></div>
-      <button class="object-chip sleep-chip" data-action="sleep"><span>●</span>Sleep</button>
-      <button class="object-chip shower-chip" data-action="shower"><span>●</span>Shower</button>
-      <button class="object-chip eat-chip" data-action="eat"><span>●</span>Eat ₦2,200</button>
-      <div class="ambient-card"><div class="ambient-icon">◌</div><div class="ambient-copy"><strong>Abuja is alive around you</strong>Traffic is building toward Wuse and the city centre. Jabi gets busier after work.</div></div>
-    </section>
-    ${needs(p)}
-  </main>`);
+addEventListener('popstate',()=>{view=location.hash.slice(1)||'world';phone.close();closeSheet();renderMain();});
+addEventListener('keydown',event=>{if(event.key==='Escape')closeSheet();});
+function connectRealtime(){
+ stream?.close();if(!state.authenticated)return;stream=new EventSource('/api/realtime');
+ for(const type of ['ready','presence','location-chat','typing','message','notification','invitation','profile','receipt'])stream.addEventListener(type,event=>{
+  let data;try{data=JSON.parse(event.data);}catch{return;}phone.handleEvent(type,data);
+  if(type==='location-chat'){chatMessages.push(data.message||data);chatMessages=chatMessages.slice(-60);if(chatOpen)renderChat();}
+  if(['presence','profile','message','notification','invitation','receipt'].includes(type)){
+   clearTimeout(refreshTimer);refreshTimer=setTimeout(()=>refresh({render:!document.querySelector('.sheet')&&!root.contains(document.activeElement)}).catch(()=>{}),250);
+  }
+ });
+ stream.onopen=()=>{document.documentElement.dataset.connection='online';};stream.onerror=()=>{document.documentElement.dataset.connection='reconnecting';};
 }
-function needs(p){const arr=[['Energy',p.energy],['Food',p.hunger],['Clean',p.hygiene],['Social',p.social]];return `<section class="needs"><div class="needs-head"><strong>Your day</strong><span>Mood ${p.mood}%</span></div><div class="need-grid">${arr.map(([n,v])=>`<div class="need"><label>${n}</label><div class="bar ${v<35?'low':''}"><i style="width:${v}%"></i></div></div>`).join('')}</div></section>`}
-
-function city(){
-  const inScope = p => scope==='city' ? p.kind==='fcc-district' : p.kind==='town';
-  const filtered=data.atlas.filter(p=>inScope(p)&&(scope==='city'||council==='all'||p.council===council)&&(!query||`${p.name} ${p.vibe} ${p.code||''}`.toLowerCase().includes(query.toLowerCase()))).slice(0,90);
-  return shell(`<main class="screen">
-    <section class="city-hero"><h1>${scope==='city'?'Abuja City.':'Greater FCT.'}<br>One connected life.</h1><p>${scope==='city'?'The Federal Capital City is the heart of Abuja: its phases, districts, sector centres and everyday neighbourhoods.':'Satellite towns and Area Councils sit outside the FCC core but remain connected to work, family, trade and travel.'}</p></section>
-    <div class="scope-switch"><button class="filter-chip ${scope==='city'?'active':''}" data-scope="city">Abuja City</button><button class="filter-chip ${scope==='fct'?'active':''}" data-scope="fct">Greater FCT</button></div>
-    ${scope==='fct'?`<div class="council-row"><button class="filter-chip ${council==='all'?'active':''}" data-council="all">All councils</button>${data.councils.map(c=>`<button class="filter-chip ${council===c.id?'active':''}" data-council="${c.id}">${esc(c.short)}</button>`).join('')}</div>`:''}
-    <input class="searchbox" id="placeSearch" placeholder="${scope==='city'?'Search Wuse, Garki, Maitama, Jabi, Gwarinpa…':'Search Kubwa, Kuje, Gwagwalada, Bwari, Abaji…'}" value="${esc(query)}" />
-    <h2 class="section-title">${filtered.length} ${scope==='city'?'city places':'FCT places'}</h2><p class="section-sub">${scope==='city'?'FCC geography stays separate from satellite towns so Abuja never becomes a random list of FCT names.':'The wider territory is available for commuting, family, businesses, events and expansion without pretending every FCT town is an Abuja city district.'}</p>
-    <div class="place-list">${filtered.map(placeCard).join('')}</div>
-  </main>`);
+async function action(name,payload={}){
+ if(busy)return;busy=true;
+ try{const result=await api('/api/action',{method:'POST',body:{action:name,payload}});if(result.profile)state.profile=result.profile;await refresh();return result;}
+ catch(error){toast(error.message);return null;}finally{busy=false;}
 }
-function placeCard(p){const here=p.id===data.profile.district;return `<article class="place-card"><div class="place-art"></div><div class="place-main"><strong>${esc(p.name)}</strong><span>${esc(p.vibe)}${p.phase?` • Phase ${p.phase}`:''}${p.code?` • ${p.code}`:''}</span></div><div class="place-meta">${p.commute} min${here?'<div style="color:#0d8a5c;font-weight:900;margin-top:6px">YOU ARE HERE</div>':`<button class="travel-btn" data-travel="${p.id}">Travel</button>`}</div></article>`}
-
-function work(){
-  const p=data.profile;
-  return shell(`<main class="screen"><h1 class="section-title">Build a life</h1><p class="section-sub">Work is not a tap-to-win button. Jobs have districts, energy cost, pay and progression. Businesses and contracts plug into the same economy later.</p><div class="cards">${Object.entries(data.jobs).map(([id,j])=>`<article class="glass-card job-card"><div><span class="job-tag">${esc(j.skill)} • ${esc(placeById(j.district)?.name||'Abuja')}</span><div class="job-title">${esc(j.title)}</div><div class="job-sub">Shift energy ${j.energy}% • pays after completing work</div></div><div><div class="job-pay">${money(j.pay)}</div>${p.job===id?`<button class="job-action" data-work="1">Work shift</button>`:`<button class="job-action secondary" data-job="${id}">Take job</button>`}</div></article>`).join('')}</div><div class="glass-card" style="margin-top:10px"><strong>Current path</strong><div class="tiny-line"></div><div style="font-size:11px;color:var(--muted)">${p.job?`You are working as ${esc(data.jobs[p.job]?.title)}. Earn reputation, unlock higher roles, then choose employment or your own business.`:'You are currently between jobs. Pick work that fits the life you want.'}</div></div></main>`)
+let previousFocus;
+function openSheet(content){
+ previousFocus=document.activeElement;
+ sheetRoot.innerHTML=`<div class="sheet-backdrop"><section class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title"><button class="sheet-close icon-button" data-close aria-label="Close">${icon('close')}</button>${content}</section></div>`;
+ sheetRoot.querySelector('[data-close]').onclick=closeSheet;
+ sheetRoot.querySelector('.sheet-backdrop').onclick=e=>{if(e.target.classList.contains('sheet-backdrop'))closeSheet();};
+ sheetRoot.querySelector('button:not([data-close]),input,select')?.focus();
+ sheetRoot.querySelector('.sheet').onkeydown=e=>{if(e.key!=='Tab')return;const controls=[...sheetRoot.querySelectorAll('button,input,select,textarea,a[href]')].filter(el=>!el.disabled);if(e.shiftKey&&document.activeElement===controls[0]){e.preventDefault();controls.at(-1)?.focus();}else if(!e.shiftKey&&document.activeElement===controls.at(-1)){e.preventDefault();controls[0]?.focus();}};
 }
-
-function phone(){return shell(`<main class="screen"><section class="phone-shell"><div class="phone-top"><strong>Your Phone</strong><span>AbujaLife OS</span></div><div class="app-grid">${phoneApp('map','Map')}${phoneApp('brief','Jobs')}${phoneApp('car','Transport')}${phoneApp('home','Property')}${phoneApp('bag','City Market')}${phoneApp('people','Friends')}${phoneApp('msg','Messages')}${phoneApp('wallet','Wallet')}${phoneApp('gear','Settings')}</div></section><h2 class="section-title">Tonight in Abuja</h2><p class="section-sub">Phone apps become the control centre for work, rides, social life, homes and businesses without covering the world in floating UI.</p><div class="glass-card"><strong>Nearby friends</strong><div class="tiny-line"></div><div style="display:flex;gap:8px"><div class="filter-chip active">Tunde • Wuse II</div><div class="filter-chip">Zara • Jabi</div><div class="filter-chip">Amaka • Garki</div></div></div></main>`)}
-function phoneApp(ic,label){return `<div class="phone-app"><div class="app-icon">${icon(ic)}</div><span>${label}</span></div>`}
-
-function okrika(){return shell(`<main class="screen"><section class="market-hero"><div><h2>Okrika, in real life.</h2><p>Discover actual items around Abuja without confusing real commerce with AbujaLife game money.</p></div><div class="market-visual"></div></section><div class="market-note"><strong>Two economies, one audience.</strong><br>Abuja Naira buys virtual game items. Okrika listings use real-world checkout. The game can send demand to Okrika without turning AbujaLife into an ad.</div><h2 class="section-title">Around Abuja</h2><div class="listing-grid">${listing('iPhone 15 Pro','Wuse II','₦920,000')}${listing('Clean sofa set','Gwarinpa','₦180,000')}${listing('Nike trainers','Jabi','₦42,000')}${listing('Dining set','Lokogoma','₦135,000')}</div></main>`)}
-function listing(n,l,p){return `<article class="listing"><div class="listing-img"></div><div class="listing-body"><strong>${n}</strong><span>${l} • real listing</span><span class="listing-price">${p}</span></div></article>`}
-
-function modalMarkup(){if(modal!=='topup')return '';return `<div class="modal-backdrop"><section class="modal"><h2>Add Abuja Naira</h2><p>This demo simulates server-verified digital currency. Production iOS uses Apple IAP, Android uses Play Billing, and web uses approved web payments.</p><div class="topup-grid">${[10000,25000,50000,100000].map(n=>`<button class="money-pack" data-topup="${n}"><strong>${money(n)}</strong><span>game money pack</span></button>`).join('')}</div><button class="close-btn" data-close>Close</button></section></div>`}
-
-function render(){
-  const fn={home,city,work,phone,okrika}[view]||home;
-  document.getElementById('app').innerHTML=fn();
-  bind();
+function closeSheet(){sheetRoot.innerHTML='';chatOpen=false;if(previousFocus?.isConnected)previousFocus.focus();}
+const appearanceOptions={skinTone:[['deep','Deep'],['brown','Brown'],['warm','Warm'],['light','Light']],hair:[['crop','Low cut'],['afro','Afro'],['locs','Locs'],['braids','Braids'],['bald','Shaved']],top:[['forest','Forest tee'],['ochre','Ochre tee'],['cream','Cream shirt'],['navy','Navy shirt'],['agbada','Agbada']],body:[['regular','Regular'],['slim','Slim'],['broad','Broad']],face:[['oval','Oval'],['round','Round'],['angular','Angular']],presentation:[['neutral','Your style'],['feminine','Feminine'],['masculine','Masculine']],facialHair:[['none','Clean shaven'],['beard','Beard']],bottom:[['charcoal','Charcoal'],['denim','Denim'],['cream','Cream']],shoes:[['white','White trainers'],['black','Black shoes']],accessory:[['none','None'],['glasses','Glasses']]};
+function appearanceFields(appearance,compact=false){const paid={cream:'linen-shirt',navy:'office-shirt',agbada:'traditional-set'};return Object.entries(appearanceOptions).filter(([key])=>!compact||['skinTone','hair','top'].includes(key)).map(([key,options])=>`<label>${({skinTone:'Skin tone',top:'Outfit',facialHair:'Facial hair',bottom:'Trousers',presentation:'Presentation'})[key]||key[0].toUpperCase()+key.slice(1)}<select name="${key}" data-appearance>${options.map(([value,label])=>{const locked=key==='top'&&paid[value]&&!state.profile?.inventory?.includes(paid[value]);return `<option value="${value}" ${appearance[key]===value?'selected':''} ${locked?'disabled':''}>${label}${locked?' · City Market':''}</option>`;}).join('')}</select></label>`).join('');}
+function renderAuth(){
+ root.innerHTML=`<main class="welcome"><div class="welcome-art"><div class="welcome-brand">Abuja<span>Life</span><i></i></div><div id="welcome-scene"></div><div class="welcome-title"><span class="eyebrow">YOUR CITY. YOUR PEOPLE.</span><h1>A life<br>of your own.</h1><p>Make Abuja home.</p></div><div class="welcome-geography">Abuja, Federal Capital Territory · Nigeria</div></div><section class="welcome-form"><div class="auth-switch"><button data-mode="register" class="${authMode==='register'?'active':''}">Create a resident</button><button data-mode="login" class="${authMode==='login'?'active':''}">Sign in</button></div><h2>${authMode==='register'?'Start your next chapter.':'Welcome home.'}</h2><form id="auth-form"><div class="auth-portrait">${avatarSVG(draft,{size:145,fullBody:true})}</div>${authMode==='register'?'<label>Your name<input name="displayName" required maxlength="40" autocomplete="nickname" placeholder="What should people call you?"></label>':''}<label>Username<input name="username" required minlength="3" maxlength="24" pattern="[A-Za-z0-9_]+" autocomplete="username" placeholder="e.g. zara_abuja" autocapitalize="none"></label><label>Password<input name="password" type="password" required minlength="8" autocomplete="${authMode==='register'?'new-password':'current-password'}" placeholder="At least 8 characters"></label>${authMode==='register'?`<div class="appearance-fields compact">${appearanceFields(draft,true)}</div>`:''}<p class="form-error" id="auth-error" role="alert"></p><button type="submit" class="primary auth-submit">${authMode==='register'?'Begin your life':'Sign in'}${icon('arrow')}</button><p class="auth-note">Your progress saves as you play. Abuja Naira is virtual game money.</p></form></section></main>`;
+ cleanup=renderWorld(document.querySelector('#welcome-scene'),{profile:{appearance:draft,location:{kind:'home'},home:{name:'Garki starter studio'}},place:{id:'garki-i',name:'Garki I'},people:[],onInteract:()=>{},onResident:()=>{}});
+ root.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{authMode=b.dataset.mode;renderMain();});
+ root.querySelectorAll('[data-appearance]').forEach(s=>s.onchange=()=>{draft[s.name]=s.value;root.querySelector('.auth-portrait').innerHTML=avatarSVG(draft,{size:145,fullBody:true});});
+ document.querySelector('#auth-form').onsubmit=async e=>{e.preventDefault();const form=e.currentTarget,submit=form.querySelector('[type=submit]');submit.disabled=true;const values=Object.fromEntries(new FormData(form));if(authMode==='register')values.appearance=draft;try{state=await api(`/api/auth/${authMode}`,{method:'POST',body:values});view='world';renderMain();connectRealtime();toast('Welcome home.');}catch(error){document.querySelector('#auth-error').textContent=error.message;submit.disabled=false;}};
 }
-function bind(){
-  document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{view=b.dataset.view;render()});
-  document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>act(b.dataset.action));
-  document.querySelectorAll('[data-scope]').forEach(b=>b.onclick=()=>{scope=b.dataset.scope;council='all';query='';render()});
-  document.querySelectorAll('[data-council]').forEach(b=>b.onclick=()=>{council=b.dataset.council;render()});
-  document.querySelectorAll('[data-travel]').forEach(b=>b.onclick=async()=>{await act('travel',{district:b.dataset.travel});toast(`Arrived in ${placeById(b.dataset.travel)?.name}`)});
-  document.querySelectorAll('[data-job]').forEach(b=>b.onclick=async()=>{await act('take-job',{jobId:b.dataset.job});toast('Job accepted')});
-  document.querySelectorAll('[data-work]').forEach(b=>b.onclick=async()=>{await act('work-shift');toast('Shift complete — you got paid')});
-  document.querySelectorAll('[data-modal]').forEach(b=>b.onclick=()=>{modal=b.dataset.modal;render()});
-  document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>{modal=null;render()});
-  document.querySelectorAll('[data-topup]').forEach(b=>b.onclick=async()=>{const amount=Number(b.dataset.topup);await act('topup',{amount,verified:true,receipt:`demo-${Date.now()}-${amount}`});modal=null;render();toast(`${money(amount)} added`)});
-  const s=document.querySelector('#placeSearch');if(s)s.oninput=e=>{query=e.target.value;render()};
+function header(){const p=state.profile,loc=place(p.district);return `<header class="game-header"><a href="#world" class="wordmark" data-view="world" aria-label="AbujaLife home">Abuja<span>Life</span><i></i></a><div class="header-place">${esc(loc?.name||'Abuja')}<span>${p.location?.kind==='home'?'At home':'Out in the city'}</span></div><button class="wallet-button" data-phone="wallet" aria-label="Open wallet"><span>ABUJA NAIRA</span><strong>₦${money(p.wallet)}</strong></button><button class="resident-button" data-view="profile" aria-label="Your resident profile">${avatarSVG(p.appearance,{size:40})}</button></header>`;}
+function nav(){const unread=list(state.conversations).reduce((n,c)=>n+Number(c.unread||0),0)+list(state.notifications).filter(n=>!n.readAt&&!n.read).length;return `<nav class="game-nav" aria-label="Game navigation">${[['world','Home'],['map','Explore'],['work','Work']].map(([id,label])=>`<button data-view="${id}" class="${view===id?'active':''}" ${view===id?'aria-current="page"':''}>${icon(id)}<span>${label}</span></button>`).join('')}<button data-phone="home" class="phone-launch">${icon('phone')}<span>Phone</span>${unread?`<i class="nav-badge">${unread}</i>`:''}</button></nav>`;}
+function renderMain(){
+ cleanup?.();cleanup=undefined;if(!state.authenticated){renderAuth();return;}
+ if(!['world','map','work','market','property','profile'].includes(view))view='world';
+ root.innerHTML=`<div class="game-shell">${header()}<main class="game-content view-${view}">${({world:worldMarkup,map:mapMarkup,work:workMarkup,market:marketMarkup,property:propertyMarkup,profile:profileMarkup})[view]()}</main>${nav()}</div>`;
+ root.querySelectorAll('[data-view]').forEach(b=>b.onclick=e=>{e.preventDefault();navigate(b.dataset.view);});root.querySelectorAll('[data-phone]').forEach(b=>b.onclick=()=>phone.open(b.dataset.phone==='home'?undefined:b.dataset.phone));
+ ({world:bindWorld,map:bindMap,work:bindWork,market:bindMarket,property:bindProperties,profile:bindProfile})[view]();
 }
-
-(async()=>{try{data=await api('/api/bootstrap');render()}catch(e){document.getElementById('app').innerHTML=`<div class="phone-frame"><div class="empty"><h2>AbujaLife could not start</h2><p>${esc(e.message)}</p></div></div>`}})();
+function worldMarkup(){const p=state.profile,atHome=p.location?.kind==='home',loc=place(p.district);return `<div class="scene-heading"><div><span class="eyebrow">${atHome?'YOUR PLACE':esc(loc?.vibe||'OUT IN ABUJA')}</span><h1>${atHome?esc(p.home?.name||'Your home'):esc(loc?.name||'Abuja')}</h1></div><button class="quiet-button" data-day>${icon('sun')}<span>Mood ${p.mood}%</span></button></div><section class="world-stage" aria-label="Your playable location"><div id="world-scene"></div>${p.activeTrip?tripMarkup(p.activeTrip):''}<div class="scene-caption"><span>${atHome?'A little space to call your own.':'There’s a whole life out here.'}</span><button class="icon-button" data-chat aria-label="Nearby residents and chat">${icon('chat')}</button></div></section><div class="world-footer"><div class="status-summary"><i class="state-dot"></i><span>${atHome?'Home is where the day begins.':`${list(state.nearby).length} residents nearby`}</span></div><button class="text-button" id="world-door">${atHome?'Head into the city':'Go home'}${icon('arrow')}</button></div>`;}
+function tripMarkup(trip){return `<div class="trip-banner" role="status"><span class="eyebrow">ON THE WAY · ${esc(trip.mode)}</span><strong>${esc(place(trip.destination)?.name||trip.destination)}</strong><span data-trip-countdown>Arriving soon</span><button class="primary" data-arrive disabled>Arrive</button></div>`;}
+function bindWorld(){
+ const p=state.profile;cleanup=renderWorld(document.querySelector('#world-scene'),{profile:p,place:place(p.district),people:list(state.nearby),onInteract:interact,onResident:residentSheet});
+ document.querySelector('[data-day]').onclick=()=>openSheet(`<span class="eyebrow">YOUR DAY</span><h2 id="sheet-title">How you’re doing</h2><div class="daily-needs">${[['Energy','energy'],['Food','hunger'],['Cleanliness','hygiene'],['Social','social'],['Fun','fun'],['Stress','stress']].map(([label,key])=>`<div><label>${label}<span>${p[key]??0}%</span></label><progress max="100" value="${p[key]??0}" aria-label="${label}"></progress></div>`).join('')}</div><p class="muted">Rest at home, get something to eat, or spend time in the city. Find a rhythm that works for you.</p>`);
+ document.querySelector('[data-chat]').onclick=openLocalChat;
+ document.querySelector('#world-door').onclick=()=>{if(p.location?.kind==='home'){navigate('map');return;}if(p.district===p.home.district){action('enter-home');return;}travelSheet(p.home.district,true);};
+ if(p.activeTrip)bindTrip(p.activeTrip);
+}
+function bindTrip(trip){const update=()=>{const left=Math.max(0,Math.ceil((Number(trip.arrivesAt)-Date.now())/1000));const el=root.querySelector('[data-trip-countdown]'),button=root.querySelector('[data-arrive]');if(el&&button){el.textContent=left?`${left}s to go`:'You’ve arrived';button.disabled=left>0;}};update();const timer=setInterval(update,250),previous=cleanup;cleanup=()=>{clearInterval(timer);previous?.();};root.querySelector('[data-arrive]').onclick=async()=>{if(await action('arrive',{tripId:trip.id}))toast('You’ve arrived.');};}
+function interact(name){
+ if(name==='wardrobe'){navigate('profile');return;}if(['leave-home','enter-home'].includes(name)){action(name);return;}
+ const info={eat:['In the kitchen','Make a meal','A warm plate and a little time to yourself.','₦1,200'],sleep:['In the bedroom','Get some rest','Put your feet up and recharge.','Free'],shower:['In the bathroom','Freshen up','A shower makes a difference to your day.','Free'],relax:['On the sofa','Take a breather','Switch off for a moment.','Free'],hangout:['Out in the city','Spend time out','Enjoy the neighbourhood. Invite a friend from your phone.','₦2,400'],exercise:['In the fresh air','Go for a run','Clear your head and get moving.','₦800'],cinema:['An evening out','Watch a film','A little escape from your usual day.','₦3,800']}[name];if(!info)return;
+ const cost=state.activities?.[name]?.cost;const costLabel=cost===undefined?info[3]:cost===0?'Free':`₦${money(cost)}`;
+ openSheet(`<span class="eyebrow">${info[0]}</span><h2 id="sheet-title">${info[1]}</h2><p class="muted">${info[2]}</p><div class="detail-line"><span>Virtual cost</span><strong>${costLabel}</strong></div><button class="primary full" id="confirm-interaction">${info[1]}${icon('arrow')}</button>`);
+ document.querySelector('#confirm-interaction').onclick=async()=>{if(await action(name)){closeSheet();toast('A little better than before.');}};
+}
+function mapMarkup(){return `<div class="page-heading"><span class="eyebrow">ABUJA & THE WIDER FCT</span><h1>Find your next place.</h1><p>City districts, satellite towns, and six Area Councils.</p></div><section class="map-stage" id="map-root" aria-label="Abuja map"></section>`;}
+function bindMap(){cleanup=renderMap(document.querySelector('#map-root'),{atlas:state.atlas,profile:state.profile,onSelect:()=>{},onTravel:id=>travelSheet(typeof id==='string'?id:id.id)});}
+function travelSheet(district,returningHome=false){
+ const destination=place(district);if(!destination)return;
+ openSheet(`<span class="eyebrow">GETTING AROUND</span><h2 id="sheet-title">${esc(destination.name)}</h2><p class="muted">${esc(destination.vibe||'Make your way across Abuja.')}</p><form id="travel-form"><label>How are you going?<select name="mode">${list(state.transportModes).map(mode=>`<option value="${esc(mode.id||mode.mode)}" ${mode.id==='bus'?'selected':''} ${mode.id==='walk'&&district!==state.profile.district||mode.id==='car'&&!state.profile.inventory.includes('compact-car')?'disabled':''}>${esc(mode.name||mode.label||mode.id)}</option>`).join('')||'<option value="bus">Bus</option><option value="taxi">Taxi</option><option value="ride">Ride-hailing</option>'}</select></label><div class="detail-line" id="travel-quote" aria-live="polite">Checking your fare…</div><p class="muted">Fares use virtual Abuja Naira. Travel time is compressed for gameplay.</p><button class="primary full" type="submit" disabled>Start journey${icon('arrow')}</button></form>`);
+ const form=document.querySelector('#travel-form');let quoteSequence=0;
+ const getQuote=async()=>{const sequence=++quoteSequence;form.querySelector('[type=submit]').disabled=true;try{const result=await api(`/api/travel/quote?district=${encodeURIComponent(district)}&mode=${encodeURIComponent(form.elements.mode.value)}`);if(sequence!==quoteSequence||!form.isConnected)return;form.querySelector('#travel-quote').innerHTML=`<span>${result.quote.seconds}s journey</span><strong>₦${money(result.quote.cost)}</strong>`;form.querySelector('[type=submit]').disabled=false;}catch(error){if(form.isConnected)form.querySelector('#travel-quote').textContent=error.message;}};
+ form.elements.mode.onchange=getQuote;getQuote();
+ document.querySelector('#travel-form').onsubmit=async e=>{e.preventDefault();if(await action(returningHome?'return-home':'travel',{district,mode:new FormData(e.currentTarget).get('mode')})){closeSheet();navigate('world');toast('Your journey has started.');}};
+}
+function workMarkup(){
+ const p=state.profile,jobs=list(state.jobs),current=jobs.find(j=>j.id===(selectedJob||p.job)),challenge=state.activeChallenge||p.activeChallenge;
+ return `<div class="page-heading"><span class="eyebrow">MAKE YOUR WAY</span><h1>A good day’s work.</h1><p>Choose your path. Learn on the job. Build a reputation.</p></div>${challenge?`<section class="work-challenge"><span class="eyebrow">ON YOUR SHIFT</span><h2>${esc(challenge.title||'Your shift')}</h2><form id="shift-form">${(challenge.tasks||[]).map((task,index)=>`<fieldset><legend><span>${index+1}</span>${esc(task.prompt)}</legend>${task.options.map(option=>`<label class="task-option"><input type="radio" name="${esc(task.id)}" value="${esc(option.id)}" required><span>${esc(option.label)}</span></label>`).join('')}</fieldset>`).join('')}<button class="primary full" type="submit">Finish your shift${icon('check')}</button></form></section>`:`<div class="job-list">${jobs.map(job=>`<button class="job-row ${job.id===p.job?'chosen':''}" data-job="${esc(job.id)}"><span class="job-monogram">${esc((job.skill||job.title||'J').slice(0,1))}</span><span><strong>${esc(job.title)}</strong><small>${esc(place(job.district)?.name||'Abuja')} · ${esc(job.skill||'Career')}${job.id===p.job?' · Your job':''}</small></span><span class="job-salary">₦${money(job.pay)}<small>per shift</small></span>${icon('arrow')}</button>`).join('')}</div>${current?`<section class="job-detail"><span class="eyebrow">${esc(current.skill||'YOUR NEXT CHAPTER')}</span><h2>${esc(current.title)}</h2><p class="muted">Work in ${esc(place(current.district)?.name||'Abuja')}. Each shift brings a few real decisions and a chance to improve.</p><div class="detail-line"><span>Shift pay</span><strong>₦${money(current.pay)}</strong></div><div class="detail-line"><span>Energy needed</span><strong>${current.energy}%</strong></div>${p.job===current.id?`<button class="primary full" data-start-shift>${p.district!==current.district?'Travel to work':p.location?.kind==='home'?'Step outside to work':'Begin your shift'}${icon('arrow')}</button>`:`<button class="primary full" data-take-job="${esc(current.id)}">Take this job${icon('arrow')}</button>`}</section>`:''}`}`;
+}
+function bindWork(){
+ root.querySelectorAll('[data-job]').forEach(b=>b.onclick=()=>{selectedJob=b.dataset.job;renderMain();});root.querySelector('[data-take-job]')?.addEventListener('click',async e=>{if(await action('take-job',{jobId:e.currentTarget.dataset.takeJob}))toast('Your new chapter starts here.');});
+ root.querySelector('[data-start-shift]')?.addEventListener('click',async()=>{const job=list(state.jobs).find(j=>j.id===state.profile.job);if(state.profile.district!==job.district){travelSheet(job.district);return;}if(state.profile.location?.kind==='home'){await action('leave-home');toast('You’re outside. Begin your shift when you’re ready.');return;}await action('start-shift');});
+ root.querySelector('#shift-form')?.addEventListener('submit',async e=>{e.preventDefault();const challenge=state.activeChallenge||state.profile.activeChallenge,answers=[...new FormData(e.currentTarget)].map(([taskId,optionId])=>({taskId,optionId})),before=state.profile.wallet;if(await action('complete-shift',{challengeId:challenge.id,answers}))toast(`Shift complete. ₦${money(state.profile.wallet-before)} earned.`);});
+}
+function marketMarkup(){const items=list(state.catalog).filter(i=>marketFilter==='all'||i.category===marketFilter),categories=[...new Set(list(state.catalog).map(i=>i.category))];return `<div class="page-heading"><span class="eyebrow">CITY MARKET</span><h1>A little more you.</h1><p>Clothes, furniture, and things for your life. All virtual, all bought with Abuja Naira.</p></div><div class="filter-row">${['all',...categories].map(c=>`<button data-filter="${esc(c)}" class="${marketFilter===c?'active':''}">${esc(c)}</button>`).join('')}</div><div class="market-list">${items.map(i=>`<article class="market-row"><div class="item-symbol">${icon(i.category==='clothing'?'profile':i.category==='vehicle'?'map':'world')}</div><div><span class="eyebrow">${esc(i.category)}</span><h2>${esc(i.name)}</h2><p>${esc(i.description||'')}</p><strong>₦${money(i.price)}</strong></div><button class="secondary" data-purchase="${esc(i.id)}" ${state.profile.inventory?.includes(i.id)?'disabled':''}>${state.profile.inventory?.includes(i.id)?'Owned':'Buy'}</button></article>`).join('')}</div>`;}
+function bindMarket(){root.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{marketFilter=b.dataset.filter;renderMain();});root.querySelectorAll('[data-purchase]').forEach(b=>b.onclick=async()=>{if(await action('purchase',{itemId:b.dataset.purchase}))toast('It’s yours.');});}
+function propertyMarkup(){return `<div class="page-heading"><span class="eyebrow">A PLACE IN THE CITY</span><h1>Make yourself at home.</h1><p>Start small. Find a neighbourhood that suits your life.</p></div><div class="property-list">${list(state.properties).map(h=>`<article class="property-row"><div class="property-number">${esc((place(h.district)?.name||'Abuja').slice(0,1))}</div><div><span class="eyebrow">${esc(place(h.district)?.name||'Abuja')}</span><h2>${esc(h.name)}</h2><p>${esc(h.description||'')}</p><small>Rent ₦${money(h.rent)} · Buy ₦${money(h.price||h.buy)}</small></div><button class="secondary" data-property="${esc(h.id)}">${state.profile.home?.propertyId===h.id?'Your home':'View'}</button></article>`).join('')}</div>`;}
+function bindProperties(){root.querySelectorAll('[data-property]').forEach(b=>b.onclick=()=>{const h=list(state.properties).find(h=>h.id===b.dataset.property);openSheet(`<span class="eyebrow">${esc(place(h.district)?.name||'Abuja')}</span><h2 id="sheet-title">${esc(h.name)}</h2><p class="muted">${esc(h.description||'A new place to call your own.')}</p><div class="detail-line"><span>Rental</span><strong>₦${money(h.rent)}</strong></div><div class="detail-line"><span>Ownership</span><strong>₦${money(h.price||h.buy)}</strong></div><div class="button-pair"><button class="secondary" data-move="rent">Rent</button><button class="primary" data-move="own">Buy</button></div>`);sheetRoot.querySelectorAll('[data-move]').forEach(btn=>btn.onclick=async()=>{if(await action('move-home',{propertyId:h.id,tenure:btn.dataset.move})){closeSheet();navigate('world');toast('Welcome to your new place.');}});});}
+function profileMarkup(){const p=state.profile;return `<div class="page-heading"><span class="eyebrow">THIS IS YOU</span><h1>${esc(p.displayName)}</h1><p>@${esc(p.username)} · Reputation ${p.reputation} · Career level ${p.careerLevel||1}</p></div><section class="profile-studio"><div class="profile-portrait">${avatarSVG(p.appearance,{size:280,fullBody:true})}</div><form id="profile-form"><label>Display name<input name="displayName" value="${esc(p.displayName)}" required maxlength="40"></label><div class="appearance-fields">${appearanceFields(p.appearance||{})}</div><button class="primary full" type="submit">Save your look${icon('check')}</button></form></section><div class="profile-actions"><button class="secondary" data-phone="settings">Privacy & settings</button><button class="text-button" data-logout>Sign out</button></div>`;}
+function bindProfile(){const form=root.querySelector('#profile-form');form.querySelectorAll('[data-appearance]').forEach(s=>s.onchange=()=>{root.querySelector('.profile-portrait').innerHTML=avatarSVG(Object.fromEntries(new FormData(form)),{size:280,fullBody:true});});form.onsubmit=async e=>{e.preventDefault();const {displayName,...appearance}=Object.fromEntries(new FormData(form));try{await api('/api/profile',{method:'POST',body:{displayName,appearance}});await refresh();toast('Looking like yourself.');}catch(error){toast(error.message);}};root.querySelector('[data-logout]').onclick=async()=>{await api('/api/auth/logout',{method:'POST',body:{}});stream?.close();phone.close();state=await api('/api/bootstrap');authMode='login';renderMain();};}
+function residentSheet(resident){
+ if(typeof resident==='string')resident=list(state.people).find(p=>p.id===resident);if(!resident)return;
+ openSheet(`<div class="resident-sheet-portrait">${avatarSVG(resident.appearance,{size:115})}</div><span class="eyebrow">${resident.online?'ONLINE NOW':'RESIDENT'}</span><h2 id="sheet-title">${esc(resident.displayName)}</h2><p class="muted">@${esc(resident.username)}</p><div class="button-pair"><button class="secondary" id="request-friend">Add friend</button><button class="primary" id="message-resident">Message</button></div>`);
+ document.querySelector('#request-friend').onclick=async()=>{try{await api('/api/friends/request',{method:'POST',body:{residentId:resident.id}});toast('Friend request sent.');closeSheet();await refresh();}catch(error){toast(error.message);}};
+ document.querySelector('#message-resident').onclick=async()=>{try{const result=await api('/api/conversations',{method:'POST',body:{residentId:resident.id}});closeSheet();await refresh();phone.open('messages',{conversationId:result.conversation.id});}catch(error){toast(error.message);}};
+}
+async function openLocalChat(){
+ try{chatMessages=(await api('/api/chat/location')).messages||[];}catch(error){toast(error.message);return;}
+ openSheet(`<span class="eyebrow">${esc(place(state.profile.district)?.name||'YOUR NEIGHBOURHOOD')}</span><h2 id="sheet-title">Around you</h2><div class="nearby-list">${list(state.nearby).map(p=>`<button data-resident="${esc(p.id)}">${avatarSVG(p.appearance,{size:40})}<span>${esc(p.displayName)}</span><i class="state-dot"></i></button>`).join('')||'<p class="muted">No other residents nearby right now. Invite a friend to join your neighbourhood.</p>'}</div><div class="local-messages" id="local-messages" aria-live="polite"></div><form id="local-chat-form" class="chat-composer"><label class="sr-only" for="local-text">Say something nearby</label><input id="local-text" name="text" required maxlength="1000" placeholder="Say hello…"><button class="primary" type="submit" aria-label="Send nearby message">${icon('arrow')}</button></form>`);
+ chatOpen=true;renderChat();sheetRoot.querySelectorAll('[data-resident]').forEach(b=>b.onclick=()=>residentSheet(b.dataset.resident));document.querySelector('#local-chat-form').onsubmit=async e=>{e.preventDefault();try{await api('/api/chat/location',{method:'POST',body:{text:new FormData(e.currentTarget).get('text')}});e.target.reset();}catch(error){toast(error.message);}};
+}
+function renderChat(){const el=document.querySelector('#local-messages');if(!el)return;el.innerHTML=chatMessages.map(m=>`<div><strong>${esc(m.sender?.displayName||list(state.people).find(p=>p.id===m.senderId)?.displayName||state.profile.displayName)}</strong><p>${esc(m.text)}</p></div>`).join('')||'<p class="muted">The conversation starts with you.</p>';el.scrollTop=el.scrollHeight;}
+async function boot(){root.innerHTML='<div class="loading-state"><span class="wordmark">Abuja<span>Life</span><i></i></span><p>Opening your city…</p></div>';try{await refresh();connectRealtime();}catch(error){root.innerHTML=`<div class="loading-state"><h1>Let’s try that again.</h1><p>${error.status?esc(error.message):'We can’t reach the city right now. Check your connection and try again.'}</p><button class="primary" id="retry-start">Reconnect</button></div>`;root.querySelector('#retry-start').onclick=boot;}}
+boot();

@@ -3,7 +3,8 @@
   "short_name":"AbujaLife",
   "start_url":"/",
   "display":"standalone",
-  "background_color":"#06170f",
-  "theme_color":"#0f8f5f",
-  "icons":[]
+  "background_color":"#f4f2eb",
+  "theme_color":"#204b3c",
+  "description":"Make Abuja home. Create a resident and build a life with your people.",
+  "icons":[{"src":"/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
 }

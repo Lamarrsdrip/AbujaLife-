@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import crypto from 'node:crypto';
 import { build } from 'esbuild';
@@ -11,7 +12,7 @@ import { starterHomeSeed } from '../src/shared/life.mjs';
 import { ORIGIN_HOMES } from '../src/shared/origins.mjs';
 import { buildInterior, furniturePlacementPreservesRoutes } from '../app/world-interiors.js';
 
-const repo=new URL('../',import.meta.url).pathname;
+const repo=fileURLToPath(new URL('../',import.meta.url));
 const gifts=['bed','sofa','dining-table','fridge'];
 async function fixture(t,branch=1,index=0) {
   const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'abujalife-home-start-'));

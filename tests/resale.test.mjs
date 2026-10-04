@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import crypto from 'node:crypto';
 import { build } from 'esbuild';
@@ -92,7 +93,7 @@ test('a wallet overflow rolls back ownership, placement, ledger and operation ke
   assert.equal(sell(f,'plant','resale_overflow_key').profile.wallet,Number.MAX_SAFE_INTEGER);
 });
 
-const repo=new URL('../',import.meta.url).pathname;
+const repo=fileURLToPath(new URL('../',import.meta.url));
 const source=fs.readFileSync(path.join(repo,'preview/runtime.mjs'),'utf8').replace("await import('../app/app.js');",'globalThis.__adapterReady=true;');
 const code=(await build({stdin:{contents:source,resolveDir:path.join(repo,'preview'),sourcefile:'runtime.mjs'},bundle:true,write:false,format:'iife',platform:'browser',target:'es2022'})).outputFiles[0].text;
 function preview(storage=new Map()){

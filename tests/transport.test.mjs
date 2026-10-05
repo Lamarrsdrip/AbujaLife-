@@ -16,18 +16,18 @@ async function fixture(t) {
   return {id,get store(){return store;},advance:ms=>{time+=ms;},reopen(){store.close();store=new GameStore({dataDir,clock:()=>time});}};
 }
 
-test('every paid local venue ride charges its authoritative fare and arrives in that venue',async t=>{
+test('paid transport charges authoritative fares while a resident-owned car is free to drive',async t=>{
   const f=await fixture(t);
   f.store.topup(f.id,{amount:100000,idempotencyKey:'transport_car_funds'});
   f.store.action(f.id,'purchase',{itemId:'used-hatchback'});
   f.store.action(f.id,'leave-home');
-  const fares={bus:330,taxi:830,ride:1080,bike:420,car:430};
+  const fares={bus:330,taxi:830,ride:1080,bike:420,car:0};
   assert.ok(transportModes.some(mode=>mode.id==='bike'));
   for(const [mode,fare] of Object.entries(fares)){
     const district=f.store.profile(f.id).district,before=f.store.profile(f.id).wallet;
     const quote=f.store.quoteTravel(f.id,{district,mode,venueId:'restaurant'});
     assert.equal(quote.cost,fare);assert.ok(quote.seconds>=4);assert.equal(quote.venueId,'restaurant');
-    const result=f.store.action(f.id,'travel',{district,mode,venueId:'restaurant',cost:0,seconds:0,arrivesAt:0,vehicleId:'forged'});
+    const result=f.store.action(f.id,'travel',{district,mode,venueId:'restaurant',cost:999999,seconds:0,arrivesAt:0,vehicleId:'forged'});
     assert.equal(result.trip.cost,fare);assert.equal(result.trip.seconds,quote.seconds);
     assert.equal(result.profile.wallet,before-fare);assert.equal(result.profile.location.kind,'transit');
     if(mode==='car')assert.equal(result.trip.vehicleId,'used-hatchback');
@@ -122,7 +122,9 @@ test('district-only travel quotes and owned car public arrivals preserve their e
   const origin=ABUJA_ATLAS.find(place=>place.id===district),destination=ABUJA_ATLAS.find(place=>place.id==='jabi');
   assert.deepEqual(f.store.quoteTravel(f.id,{district:'jabi',mode:'bus'}),travelPricing(origin,destination,'bus'));
   f.store.topup(f.id,{amount:100000,idempotencyKey:'transport_legacy_car'});f.store.action(f.id,'purchase',{itemId:'used-hatchback'});f.store.action(f.id,'leave-home');
-  const {trip}=f.store.action(f.id,'travel',{district:'jabi',mode:'car'});f.advance(trip.seconds*1000);
+  const before=f.store.profile(f.id).wallet,{trip}=f.store.action(f.id,'travel',{district:'jabi',mode:'car'});
+  assert.equal(trip.cost,0);assert.equal(f.store.profile(f.id).wallet,before);
+  f.advance(trip.seconds*1000);
   const arrived=f.store.action(f.id,'arrive',{tripId:trip.id}).profile;
-  assert.equal(arrived.location.kind,'public');assert.equal(arrived.drivingVehicle,'used-hatchback');
+  assert.equal(arrived.location.kind,'public');assert.equal(arrived.drivingVehicle,'used-hatchback');assert.equal(arrived.wallet,before);
 });

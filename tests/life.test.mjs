@@ -34,11 +34,12 @@ test('venues require entry and apply their own prices and bounded needs', async 
   assert.throws(() => store.action(id, 'venue-action', { activityId: 'gym-workout' }), /Enter this place/);
   assert.equal(store.profile(id).wallet, result.profile.wallet);
   assert.equal(store.action(id, 'exit-venue').profile.location.kind, 'public');
-  assert.ok(VENUES.every(venue => venue.fictional));
+  assert.ok(VENUES.some(venue => venue.fictional === false),'real Abuja hubs are first-class playable venues');
+  assert.ok(VENUES.some(venue => venue.fictional === true),'authored game venues remain available');
   assert.ok(VENUE_ACTIONS.every(activity => VENUES.some(venue => venue.id === activity.venueId)));
 });
 
-test('work pays an earned wage and purchased driving still enforces ownership and affordability', async t => {
+test('work pays an earned wage and purchased driving enforces ownership without charging an owned-car fare', async t => {
   const { store, id, advance } = await fixture(t);
   assert.throws(() => store.action(id, 'purchase', { itemId: 'compact-car', price: 0 }), /need more/);
   store.action(id, 'take-job', { jobId: 'restaurant-host' });
@@ -54,10 +55,10 @@ test('work pays an earned wage and purchased driving still enforces ownership an
   const driving = store.action(id, 'toggle-driving', { vehicleId: 'used-hatchback' }).profile;
   assert.equal(driving.drivingVehicle, 'used-hatchback');
   assert.throws(() => store.action(id, 'enter-venue', { venueId: 'hotel' }), /Park your car/);
-  const quote = store.quoteTravel(id, { district: 'jabi', mode: 'car' });
-  assert.ok(quote.cost > 0);
+  const beforeDrive=store.profile(id).wallet,quote = store.quoteTravel(id, { district: 'jabi', mode: 'car' });
+  assert.equal(quote.cost,0);
   const { trip } = store.action(id, 'travel', { district: 'jabi', mode: 'car' });
-  assert.equal(trip.vehicleId, 'used-hatchback');
+  assert.equal(trip.vehicleId, 'used-hatchback');assert.equal(trip.cost,0);assert.equal(store.profile(id).wallet,beforeDrive);
   assert.equal(store.profile(id).drivingVehicle, null);
   advance(trip.seconds * 1000);
   assert.equal(store.action(id, 'arrive', { tripId: trip.id }).profile.drivingVehicle, 'used-hatchback');

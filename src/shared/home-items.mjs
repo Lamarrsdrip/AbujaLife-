@@ -21,6 +21,23 @@ export const EXTRA_HOME_ITEMS = Object.freeze([
   {id:'table-lamp',name:'Warm bedside lamp',price:4500,modelKind:'table-lamp',width:40,depth:32,placement:'surface',description:'Place a warm reading light on a table or counter.'},
   {id:'ceramic-vase',name:'Hand-finished ceramic vase',price:2800,modelKind:'vase',width:28,depth:28,placement:'surface',description:'A sculpted vase for your sideboard or coffee table.'},
   {id:'succulent',name:'Potted succulent',price:3600,modelKind:'succulent',width:30,depth:30,placement:'surface',description:'A little green for a bedside table or kitchen counter.'},
-  {id:'book-stack',name:'Coffee-table books',price:2400,modelKind:'book-stack',width:44,depth:32,placement:'surface',description:'A thoughtful finishing touch for your table or sideboard.'}
+  {id:'book-stack',name:'Coffee-table books',price:2400,modelKind:'book-stack',width:44,depth:32,placement:'surface',description:'A thoughtful finishing touch for your table or sideboard.'},
+
+  // Richer resident-owned 3D pieces. These are proper inventory items: residents can buy,
+  // place, store, move and resell them instead of living with permanently baked-in decor.
+  {id:'vanity-desk',name:'Bedroom vanity desk',price:24000,modelKind:'desk',width:146,depth:69,description:'A clean dressing and getting-ready station for the bedroom.'},
+  {id:'reading-chair',name:'Deep reading chair',price:17500,modelKind:'lounge-chair',width:94,depth:88,color:'#8d765f',description:'A relaxed reading chair for a quiet corner.'},
+  {id:'media-sideboard',name:'Media sideboard',price:28000,modelKind:'storage-drawers',width:176,depth:52,description:'A low storage unit for the living-room media wall.'},
+  {id:'kitchen-island',name:'Kitchen island',price:44000,modelKind:'kitchen',width:212,depth:91,description:'A proper prep island that makes a larger kitchen feel lived in.'},
+  {id:'dining-bench',name:'Dining bench',price:13500,modelKind:'balcony-bench',width:172,depth:61,description:'A timber bench that works beside a dining table or against a wall.'},
+  {id:'entry-console',name:'Entry console table',price:12500,modelKind:'coffee-table',width:132,depth:49,description:'A slim console for keys, bags and the first corner guests see.'},
+  {id:'tall-bookshelf',name:'Tall statement bookshelf',price:26000,modelKind:'bookshelf',width:142,depth:54,description:'A taller shelf for books, objects and a more finished room.'},
+  {id:'floor-speaker',name:'Floor-standing speaker',price:22000,modelKind:'music-speaker',width:52,depth:48,upright:true,description:'A larger speaker for residents building a proper entertainment setup.'},
+  {id:'indoor-ficus',name:'Indoor ficus tree',price:9200,modelKind:'plant',width:71,depth:63,upright:true,description:'A fuller indoor tree for large rooms, corners and balconies.'},
+  {id:'runner-rug',name:'Hallway runner rug',price:6200,modelKind:'rug',width:246,depth:86,solid:false,color:'#9b8269',description:'A long woven runner for hallways and entry spaces.'},
+  {id:'laundry-cabinet',name:'Laundry storage cabinet',price:19500,modelKind:'storage-drawers',width:118,depth:54,description:'Closed storage for laundry supplies and household essentials.'},
+  {id:'coffee-bar',name:'Home coffee bar',price:32000,modelKind:'kitchen',width:168,depth:67,description:'A compact drinks and coffee station for hosting at home.'},
+  {id:'window-bench',name:'Window bench',price:15500,modelKind:'balcony-bench',width:181,depth:66,description:'A low bench for a bright window or balcony corner.'},
+  {id:'console-table',name:'Slim console table',price:14500,modelKind:'coffee-table',width:158,depth:48,description:'A narrow table for a hallway, mirror wall or lounge edge.'}
 ].map(item=>Object.freeze({...item,category:'furniture'})));
 export const HOME_ITEM_MODELS=Object.freeze(Object.fromEntries(EXTRA_HOME_ITEMS.map(item=>[item.id,item])));

@@ -18,10 +18,12 @@ export const TRANSPORT_MODES = [
   { id: 'taxi', name: 'Taxi', description: 'A direct trip to your destination.' },
   { id: 'ride', name: 'Ride-hailing', description: 'A car pickup for your journey.' },
   { id: 'bike', name: 'Bike ride', description: 'A simulated motorbike ride in the game.' },
-  { id: 'car', name: 'Your car', description: 'Drive a vehicle you own.' },
+  { id: 'car', name: 'Your car', description: 'Drive a vehicle you own. Your own car has no per-trip game fare.' },
 ];
 
 // Only registration uses this seed. Existing homes and purchases are never reseeded.
+// Gifted-home furniture is resident-owned inventory, never permanent scenery. That means
+// every starter piece can be stored, moved, replaced or sold through the normal authority path.
 export function starterHomeSeed(origin) {
   const nepo = origin?.id === 'nepo';
   return {
@@ -42,11 +44,12 @@ export function systemResaleValue(item) {
 }
 
 // The server validates ownership and venue availability before quoting these game fares.
-// Keep district-only routes compatible; a venue target adds a real local journey.
+// Public transport carries a game fare. Driving a car the resident already owns is free;
+// future fuel/maintenance mechanics must be explicit systems, never a hidden travel tax.
 export function travelPricing(originPlace, destinationPlace, mode, { venueId = null } = {}) {
   const same = originPlace.id === destinationPlace.id;
   const distance = same ? venueId ? 4 : 0 : Math.max(4, Math.round(((destinationPlace.commute || 35) + (originPlace.commute || 35)) / 3));
-  const cost = mode === 'walk' || !distance ? 0 : mode === 'bus' ? 250 + distance * 20 : mode === 'car' ? 350 + distance * 20 : mode === 'taxi' ? 650 + distance * 45 : mode === 'bike' ? 300 + distance * 30 : 900 + distance * 45;
+  const cost = mode === 'walk' || mode === 'car' || !distance ? 0 : mode === 'bus' ? 250 + distance * 20 : mode === 'taxi' ? 650 + distance * 45 : mode === 'bike' ? 300 + distance * 30 : 900 + distance * 45;
   const seconds = mode === 'walk' || !distance ? 1 : 10 + Math.min(14, Math.max(4, Math.round(distance / (mode === 'bus' ? 2.5 : 4))));
   return { destination: destinationPlace.id, mode, cost, seconds, ...(venueId ? { venueId } : {}) };
 }
@@ -154,12 +157,46 @@ export const VENUE_ACTIONS = [
   { id: 'magic-city-vip', venueId: 'magic-city', name: 'Magic City · VIP lounge', cost: 12000, duration: 17, animation: 'social', effects: { fun: 30, social: 30, stress: -12, energy: -4 } },
   { id: 'bear-barn-relax', venueId: 'bear-barn', name: 'Bear Barn · unwind with music', cost: 2500, duration: 16, animation: 'social', effects: { fun: 24, social: 20, stress: -16, energy: -3 } },
   { id: 'bear-barn-drinks', venueId: 'bear-barn', name: 'Bear Barn · drinks & small chops', cost: 4500, duration: 15, animation: 'eat', effects: { hunger: 24, fun: 16, social: 12, energy: 6 } },
+
+  // Purposeful Abuja multiplayer hubs. These actions make each destination more than scenery:
+  // residents share the same venue zone, can meet there, and have activities that fit the place.
+  { id:'city-gate-meet', venueId:'city-gate-plaza', name:'Meet at the City Gate', cost:0, duration:14, animation:'social', effects:{social:20,fun:8,mood:6} },
+  { id:'city-gate-photo', venueId:'city-gate-plaza', name:'Take a City Gate photo', cost:0, duration:14, animation:'watch', effects:{fun:12,mood:7} },
+  { id:'aso-view-walk', venueId:'aso-rock-view', name:'Walk the Aso Rock viewpoint', cost:0, duration:18, animation:'walk', effects:{stress:-20,fun:18,energy:-4,mood:8} },
+  { id:'aso-view-meet', venueId:'aso-rock-view', name:'Meet friends at the viewpoint', cost:0, duration:16, animation:'social', effects:{social:22,stress:-10,fun:12} },
+  { id:'cbn-exhibit', venueId:'cbn-experience', name:'Explore money & economic history', cost:0, duration:17, animation:'watch', effects:{fun:8,mood:5} },
+  { id:'cbn-career', venueId:'cbn-experience', name:'Attend a finance career session', cost:0, duration:18, animation:'social', effects:{social:10,mood:8} },
+  { id:'magicland-rides', venueId:'magicland', name:'Go on the rides', cost:3500, duration:19, animation:'ride', effects:{fun:48,social:14,energy:-8,stress:-18,mood:10} },
+  { id:'magicland-arcade', venueId:'magicland', name:'Play in the arcade', cost:2500, duration:18, animation:'play', effects:{fun:38,social:16,energy:-4,mood:8} },
+  { id:'magicland-meet', venueId:'magicland', name:'Meet up inside the park', cost:0, duration:15, animation:'social', effects:{social:24,fun:14} },
+  { id:'farmcity-meal', venueId:'farm-city', name:'Eat at Farm City', cost:4500, duration:17, animation:'eat', effects:{hunger:48,fun:14,social:12,mood:8} },
+  { id:'farmcity-arcade', venueId:'farm-city', name:'Play at the game arcade', cost:2200, duration:17, animation:'play', effects:{fun:34,social:18,stress:-10} },
+  { id:'farmcity-hangout', venueId:'farm-city', name:'Hang out with friends', cost:1200, duration:17, animation:'social', effects:{social:30,fun:20,stress:-12} },
+  { id:'transcorp-lobby', venueId:'transcorp-hilton-hub', name:'Meet in the lobby', cost:0, duration:16, animation:'social', effects:{social:25,stress:-8,mood:8} },
+  { id:'transcorp-pool', venueId:'transcorp-hilton-hub', name:'Spend time by the pool', cost:3500, duration:18, animation:'relax', effects:{fun:28,stress:-24,energy:8,mood:8} },
+  { id:'transcorp-dining', venueId:'transcorp-hilton-hub', name:'Dinner at the hotel', cost:5500, duration:18, animation:'eat', effects:{hunger:45,fun:16,social:16,mood:8} },
+  { id:'millennium-walk', venueId:'millennium-park-hub', name:'Walk through Millennium Park', cost:0, duration:18, animation:'walk', effects:{stress:-22,fun:18,energy:-4,mood:7} },
+  { id:'millennium-picnic', venueId:'millennium-park-hub', name:'Picnic in the park', cost:1200, duration:17, animation:'eat', effects:{hunger:25,fun:24,social:15,stress:-12} },
+  { id:'millennium-meet', venueId:'millennium-park-hub', name:'Meet friends on the lawn', cost:0, duration:16, animation:'social', effects:{social:28,fun:12} },
+  { id:'eagle-square-meet', venueId:'eagle-square-hub', name:'Meet at Eagle Square', cost:0, duration:16, animation:'social', effects:{social:24,fun:10,mood:6} },
+  { id:'eagle-square-event', venueId:'eagle-square-hub', name:'Attend a public city event', cost:0, duration:18, animation:'watch', effects:{fun:24,social:16,mood:8} },
+  { id:'national-mosque-prayer', venueId:'national-mosque-hub', name:'Prayer & reflection', cost:0, duration:16, animation:'pray', effects:{stress:-20,mood:10} },
+  { id:'national-mosque-community', venueId:'national-mosque-hub', name:'Spend time with the community', cost:0, duration:16, animation:'social', effects:{social:22,mood:6} },
+  { id:'national-christian-reflect', venueId:'national-christian-centre-hub', name:'Prayer & reflection', cost:0, duration:16, animation:'pray', effects:{stress:-20,mood:10} },
+  { id:'national-christian-community', venueId:'national-christian-centre-hub', name:'Spend time with the community', cost:0, duration:16, animation:'social', effects:{social:22,mood:6} },
+  { id:'stadium-train', venueId:'national-stadium-hub', name:'Train at the stadium', cost:800, duration:19, animation:'exercise', effects:{energy:-14,fun:20,stress:-18,mood:8} },
+  { id:'stadium-meet', venueId:'national-stadium-hub', name:'Meet on the concourse', cost:0, duration:15, animation:'social', effects:{social:22,fun:10} },
 ];
 
 const venue = (id, name, category, description) => ({
   id, type: id, name, title: name, category, description,
   fictional: true,
   actionIds: VENUE_ACTIONS.filter(action => action.venueId === id).map(action => action.id),
+});
+const realVenue = (id,name,type,category,description,districts) => ({
+  ...venue(id,name,category,description),type,districts,fictional:false,
+  settingSource:'real-world-reference-authored-game-approximation',
+  affiliation:'Unofficial AbujaLife game interpretation; no affiliation or endorsement is implied.',
 });
 export const VENUES = [
   venue('restaurant', 'Courtyard Kitchen', 'Food & dining', 'An authored neighbourhood restaurant serving Nigerian favourites.'),
@@ -182,6 +219,18 @@ export const VENUES = [
   { ...venue('magic-city', 'Magic City', 'Nightlife', 'A vivid performance club with a lit stage, dancers, audience energy, lounge seating and a premium VIP corner.'), kind: 'club', style: 'stage-lounge', districts: ['garki-ii'], settingSource: 'authored-game-scenery', nameSource: 'player-provided', pricesVerified: false },
   { ...venue('bear-barn', 'Bear Barn', 'Nightlife', 'A warm late-night music bar with a busy counter, groups hanging out, small chops, conversation and a relaxed dance corner.'), kind: 'club', style: 'casual-bar', districts: ['jabi'], settingSource: 'authored-game-scenery', nameSource: 'player-provided', pricesVerified: false },
   venue('games-lounge', 'Dice & Chill Lounge', 'Games', 'A simple chance game with virtual Naira, plus space to unwind.'),
+
+  realVenue('city-gate-plaza','Abuja City Gate','park','Landmark & social','The ceremonial entrance to Abuja, rebuilt as a public meetup and photo landmark in the game.','kukwaba'.split(',')),
+  realVenue('aso-rock-view','Aso Rock Viewpoint','park','Landmark & outdoors','A public AbujaLife viewpoint for the city-defining monolith. The secured government complex is not treated as public access.',['central-area']),
+  realVenue('cbn-experience','Central Bank of Nigeria','estate-office','Civic & finance','A game interpretation focused on the institution’s real central-bank purpose: money, financial-system stability, economic history and finance careers.',['central-area']),
+  realVenue('magicland','Magicland Amusement Park','park','Entertainment & family','A game interpretation of Abuja’s amusement park with outdoor rides, arcade play and shared social spaces.',['kukwaba']),
+  realVenue('farm-city','Farm City Abuja','restaurant','Food, arcade & social','A game interpretation of the Wuse 2 food and social venue, including meals, group hangouts and its game arcade.',['wuse-ii-a07']),
+  realVenue('transcorp-hilton-hub','Transcorp Hilton Abuja','hotel','Hospitality & social','A game interpretation of the Maitama hotel as a major social hub for stays, dining, pool time, meetings and lobby meetups.',['maitama']),
+  realVenue('millennium-park-hub','Millennium Park','park','Park & social','A spacious green multiplayer meetup for walks, picnics and public gatherings.',['maitama']),
+  realVenue('eagle-square-hub','Eagle Square','park','Events & civic','A large public-event plaza for meetups and city events in the AbujaLife world.',['central-area']),
+  realVenue('national-mosque-hub','Abuja National Mosque','mosque','Faith & community','A respectful game interpretation centred on prayer, reflection and community.',['central-area']),
+  realVenue('national-christian-centre-hub','National Christian Centre','church','Faith & community','A respectful game interpretation centred on prayer, reflection and community.',['central-area']),
+  realVenue('national-stadium-hub','Moshood Abiola National Stadium','gym','Sport & events','A multiplayer sport destination for training, meetups and event-day activity.',['kukwaba']),
 ];
 
 export const NIGHTCLUB_IDS = VENUES.filter(place => place.kind === 'club').map(place => place.id);

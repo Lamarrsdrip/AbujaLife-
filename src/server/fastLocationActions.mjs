@@ -6,6 +6,64 @@ function fail(condition, message, status = 400, code = 'invalid_action') {
   if (!condition) throw new GameError(message, status, code);
 }
 
+// Old AbujaLife interiors predate resident-owned furniture. Those rooms drew several
+// removable pieces directly into the scene, so a resident could see a sofa or bed but
+// the server correctly refused to sell it because no inventory row existed. Migrate
+// each legacy home once: grant only the authored removable pieces for that floor plan,
+// then move the home onto the owned-furniture renderer. Plumbing, walls, doors and
+// permanent fixtures are deliberately not inventory.
+const LEGACY_HOME_FURNITURE = Object.freeze({
+  'garki-studio': Object.freeze(['bed','wardrobe','kitchen-unit','fridge','sofa','coffee-table','plant','floor-lamp']),
+  'lugbe-flat': Object.freeze(['bed','wardrobe','kitchen-unit','fridge','sofa','dining-table','plant']),
+  'gwarinpa-apartment': Object.freeze(['bed','wardrobe','work-desk','office-chair','sofa','kitchen-unit','fridge','dining-table','plant']),
+  'jabi-apartment': Object.freeze(['bed','wardrobe','lounge-chair','sofa','kitchen-unit','fridge','dining-table','plant']),
+  'guzape-terrace': Object.freeze(['bed','wardrobe','work-desk','office-chair','sofa','kitchen-unit','fridge','coffee-table','plant']),
+  'maitama-villa': Object.freeze(['bed','wardrobe','work-desk','accent-chair','library-shelf','sofa','kitchen-unit','fridge','dining-table','plant']),
+});
+
+async function migrateLegacyHomeFurniture(store, residentId, profile, options = {}) {
+  if (!profile?.home || Number(profile.home.starterVersion || 0) >= 1) return profile;
+  const layoutId = profile.home.layoutId || profile.home.propertyId;
+  const defaults = LEGACY_HOME_FURNITURE[layoutId];
+  if (!defaults?.length) return profile;
+
+  const session = options?.session || null;
+  const dbOptions = session ? { session } : {};
+  const acquiredAt = store.clock();
+  const inventory = store.collection('inventory');
+
+  // Inventory rows are written before the migration marker. A process interruption
+  // can therefore only cause a safe retry; it cannot mark a partially migrated home.
+  for (const itemId of defaults) {
+    await inventory.updateOne(
+      { residentId, itemId },
+      {
+        $setOnInsert: {
+          _id: `${residentId}:${itemId}`,
+          residentId,
+          itemId,
+          category: 'furniture',
+          acquiredAt,
+          source: 'legacy-home-furniture',
+        },
+      },
+      { ...dbOptions, upsert: true },
+    );
+  }
+
+  const furnishingPreset = 'nepo-furnished';
+  await store.collection('homes').updateOne(
+    { residentId },
+    { $set: { starterVersion: 1, furnishingPreset } },
+    dbOptions,
+  );
+
+  profile.inventory = [...new Set([...(profile.inventory || []), ...defaults])];
+  profile.home = { ...profile.home, starterVersion: 1, furnishingPreset };
+  profile.legacyHomeFurnitureMigrated = true;
+  return profile;
+}
+
 /**
  * Installs bounded, hot-path location transitions on an existing MongoGameStore.
  *
@@ -22,6 +80,12 @@ function fail(condition, message, status = 400, code = 'invalid_action') {
 export function installFastLocationActions(store) {
   fail(store && typeof store.action === 'function' && typeof store.transaction === 'function' && typeof store.collection === 'function' && typeof store.profile === 'function', 'Fast location actions require the Mongo game store', 500, 'storage_unavailable');
   if (store.fastLocationActionsInstalled === true) return store;
+
+  const originalProfile = store.profile.bind(store);
+  store.profile = async (residentId, options = {}) => {
+    const profile = await originalProfile(residentId, options);
+    return migrateLegacyHomeFurniture(store, residentId, profile, options);
+  };
 
   const originalAction = store.action.bind(store);
 

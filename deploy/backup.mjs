@@ -6,7 +6,10 @@ const directory=temporaryDirectory(),output=process.env.BACKUP_OUTPUT_DIR||'/bac
 fs.mkdirSync(output,{recursive:true,mode:0o700});
 const stamp=new Date().toISOString().replace(/[:.]/g,'-');
 const destination=path.join(output,`abujalife-${stamp}.abjl.enc`),partial=destination+'.partial';
-const backupUri=uri('abujalife_backup','mongo-backup-password');let client;
+// `mongodump --oplog` must be a true full replica-set dump. A database name in
+// the URI scopes the dump exactly like --db, so the tools URI intentionally
+// connects at the replica-set root while authenticating against abujalife_prod.
+const backupUri=uri('abujalife_backup','mongo-backup-password',DATABASE,'');let client;
 try{
   client=await connect(backupUri);
   const raw=path.join(directory,'database.archive.gz');

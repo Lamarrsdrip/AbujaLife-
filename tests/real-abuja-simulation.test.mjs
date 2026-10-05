@@ -25,7 +25,7 @@ test('gifted-home starter furniture is real owned catalogue inventory', () => {
   const seed=starterHomeSeed({id:'nepo'});
   assert.equal(seed.homeStyle.starterVersion,1);
   assert.equal(seed.homeStyle.furnishingPreset,'nepo-furnished');
-  assert.ok(seed.inventory.length>=8);
+  assert.deepEqual(seed.inventory,['bed','sofa','dining-table','fridge']);
   for(const itemId of seed.inventory){
     const item=catalog.find(entry=>entry.id===itemId);
     assert.ok(item,`starter item ${itemId} must exist in the catalogue`);
@@ -65,13 +65,15 @@ test('real Abuja multiplayer hubs have a purpose, a district and playable action
     const venue=byId(id);
     assert.ok(venue,`${id} must exist`);
     assert.equal(venue.fictional,false);
+    assert.equal(venue.settingSource,'real-world-reference-authored-game-approximation');
+    assert.match(venue.affiliation,/no affiliation or endorsement/i);
     assert.ok(venue.districts.includes(district));
     assert.equal(venueAvailable(id,district),true);
     const actions=actionsForVenue(id);
     assert.ok(actions.length>=2,`${id} needs meaningful activities`);
     for(const action of actions){
       assert.equal(action.venueId,id);
-      assert.ok(Number.isFinite(action.duration)&&action.duration>0);
+      assert.ok(Number.isFinite(action.duration)&&action.duration>=14);
       assert.ok(action.effects&&typeof action.effects==='object');
     }
   }

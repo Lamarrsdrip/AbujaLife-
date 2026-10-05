@@ -64,6 +64,7 @@ try {
   }
   mongoLock = acquireLock(path.join(config.shared, 'mongo-operations.lock'), 'deploy');
   command(config.nodePath, [path.join(destination, 'deploy', 'windows', 'bootstrap-mongo.mjs')], destination, { ...safeEnvironment(), ABUJALIFE_WINDOWS_ROOT: config.root });
+  command(config.nodePath, [path.join(destination, 'deploy', 'windows', 'bootstrap-jackpot.mjs')], destination, { ...safeEnvironment(), ABUJALIFE_WINDOWS_ROOT: config.root });
   if (await health(18788)) throw new Error('The private candidate port is already occupied.');
   candidate = spawn(config.nodePath, [path.join(destination, 'deploy', 'windows', 'api.mjs')], { cwd: destination, env: { ...safeEnvironment(), ABUJALIFE_WINDOWS_ROOT: config.root, ABUJALIFE_CANDIDATE_PORT: '18788' }, stdio: ['ignore', 'inherit', 'inherit', 'ipc'], windowsHide: true });
   await new Promise((resolve, reject) => {

@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -30,4 +31,16 @@ test('draw selection is deterministic and bounded', () => {
   assert.ok(first>=0 && first<tickets.length);
   assert.equal(first,1);
   assert.ok(jackpotWinnerIndex(seed,room,[...tickets,'t-5'])>=0);
+});
+
+test('Windows production deploy provisions Jackpot schema before candidate startup', () => {
+  const bootstrap = fs.readFileSync(new URL('../deploy/windows/bootstrap-jackpot.mjs', import.meta.url), 'utf8');
+  const deploy = fs.readFileSync(new URL('../deploy/windows/deploy.mjs', import.meta.url), 'utf8');
+  assert.match(bootstrap, /ensureMongoJackpotSchema\(db\)/);
+  assert.match(bootstrap, /JACKPOT_COLLECTIONS/);
+  assert.match(bootstrap, /updateRole:\s*'abujalife_runtime'/);
+  const baseBootstrap = deploy.indexOf("bootstrap-mongo.mjs");
+  const jackpotBootstrap = deploy.indexOf("bootstrap-jackpot.mjs");
+  const candidateStart = deploy.indexOf("ABUJALIFE_CANDIDATE_PORT");
+  assert.ok(baseBootstrap >= 0 && jackpotBootstrap > baseBootstrap && candidateStart > jackpotBootstrap);
 });

@@ -11,7 +11,7 @@ import { MongoAuthStore } from './mongo/authStore.mjs';
 import { createEmailDelivery } from './emailDelivery.mjs';
 import { createProductionServer, productionLog } from './production-http.mjs';
 import { attachXIntegration } from './xIntegration.mjs';
-import { attachJackpotIntegration } from './jackpotIntegration.mjs';
+import { attachJackpotRuntime } from './jackpotRuntime.mjs';
 
 function publicOrigin(value,name){let url;try{url=new URL(value);}catch{throw new Error(`${name} requires a public HTTPS origin`);}if(url.protocol!=='https:'||url.username||url.password||url.pathname!=='/'||url.search||url.hash||/^(localhost|127\.|0\.|\[?::1\]?$)/i.test(url.hostname))throw new Error(`${name} requires a public HTTPS origin`);return url.origin;}
 export function productionConfig(env=process.env){
@@ -40,7 +40,7 @@ export async function createProductionApplication({env=process.env,clock=Date.no
     const ads=new MongoAdStore({store,admin,payments,log});await ads.init({ensureIndexes:false});ads.attach();
     const server=createProductionServer({...config,store,social,directory,presence,admin,payments,database,log});
     const x=attachXIntegration(server,{store,admin,database,env,publicWebUrl:config.publicWebUrl,apiPublicUrl:config.apiPublicUrl,corsOrigins:config.corsOrigins,fetchImpl});
-    const jackpot=await attachJackpotIntegration(server,{store,admin,payments,database,env,publicWebUrl:config.publicWebUrl,apiPublicUrl:config.apiPublicUrl,corsOrigins:config.corsOrigins,log});
+    const jackpot=await attachJackpotRuntime(server,{store,admin,payments,database,env,publicWebUrl:config.publicWebUrl,apiPublicUrl:config.apiPublicUrl,corsOrigins:config.corsOrigins,log});
     return{server,store,social,directory,presence,admin,payments,ads,x,jackpot,database,config,close:async()=>{server.closeRealtime();jackpot.close();if(server.listening)await new Promise(resolve=>server.close(resolve));await database.close();}};
   }catch(error){await database.close();throw error;}
 }

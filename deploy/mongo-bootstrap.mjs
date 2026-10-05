@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import {MongoClient} from 'mongodb';
 import {ensureMongoSchema, MONGO_COLLECTIONS, MONGO_APPEND_ONLY_COLLECTIONS} from '../src/server/mongo/database.mjs';
 import {ensureMongoAdSchema} from '../src/server/mongo/adStore.mjs';
+import {ensureMongoJackpotSchema, JACKPOT_COLLECTIONS, JACKPOT_APPEND_ONLY_COLLECTIONS} from '../src/server/mongo/jackpotSchema.mjs';
 
 const database = process.env.MONGODB_DATABASE || 'abujalife_prod';
 const host = process.env.MONGODB_HOST || 'mongo:27017';
@@ -28,8 +29,9 @@ try {
   const db = client.db(database);
   await ensureMongoSchema(db);
   await ensureMongoAdSchema(db);
+  await ensureMongoJackpotSchema(db);
   // Future privilege/schema expansion consumes the same explicit collection
-  // contract as the server. No wildcard write privilege is granted.
+  // contract as the server. No wildcard write or DDL privilege is granted.
   const privileges = MONGO_COLLECTIONS.map(collection => ({
     resource: {db: database, collection},
     actions: MONGO_APPEND_ONLY_COLLECTIONS.includes(collection) ? ['find','insert','listIndexes'] : collection === 'schema_versions' ? ['find','insert','remove','listIndexes'] : ['find','insert','update','remove','listIndexes']
@@ -39,6 +41,12 @@ try {
     {resource:{db:database,collection:'ad_slots'},actions:['find','insert','update','remove','listIndexes']},
     {resource:{db:database,collection:'ad_receipts'},actions:['find','insert','listIndexes']}
   );
+  for (const collection of JACKPOT_COLLECTIONS) {
+    privileges.push({
+      resource: {db: database, collection},
+      actions: JACKPOT_APPEND_ONLY_COLLECTIONS.includes(collection) ? ['find','insert','listIndexes'] : ['find','insert','update','remove','listIndexes']
+    });
+  }
   const existingRole = await db.command({rolesInfo: 'abujalife_runtime'});
   await db.command({[existingRole.roles.length ? 'updateRole' : 'createRole']: 'abujalife_runtime', privileges, roles: []});
   const backupPrivileges = [
@@ -51,5 +59,5 @@ try {
     const existing = await db.command({usersInfo: user});
     await db.command({[existing.users.length ? 'updateUser' : 'createUser']: user, pwd: secret(passwordFile), roles: [{role,db:roleDb}]});
   }
-  console.log(JSON.stringify({ok:true,database,replicaSet,collections:MONGO_COLLECTIONS.length+3,ledger:'find/insert only',adReceipts:'find/insert only',appDDL:false}));
+  console.log(JSON.stringify({ok:true,database,replicaSet,collections:MONGO_COLLECTIONS.length+3+JACKPOT_COLLECTIONS.length,ledger:'find/insert only',adReceipts:'find/insert only',jackpotLedger:'find/insert only',appDDL:false}));
 } finally { await client.close(); }

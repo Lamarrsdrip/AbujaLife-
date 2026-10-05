@@ -72,7 +72,7 @@ test('catalogue safely renders backend labels and a nonmodal panel without prese
 test('a failed or lost purchase keeps its retry key and cannot start placing or change balances locally', async () => {
   const f = fixture({}, { mutate: async (_action, payload, state, writes) => {
     if (writes.length === 1) throw new Error('Connection interrupted');
-    state.profile.inventory.push(payload.itemId); state.profile.storedFurniture.push(payload.itemId); state.profile.wallet -= 2300;
+    state.profile.inventory.push(payload.itemId); state.profile.storedFurniture.push(payload.itemId); state.profile.wallet -= catalog.find(item=>item.id===payload.itemId).price;
     return { profile: state.profile };
   } });
   f.controller.open();
@@ -84,7 +84,7 @@ test('a failed or lost purchase keeps its retry key and cannot start placing or 
   assert.equal(await f.controller.select('plant'), true);
   assert.equal(f.writes[0].idempotencyKey, f.writes[1].idempotencyKey);
   assert.equal(f.writes[0].action, 'purchase');
-  assert.equal(f.state.profile.wallet, 97700);
+  assert.equal(f.state.profile.wallet, 100000-catalog.find(item=>item.id==='plant').price);
   assert.deepEqual(f.selections, [{ itemId: 'plant' }]);
   assert.equal(f.controller.isOpen(), false);
 });
@@ -122,7 +122,7 @@ test('Store retains ownership, and Sell requires a visible confirmation before o
   assert.equal(await f.controller.edit('confirm-sell', 'sofa'), false);
   f.controller.showItem('sofa'); await f.controller.edit('sell');
   assert.equal(await f.controller.edit('confirm-sell'), true);
-  assert.equal(f.state.profile.wallet, 109000);
+  assert.equal(f.state.profile.wallet, 100000+Math.floor(catalog.find(item=>item.id==='sofa').price/2));
   assert.ok(!f.state.profile.inventory.includes('sofa'));
   assert.deepEqual(f.writes.map(write => write.action), ['store-furniture', 'sell-item']);
   assert.equal(f.controller.isOpen(), false);

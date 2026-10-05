@@ -40,7 +40,7 @@ test('venues require entry and apply their own prices and bounded needs', async 
 
 test('work pays an earned wage and purchased driving still enforces ownership and affordability', async t => {
   const { store, id, advance } = await fixture(t);
-  assert.throws(() => store.action(id, 'purchase', { itemId: 'compact-car', price: 0 }), /need more/);
+  assert.throws(() => store.action(id, 'purchase', { itemId: 'mercedes-g63', price: 0 }), /need more/);
   store.action(id, 'take-job', { jobId: 'restaurant-host' });
   store.action(id, 'leave-home');
   assert.throws(() => store.action(id, 'toggle-driving', { vehicleId: 'used-hatchback' }), /Buy this car/);
@@ -49,7 +49,7 @@ test('work pays an earned wage and purchased driving still enforces ownership an
   advance(2000);
   const earned=store.action(id, 'complete-shift', { challengeId: challenge.id, answers: jobs['restaurant-host'].tasks.map(task => ({ taskId: task.id, optionId: task.answer })) });assert.equal(earned.result.pay,5600);assert.equal(earned.profile.wallet,beforeWork+earned.result.pay);
   const bought = store.action(id, 'purchase', { itemId: 'used-hatchback' }).profile;
-  assert.equal(bought.wallet, earned.profile.wallet - 28000);
+  assert.equal(bought.wallet, earned.profile.wallet - catalog.find(item => item.id === 'used-hatchback').price);
   assert.equal(bought.drivingVehicle, null);
   const driving = store.action(id, 'toggle-driving', { vehicleId: 'used-hatchback' }).profile;
   assert.equal(driving.drivingVehicle, 'used-hatchback');
@@ -64,7 +64,7 @@ test('work pays an earned wage and purchased driving still enforces ownership an
   assert.equal(store.action(id, 'toggle-driving', { vehicleId: null }).profile.drivingVehicle, null);
   store.action(id, 'enter-venue', { venueId: 'hotel' });
   assert.throws(() => store.action(id, 'toggle-driving', { vehicleId: 'used-hatchback' }), /Head out/);
-  assert.equal(catalog.find(item => item.id === 'compact-car').price, 240000);
+  assert.equal(catalog.find(item => item.id === 'compact-car').price, 2400000);
 });
 
 test('furniture must be owned, placed at home and remain inside the floor plan after restart', async t => {
@@ -81,7 +81,7 @@ test('furniture must be owned, placed at home and remain inside the floor plan a
   assert.throws(() => f.store.action(f.id, 'place-furniture', { itemId: 'dining-table', x: .5, y: .5 }), /Go home/);
   f.reopen();
   assert.deepEqual(f.store.profile(f.id).furnitureLayout, placed.furnitureLayout);
-  assert.equal(f.store.profile(f.id).wallet, starting - 4200);
+  assert.equal(f.store.profile(f.id).wallet, starting - catalog.find(item => item.id === 'dining-table').price);
 });
 
 test('rent covers a game year while weekly service charges never charge annual rent again', async t => {

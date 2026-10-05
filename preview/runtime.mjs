@@ -1,5 +1,6 @@
 /** Browser-only public preview. This adapter never connects to the game server. */
 import data from './data.mjs';
+import { catalog as authoritativeCatalog } from '../src/shared/catalogue.mjs';
 import { LIFE_GOALS, GAME_YEAR_MS, GAME_BILL_PERIOD_MS, WALLET_META, INVESTMENT_META, DICE_META, LOAN_META, TRANSPORT_MODES, travelPricing, starterHomeSeed, systemResaleValue, homeBenefits, investmentView, loanQuote, loanView, venueFor, venueAvailable, venueActionFor, applyNeedEffects, furniturePlacement, ownsVehicle } from '../src/shared/life.mjs';
 import { vehicleColorFor } from '../src/shared/vehicles.mjs';
 import { ORIGIN_META, createOrigin, originHome } from '../src/shared/origins.mjs';
@@ -14,7 +15,7 @@ const PLAYER_ID = 'browser-preview';
 const publicData = data.bootstrap || data;
 const allJobs = data.jobs || publicData.jobs || {};
 const atlas = new Map((publicData.atlas || []).map(place => [place.id, place]));
-const catalog = publicData.catalog || [];
+const catalog = authoritativeCatalog;
 const properties = publicData.properties || [];
 const appearanceOptions = publicData.appearanceOptions || {};
 const clone = value => structuredClone(value);
@@ -129,7 +130,7 @@ function challengeView() {
 function bootstrap() {
   const now=Date.now(),clock=abujaTime(now),workSchedules=Object.fromEntries(Object.keys(allJobs).map(id=>[id,jobSchedule(id,state.profile,now)]));
   return {
-    ...clone(publicData), walletMeta:{...clone(WALLET_META),transferEnabled:false,topupMode:'preview',demoTopupEnabled:true}, jobs:publicJobs(), authenticated:true, profile:clone(state.profile), activeChallenge:challengeView(),
+    ...clone(publicData), catalog:clone(catalog), walletMeta:{...clone(WALLET_META),transferEnabled:false,topupMode:'preview',demoTopupEnabled:true}, jobs:publicJobs(), authenticated:true, profile:clone(state.profile), activeChallenge:challengeView(),
     properties:clone(propertiesFor()),originMeta:clone(ORIGIN_META),loanMeta:clone(LOAN_META),loans:loanView(state.profile,now),workSchedule:jobSchedule(state.profile.job,state.profile,now),workSchedules,serverTime:now,clock,weather:seasonalWeather(now),clubSchedule:clubSchedule(now),visit:null,homeVisit:null,homeVisitRequests:[],homeVisitors:[],payments:previewPayments(),admin:{ok:true,role:null,permissions:[],bootstrapConfigured:false},
     people:[],friends:[],friendRequests:[],conversations:[],nearby:[],invitations:[],events:[],blocked:[],muted:[],
     notifications:clone(state.notifications),transactions:clone(state.transactions).slice(-60).reverse(),

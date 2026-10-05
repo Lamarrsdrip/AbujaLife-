@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { GameStore, jobs } from '../src/server/gameStore.mjs';
+import { GameStore, jobs, catalog } from '../src/server/gameStore.mjs';
 
 async function fixture(t) {
   const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'abujalife-game-'));
@@ -24,7 +24,7 @@ test('client verification and payload amounts cannot mint currency',async t=>{
   for(const verified of [false,true])assert.throws(()=>store.action(id,'topup',{amount:5000000,receipt:'forged',verified}),/verified payment provider/);
   assert.throws(()=>store.action(id,'purchase',{itemId:'not-a-real-item',price:-999999}),/Okrika Marketplace/);
   const after=store.action(id,'purchase',{itemId:'plant',price:-999999,wallet:999999999}).profile;
-  assert.equal(after.wallet,before.wallet-2300);assert.deepEqual(after.inventory,['plant']);
+  assert.equal(after.wallet,before.wallet-catalog.find(item=>item.id==='plant').price);assert.deepEqual(after.inventory,['plant']);
   assert.throws(()=>store.action(id,'purchase',{itemId:'plant'}),/already own/);
 });
 
@@ -60,7 +60,7 @@ test('premium wardrobe ownership and travel quotations are enforced by the serve
   const {store,id}=await fixture(t);const before=store.profile(id);
   assert.throws(()=>store.updateProfile(id,{appearance:{top:'agbada'}}),/Buy this outfit/);
   const bought=store.action(id,'purchase',{itemId:'traditional-set'}).profile;
-  assert.equal(bought.wallet,before.wallet-12000);assert.equal(store.updateProfile(id,{appearance:{top:'agbada'}}).appearance.top,'agbada');
+  assert.equal(bought.wallet,before.wallet-catalog.find(item=>item.id==='traditional-set').price);assert.equal(store.updateProfile(id,{appearance:{top:'agbada'}}).appearance.top,'agbada');
   const quote=store.quoteTravel(id,{district:'jabi',mode:'bus'});assert.equal(store.profile(id).wallet,bought.wallet);
   const journey=store.action(id,'travel',{district:'jabi',mode:'bus',cost:0});assert.equal(journey.trip.cost,quote.cost);assert.equal(journey.trip.seconds,quote.seconds);assert.equal(journey.profile.wallet,bought.wallet-quote.cost);
 });

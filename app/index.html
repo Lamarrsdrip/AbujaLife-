@@ -51,9 +51,6 @@
   <div id="sheet-root"></div>
   <div id="toast" role="status" aria-live="polite"></div>
   <script>
-    // iOS Safari can strand an async hosted-checkout pre-open on about:blank.
-    // Keep the existing payment API flow, but send that exact pre-open handoff
-    // through the current AbujaLife tab once Flutterwave returns its checkout URL.
     (() => {
       const nativeOpen = window.open.bind(window);
       window.open = (url = '', target = '', features = '') => {
@@ -65,9 +62,7 @@
             close() { closed = true; },
             location: {
               replace(nextUrl) {
-                if (!closed && typeof nextUrl === 'string' && /^https:\/\//i.test(nextUrl)) {
-                  window.location.assign(nextUrl);
-                }
+                if (!closed && typeof nextUrl === 'string' && /^https:\/\//i.test(nextUrl)) window.location.assign(nextUrl);
               }
             }
           };
@@ -76,7 +71,9 @@
       };
     })();
   </script>
+  <script type="module">import { applyUncappedEconomyPolicy } from '/src/shared/economy-policy.mjs'; applyUncappedEconomyPolicy();</script>
   <script type="module" src="/app.js"></script>
+  <script type="module" src="/auth-username-only-ui.js"></script>
   <script type="module" src="/game-ui-kit.js"></script>
   <script type="module" src="/ads.js"></script>
   <script type="module" src="/integrations.js"></script>

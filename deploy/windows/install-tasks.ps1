@@ -4,7 +4,7 @@ Assert-Administrator
 $Root = Assert-AbujaLifeRoot $Root
 $config = Read-AbujaLifeConfiguration $Root
 $runtime = Join-Path $Root 'shared\runtime'
-foreach ($file in @('runtime.mjs', 'supervisor.mjs', 'backup-run.mjs')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination (Join-Path $runtime $file) -Force }
+foreach ($file in @('runtime.mjs', 'supervisor.mjs', 'backup-run.mjs', 'auto-update.ps1')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination (Join-Path $runtime $file) -Force }
 $apiPrincipal = New-ScheduledTaskPrincipal -UserId 'S-1-5-19' -LogonType ServiceAccount -RunLevel Limited
 $backupPrincipal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
 $apiSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
@@ -21,4 +21,8 @@ $guardAction = New-ScheduledTaskAction -Execute $config.nodePath -Argument ('"' 
 $guardTrigger = New-ScheduledTaskTrigger -Once -At ([DateTime]::Now.AddMinutes(1)) -RepetitionInterval (New-TimeSpan -Minutes 5)
 $guardSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 2) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 Register-ScheduledTask -TaskName 'AbujaLife-Mongo-LockGuard' -Action $guardAction -Trigger $guardTrigger -Principal $backupPrincipal -Settings $guardSettings -Description 'Every five minutes, release only a proven stale AbujaLife backup write-lock after the backup PID has exited; never accesses Okrika.' -Force | Out-Null
-Write-Output 'AbujaLife-API starts after reboot; supervisor restarts API crashes. AbujaLife-Backup runs daily at 03:15 server local time.'
+$updateAction = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + (Join-Path $runtime 'auto-update.ps1') + '"') -WorkingDirectory $Root
+$updateTrigger = New-ScheduledTaskTrigger -Once -At ([DateTime]::Now.AddMinutes(2)) -RepetitionInterval (New-TimeSpan -Minutes 5)
+$updateSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 2) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+Register-ScheduledTask -TaskName 'AbujaLife-AutoDeploy' -Action $updateAction -Trigger $updateTrigger -Principal $backupPrincipal -Settings $updateSettings -Description 'Polls public GitHub main after successful CI and promotes only validated AbujaLife releases; never changes Okrika.' -Force | Out-Null
+Write-Output 'AbujaLife-API starts after reboot; supervisor restarts API crashes. AbujaLife-Backup runs daily at 03:15 server local time. AbujaLife-AutoDeploy checks successful main builds every five minutes.'

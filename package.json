@@ -7,7 +7,7 @@
     "dev": "node --watch scripts/dev.mjs",
     "start": "node src/server/production.mjs",
     "qa": "node scripts/qa.mjs && node --test tests/*.test.mjs",
-    "qa:browser": "python tests/browser-smoke.py",
+    "qa:browser": "python tests/browser-ci-smoke.py",
     "assets:build": "node scripts/vendor-three.mjs",
     "preview:build": "node scripts/vendor-three.mjs && node preview/build.mjs",
     "qa:gameplay": "python tests/gameplay-smoke.py",

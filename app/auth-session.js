@@ -6,6 +6,11 @@ export function mergeCoreBootstrap(current,next) {
   const merged={...next};
   const locationKey=p=>[p?.district,p?.location?.kind,p?.location?.venue,p?.location?.ownerId,p?.location?.visitId].join(':');
   for(const key of deferredFields)if(current[key]!==undefined && (key!=='nearby'||locationKey(current.profile)===locationKey(next.profile)))merged[key]=current[key];
+  // A resident only needs one optional/full hydration per authenticated session.
+  // After it has happened, startup=1 refreshes are authoritative core-state
+  // reconciliation only. Keep the optional data but do not trigger another
+  // heavyweight /api/bootstrap after every heartbeat, action or realtime event.
+  if(current.startup!==true)merged.startup=false;
   return merged;
 }
 

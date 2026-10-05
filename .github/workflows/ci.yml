@@ -20,6 +20,45 @@ jobs:
       - run: npm run build
       - run: npm run qa:infra
 
+  browser-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm ci --ignore-scripts
+      - name: Install Playwright client
+        run: python -m pip install --disable-pip-version-check playwright==1.55.0
+      - name: Use runner Chrome
+        shell: bash
+        run: |
+          if [ -x /usr/bin/google-chrome ]; then
+            echo "CHROMIUM_PATH=/usr/bin/google-chrome" >> "$GITHUB_ENV"
+          elif [ -x /usr/bin/chromium ]; then
+            echo "CHROMIUM_PATH=/usr/bin/chromium" >> "$GITHUB_ENV"
+          else
+            echo "No compatible Chromium browser is installed on this runner" >&2
+            exit 1
+          fi
+      - name: Run two-resident playable browser acceptance
+        env:
+          ABUJALIFE_QA_ARTIFACTS: ${{ runner.temp }}/abujalife-browser-qa
+        run: npm run qa:browser
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-smoke-evidence
+          path: ${{ runner.temp }}/abujalife-browser-qa
+          if-no-files-found: ignore
+          retention-days: 7
+
   windows:
     runs-on: windows-latest
     steps:

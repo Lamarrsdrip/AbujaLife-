@@ -19,6 +19,7 @@ export const productionEntryPoints = Object.freeze({
   'living-city': 'app/living-city.js',
   'game-map': 'app/game-map.js',
   'game-experience': 'app/game-experience.js',
+  'game-realm-2026': 'app/game-realm-2026.js',
 });
 
 export function publicOrigin(value, name) {
@@ -27,7 +28,7 @@ export function publicOrigin(value, name) {
   const hostname = url.hostname.toLowerCase();
   const dnsName = /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z](?:[a-z0-9-]*[a-z0-9])?$/;
   if (url.protocol !== 'https:' || url.username || url.password || url.port || url.pathname !== '/' || url.search || url.hash || !dnsName.test(hostname) || /(?:^|\.)(?:localhost|local|internal|invalid|test)$/.test(hostname)) {
-    throw new Error(`${name} must be a public HTTPS origin without credentials, a port, path, query or fragment.`);
+    throw new Error(`${name} must identify a public HTTPS origin without credentials, a port, path, query or fragment.`);
   }
   return url.origin;
 }

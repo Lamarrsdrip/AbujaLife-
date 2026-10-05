@@ -2,6 +2,19 @@ import { HOME_UPGRADES, TRANSPORT_MODES, INVESTMENT_META, systemResaleValue } fr
 import { VEHICLE_CATALOG } from './vehicles.mjs';
 import { EXTRA_HOME_ITEMS } from './home-items.mjs';
 const task = (id,prompt,options,answer) => ({id,prompt,options:options.map(([id,label])=>({id,label})),answer});
+const ITEM_PRICE_MULTIPLIER = 10;
+const scaleCatalogItem = item => {
+  if (!Number.isSafeInteger(item?.price) || item.price < 0) throw new RangeError(`Invalid catalogue price for ${item?.id || 'item'}`);
+  const price = item.price * ITEM_PRICE_MULTIPLIER;
+  if (!Number.isSafeInteger(price)) throw new RangeError(`Catalogue price overflow for ${item.id}`);
+  const next = { ...item, price };
+  if (Number.isSafeInteger(item.cost)) {
+    const cost = item.cost * ITEM_PRICE_MULTIPLIER;
+    if (!Number.isSafeInteger(cost)) throw new RangeError(`Catalogue cost overflow for ${item.id}`);
+    next.cost = cost;
+  }
+  return next;
+};
 export const jobs = {
   'restaurant-host': {id:'restaurant-host',title:'Restaurant host',district:'garki-i',pay:5600,energy:12,skill:'Hospitality',description:'Welcome guests and coordinate service.',tasks:[
     task('arrival','A party of four arrives. Only a table for two is ready.',[['join','Check whether two tables can be joined'],['split','Seat them apart without asking'],['ignore','Leave them waiting without an update']],'join'),
@@ -46,7 +59,7 @@ export const catalog = [
   ...HOME_UPGRADES,
   ...EXTRA_HOME_ITEMS,
   ...VEHICLE_CATALOG
-];
+].map(scaleCatalogItem);
 export const properties = [
   {id:'garki-studio',name:'Garki starter studio',district:'garki-i',tier:0,rent:0,buy:0,bills:450,description:'A modest studio shell with a bathroom, ready to make your own.'},
   {id:'lugbe-flat',name:'Lugbe one-bedroom',district:'lugbe',tier:1,rent:18000,buy:280000,bills:1200,description:'More space along the airport corridor.'},

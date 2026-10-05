@@ -27,7 +27,8 @@ try {
       }
     } finally { await recovery.close(); }
   }
-  const backupUri = mongoUri(config, 'abujalife_backup', 'mongo-backup-password');
+  // A full replica-set dump requires an unscoped tools URI.
+  const backupUri = mongoUri(config, 'abujalife_backup', 'mongo-backup-password', config.database, '');
   client = new MongoClient(backupUri, { serverSelectionTimeoutMS: 15000 }); await client.connect();
   const hello = await client.db('admin').command({ hello: 1 });
   if (hello.setName !== config.replicaSet || !hello.isWritablePrimary) throw new Error('Refusing to back up a different MongoDB instance.');

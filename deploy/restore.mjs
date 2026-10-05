@@ -12,11 +12,14 @@ try{
   // Authenticate every byte before mongorestore can modify any data.
   await decryptArchive(source,raw);
   const restoreUri=uri('abujalife_bootstrap','mongo-root-password','admin');client=await connect(restoreUri);
-  const restoreArguments=['--config',toolConfiguration(directory,restoreUri),'--archive='+raw,'--gzip','--nsInclude='+DATABASE+'.*','--stopOnError'];
+  // Full archives with oplog replay cannot be namespace-filtered. The Mongo
+  // service is dedicated to AbujaLife; restore the snapshot and replay its
+  // oplog after dropping only abujalife_prod.
+  const restoreArguments=['--config',toolConfiguration(directory,restoreUri),'--archive='+raw,'--gzip','--oplogReplay','--stopOnError'];
   // --drop alone leaves collections created after the selected snapshot.
   // Validate the authenticated archive before replacing this exact isolated DB.
   await runTool('mongorestore',[...restoreArguments,'--dryRun']);
   await client.db(DATABASE).dropDatabase();
   await runTool('mongorestore',restoreArguments);
-  console.log(JSON.stringify({ok:true,database:DATABASE,restored:source,verifiedEncryption:true}));
+  console.log(JSON.stringify({ok:true,database:DATABASE,restored:source,verifiedEncryption:true,oplogReplayed:true}));
 }finally{if(client)await client.close();fs.rmSync(directory,{recursive:true,force:true});}

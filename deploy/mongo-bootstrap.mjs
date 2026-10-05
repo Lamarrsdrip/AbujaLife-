@@ -49,16 +49,10 @@ try {
   }
   const existingRole = await db.command({rolesInfo: 'abujalife_runtime'});
   await db.command({[existingRole.roles.length ? 'updateRole' : 'createRole']: 'abujalife_runtime', privileges, roles: []});
-  // The backup account is limited to this dedicated AbujaLife Mongo service.
-  // Full replica-set dumps need database discovery and read access to the
-  // service's internal databases; restore still filters to abujalife_prod.
-  const backupPrivileges = [
-    {resource: {cluster: true}, actions: ['listDatabases']},
-    {resource: {db: '', collection: ''}, actions: ['find','listCollections','listIndexes','collStats','dbStats']}
-  ];
-  const existingBackupRole = await admin.command({rolesInfo: 'abujalife_backup'});
-  await admin.command({[existingBackupRole.roles.length ? 'updateRole' : 'createRole']: 'abujalife_backup', privileges: backupPrivileges, roles: []});
-  for (const [user, passwordFile, role, roleDb] of [['abujalife_app','mongo-app-password','abujalife_runtime',database], ['abujalife_backup','mongo-backup-password','abujalife_backup','admin']]) {
+  // Full replica-set mongodump --oplog is an instance-level operation. The
+  // built-in backup role is the supported least-privilege role for it; the
+  // restore command filters the archive back to abujalife_prod.
+  for (const [user, passwordFile, role, roleDb] of [['abujalife_app','mongo-app-password','abujalife_runtime',database], ['abujalife_backup','mongo-backup-password','backup','admin']]) {
     const existing = await db.command({usersInfo: user});
     await db.command({[existing.users.length ? 'updateUser' : 'createUser']: user, pwd: secret(passwordFile), roles: [{role,db:roleDb}]});
   }

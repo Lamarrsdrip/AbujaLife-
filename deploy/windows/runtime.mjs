@@ -18,8 +18,10 @@ export function secret(config, name) {
   return fs.readFileSync(path.join(config.secrets, name), 'utf8').trim();
 }
 
-export function mongoUri(config, user = 'abujalife_app', password = 'mongo-app-password', authSource = config.database) {
-  return `mongodb://${user}:${encodeURIComponent(secret(config, password))}@${config.mongoHost}/${config.database}?replicaSet=${config.replicaSet}&authSource=${authSource}&directConnection=true`;
+export function mongoUri(config, user = 'abujalife_app', password = 'mongo-app-password', authSource = config.database, databasePath = config.database) {
+  if (![config.database, ''].includes(databasePath)) throw new Error('Mongo connections may target only abujalife_prod or the dedicated replica-set root.');
+  const pathname = databasePath ? `/${databasePath}` : '/';
+  return `mongodb://${user}:${encodeURIComponent(secret(config, password))}@${config.mongoHost}${pathname}?replicaSet=${config.replicaSet}&authSource=${authSource}&directConnection=true`;
 }
 
 export function apiEnvironment(config, port = config.apiPort) {

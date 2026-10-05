@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 
-const source=readFileSync(new URL('../app/ads.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'');
+const source=readFileSync(new URL('../app/ads.js',import.meta.url),'utf8').replace(/^import .*;\r?\n/gm,'');
 async function fixture({renderer}={}){
   const observers=[],pending=new Set(),stats={mutations:0,bounds:0,callbacks:0};
   function mutation(target){

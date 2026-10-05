@@ -6,7 +6,7 @@ import * as THREE from '../app/vendor/three.module.js';
 
 // Run the production queue with real Three scene objects and a measured renderer;
 // no browser or GPU is required to verify when expensive rendering happens.
-const source=readFileSync(new URL('../app/product-3d.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'').replace('export function enhanceProductPreviews','function enhanceProductPreviews');
+const source=readFileSync(new URL('../app/product-3d.js',import.meta.url),'utf8').replace(/^import .*;\r?\n/gm,'').replace('export function enhanceProductPreviews','function enhanceProductPreviews');
 function fixture({intersection=true,failRender=false,failEncode=false}={}) {
   let now=1000,sequence=0;
   const idle=new Map(),frames=new Map(),timers=new Map(),events=new Map(),documentEvents=new Map();

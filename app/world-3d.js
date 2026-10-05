@@ -5,6 +5,7 @@ import { buildThreeEnvironment, batchRigidMeshes } from './world-3d-scenes.js';
 import { applyWorldCamera } from './world-camera.js';
 import { createCharacter as character, animateCharacter as animate } from './world-character.js';
 import { ambientAppearance } from '../src/shared/avatars.mjs';
+import { furnitureSurfaceRect } from '../src/shared/furniture-metadata.mjs';
 
 const DEPTH = Math.SQRT1_2;
 const palette = {
@@ -71,6 +72,23 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
       return null;
     },
     screenToGround(clientX,clientY){if(lost||disposed||!viewWidth)return null;const rect=container.getBoundingClientRect();pickNdc.set((clientX-rect.left)/rect.width*2-1,1-(clientY-rect.top)/rect.height*2);pickRay.setFromCamera(pickNdc,camera);return pickRay.ray.intersectPlane(groundPlane,pickPoint)?{x:pickPoint.x,y:pickPoint.z*DEPTH}:null;},
+    screenToFurnitureSurface(clientX,clientY,excludeId){
+      if(lost||disposed||!viewWidth)return null;
+      const rect=container.getBoundingClientRect();pickNdc.set((clientX-rect.left)/rect.width*2-1,1-(clientY-rect.top)/rect.height*2);pickRay.setFromCamera(pickNdc,camera);
+      let nearest=null,best=Infinity;
+      for(const item of environment?.furnitureObjects?.()||[]){
+        if(!item.visible||item.userData.itemId===excludeId)continue;
+        const data=item.userData,area=furnitureSurfaceRect({...data.footprint,itemId:data.itemId});if(!area)continue;
+        const height=area.height+(data.elevation||0),plane=new THREE.Plane(new THREE.Vector3(0,1,0),-height);
+        if(!pickRay.ray.intersectPlane(plane,pickPoint))continue;
+        const x=pickPoint.x,y=pickPoint.z*DEPTH;
+        if(x<area.x||x>area.x+area.w||y<area.y||y>area.y+area.h)continue;
+        const distance=pickRay.ray.origin.distanceToSquared(pickPoint);
+        if(distance<best){best=distance;nearest={x,y,supportId:data.itemId,elevation:height};}
+      }
+      return nearest;
+    },
+    projectWorld(point){if(lost||disposed||!viewWidth)return null;const rect=container.getBoundingClientRect();projected.set(point.x,point.elevation||0,point.y/DEPTH).project(camera);return {x:rect.left+(projected.x+1)*rect.width/2,y:rect.top+(1-projected.y)*rect.height/2,z:projected.z};},
     projectGround(point){if(lost||disposed||!viewWidth)return null;const rect=container.getBoundingClientRect();projected.set(point.x,0,point.y/DEPTH).project(camera);return {x:rect.left+(projected.x+1)*rect.width/2,y:rect.top+(1-projected.y)*rect.height/2};},
     setResidents(people){if(disposed)return;const key=JSON.stringify(people.map(p=>[p.id,p.appearance]));if(key===onlineKey)return;onlineKey=key;for(const rig of online){scene.remove(rig.root);rig.dispose?.();}online=people.map(p=>{const rig=character(p.appearance);scene.add(rig.root);return rig;});},
     draw({player,camera:position,width,height,orientation={},angle,phase,time,moving,transport,driving,activity,clock,weather,clubOpen,carColor,carStyle,ownVehicle,parked,trafficPositions,trip,npcPositions=[],onlinePositions=[]}){

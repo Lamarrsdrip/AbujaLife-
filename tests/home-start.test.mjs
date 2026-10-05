@@ -3,15 +3,17 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import crypto from 'node:crypto';
 import { build } from 'esbuild';
 import { GameStore, catalog, properties } from '../src/server/gameStore.mjs';
+import { appearanceOptions as appearanceValues } from '../src/shared/catalogue.mjs';
 import { starterHomeSeed } from '../src/shared/life.mjs';
 import { ORIGIN_HOMES } from '../src/shared/origins.mjs';
 import { buildInterior, furniturePlacementPreservesRoutes } from '../app/world-interiors.js';
 
-const repo=new URL('../',import.meta.url).pathname;
+const repo=fileURLToPath(new URL('../',import.meta.url));
 const gifts=['bed','sofa','dining-table','fridge'];
 async function fixture(t,branch=1,index=0) {
   const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'abujalife-home-start-'));
@@ -192,8 +194,8 @@ test('preview saves created before furnishing presets stay unchanged',async()=>{
 
 test('the signup wizard requires Male or Female while an existing neutral profile retains its choice',()=>{
   const source=fs.readFileSync(path.join(repo,'app/app.js'),'utf8');
-  const lines=['const appearanceOptions=','const appearanceLabels=','const appearanceColors=','function appearanceChoices('].map(prefix=>source.split('\n').find(line=>line.startsWith(prefix))).join('\n');
-  const context=vm.createContext({state:{profile:{inventory:[]}},esc:value=>String(value)});
+  const lines=['const appearanceOptionsLabels=','const appearanceOptions=','const appearanceLabels=','const appearanceColors=','function appearanceChoices('].map(prefix=>source.split('\n').find(line=>line.startsWith(prefix))).join('\n');
+  const context=vm.createContext({appearanceValues,state:{profile:{inventory:[]}},esc:value=>String(value)});
   vm.runInContext(lines,context);
   const signup=vm.runInContext("appearanceChoices({presentation:'neutral'},['presentation'],{signup:true})",context);
   assert.match(signup,/>Gender</);assert.match(signup,/>Female</);assert.match(signup,/>Male</);

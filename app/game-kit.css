@@ -13,6 +13,38 @@
   --kit-radius:18px;
 }
 
+/* One viewport, one game surface. Chrome has its own space, so city controls
+   and roof names stay tappable below the header and above the native dock. */
+#app .game-shell.is-playing{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:calc(64px + env(safe-area-inset-top)) minmax(0,1fr) calc(76px + env(safe-area-inset-bottom));height:100dvh;min-height:0;min-width:0;width:100%;max-width:none;padding:0;overflow:hidden;background:#f7f5ee}
+#app .is-playing .game-header{position:relative;inset:auto;height:100%;padding:env(safe-area-inset-top) 16px 0;z-index:20;pointer-events:auto;background:#f7f5ee;color:#24483a}
+#app .is-playing .game-header .wordmark{filter:none}
+#app .is-playing .game-header .wallet-button{background:#e7eee2;border:1px solid #dce5d7;box-shadow:inset 0 1px #fff8;color:#24483a}
+#app .is-playing .game-header .wallet-button>span{color:#72806c}
+#app .is-playing .game-header .wallet-button strong{color:#24483a}
+#app .is-playing .game-header,#app .is-playing .game-content,#app .is-playing .game-nav{min-width:0;box-sizing:border-box}
+#app .is-playing .game-content{height:100%;min-height:0;width:100%;max-width:none;padding:0;overflow:hidden}
+#app .is-playing :is(.world-stage,#world-scene.world-playable){height:100%;min-height:0;width:100%;border:0;border-radius:0;box-shadow:none}
+#app .is-playing .game-nav{position:relative;inset:auto;transform:none;align-self:stretch;width:100%;max-width:none;margin:0;border:0;border-top:1px solid #dce4d6;border-radius:0;padding:8px 12px calc(8px + env(safe-area-inset-bottom));gap:5px;backdrop-filter:none;background:#f7f5ee;box-shadow:none}
+#app .is-playing .game-nav button{flex:1;min-width:0;min-height:44px;max-height:56px;color:#738173}
+#app .is-playing .game-nav button.active{background:#204b3c;color:#fffdf2;box-shadow:inset 0 1px #ffffff16}
+#app .is-playing .world-hud{top:14px;left:14px;right:14px}
+#app .is-playing .world-motion-status{top:64px;left:16px}
+#app .is-playing .world-minimap{top:70px;right:14px}
+#app .is-playing .world-game-controls{left:16px;right:16px;bottom:18px}
+#app .is-playing .world-furniture-toolbar{bottom:18px}
+#app .is-playing .game-status-rail{display:none}
+#app .is-playing .world-camera-button{width:44px;height:44px;min-height:44px}
+#app .is-playing .world-time-chip{top:63px}
+#app .is-playing .world-catalogue-button{top:106px}
+#app .is-playing .header-needs-button{min-height:44px;min-width:44px;color:#537344;background:#e7eee2;border:1px solid #dce5d7;border-radius:12px}
+#sheet-root .sheet-backdrop{background:#102a224d;backdrop-filter:blur(6px);overscroll-behavior:contain}
+#sheet-root .sheet{overscroll-behavior:contain;-webkit-overflow-scrolling:touch;animation:kit-sheet-enter .22s cubic-bezier(.2,.8,.2,1)}
+@keyframes kit-sheet-enter{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:650px){#sheet-root .sheet{border-radius:24px 24px 0 0;padding-bottom:max(24px,env(safe-area-inset-bottom))}#app .is-playing .game-header{gap:6px}#app .is-playing .world-minimap{width:72px}#app .is-playing .header-needs-button{display:none}}
+@media(prefers-reduced-motion:reduce){#sheet-root .sheet{animation:none}}
+@media(max-width:650px){#app .is-playing .needs-header{flex:none;width:44px;min-width:44px;min-height:44px;padding:0;display:grid;place-items:center;border-radius:12px;background:#e7eee2;color:#537344}#app .is-playing .needs-header-item{display:none}#app .is-playing .needs-header::before{content:'✦';font-size:19px}#app .is-playing .wallet-button{min-width:0;max-width:110px;flex:1}#app .is-playing .game-header .wordmark{margin-right:auto}}
+@media(max-width:360px){#app .is-playing .needs-header{display:none}#app .is-playing .game-header .brand-name{font-size:20px}}
+
 /* Clear hierarchy without increasing the chrome around the playable view. */
 #app .game-header{
   background:var(--kit-paper);
@@ -166,3 +198,5 @@
 @media(prefers-reduced-motion:reduce){
   #app .game-header :is(button,a),#app .game-nav button,#app .welcome-form :is(button,input),#app .onboarding-details :is(button,input,select),#app .game-content:not(.view-world) :is(button,input,select),#sheet-root :is(button,input,select,textarea){transition:none}
 }
+
+#app .world-roof-name:not(:disabled):active{transform:translate(-50%,-100%) scale(.98)}

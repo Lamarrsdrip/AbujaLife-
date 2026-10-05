@@ -493,7 +493,7 @@ function venuePoints(s,venue,anchors,fallbacks=[]) {
   const activities=venueActivities(venue);const points=activities.length?activities:fallbacks.map(([id,name])=>({id,name}));
   const action={'dealership':'dealership','estate-office':'estate-office','furniture-store':'market'}[venue.id];
   if(venue.id==='banex'){anchors.forEach((p,i)=>s.point(`browse-${i}`,p.x,p.y,i===0?'Browse Banex tech':'Browse this tech counter','banex-market',{venueId:'banex'}));return;}
-  if(action){const p=anchors[0];s.point('browse',p.x,p.y,venue.id==='dealership'?'Find your next car':venue.id==='estate-office'?'Find your next home':'Browse Capital Market',action,{});return;}
+  if(action){const p=anchors[0];s.point('browse',p.x,p.y,venue.id==='dealership'?'Find your next car':venue.id==='estate-office'?'Find your next home':'Browse Okrika Marketplace',action,{});return;}
   points.forEach((a,i)=>{const p=anchors[i%anchors.length];s.point(`activity-${a.id}`,p.x,p.y,a.name||a.label||a.title||'Take part','venue-action',{venueId:venue.id,activityId:a.id});});
 }
 function treadmillArt() {

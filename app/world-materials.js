@@ -18,9 +18,18 @@ export function createWorldMaterialLibrary(T, {size = 128} = {}) {
       const nx = x / size, ny = y / size, n = noise();
       let shade = 248;
       if (type === 'wood') shade = 243 + Math.sin(ny * 76 + Math.sin(nx * 12) * .9) * 7 + (n - .5) * 5;
+      else if (type === 'planks') {
+        const board = Math.floor(nx * 8), seam = x % (size / 8), end = (y + (board % 2) * size / 2) % size;
+        shade = 242 + Math.sin(nx * 190 + Math.sin(ny * 15 + board) * 1.7) * 5 + Math.sin(board * 4.7) * 5 + (n - .5) * 4;
+        if (seam < 1 || end < 1) shade = 196;
+      }
+      else if (type === 'plaster') shade = 246 + (n - .5) * 7 + Math.sin(nx * 19 + ny * 23) * 1.5;
       else if (type === 'fabric') shade = 241 + (x % 4 < 2 ? 7 : -3) + (y % 4 < 2 ? 4 : -5) + (n - .5) * 4;
       else if (type === 'stone') shade = 246 - Math.max(0, Math.sin(nx * 17 + ny * 29 + Math.sin(ny * 13) * 2) - .9) * 58 + (n - .5) * 5;
-      else if (type === 'tile' || type === 'bath') shade = x % 32 < 1 || y % 32 < 1 ? 198 : 245 + (n - .5) * 5;
+      else if (type === 'tile' || type === 'bath') {
+        const cell = type === 'bath' ? size / 4 : size / 2;
+        shade = x % cell < 1 || y % cell < 1 ? 203 : 246 + (n - .5) * 4;
+      }
       else if (type === 'road') shade = 234 + (n - .5) * 29;
       else if (type === 'grass') shade = 235 + (n - .5) * 28 + Math.sin(nx * 70 + ny * 31) * 5;
       else if (type === 'rug') shade = 229 + (x % 3 ? 8 : -5) + (y % 3 ? 5 : -7) + (n - .5) * 5;
@@ -34,7 +43,8 @@ export function createWorldMaterialLibrary(T, {size = 128} = {}) {
     map.userData = {surface: type, authored: true}; textures.set(key, map); return map;
   }
   const defaults = {
-    wood: {roughness: .57, bumpScale: .19}, fabric: {roughness: .94, bumpScale: .11},
+    wood: {roughness: .57, bumpScale: .12}, planks: {roughness: .63, bumpScale: .09},
+    plaster: {roughness: .89, bumpScale: .035}, fabric: {roughness: .94, bumpScale: .07},
     stone: {roughness: .36, bumpScale: .04}, tile: {roughness: .47, bumpScale: .07},
     bath: {roughness: .48, bumpScale: .06}, road: {roughness: .98, bumpScale: .23},
     grass: {roughness: 1, bumpScale: .20}, rug: {roughness: 1, bumpScale: .20},
@@ -45,7 +55,7 @@ export function createWorldMaterialLibrary(T, {size = 128} = {}) {
     const key = JSON.stringify([type, color, extra]);
     if (materials.has(key)) return materials.get(key);
     const {repeatX = 1, repeatY = 1, ...options} = extra;
-    const textured = ['wood','fabric','stone','tile','bath','road','grass','rug'].includes(type);
+    const textured = ['wood','planks','plaster','fabric','stone','tile','bath','road','grass','rug'].includes(type);
     const map = textured ? texture(type, repeatX, repeatY) : null;
     const result = new T.MeshStandardMaterial({color, metalness: 0, ...defaults[type],
       ...(map ? {map, bumpMap: map} : {}), ...options});

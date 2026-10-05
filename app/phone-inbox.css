@@ -120,3 +120,58 @@
   .ph-chat-thread .ph-app-header{flex-shrink:0}
 }
 @media(max-height:620px){.phone-chat-open .ph-statusbar{flex-basis:34px}.ph-thread-profile .ph-thread-person{padding:10px 0}.ph-chat-shortcuts .ph-button{min-height:37px}.ph-thread-profile{padding-bottom:8px}.ph-chat-thread .ph-thread-scroll{padding-top:0}.ph-chat-thread .ph-composer{padding-top:7px}.ph-chat-thread .ph-bubble{font-size:13px}}
+
+/* Quiet messenger surfaces, with compact receipts and reachable money controls. */
+.phone-root .ph-chat-app{background:var(--ph-paper)}
+.phone-root .ph-chat-app .ph-search{background:#eef1e6;border-color:#dce5d3;box-shadow:inset 0 1px #fff9}
+.phone-root .ph-inbox-title small{color:#9d8150;font-size:9px;letter-spacing:.12em}
+.phone-root .ph-inbox-title h2{color:#214b39;font-size:29px;letter-spacing:-.055em}
+.phone-root .ph-inbox-title p{color:#73816f;font-size:12px}
+.phone-root .ph-compose-new{background:linear-gradient(135deg,#34634a,#244e3b);box-shadow:inset 0 1px #fff3,0 3px 8px #224c2d1a}
+.phone-root .ph-inbox-filters{gap:8px}
+.phone-root .ph-inbox-filters button{min-height:44px;background:#ebefe3;color:#667c59;border:1px solid #e1e7d8;border-radius:13px}
+.phone-root .ph-inbox-filters button[aria-pressed=true]{background:#dde8cf;color:#345b3e;border-color:#c5d5b4;box-shadow:inset 0 1px #fff7}
+.phone-root .ph-inbox-list .ph-conversation{padding-inline:6px;border-radius:13px;transition:background-color .16s ease}
+.phone-root .ph-inbox-list .has-unread{background:#eaf0df70}
+.phone-root .ph-inbox-list .ph-unread{background:#42734f;box-shadow:inset 0 1px #fff2}
+.phone-root .ph-inbox-list .ph-row-copy>small{color:#73816d}
+.phone-root .ph-chat-thread .ph-thread-scroll{background:radial-gradient(ellipse at 100% 0,#e7eddb80,transparent 65%),#f7f8ef}
+.phone-root .ph-thread-profile{background:#f8f9f1f5;border-bottom-color:#dce5d2;box-shadow:0 3px 8px #29492b06}
+.phone-root .ph-chat-shortcuts .ph-button{min-height:44px;border:1px solid #dce5cf;background:#eaf0e0;color:#526e46;box-shadow:inset 0 1px #fff9}
+.phone-root .ph-chat-shortcuts .ph-money-shortcut{background:#f2e4bd;color:#7e6637;border-color:#decd9a!important}
+.phone-root .ph-chat-thread .ph-bubble{background:#e8eddf;color:#34533e;box-shadow:inset 0 1px #fff7,0 2px 3px #284a2606}
+.phone-root .ph-chat-thread .mine .ph-bubble{background:linear-gradient(135deg,#356749,#28553b);color:#fffdf0;box-shadow:inset 0 1px #fff2,0 2px 4px #284a2610}
+.phone-root .ph-chat-thread .ph-message>span{color:#718268}
+.phone-root .ph-chat-thread .ph-message-day{background:#eaf0de;color:#6d825c;border:1px solid #dfe8d2}
+.phone-root .ph-chat-thread .ph-composer{background:#fafbf3;border-top-color:#dce5d2;box-shadow:0 -3px 10px #234d2605}
+.phone-root .ph-chat-thread .ph-composer textarea{background:#edf2e4;border-color:#d9e3cc;box-shadow:inset 0 1px #fff9}
+.phone-root .ph-chat-thread .ph-send{background:linear-gradient(135deg,#3a744e,#2c593d);box-shadow:inset 0 1px #fff3,0 2px 5px #20472a17}
+.phone-root .ph-new-messages{min-height:44px;background:#fffdf5;border-color:#cad9bb!important;color:#477243}
+.phone-root .ph-send-error button{min-height:44px;background:#f3e7d7;color:#9b6841}
+.phone-root .ph-money-panel{padding:13px;border-color:#ded0aa;border-radius:19px;background:radial-gradient(ellipse at 100% 0,#fff2ca,transparent 65%),linear-gradient(145deg,#fffdf5,#f5eddb);box-shadow:inset 0 1px #fff,0 5px 16px #6c5d320d}
+.phone-root .ph-money-heading{margin-bottom:11px}
+.phone-root .ph-money-heading small{font-size:8px;color:#998052}
+.phone-root .ph-money-heading>button{width:44px;height:44px;flex:none;background:#e9e1cc80}
+.phone-root .ph-money-amount>button{min-width:44px;min-height:44px;background:#f0e8d4}
+.phone-root .ph-money-panel .ph-chat-amounts{gap:6px;margin:10px 0}
+.phone-root .ph-money-panel .ph-chat-amounts .ph-button{min-height:44px;background:#f5eedb;color:#897143;border-color:#e5d9b9!important;box-shadow:inset 0 1px #fff9}
+.phone-root .ph-money-note-field input{min-height:44px;background:#fffaf0;border-color:#e4dac0}
+.phone-root .ph-money-panel .ph-money-edit{min-height:44px}
+.phone-root .ph-money-review-amount strong{font-variant-numeric:tabular-nums;font-size:36px}
+.phone-root .ph-transfer-message{
+  min-width:174px;
+  grid-template-columns:30px minmax(0,1fr);
+  background:linear-gradient(140deg,#fffdf4,#f5edda);
+  border:1px solid #e0d0a6;
+  box-shadow:inset 0 1px #fff,0 3px 9px #6f5c3110;
+  border-radius:15px;
+  padding:11px 12px;
+  column-gap:8px;
+}
+.phone-root .ph-transfer-message>.ph-icon{width:22px;height:22px;padding:4px;background:#eedfb8;color:#9b7c3e;border-radius:9px}
+.phone-root .ph-transfer-message>strong{font-size:23px;font-variant-numeric:tabular-nums;color:#3b6244}
+.phone-root .ph-transfer-message>small{font-size:8px;color:#947d50;letter-spacing:.075em}
+.phone-root .ph-transfer-message>small:last-child{font-size:9px;color:#728664;letter-spacing:0}
+@media(hover:hover) and (pointer:fine){
+  .phone-root .ph-inbox-list .ph-conversation:hover{background:#e8efdb}
+}

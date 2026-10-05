@@ -85,13 +85,25 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
   }
   function leg(p,x,z,height=35,color='#73533d') {box(p,x,height/2,z,6,height,6,typeof color==='string'?surfaces.material('wood',color):color);}
   function floor(parent,x,y,w,h,type='wood',height=0) {
-    const surface=type==='oak'||type==='darkoak'?'wood':type;
+    const surface=['wood','oak','darkoak'].includes(type)?'planks':type;
     const colors={wood:'#c5a581',oak:'#c5a581',darkoak:'#927556',tile:'#ded9ce',bath:'#aec2b9',road:'#41484e',grass:'#687d55'};
     const material=surfaces.material(surface,colors[type]||'#d4c9b5',{repeatX:Math.max(1,w/240),repeatY:Math.max(1,h/240)});
     return box(parent,x+w/2,height-2,(y+h/2)*ds,w,4,h*ds,material,false,false);
   }
   const wood=surfaces.material('wood','#b18e63'), darkWood=surfaces.material('wood','#755237'), cream=mat('#e9e0cb'), linen=surfaces.material('fabric','#e6dfd1'), green=surfaces.material('fabric','#506959'), metal=surfaces.material('metal','#657077'), glass=surfaces.material('glass','#86adb4');
   const fabric=color=>surfaces.material('fabric',color), ceramic=color=>surfaces.material('ceramic',color);
+  // The same recessed frame language carries from homes to every city facade.
+  // Windows stay opaque for inexpensive, clean rendering at overview distances.
+  function framedWindow(parent,x,y,z,w,h,{rotation=0,interior=false}={}) {
+    const frame=new T.Group();frame.name='Recessed architectural window';frame.position.set(x,y,z);frame.rotation.y=rotation;parent.add(frame);
+    const trim=interior?cream:mat('#d7d2c0'),reveal=mat('#53675f');
+    box(frame,0,0,0,w+8,h+8,5,reveal);
+    box(frame,0,0,3,w,h,2,mat(interior?'#a7bec0':'#789899',.25,.08,{emissive:'#e8c48b',emissiveIntensity:interior?.035:0}));
+    for(const side of[-1,1]){box(frame,side*(w/2+1),0,5,4,h+7,4,trim);box(frame,0,side*(h/2+1),5,w+7,4,4,trim);}
+    box(frame,0,0,5,3,h,3,trim);box(frame,0,-h/2-5,7,w+14,5,13,trim);
+    if(interior)box(frame,0,0,5,w,2,3,cream);
+    return frame;
+  }
   function plant(p,w=40,h=40) {
     cylinder(p,0,11,0,w*.35,23,'#b58461',w*.43);
     cylinder(p,0,24,0,w*.4,3,'#4b4233');
@@ -169,9 +181,10 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     switch(type) {
       case 'tech-laptop-stall':case 'tech-console-stall':case 'tech-repair-bench':case 'tech-accessory-stall':case 'tech-power-stall':case 'tech-parts-shelf':techStallModel(p,type,w,h);break;
       case 'sleeping-mat': {
-        box(p,0,5,0,w,10,h,mat('#8d9a89',.94),true);
-        box(p,0,11,h*.16,w*.96,2,h*.6,mat('#b5a990',.98),true);
-        box(p,0,14,-h*.34,w*.65,8,h*.16,'#ded8c9',true);break;
+        box(p,0,5,0,w,10,h,fabric('#8d9a89'),true);
+        box(p,0,11,h*.16,w*.96,2,h*.6,fabric('#b5a990'),true);
+        box(p,0,14,-h*.34,w*.65,8,h*.16,linen,true);
+        for(const x of[-w*.45,w*.45])box(p,x,11,0,1,.8,h*.92,fabric('#c5baa0'),false,false);break;
       }
       case 'king-bed':case 'bed': {
         for(const x of [-w*.4,w*.4])for(const z of [-h*.42,h*.42])leg(p,x,z,16);
@@ -307,7 +320,9 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
       }
       case 'bench':case 'pew': {
         for(const x of [-w*.4,w*.4])for(const z of [-h*.28,h*.28])leg(p,x,z,30);
-        box(p,0,36,0,w,9,h,wood);box(p,0,67,-h*.4,w,49,8,wood);break;
+        for(let i=0;i<4;i++)box(p,0,36,-h*.36+i*h*.24,w,7,h*.20,wood,true);
+        for(let i=0;i<3;i++)box(p,0,51+i*14,-h*.4,w,10,6,wood,true);
+        for(const x of[-w*.43,w*.43])box(p,x,49,0,5,5,h*.91,darkWood,true);break;
       }
       case 'altar':tabletop(p,w,h,60);box(p,0,68,0,w*.68,2,h*.82,'#ece1ca');box(p,0,100,-h*.15,4,67,4,darkWood);box(p,0,112,-h*.15,31,4,4,darkWood);for(const x of [-w*.3,w*.3]){cylinder(p,x,80,0,3,21,'#dbc28d');ball(p,x,92,0,2,4,2,mat('#ffd693',.6,0,{emissive:'#ffad42',emissiveIntensity:.65}));}break;
       case 'prayer-alcove':box(p,0,69,-h*.4,w,135,12,'#d3c9af');box(p,0,58,-h*.29,w*.48,110,6,'#59766a',true);box(p,0,5,0,w*.8,2,h*.9,'#8b7556');break;
@@ -374,8 +389,10 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     return p;
   }
   function tree(p,size=80) {
-    cylinder(p,0,52,0,6,104,'#7c6547',4,8);
-    for(const [x,y,z,r] of [[0,125,0,.46],[-.27,109,.14,.37],[.28,113,-.1,.38],[0,151,-.08,.33]])ball(p,x*size,y,z*size,r*size,r*size*.88,r*size,['#58774d','#678153','#46693e'][Math.round(y)%3],8);
+    const bark=surfaces.material('wood','#79654b',{roughness:.94});
+    cylinder(p,0,52,0,6,104,bark,4,8);cylinder(p,0,4,0,11,8,bark,7,8);
+    for(const side of[-1,1]){const branch=cylinder(p,side*11,87,side*7,2.8,43,bark,1.6,7);branch.rotation.z=-side*.55;branch.rotation.x=side*.25;}
+    for(const [x,y,z,r] of [[0,125,0,.46],[-.27,109,.14,.37],[.28,113,-.1,.38],[0,151,-.08,.33]])ball(p,x*size,y,z*size,r*size,r*size*.88,r*size,['#58774d','#678153','#46693e'][Math.round(y)%3],12);
   }
   function sculptedCarModel(color,item) {
     const p=new T.Group(),wheels=[],shape=item.renderShape,dimensions=item.dimensions,unit=.046;
@@ -602,15 +619,19 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
       }
       const indices=[];let offset=0;for(const piece of pieces){for(const index of piece.index.array)indices.push(index+offset);offset+=piece.attributes.position.count;piece.dispose();}combined.setIndex(indices);combined.computeBoundingBox();combined.computeBoundingSphere();return combined;
     });
-    mesh(wall,geometry,mat('#ffffff',.88,0,{vertexColors:true}),x+w/2,0,(y+h/2)*ds);
+    mesh(wall,geometry,surfaces.material('plaster','#ffffff',{vertexColors:true}),x+w/2,0,(y+h/2)*ds);
     group.add(wall);cutawayWalls.push(wall);return wall;
   }
   function contactShadows(items) {
-    const solid=items.filter(item=>item.w>15&&item.h>15&&!['rug','lake','lawn','sleeping-mat'].includes(item.kind));
+    const solid=items.filter(item=>item.w>15&&item.h>15&&!['rug','lake','lawn'].includes(item.kind));
     if(!solid.length)return;
-    const canvas=document.createElement('canvas');canvas.width=canvas.height=64;const context=canvas.getContext('2d');if(!context)return;
-    const gradient=context.createRadialGradient(32,32,7,32,32,32);gradient.addColorStop(0,'rgba(42,35,26,.27)');gradient.addColorStop(.65,'rgba(42,35,26,.12)');gradient.addColorStop(1,'rgba(42,35,26,0)');context.fillStyle=gradient;context.fillRect(0,0,64,64);
-    const texture=new T.CanvasTexture(canvas);textures.push(texture);
+    const size=64,data=new Uint8Array(size*size*4);
+    for(let y=0;y<size;y++)for(let x=0;x<size;x++){
+      const radius=Math.hypot((x+.5-size/2)/(size/2),(y+.5-size/2)/(size/2)),i=(y*size+x)*4;
+      data[i]=42;data[i+1]=35;data[i+2]=26;data[i+3]=Math.round(70*Math.pow(Math.max(0,1-radius),1.35));
+    }
+    const texture=new T.DataTexture(data,size,size,T.RGBAFormat);texture.name='Authored soft contact shadow';texture.colorSpace=T.SRGBColorSpace;
+    texture.magFilter=texture.minFilter=T.LinearFilter;texture.needsUpdate=true;textures.push(texture);
     const material=new T.MeshBasicMaterial({map:texture,transparent:true,depthWrite:false,toneMapped:false});materials.set('contact-shadows',material);
     // One instanced draw for the whole room, rather than one extra light or
     // shadow pass per chair, table, appliance or bed.
@@ -629,8 +650,8 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     floor(group,60,140,layout.width-120,layout.height-220,outdoor?'grass':layout.floorMaterial||'tile');
     for(const area of layout.floorAreas||[]) {
       if(area.material==='rug'){
-        box(group,area.x+area.w/2,1,(area.y+area.h/2)*ds,area.w,2,area.h*ds,area.color||'#a9a186',false,false);
-        box(group,area.x+area.w/2,2,(area.y+area.h/2)*ds,Math.max(1,area.w-14),1,Math.max(1,area.h-14)*ds,mat('#b8ad93',.96),false,false);
+        box(group,area.x+area.w/2,1,(area.y+area.h/2)*ds,area.w,2,area.h*ds,surfaces.material('rug',area.color||'#a9a186'),false,false);
+        box(group,area.x+area.w/2,2,(area.y+area.h/2)*ds,Math.max(1,area.w-14),1,Math.max(1,area.h-14)*ds,surfaces.material('rug','#b8ad93'),false,false);
       }else floor(group,area.x,area.y,area.w,area.h,area.material==='pave'?'tile':area.material,1);
     }
     if(!outdoor) {
@@ -647,15 +668,23 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
       // Framed windows, wall lights, art and skirting keep surfaces lived in.
       const rearDecor=new T.Group();rearDecor.name='Rear wall fixtures';rear.add(rearDecor);rear.userData.decor=rearDecor;
       for(const x of [layout.width*.22,layout.width*.76]) {
-        box(rearDecor,x,81,143*ds,135,64,5,darkWood);box(rearDecor,x,82,147*ds,122,52,3,mat('#9db8b8',.17,.1));box(rearDecor,x,82,150*ds,4,53,2,cream);
-        box(rearDecor,x,14,144*ds,160,3,4,cream);
+        framedWindow(rearDecor,x,85,143*ds,130,64,{interior:true});
+        if(kind==='venue'&&!isClub){
+          box(rearDecor,x,130,150*ds,184,3,3,metal);
+          for(const side of[-1,1])for(let fold=0;fold<4;fold++){
+            const drape=box(rearDecor,x+side*(81-fold*5),75,149*ds+(fold%2)*2,7,105,4,linen,true);drape.name='Venue window drapery';
+          }
+        }
       }
       if(profile.home?.starterVersion!==1) {
       box(rearDecor,layout.width*.49,85,143*ds,66,58,4,darkWood);box(rearDecor,layout.width*.49,85,146*ds,55,47,2,mat('#6c8275'));
       box(rearDecor,layout.width*.49-9,84,148*ds,15,27,1,mat('#c5b58b'));
       }
       for(const x of [layout.width*.13,layout.width*.61,layout.width*.89]) {
-        box(rearDecor,x,105,148*ds,17,27,12,mat('#e0bc7f',.55,.15,{emissive:'#ddaa62',emissiveIntensity:.24}),true);
+        const fixture=new T.Group();fixture.name='Built-in warm wall sconce';fixture.position.set(x,105,148*ds);rearDecor.add(fixture);
+        box(fixture,0,0,0,12,29,4,darkWood,true);
+        cylinder(fixture,0,0,7,8,22,mat('#e3c797',.68,0,{emissive:'#ddaa62',emissiveIntensity:.24}),8,12);
+        for(const y of[-12,12])box(fixture,0,y,7,17,2,13,metal,true);
       }
       for(const wall of cutawayWalls)batchRigidMeshes(T,wall,{recursive:true});
     }
@@ -703,11 +732,18 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     }
     floor(group,1820,0,254,layout.height,'road',0);
     for(let y=0;y<layout.height;y+=100)box(group,1947,1,(y+25)*ds,4,1,51*ds,'#d4cbb2',false,false);
-    const buildings=layout.buildings||layout.obstacles.filter(o=>o.w>200&&o.h>180).map(o=>({...o,y:o.y+o.h,frontY:true,floors:2,name:''}));
+    const buildings=layout.buildings||(layout.obstacles||[]).filter(o=>o.w>200&&o.h>180).map(o=>({...o,y:o.y+o.h,frontY:true,floors:2,name:''}));
     for(const b of buildings) {
       const p=new T.Group(),bottom=b.frontY===false?b.y:b.y-b.h,height=b.id==='hotel'?250:b.id==='home'?145:b.floors>1?140:103;
       p.position.set(b.x+b.w/2,0,(bottom+b.h/2)*ds);group.add(p);
-      box(p,0,height/2,0,b.w,height,b.h*ds,surfaces.material('stone',affluent?'#e5decc':b.wall||'#d6d1bc',{roughness:.83}));
+      p.name=`Authored building: ${b.id||b.name||'residence'}`;
+      box(p,0,height/2,0,b.w,height,b.h*ds,surfaces.material('plaster',affluent?'#e5decc':b.wall||'#d6d1bc'));
+      const facadeTrim=mat(affluent?'#d8d1bd':'#c9c5b0');
+      // Plinth, cornice and intermediate floor bands continue around the building;
+      // an orbit reveals a complete residence instead of a dressed front slab.
+      for(const level of[9,height-5,...(height>125?[92]:[])]){
+        box(p,0,level,0,b.w+5,level===9?13:4,b.h*ds+5,facadeTrim);
+      }
       const roofColor=affluent?'#77796b':b.accent||'#677669';
       box(p,0,height+7,0,b.w+14,14,b.h*ds+14,roofColor);
       if(!affluent&&(b.id==='home'||!b.name)){
@@ -724,13 +760,30 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
         if(b.id==='hotel'){box(p,-b.w*.20,height+38,-b.h*.12*ds,b.w*.25,35,b.h*.22*ds,metal,true);for(let i=0;i<4;i++)box(p,-b.w*.20,height+55,-b.h*.12*ds-14+i*9,b.w*.19,2,2,'#a6b4b0');}
       }
       box(p,0,7,b.h*ds/2+6,b.w+30,14,28,'#b9baa8');
-      box(p,0,42,b.h*ds/2+2,55,84,4,glass);box(p,0,43,b.h*ds/2+5,3,86,3,cream);
+      const residential=b.id==='home'||b.kind==='home'||!b.name;
+      box(p,0,42,b.h*ds/2+2,55,84,4,residential?darkWood:glass);
+      for(const x of[-29,29])box(p,x,43,b.h*ds/2+5,4,86,6,facadeTrim);
+      box(p,0,86,b.h*ds/2+5,62,5,6,facadeTrim);
+      if(residential){box(p,0,44,b.h*ds/2+5,39,64,2,wood);box(p,17,46,b.h*ds/2+7,2,13,3,metal);}
+      else box(p,0,43,b.h*ds/2+5,3,86,3,cream);
       const rows=height>200?3:height>125?2:1;
-      for(let row=0;row<rows;row++)for(const x of [-b.w*.3,b.w*.3]){box(p,x,60+row*63,b.h*ds/2+2,b.w*.2,37,4,mat('#739899',.25,.08,{emissive:'#e8c48b',emissiveIntensity:0}));box(p,x,60+row*63,b.h*ds/2+5,3,38,2,cream);}
+      for(let row=0;row<rows;row++){
+        for(const x of [-b.w*.3,b.w*.3]){
+          framedWindow(p,x,60+row*63,b.h*ds/2+2,b.w*.2,37);
+          framedWindow(p,x,60+row*63,-b.h*ds/2-2,b.w*.18,37,{rotation:Math.PI});
+        }
+        for(const side of[-1,1])for(const z of[-b.h*.27*ds,b.h*.27*ds]){
+          framedWindow(p,side*(b.w/2+2),60+row*63,z,Math.min(78,b.h*ds*.20),37,{rotation:side*Math.PI/2});
+        }
+      }
       for(const x of[-b.w*.48,b.w*.48])box(p,x,height*.50,b.h*ds/2+3,9,height-7,8,affluent?'#a69b83':'#bebfae');
       for(const x of[-b.w*.30,b.w*.30])box(p,x,37,b.h*ds/2+6,b.w*.22,4,12,cream,true);
       if(affluent&&rows>1){box(p,0,95,b.h*ds/2-7,b.w*.82,6,24,darkWood);for(let i=0;i<7;i++)box(p,-b.w*.36+i*b.w*.12,112,b.h*ds/2+3,2,27,2,metal);box(p,0,126,b.h*ds/2+3,b.w*.76,2,2,metal);}
       if(b.name)sign(p,b.name,Math.min(b.w-30,290),35,0,height-20,b.h*ds/2+5);
+      if(b.kind==='restaurant'){
+        const awning=box(p,0,93,b.h*ds/2+14,b.w*.83,5,39,surfaces.material('fabric',b.accent||'#788569'));awning.rotation.x=-.12;
+        box(p,0,88,b.h*ds/2+34,b.w*.83,8,2,cream);
+      }
       if(b.id==='banex') {
         // An original tech-market frontage, with shallow awnings and stock
         // kept inside its collision footprint so the entrance stays clear.

@@ -70,3 +70,24 @@ integration('Mongo chat transfers atomically persist one authorized server recei
   const beforeSender=(await f.game.profile(sender)).wallet,beforeRecipient=(await f.game.profile(recipient)).wallet,beforeMessages=await f.connection.db.collection('messages').countDocuments({conversationId:dm.id});await denied(f.game.transfer(sender,{...input,conversationId:other.id,idempotencyKey:key()}),403);await denied(f.game.transfer(outsider,{...input,idempotencyKey:key()}),404);await denied(f.game.transfer(sender,{...input,amount:1000000,idempotencyKey:key()}),409);assert.equal((await f.game.profile(sender)).wallet,beforeSender);assert.equal((await f.game.profile(recipient)).wallet,beforeRecipient);assert.equal(await f.connection.db.collection('messages').countDocuments({conversationId:dm.id}),beforeMessages);
   await f.social.moderate(recipient,'block',sender,true);await denied(f.game.transfer(sender,{...input,idempotencyKey:key()}),403);assert.equal(await f.connection.db.collection('messages').countDocuments({conversationId:dm.id,kind:'transfer'}),1);
 });
+
+integration('Mongo events reach authorized friends and RSVP participants through realtime with block and mute controls', async t => {
+  const f = await fixture(t), [host, friend, outsider] = f.users, emitted = [];
+  await befriend(f, host, friend);
+  f.game.emitUser = (residentId, event, data) => emitted.push({ residentId, event, data });
+  const created = await f.social.createEvent(host, { title: 'Abuja gathering', district: 'wuse-ii-a08', startsAt: f.game.clock() + 3600000 });
+  assert.ok(emitted.some(e => e.residentId === friend && e.event === 'event' && e.data.event.id === created.event.id));
+  assert.ok(emitted.some(e => e.residentId === friend && e.event === 'notification' && e.data.kind === 'event'));
+  assert.equal(emitted.some(e => e.residentId === outsider), false);
+  emitted.length = 0;
+  await f.social.rsvp(friend, created.event.id, true);
+  assert.ok(emitted.some(e => e.residentId === host && e.event === 'event' && e.data.event.attendeeIds.includes(friend)));
+  emitted.length = 0;
+  await f.social.moderate(friend, 'mute', host, true);
+  await f.social.createEvent(host, { title: 'Muted event', district: 'wuse-ii-a08', startsAt: f.game.clock() + 7200000 });
+  assert.equal(emitted.some(e => e.residentId === friend), false);
+  await f.social.moderate(friend, 'block', host, true);
+  emitted.length = 0;
+  await denied(f.social.rsvp(friend, created.event.id, true), 403);
+  assert.equal(emitted.length, 0);
+});

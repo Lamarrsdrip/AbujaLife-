@@ -5,10 +5,21 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
   <meta name="theme-color" content="#204b3c" />
   <meta name="description" content="Make Abuja home. Create a resident, find your people, and build a life in AbujaLife." />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="AbujaLife" />
+  <meta property="og:title" content="AbujaLife · Your city, your story" />
+  <meta property="og:description" content="Make Abuja home. Create a resident, find your people, and build a life in AbujaLife." />
+  <meta property="og:url" content="https://abujacity.life/" />
+  <meta property="og:image" content="https://abujacity.life/icons/icon-512.png?v=abuja-city-gate-20261005-4" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="AbujaLife · Your city, your story" />
+  <meta name="twitter:description" content="Make Abuja home. Create a resident, find your people, and build a life in AbujaLife." />
+  <meta name="twitter:image" content="https://abujacity.life/icons/icon-512.png?v=abuja-city-gate-20261005-4" />
   <title>AbujaLife · Your city, your story</title>
-  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
-  <link rel="manifest" href="/manifest.webmanifest" />
-  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <link rel="icon" href="/icon.svg?v=abuja-city-gate-20261005-4" type="image/svg+xml" />
+  <link rel="manifest" href="/manifest.webmanifest?v=abuja-city-gate-20261005-4" />
+  <link rel="apple-touch-icon" sizes="180x180" type="image/png" href="/icons/apple-touch-icon.png?v=abuja-city-gate-20261005-4" />
+  <link rel="apple-touch-icon-precomposed" sizes="180x180" type="image/png" href="/icons/apple-touch-icon.png?v=abuja-city-gate-20261005-4" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="AbujaLife" />
   <link rel="stylesheet" href="/styles.css" />
@@ -21,8 +32,13 @@
   <link rel="stylesheet" href="/install.css" />
   <link rel="stylesheet" href="/phone-home.css" />
   <link rel="stylesheet" href="/phone-inbox.css" />
+  <link rel="stylesheet" href="/game-ui-kit.css" />
+  <link rel="stylesheet" href="/game-status-hud.css" />
+  <link rel="stylesheet" href="/ads.css" />
+  <link rel="stylesheet" href="/integrations.css" />
   <link rel="stylesheet" href="/furniture-catalogue.css" />
   <link rel="stylesheet" href="/game-kit.css" />
+  <link rel="stylesheet" href="/outside-city.css" />
 </head>
 <body>
   <div id="app" class="app-shell"></div>
@@ -30,6 +46,8 @@
   <div id="sheet-root"></div>
   <div id="toast" role="status" aria-live="polite"></div>
   <script type="module" src="/app.js"></script>
-  <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});</script>
+  <script type="module" src="/game-ui-kit.js"></script>
+  <script type="module" src="/ads.js"></script>
+  <script type="module" src="/integrations.js"></script>
 </body>
 </html>

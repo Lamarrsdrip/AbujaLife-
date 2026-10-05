@@ -4,6 +4,7 @@ import { promisify } from 'node:util';
 const scrypt = promisify(crypto.scrypt);
 const SESSION_MS = 30 * 24 * 60 * 60 * 1000;
 const RESET_MS = 30 * 60 * 1000;
+const VERIFICATION_MS = 24 * 60 * 60 * 1000;
 const PASSWORD_COST = 32768;
 const PASSWORD_BYTES = 64;
 const dummyPassword = `scrypt$${PASSWORD_COST}$8$1$${Buffer.alloc(16).toString('base64url')}$${Buffer.alloc(PASSWORD_BYTES).toString('base64url')}`;
@@ -25,6 +26,13 @@ const dateAt = clock => new Date(clock());
 const validToken = token => typeof token === 'string' && /^[a-f0-9]{64}$/i.test(token);
 export const hashToken = token => crypto.createHash('sha256').update(token).digest('hex');
 
+function validateEmail(value) {
+  check(typeof value === 'string', 'Choose a valid email address', 400, 'invalid_email');
+  const email = value.trim().toLowerCase();
+  check(email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email), 'Choose a valid email address', 400, 'invalid_email');
+  return email;
+}
+
 function validatePassword(password) {
   check(typeof password === 'string' && password.length >= 8 && password.length <= 128,
     'Choose a password of 8–128 characters', 400, 'invalid_password');
@@ -38,9 +46,7 @@ export function validateRegistration({ username, displayName, password, email } 
   check(displayName.length >= 2 && displayName.length <= 40, 'Display name must have 2–40 characters', 400, 'invalid_display_name');
   validatePassword(password);
   if (email != null && email !== '') {
-    check(typeof email === 'string', 'Choose a valid email address', 400, 'invalid_email');
-    email = email.trim().toLowerCase();
-    check(email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email), 'Choose a valid email address', 400, 'invalid_email');
+    email = validateEmail(email);
   } else email = undefined;
   return { username, displayName, password, ...(email ? { email } : {}) };
 }
@@ -82,7 +88,7 @@ export async function verifyPassword(password, stored) {
 }
 
 export class MongoAuthStore {
-  constructor({ db, client, clock = () => Date.now(), deliverPasswordReset = null, sessionMs = SESSION_MS, resetMs = RESET_MS } = {}) {
+  constructor({ db, client, clock = () => Date.now(), deliverPasswordReset = null, deliverEmailVerification = null, sessionMs = SESSION_MS, resetMs = RESET_MS } = {}) {
     check(db && client, 'Mongo authentication requires a connected database', 500, 'mongo_required');
     check(Number.isSafeInteger(sessionMs) && sessionMs > 0 && sessionMs <= SESSION_MS, 'Invalid session lifetime', 500, 'invalid_configuration');
     check(Number.isSafeInteger(resetMs) && resetMs > 0 && resetMs <= RESET_MS, 'Invalid password reset lifetime', 500, 'invalid_configuration');
@@ -90,6 +96,7 @@ export class MongoAuthStore {
     this.client = client;
     this.clock = clock;
     this.deliverPasswordReset = typeof deliverPasswordReset === 'function' ? deliverPasswordReset : null;
+    this.deliverEmailVerification = typeof deliverEmailVerification === 'function' ? deliverEmailVerification : null;
     this.sessionMs = sessionMs;
     this.resetMs = resetMs;
   }
@@ -165,8 +172,58 @@ export class MongoAuthStore {
     return { ok: true };
   }
 
-  async verifyEmail() {
-    throw new AuthError('Email verification is not configured', 503, 'email_verification_unavailable');
+  configuration() {
+    return { ok: true, emailVerificationEnabled: Boolean(this.deliverEmailVerification), passwordResetEnabled: Boolean(this.deliverPasswordReset) };
+  }
+
+  async emailStatus(residentId) {
+    const resident = await this.db.collection('residents').findOne({ _id: residentId }, { projection: { email: 1, emailVerified: 1 } });
+    check(resident, 'Resident not found', 404, 'resident_not_found');
+    return { ok: true, email: resident.email || null, emailVerified: resident.emailVerified === true, verificationEnabled: Boolean(this.deliverEmailVerification) };
+  }
+
+  async requestEmailVerification(residentId, { email, password } = {}) {
+    check(this.deliverEmailVerification, 'Email verification is not configured', 503, 'email_verification_unavailable');
+    const resident = await this.db.collection('residents').findOne({ _id: residentId }, { projection: { email: 1, emailVerified: 1, passwordHash: 1, authEpoch: 1 } });
+    check(resident, 'Resident not found', 404, 'resident_not_found');
+    const targetEmail = email === undefined ? resident.email : validateEmail(email);
+    check(targetEmail, 'Add an email address to verify it', 400, 'email_required');
+    if (targetEmail !== resident.email) {
+      check((await verifyPassword(password, resident.passwordHash)).valid, 'Confirm your password to change your email address', 401, 'invalid_credentials');
+    } else if (resident.emailVerified) return { ok: true };
+    const token = crypto.randomBytes(32).toString('hex'), tokenHash = hashToken(token), createdAt = dateAt(this.clock), expiresAt = new Date(createdAt.getTime() + VERIFICATION_MS);
+    await this.transaction(async session => {
+      const current = await this.db.collection('residents').findOne({ _id: residentId, authEpoch: resident.authEpoch ?? 0, passwordHash: resident.passwordHash }, { session, projection: { email: 1 } });
+      check(current && current.email === resident.email, 'Your account changed; please try again', 409, 'account_changed');
+      await this.db.collection('email_verifications').deleteMany({ residentId }, { session });
+      await this.db.collection('email_verifications').insertOne({ _id: tokenHash, residentId, authEpoch: resident.authEpoch ?? 0, email: targetEmail, originalEmail: resident.email || null, createdAt, expiresAt }, { session });
+    });
+    try {
+      await this.deliverEmailVerification({ email: targetEmail, residentId, token, expiresAt: expiresAt.getTime() });
+    } catch {
+      await this.db.collection('email_verifications').deleteOne({ _id: tokenHash });
+    }
+    return { ok: true };
+  }
+
+  async verifyEmail({ token } = {}) {
+    check(validToken(token), 'This email verification link is invalid or expired', 410, 'invalid_verification');
+    try {
+      return await this.transaction(async session => {
+        const verification = await this.db.collection('email_verifications').findOneAndDelete({ _id: hashToken(token), expiresAt: { $gt: dateAt(this.clock) } }, { session, includeResultMetadata: false });
+        check(verification, 'This email verification link is invalid or expired', 410, 'invalid_verification');
+        const resident = await this.db.collection('residents').findOne({ _id: verification.residentId, authEpoch: verification.authEpoch }, { session, projection: { email: 1 } });
+        check(resident && (resident.email || null) === verification.originalEmail, 'This email verification link is invalid or expired', 410, 'invalid_verification');
+        const changed = await this.db.collection('residents').updateOne({ _id: verification.residentId, authEpoch: verification.authEpoch }, { $set: { email: verification.email, emailVerified: true, emailVerifiedAt: this.clock() } }, { session });
+        check(changed.matchedCount === 1, 'This email verification link is invalid or expired', 410, 'invalid_verification');
+        await this.db.collection('email_verifications').deleteMany({ residentId: verification.residentId }, { session });
+        await this.db.collection('password_resets').deleteMany({ residentId: verification.residentId }, { session });
+        return { ok: true };
+      });
+    } catch (error) {
+      if (error.code === 11000) throw new AuthError('That email address already belongs to an account', 409, 'account_exists');
+      throw error;
+    }
   }
 
   async logoutAll(residentId) {
@@ -174,6 +231,7 @@ export class MongoAuthStore {
       await this.db.collection('residents').updateOne({ _id: residentId }, { $inc: { authEpoch: 1 } }, { session });
       await this.db.collection('sessions').deleteMany({ residentId }, { session });
       await this.db.collection('password_resets').deleteMany({ residentId }, { session });
+      await this.db.collection('email_verifications').deleteMany({ residentId }, { session });
       return { ok: true };
     });
   }
@@ -221,6 +279,7 @@ export class MongoAuthStore {
       check(changed.modifiedCount === 1, 'This password reset link is invalid or expired', 410, 'invalid_reset');
       await this.db.collection('sessions').deleteMany({ residentId: reset.residentId }, { session });
       await this.db.collection('password_resets').deleteMany({ residentId: reset.residentId }, { session });
+      await this.db.collection('email_verifications').deleteMany({ residentId: reset.residentId }, { session });
       return { ok: true };
     });
   }

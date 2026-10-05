@@ -4,3 +4,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overflow-x:clip}body{ma
 @media(max-width:360px){.brand-lockup--compact .brand-emblem{width:23px;height:23px}.brand-lockup--compact .brand-name{font-size:19px}}
 
 .app-install-entry[hidden]{display:none}
+
+.auth-success{color:#365e42;font-size:12px;line-height:1.6;margin:15px 0}.auth-success:empty{display:none}.auth-optional{font-weight:400;color:#81917b}.auth-forgot{display:block;margin:13px 0 0 auto;padding:4px 0;font-size:12px}.auth-back{display:block;margin:22px 0 0;padding:5px 0;font-size:12px}.account-email-form>label{display:block;margin-top:20px;font-size:12px;font-weight:600}.account-email-form input{margin-top:8px}.account-email-form>.muted{font-size:12px;margin-top:17px}.account-email-form .auth-field-hint{font-weight:400}.profile-actions{flex-wrap:wrap;row-gap:12px}
+
+.account-sessions{margin-top:30px;padding-top:24px;border-top:1px solid #dce2d3}.account-sessions h3{font-size:17px}.account-sessions>.muted{font-size:12px}.account-session{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 0;border-bottom:1px solid #e6eadf}.account-session strong,.account-session small{display:block}.account-session strong{font-size:12px}.account-session small{font-size:11px;color:#7d8d7b;margin-top:5px}.account-session button{flex:none;font-size:12px}.account-sessions>.full{margin-top:18px}

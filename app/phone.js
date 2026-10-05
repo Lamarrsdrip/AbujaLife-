@@ -35,7 +35,7 @@ paths.browser=paths.globe;paths.social=paths.heart;paths.xshare=paths.profile;
 paths.x='<path d="m4 3 16 18M20 3 4 21M3 3h5l13 18h-5Z"/>';
 paths.tiktok='<path d="M14 3v13a4 4 0 1 1-4-4M14 3c1 4 3 5 7 5"/>';
 const apps = [
-  ['messages','Messages','green'],['contacts','Contacts','sand'],['calls','Calls','green'],['map','Map','blue'],
+  ['messages','Messages','green'],['contacts','Contacts','sand'],['calls','Calls','green'],['map','Outside','blue'],
   ['ride','Ride','ink'],['jobs','Jobs','blue'],['wallet','Wallet','ink'],['property','Property','amber'],
   ['market','Marketplace','orange'],['events','Events','cream'],['profile','Camera','ink'],['friends','Friends','coral'],
   ['groups','Groups','violet'],['social','City Circle','orange'],['browser','Browser','blue'],['x','X','ink'],

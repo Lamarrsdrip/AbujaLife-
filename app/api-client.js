@@ -17,7 +17,9 @@ export function apiURL(path) {
 }
 
 export function apiFetch(path, options = {}) {
-  return globalThis.fetch(apiURL(path), { ...options, credentials: 'include', cache: 'no-store' });
+  const deadline=AbortSignal.timeout(15000);
+  const signal=options.signal?AbortSignal.any([options.signal,deadline]):deadline;
+  return globalThis.fetch(apiURL(path), { ...options, signal, credentials: 'include', cache: 'no-store' });
 }
 
 export function createApiEventSource(path, options = {}) {

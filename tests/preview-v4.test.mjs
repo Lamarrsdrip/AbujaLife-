@@ -43,7 +43,7 @@ function fixture({ storage = /* @__PURE__ */ new Map(), time = "2026-10-05T09:00
     assert.equal(response.status, expected, JSON.stringify(data));
     return data;
   }
-  return { request, storage, reset: () => context.dispatchEvent(new Event("abujalife:reset-preview")), get randomCalls() {
+  return { request, storage, randomNext: value => random.push(value), reset: () => context.dispatchEvent(new Event("abujalife:reset-preview")), get randomCalls() {
     return calls;
   }, at: (time2) => {
     now = Date.parse(time2);
@@ -69,7 +69,7 @@ async function complete(f) {
 }
 await test("WebCrypto rejection sampling and one-time durable origins", async () => {
   const f = fixture({ random: [1, 4294967295, 0] }), state = await f.request("/api/bootstrap");
-  assert.equal(f.randomCalls, 3);
+  assert.ok(f.randomCalls >= 3, "Origin rejection sampling and randomized avatar both use secure entropy");
   assert.equal(state.profile.origin.id, "lapo");
   assert.equal(state.profile.wallet, 1e5);
   assert.equal(state.profile.home.district, "lugbe");
@@ -125,6 +125,7 @@ await test("uncapped game funds and rent, exact overflow rollback, vehicle/dice 
   assert.equal(collected.income.amount, 56e4);
   await f.action("leave-home");
   await f.action("enter-venue", { venueId: "games-lounge" });
+  f.randomNext(0); // The next verified draw belongs to this round, independent of avatar entropy.
   const round = await f.action("play-dice", { stake: 1e7, choice: "low", idempotencyKey: key() });
   assert.equal(round.round.stake, 1e7);
   assert.equal(round.round.die, 1);

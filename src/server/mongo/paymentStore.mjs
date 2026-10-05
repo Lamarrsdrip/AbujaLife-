@@ -43,9 +43,9 @@ export async function ensureMongoPaymentSchema(db) {
 /** Only server-verified Flutterwave responses enter the authoritative wallet transaction. */
 export class MongoPaymentStore {
   #verifiedProofs = new WeakSet();
-  constructor({ store, admin, fetchImpl = fetch, configKey = process.env.ABUJALIFE_CONFIG_KEY, publicOrigin: origin = process.env.ABUJALIFE_PUBLIC_ORIGIN || '' } = {}) {
+  constructor({ store, admin, fetchImpl = fetch, configKey = process.env.ABUJALIFE_CONFIG_KEY, publicOrigin: origin = process.env.ABUJALIFE_PUBLIC_ORIGIN || '', log = () => {} } = {}) {
     fail(store?.db && store?.economyOperation && admin, 'Game and administrator stores are required', 500);
-    this.store = store; this.db = store.db; this.admin = admin; this.fetch = fetchImpl; this.key = encryptionKey(configKey); this.origin = origin ? publicOrigin(origin) : ''; this.clock = () => store.clock();
+    this.store = store; this.db = store.db; this.admin = admin; this.fetch = fetchImpl; this.key = encryptionKey(configKey); this.origin = origin ? publicOrigin(origin) : ''; this.clock = () => store.clock(); this.log = log;
   }
   collection(name) { return this.db.collection(name); }
   async init({ ensureIndexes = true } = {}) { if (ensureIndexes) await ensureMongoPaymentSchema(this.db); return this; }
@@ -105,7 +105,8 @@ export class MongoPaymentStore {
     let response, data;
     try {
       response = await this.fetch(PROVIDER_ORIGIN + path, { ...options, headers: { 'content-type': 'application/json', authorization: `Bearer ${secretKey}` }, redirect: 'error', signal: AbortSignal.timeout(20000) }); data = await response.json();
-    } catch { throw new GameError('Flutterwave could not be reached. No payment has been credited', 502, 'provider_unavailable'); }
+    } catch { this.log('payment_failure', { provider: 'flutterwave', code: 'provider_unavailable' }); throw new GameError('Flutterwave could not be reached. No payment has been credited', 502, 'provider_unavailable'); }
+    if (!response.ok || data.status !== 'success') this.log('payment_failure', { provider: 'flutterwave', code: 'provider_rejected' });
     fail(response.ok && data.status === 'success', 'Flutterwave could not confirm this request. No payment has been credited', 502, 'provider_rejected'); return data.data;
   }
   async checkout(id, { amount, email, idempotencyKey } = {}) {
@@ -176,6 +177,7 @@ export class MongoPaymentStore {
     } catch (error) {
       if (error.code === 11000 || error.code === 'idempotency_conflict') throw new GameError('This provider transaction has already been credited', 409, 'payment_duplicate'); throw error;
     }
+    this.log(result.replayed ? 'payment_replay' : 'payment_grant', { provider: 'flutterwave', residentId: order.residentId, reference: order.txRef, transactionId, credits: order.credits, mode: order.mode });
     return result;
   }
   async verify(id, { transactionId, txRef } = {}) {

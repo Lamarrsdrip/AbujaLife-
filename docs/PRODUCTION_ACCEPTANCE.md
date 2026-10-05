@@ -1,41 +1,29 @@
 # Production acceptance record
 
-Validated locally on 4 October 2026 using Node 24.19.0, the genuine Hostinger build and isolated, authenticated MongoDB. This is a source-release acceptance record, not confirmation of a live deployment.
+The deployment takeover completed from the owner’s Mac against the real VPS and authenticated Hostinger account. Results below record live evidence and the remaining provider prerequisites.
 
-| Check | Result | Scope |
-| --- | --- | --- |
-| `npm run qa` | 218 passed, zero skipped or failed | Auth, economy, ownership, room layout, messaging, transport, camera, vehicles and public builds |
-| `npm run qa:infra` | 36 Mongo integration tests and 12 production HTTP checks passed | Real private replica set, restricted identities, API restart, immutable ledger, idempotent payments/transfers, messages and blocks |
-| Docker and recovery acceptance | Passed | UID 1000/read-only API, immutable image selection, encrypted consistent backup, corruption rejection, complete snapshot restore and failed-promotion rollback |
-| Connected two-account browser acceptance | 7 passed | Genuine static frontend, secure sessions, realtime, purchases, transfers, persisted messages and public-only service-worker caching |
-| Resident/home/inbox acceptance | 9 passed | Explicit Female/Male, fresh Lapo/Nepo rooms, buy/place/rotate/store/sell, real unread/read state, transfers, paid travel and quick Home |
-| Banex and compact chat acceptance before visual refresh | 7 passed | Real map search and fare choices, paid journey/reload, physical browsing/exit, purchased fan placement/reload, two-account transfer |
-| Admin top-up browser acceptance | 7 passed | Actual existing-resident role grant, ordinary-account 403s, required reason, Review → Confirm, one credit/ledger/audit, replay safety and refresh persistence |
-| Environment camera acceptance | Original 9 WebGL and 2 SVG checks; 9 oblique-room checks and 17 mobile edge checks passed | Original oblique dollhouse depth, whole-room framing, capped scene gestures, precise floor picking/placement, actual resident mesh visible at doorway/map edges across 0.8×, 1× and 2.5× |
-| Final anonymous preview | 6 browser checks passed | Explicit gender/random origin, resumed real 3D movement after closing preview information, shower/sleep animations, persistent room design, actual home PNG/local post/status and disclosed local funds/loans |
-| Smaller phone and inline money acceptance | 8 passed | All 20 apps actually opened across native 8/8/4 pages, 320 × 676 launcher, pinned dock, swipe/dots/restore, inline draft-preserving review/confirm, two-account exact-once transfer/replay/reload and block enforcement |
-| Authoritative exterior exit | 26 focused checks, 1 actual Mongo integration and 2 native mobile preview checks passed | Paid Abuja Car arrival exits at its authored door with a fully visible resident; forged home hints are ignored and consumed transitions retain later walking/reloads. Compact Home sits beside the arrow with a 44px target, no overlap and actual physical return |
-
-Connected browser tests used local TLS routing for the two intended public hostnames and explicitly trusted only their generated test certificate. They do not verify public DNS, a public CA certificate, Hostinger upload or physical Safari. Test accounts and data were disposable. Payment-provider fixtures verify server checks and idempotency, not live merchant transactions. Software WebGL results do not establish physical-device frame rates.
-
-## Live gates still required
-
-The cloud task cannot execute on the owner's Mac or use its existing SSH key. The read-only attempt to `Administrator@173.212.249.202:22` returned connection refused before authentication. No Okrika server, proxy, firewall, database, ports or production secrets were inspected or changed. No Hostinger browser-control connector is available here, despite the owner's logged-in hPanel session.
-
-Before promotion to `main`, complete read-only VPS/Okrika discovery, isolated deployment, public DNS/HTTPS, Hostinger upload, external health/CORS/realtime, two-account persistence across a real backend restart, Okrika coexistence, configured off-server backup delivery and GitHub CI. Git push works through platform authentication; the GitHub Actions API was denied by the proxy, so remote CI is unverified.
-
-## Intended production handoff
-
-| Item | Configuration; live status unverified |
+| Check | Observed result |
 | --- | --- |
-| Website | `https://abujacity.life` on Hostinger shared hosting |
-| API and realtime | `https://api.abujacity.life` through the existing VPS HTTPS proxy |
-| Database | Separate authenticated private `abujalife_prod` MongoDB replica set |
-| Process | Docker Compose project `abujalife-prod`, service `api` |
-| Directory | Dedicated `/opt/abujalife/`, subject to existing VPS conventions |
-| Ports | Container API 3000; host loopback 18787 after collision check; public HTTPS 443, HTTP 80 and existing SSH 22 |
-| Mongo/Redis exposure | Mongo has no published port in the tested stack; Redis is not used |
-| Backups | Encrypted backup/restore tested locally; production schedule and separate storage not installed |
-| Main revision | `5f37d16def0e2bf29496a74b6f621812eb75f754`; promotion withheld pending live gates |
+| GitHub baseline | Final `main` is `41e2f66`; dedicated infrastructure work was promoted after live acceptance |
+| Concurrent source update | b867f44 adds 3D depth, compact phone and authoritative exterior transitions; merged without overwriting either session |
+| Mac SSH | Authorized existing Ed25519 key connects to Administrator@173.212.249.202 |
+| VPS | Windows Server 2022, native Node 24.21.0/MongoDB 8.0/Caddy 2.11.4; no Docker runtime in use |
+| Domain | abujacity.life active in Hostinger account; dedicated static website created |
+| API DNS/TLS | api A record points to VPS; verified HTTPS certificate, Caddy reload preserved original Okrika vhosts |
+| Application QA | 234 tests passed after backend/email/realtime/auth UI fixes |
+| Isolated Mongo QA | 40 authenticated Mongo integration checks passed on disposable instance |
+| Production HTTP fixture | 12 restart/persistence/realtime/authorization checks passed |
+| Repository secret scan | 729 Git objects examined; findings were generated URI templates and explicitly named test payment fixtures; no real credential identified |
+| Okrika baseline and proxy change | Public API and White Studio healthy before and after Caddy reload |
+| Native live deployment | **Passed**; revision `41e2f66ecfca-6b88670b1408` is healthy on `AbujaLife-API` with Node 24, loopback 18787, supervised LocalService startup/reload and validated `AbujaLife-AutoDeploy` polling |
+| Hostinger game deployment/browser QA | **Passed**; `https://abujacity.life` serves the `41e2f66` production build from the generated `hostinger-production` branch. HTTPS redirects/deep routes/security headers work, the browser loads the playable Garki scene and calls only HTTPS API origins |
+| Off-server backups | **Passed**; encrypted AES-GCM archive copied and authenticated at `~/AbujaLife-backups`, LaunchAgent `life.abujacity.backup-pull` active every six hours, backup/config keys mode 0600 |
+| Main/CI promotion | **Passed**; `main` is `41e2f66`; CI runs `37257026063` and `37257026052` passed on Ubuntu and Windows/frontend deployment |
 
-Use [MAC_LAUNCH_PROMPT.md](MAC_LAUNCH_PROMPT.md) for the ready-to-paste launch task on the owner’s Mac. See [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md) for commands, environment-file locations, backup retention, restore steps and safe deployment/rollback. Server initialization generates isolated private credentials without committing them. Configure optional Flutterwave merchant credentials through the permission-checked admin dashboard and an off-server backup destination separately. Never send SSH passwords, private keys or payment secrets in chat.
+Live acceptance completed. The private audit confirms `abujalife_prod`, authentication, loopback Mongo 27017, 51 collections, 170 indexes, append-only ledger protections and application DDL denial. Public HTTPS acceptance passed 9 checks before and 7 checks after a graceful AbujaLife-only restart using three independent accounts: sessions, wallets, ledger, inventory, homes, vehicles, jobs, locations, conversations, SSE reconnect, idempotency, cross-account denial and bilateral block enforcement. The backup task produced an AES-256-GCM archive with authenticated `mongorestore --dryRun` validation; the Mac pull verified checksum and GCM authentication without plaintext output. Okrika API and White Studio remained healthy. No local fixture result substitutes for these public checks.
+
+The normal release path is now `main` → GitHub Actions QA/build → generated `hostinger-production` static artifact branch → Hostinger Git auto-deployment, while the VPS `AbujaLife-AutoDeploy` task polls only successful public GitHub checks and runs the existing candidate/health-checked Windows promotion. No Mac process or manual frontend upload is needed after a merge.
+
+Email verification/password reset delivery remains disabled without a dedicated Resend key and verified sender. Flutterwave live checkout remains disabled without configured merchant verification credentials. Apple/Google verification remains fail-closed pending real platform adapters. These optional provider omissions must remain visible in the final report.
+
+See [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md) for actual Windows resource isolation and operational commands. No secrets or user database snapshots belong in this record.

@@ -1,34 +1,73 @@
 /* A smaller launcher with real swipeable pages and a dock that stays in view. */
-.ph-home-paged{padding:7px 13px 25px;overflow:hidden;gap:0}
-.ph-home-paged .ph-home-pages{position:relative;display:flex;flex:1;min-height:0;width:100%;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;overscroll-behavior-x:contain;scrollbar-width:none;touch-action:pan-x pan-y;-webkit-overflow-scrolling:touch}
-.ph-home-pages::-webkit-scrollbar{display:none}
-.ph-home-page{flex:0 0 100%;width:100%;min-width:0;max-height:100%;padding:3px 3px 9px;overflow-x:hidden;overflow-y:auto;scroll-snap-align:start;scroll-snap-stop:always;scrollbar-width:none;overscroll-behavior-y:contain}
-.ph-home-page::-webkit-scrollbar{display:none}
-.ph-home-paged .ph-widget-row{gap:8px;margin:0 0 25px;display:grid}
-.ph-home-paged .ph-widget{height:87px;padding:12px 10px;border-radius:18px}
-.ph-home-paged .ph-widget strong{font-size:17px;margin-top:11px;line-height:1.16}
-.ph-home-paged .ph-widget small{font-size:8px;letter-spacing:.1em}
-.ph-home-paged .ph-widget>span{font-size:9px}
-.ph-home-paged .ph-app-grid{gap:23px 3px;grid-template-columns:repeat(4,minmax(0,1fr));padding:1px 0 12px}
-.ph-home-paged .ph-app-icon{width:48px;height:48px;border-radius:14px;box-shadow:0 4px 8px #081c2129,inset 0 1px 1px #ffffff40}
-.ph-home-paged .ph-app-icon>.ph-icon{width:27px;height:27px}
-.ph-home-paged .ph-launcher{gap:8px;min-height:72px;padding:0 0 4px}
-.ph-home-paged .ph-app-label{font-size:10px;font-weight:500;max-width:100%;overflow:hidden;text-overflow:ellipsis}
-.ph-page-heading{height:87px;display:flex;flex-direction:column;justify-content:center;padding:5px 6px;margin-bottom:25px;color:#f1f7e8}
-.ph-page-heading small{font-size:8px;font-weight:650;letter-spacing:.15em;color:#d9e7c9}
-.ph-page-heading strong{font-size:24px;font-weight:600;line-height:1.15;letter-spacing:-.035em;margin-top:7px}
-.ph-page-heading>span{font-size:10px;color:#d2dfc5;margin-top:7px}
-.ph-home-pagination{position:relative;flex:0 0 44px;display:flex;align-items:center;justify-content:center;gap:10px;margin:3px 0 4px;color:#f8fbf1}
-.ph-page-arrow{display:grid;place-items:center;width:44px;height:44px;background:none;color:#eef7e5;font-size:25px;font-weight:300;line-height:1;padding:0;border-radius:50%}
+.phone-root .ph-home-paged{padding:7px 13px 25px;overflow:hidden;gap:0}
+.phone-root .ph-home-paged .ph-home-pages{position:relative;display:flex;flex:1;min-height:0;width:100%;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;overscroll-behavior-x:contain;scrollbar-width:none;touch-action:pan-x pan-y;-webkit-overflow-scrolling:touch}
+.phone-root .ph-home-pages::-webkit-scrollbar{display:none}
+.phone-root .ph-home-page{flex:0 0 100%;width:100%;min-width:0;max-height:100%;padding:3px 3px 9px;overflow-x:hidden;overflow-y:auto;scroll-snap-align:start;scroll-snap-stop:always;scrollbar-width:none;overscroll-behavior-y:contain}
+.phone-root .ph-home-page::-webkit-scrollbar{display:none}
+.phone-root .ph-home-paged .ph-widget-row{gap:8px;margin:0 0 25px;display:grid}
+.phone-root .ph-home-paged .ph-widget{height:87px;padding:12px 10px;border-radius:18px}
+.phone-root .ph-home-paged .ph-widget strong{font-size:17px;margin-top:11px;line-height:1.16}
+.phone-root .ph-home-paged .ph-widget small{font-size:8px;letter-spacing:.1em}
+.phone-root .ph-home-paged .ph-widget>span{font-size:9px}
+.phone-root .ph-home-paged .ph-app-grid{gap:23px 3px;grid-template-columns:repeat(4,minmax(0,1fr));padding:1px 0 12px}
+.phone-root .ph-home-paged .ph-app-icon{width:48px;height:48px;border-radius:14px;box-shadow:0 4px 8px #081c2129,inset 0 1px 1px #ffffff40}
+.phone-root .ph-home-paged .ph-app-icon>.ph-icon{width:27px;height:27px}
+.phone-root .ph-home-paged .ph-launcher{gap:8px;min-height:72px;padding:0 0 4px}
+.phone-root .ph-home-paged .ph-app-label{font-size:10px;font-weight:500;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.phone-root .ph-page-heading{height:87px;display:flex;flex-direction:column;justify-content:center;padding:5px 6px;margin-bottom:25px;color:#f1f7e8}
+.phone-root .ph-page-heading small{font-size:8px;font-weight:650;letter-spacing:.15em;color:#d9e7c9}
+.phone-root .ph-page-heading strong{font-size:24px;font-weight:600;line-height:1.15;letter-spacing:-.035em;margin-top:7px}
+.phone-root .ph-page-heading>span{font-size:10px;color:#d2dfc5;margin-top:7px}
+.phone-root .ph-home-pagination{position:relative;flex:0 0 44px;display:flex;align-items:center;justify-content:center;gap:10px;margin:3px 0 4px;color:#f8fbf1}
+.phone-root .ph-page-arrow{display:grid;place-items:center;width:44px;height:44px;background:none;color:#eef7e5;font-size:25px;font-weight:300;line-height:1;padding:0;border-radius:50%}
 .phone-root .ph-page-arrow:disabled{opacity:.22;cursor:default}
-.ph-home-page-dots{display:flex;align-items:center;gap:0}
-.ph-home-page-dot{width:32px;height:44px;display:grid;place-items:center;border-radius:12px;background:transparent;padding:0}
-.ph-home-page-dot i{height:6px;width:6px;border-radius:6px;background:#e5edcf60;transition:width .18s ease,background .18s ease}
-.ph-home-page-dot[aria-current=page] i{width:16px;background:#f1f8df}
-.ph-page-announcement{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-.ph-home-paged .ph-dock{flex:none;margin-top:0;padding:10px 6px;border-radius:23px;background:#d9dfc587;box-shadow:inset 0 1px #fff4,0 3px 15px #09271c20}
-.ph-home-paged .ph-dock .ph-launcher{min-height:0;padding:0}
-.ph-home-paged .ph-dock .ph-app-icon{width:47px;height:47px}
-@media(max-width:360px){.ph-home-paged{padding-inline:10px}.ph-home-paged .ph-app-icon{width:44px;height:44px}.ph-home-paged .ph-app-label{font-size:9px}.ph-home-paged .ph-widget{padding-inline:9px}.ph-home-paged .ph-widget strong{font-size:16px}.ph-home-paged .ph-dock .ph-app-icon{width:44px;height:44px}}
-@media(max-height:620px){.ph-home-paged .ph-widget-row{margin-bottom:16px}.ph-home-paged .ph-widget{height:69px;padding-top:9px}.ph-home-paged .ph-widget strong{margin-top:7px;font-size:15px}.ph-page-heading{height:69px;margin-bottom:16px}.ph-page-heading strong{font-size:20px}.ph-home-paged .ph-app-grid{gap:14px 3px}.ph-home-paged .ph-launcher{min-height:65px;gap:6px}.ph-home-paged .ph-dock{padding:8px 6px}.ph-home-pagination{margin-block:0}.ph-home-paged .ph-widget>span{font-size:8px}}
-@media(prefers-reduced-motion:reduce){.ph-home-page-dot i{transition:none}}
+.phone-root .ph-home-page-dots{display:flex;align-items:center;gap:0}
+.phone-root .ph-home-page-dot{width:44px;height:44px;display:grid;place-items:center;border-radius:12px;background:transparent;padding:0}
+.phone-root .ph-home-page-dot i{height:6px;width:6px;border-radius:6px;background:#e5edcf60;transition:width .18s ease,background .18s ease}
+.phone-root .ph-home-page-dot[aria-current=page] i{width:16px;background:#f1f8df}
+.phone-root .ph-page-announcement{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.phone-root .ph-home-paged .ph-dock{flex:none;margin-top:0;padding:10px 6px;border-radius:23px;background:#d9dfc587;box-shadow:inset 0 1px #fff4,0 3px 15px #09271c20}
+.phone-root .ph-home-paged .ph-dock .ph-launcher{min-height:0;padding:0}
+.phone-root .ph-home-paged .ph-dock .ph-app-icon{width:47px;height:47px}
+@media(max-width:360px){.phone-root .ph-home-paged{padding-inline:10px}.phone-root .ph-home-paged .ph-app-icon{width:44px;height:44px}.phone-root .ph-home-paged .ph-app-label{font-size:9px}.phone-root .ph-home-paged .ph-widget{padding-inline:9px}.phone-root .ph-home-paged .ph-widget strong{font-size:16px}.phone-root .ph-home-paged .ph-dock .ph-app-icon{width:44px;height:44px}}
+@media(max-height:620px){.phone-root .ph-home-paged .ph-widget-row{margin-bottom:16px}.phone-root .ph-home-paged .ph-widget{height:69px;padding-top:9px}.phone-root .ph-home-paged .ph-widget strong{margin-top:7px;font-size:15px}.phone-root .ph-page-heading{height:69px;margin-bottom:16px}.phone-root .ph-page-heading strong{font-size:20px}.phone-root .ph-home-paged .ph-app-grid{gap:14px 3px}.phone-root .ph-home-paged .ph-launcher{min-height:65px;gap:6px}.phone-root .ph-home-paged .ph-dock{padding:8px 6px}.phone-root .ph-home-pagination{margin-block:0}.phone-root .ph-home-paged .ph-widget>span{font-size:8px}}
+@media(prefers-reduced-motion:reduce){.phone-root .ph-home-page-dot i{transition:none}}
+
+/* The launcher keeps its compact native paging; surfaces echo the city. */
+.phone-root .ph-home-paged .ph-widget{
+  background:linear-gradient(140deg,#f0f0dded,#d6e1c6e6);
+  border:1px solid #fff7;
+  box-shadow:inset 0 1px #fff6,0 5px 14px #0c2c2120;
+}
+.phone-root .ph-home-paged .ph-wallet-widget{
+  background:linear-gradient(135deg,#214b3ef2,#163a2ff2);
+  border-color:#b9ce9d38;
+  color:#fff8df;
+}
+.phone-root .ph-home-paged .ph-wallet-widget small{color:#d5c48d}
+.phone-root .ph-home-paged .ph-wallet-widget>span{color:#c1d1b4}
+.phone-root .ph-home-paged .ph-widget strong{font-variant-numeric:tabular-nums}
+.phone-root .ph-home-paged .ph-app-icon{
+  border:1px solid #fff3;
+  box-shadow:inset 0 1px 1px #fff5,inset 0 -2px 2px #16372915,0 4px 8px #09291e30;
+  transition:transform .16s ease,box-shadow .16s ease;
+}
+.phone-root .ph-home-paged .ph-app-label{font-weight:550;color:#fffbea;text-shadow:0 1px 3px #092d20b3}
+.phone-root .ph-page-heading{padding-inline:7px}
+.phone-root .ph-page-heading small{color:#e5d5a3;font-size:9px;letter-spacing:.12em}
+.phone-root .ph-page-heading strong{color:#fffbed;font-weight:650}
+.phone-root .ph-page-heading>span{color:#e0e8d0}
+.phone-root .ph-page-arrow{transition:background .16s ease,color .16s ease}
+.phone-root .ph-home-page-dot{transition:background .16s ease}
+.phone-root .ph-home-page-dot[aria-current=page] i{background:#fff1c8;box-shadow:0 1px 4px #0e34282b}
+.phone-root .ph-home-paged .ph-dock{
+  background:linear-gradient(135deg,#e7e8d5ad,#cdd8be94);
+  border:1px solid #f6f5de57;
+  box-shadow:inset 0 1px #fff5,0 6px 18px #09271c26;
+}
+.phone-root .ph-home-paged .ph-launcher:active .ph-app-icon{transform:scale(.93);box-shadow:inset 0 1px #fff4,0 2px 4px #09291e26}
+.phone-root .ph-page-arrow:active:not(:disabled),.phone-root .ph-home-page-dot:active{background:#e7edcf20}
+@media(hover:hover) and (pointer:fine){
+  .phone-root .ph-home-paged .ph-launcher:hover .ph-app-icon{transform:translateY(-2px)}
+  .phone-root .ph-page-arrow:hover:not(:disabled){background:#e7edcf18}
+}

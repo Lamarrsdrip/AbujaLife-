@@ -50,6 +50,7 @@ export function createProductionServer({store,social,directory,presence,admin,pa
       if(id&&await admin.isSuspended(id))throw new GameError('This account is suspended',403,'account_suspended');
       if(pathname==='/api/bootstrap'&&method==='GET')return json(res,200,await bootstrap(id));
       if(pathname==='/api/payments/config'&&method==='GET')return json(res,200,await payments.publicConfig());
+      if(pathname==='/api/auth/config'&&method==='GET')return json(res,200,store.auth.configuration());
       if(pathname==='/payments/return'&&method==='GET'){const query=new URLSearchParams({payment:'return',transaction_id:(url.searchParams.get('transaction_id')||'').slice(0,100),tx_ref:(url.searchParams.get('tx_ref')||'').slice(0,160),status:(url.searchParams.get('status')||'').slice(0,40)});res.writeHead(303,{...SECURITY_HEADERS,location:`${publicWebUrl}/?${query}`});res.end();return;}
       if(pathname==='/api/auth/register'&&method==='POST'){rateLimit(req,'auth',12);fail((await admin.publicSettings()).registrationOpen,'Registration is temporarily paused',503);const session=await store.register(await readBody(req));setSession(res,session.token);log('signup',{requestId});return json(res,201,await bootstrap(session.residentId));}
       if(pathname==='/api/auth/login'&&method==='POST'){rateLimit(req,'auth',12);const session=await store.login(await readBody(req));if(await admin.isSuspended(session.residentId)){await store.logout(session.token);throw new GameError('This account is suspended',403,'account_suspended');}setSession(res,session.token);log('login',{requestId});return json(res,200,await bootstrap(session.residentId));}
@@ -61,10 +62,14 @@ export function createProductionServer({store,social,directory,presence,admin,pa
       if(pathname==='/api/auth/password/reset'&&method==='POST'){rateLimit(req,'reset',5);return json(res,200,await store.auth.requestPasswordReset(await readBody(req)));}
       if(pathname==='/api/auth/password/reset/complete'&&method==='POST'){rateLimit(req,'reset',5);return json(res,200,await store.auth.completePasswordReset(await readBody(req)));}
       if(pathname==='/api/auth/email/verify'&&method==='POST'){rateLimit(req,'verification',10);return json(res,200,await store.auth.verifyEmail(await readBody(req)));}
+      if(pathname==='/api/auth/email/status'&&method==='GET'){fail(id,'Sign in',401,'authentication_required');return json(res,200,await store.auth.emailStatus(id));}
+      if(pathname==='/api/auth/email/request'&&method==='POST'){fail(id,'Sign in',401,'authentication_required');rateLimit(req,'verification-send',5,id);return json(res,200,await store.auth.requestEmailVerification(id,await readBody(req)));}
       if(pathname.startsWith('/api/')){
         fail(id,'Sign in to your resident account',401,'authentication_required');
         if(pathname==='/api/realtime'&&method==='GET'){
+          rateLimit(req,'realtime-connections',30,id);
           const zone=await store.zone(id),connectionId=crypto.randomUUID();
+          fail((byUser.get(id)?.size||0)<5,'Too many active connections for this account',429,'connection_limit');fail(clients.size<5000,'Realtime is at capacity; please reconnect shortly',503,'realtime_capacity');
           res.writeHead(200,{...SECURITY_HEADERS,'content-type':'text/event-stream','cache-control':'no-cache, no-transform','connection':'keep-alive','x-accel-buffering':'no'});res.flushHeaders();
           clients.set(res,{id,token,zone,connectionId});indexAdd(byUser,id,res);indexAdd(byZone,zone,res);lastSeen.set(id,Date.now());
           req.on('close',()=>{const client=clients.get(res);clients.delete(res);indexRemove(byUser,id,res);indexRemove(byZone,client?.zone||zone,res);if(!byUser.has(id)){lastSeen.delete(id);poses.delete(id);}if(presence)safeTask(presence.disconnect(id,connectionId));if(!closed)safeTask(broadcastPresence(id,client?.zone||zone));});

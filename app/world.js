@@ -1,3 +1,4 @@
+import { canUseFurnitureSurface } from '../src/shared/furniture-metadata.mjs';
 // Original AbujaLife scenery. These are authored social spaces, not geographic maps.
 let serial = 0;
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -19,6 +20,9 @@ function residentArt(a = {}) {
   const feminine = a.presentation === 'feminine';
   const face = a.face === 'round' ? 'M74 63Q73 43 100 42Q127 43 127 64L124 88Q117 108 100 109Q83 108 76 89Z' : a.face === 'angular' ? 'M76 61Q76 43 100 43Q124 43 124 61L122 88L109 106H92L78 90Z' : 'M75 63Q75 43 100 42Q125 43 125 63L122 88Q118 107 100 109Q82 107 78 88Z';
   const hairs = {
+    bun:'<path d="M75 72Q67 29 100 29Q132 29 126 75L118 54Q100 58 81 53L81 75Z" fill="#282521"/><ellipse cx="101" cy="24" rx="18" ry="15" fill="#282521"/><path d="M85 22Q98 12 113 21" stroke="#4b3a2d" stroke-width="3" fill="none"/>',
+    long:'<path d="M74 72Q64 25 100 27Q137 26 128 77L135 134L117 141L119 54Q98 60 81 53L81 137L64 129Z" fill="#282521"/><path d="M76 49L73 127M126 50L128 130" stroke="#4b3a2d" stroke-width="3" fill="none"/>',
+    twists:'<path d="M76 72Q63 35 91 29Q126 22 129 67L121 77L117 53L83 56L81 79Z" fill="#282521"/><path d="M79 35Q70 63 76 91M88 31Q80 52 84 64M99 29L95 53M110 31Q115 48 114 59M121 38Q131 70 124 97" stroke="#48372b" stroke-width="5" stroke-linecap="round" fill="none"/>',
     crop:'<path d="M75 70V57Q73 34 100 33Q128 34 125 58V68L119 60L117 51Q103 58 82 50L82 63Z" fill="#242322"/><path d="M81 46Q102 39 119 46" stroke="#3c3731" stroke-width="4" fill="none"/>',
     bald:'<path d="M77 59Q80 43 100 42Q119 43 123 59" fill="none" stroke="#fff" opacity=".13" stroke-width="3"/>',
     afro:'<path d="M75 76Q61 71 65 59Q57 46 69 37Q68 21 85 25Q95 14 107 23Q123 19 129 33Q143 38 135 52Q141 65 126 75L122 57Q106 60 81 52Z" fill="#292724"/><path d="M72 42Q90 22 118 33M67 57Q79 48 85 47M110 27Q126 30 128 43" fill="none" stroke="#453c32" stroke-width="3" stroke-linecap="round"/>',
@@ -141,7 +145,7 @@ function makeNavigation(scene,radius=10) {
 }
 
 /** A locally simulated playable world. Online residents only come from the server. */
-export function renderWorld(container,{profile={},place={},people=[],serverNow,weather:reportedWeather,canDecorate=true,catalog=[],onInteract=()=>{},onResident=()=>{},onFurnitureSelect=()=>{},onArrive}={}) {
+export function renderWorld(container,{profile={},place={},people=[],serverNow,weather:reportedWeather,canDecorate=true,catalog=[],onInteract=()=>{},onResident=()=>{},onFurnitureSelect=()=>{},onDestination=()=>{},onArrive}={}) {
  if(!container)return Object.assign(()=>{},{perform:()=>{},walkTo:()=>{}});
  const id=`abuja-motion-${++serial}`,trip=profile.activeTrip,kind=trip?'transit':profile.location?.kind||'public',atHome=kind==='home'||kind==='visit',interior=atHome||kind==='venue',preview=container.id==='welcome-scene';
  const realTimeStart=Number.isFinite(Number(serverNow))?Number(serverNow):Date.now(),localTimeStart=performance.now();
@@ -197,6 +201,13 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
  if(sound){const button=document.createElement('button');button.className='world-sound-toggle';button.type='button';button.textContent='Music off';button.setAttribute('aria-pressed','false');button.setAttribute('aria-label','Toggle original synthesized club music');button.disabled=profile.settings?.soundEnabled!==true;button.title=button.disabled?'Enable sound in Settings first':'Original club beats · tap to listen';button.onclick=()=>sound.toggle();container.append(button);}
  const characterRenderer=createCharacterRenderer(container,{appearance:profile.appearance,pedestrians:scene.pedestrians,neighbours,scene,profile,kind,venue,place});
  let oblique=container.dataset.environmentRenderer==='webgl-3d';
+ const roofLabels=document.createElement('div');roofLabels.className='world-roof-labels';container.append(roofLabels);
+ const roofEntries=(scene.buildings||[]).filter(b=>b.name).map(b=>{
+  const button=document.createElement('button');button.type='button';button.className='world-roof-name';button.textContent=b.name;button.dataset.roofBuilding=b.id;button.setAttribute('aria-label',`Visit ${b.name}`);
+  button.onclick=()=>{if(!inputBlocked()&&!trip&&!furnitureMode)onDestination(b.id==='home'?{home:true}:{venueId:b.id});};roofLabels.append(button);
+  return {button,point:{x:b.x+b.w/2,y:(b.frontY===false?b.y:b.y-b.h)+b.h/2,elevation:(b.id==='hotel'?250:b.id==='home'?145:b.floors>1?140:103)+72}};
+ });
+
  const groundGroup=document.createElementNS('http://www.w3.org/2000/svg','g');groundGroup.classList.add('world-ground');
  while(svg.firstChild)groundGroup.append(svg.firstChild);svg.append(groundGroup);
  const on=(node,type,handler,options)=>{node.addEventListener(type,handler,options);listeners.push(()=>node.removeEventListener(type,handler,options));};
@@ -223,6 +234,7 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
   const area=scene.furnishingArea||{x:0,y:0,w:scene.width,h:scene.height},surface=surfaceForFurnitureAt(scene,furnitureMode,p,furnitureRotation);
   return {x:(p.x-area.x)/area.w,y:(p.y-area.y)/area.h,rotation:furnitureRotation,propertyId:profile.home?.propertyId,...(surface?{supportId:surface.supportId}:{})};
  };
+ const furniturePointer=event=>(canUseFurnitureSurface(furnitureMode)&&characterRenderer?.screenToFurnitureSurface?.(event.clientX,event.clientY,furnitureMode))||toWorld(event);
  const snappedFurniture=p=>{
   if(!furnitureSnap||surfaceForFurnitureAt(scene,furnitureMode,p,furnitureRotation))return p;
   const def=furnitureDimensions(furnitureMode),w=furnitureRotation%180&&!def.upright?def.height:def.width,h=furnitureRotation%180&&!def.upright?def.width:def.height;
@@ -285,10 +297,10 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
   if(announce)container.querySelector('.world-zoom-announcement').textContent=`Environment zoom ${Math.round(orientation().targetZoom*100)} percent`;remember();return orientation().targetZoom;
  };
  const resetZoom=()=>{orbit.reset({immediate:false});camera={x:interior?scene.width/2:player.x,y:interior?scene.height/2:player.y-55};updateViewport();remember();return 1;};
- const touch=bindWorldTouch({surface:svg,enabled:()=>!inputBlocked()&&!trip,orbit,placing:()=>!!furnitureMode,onStart:stop,onItemDrag:e=>paintFurniture(toWorld(e)),onZoom:next=>setZoom(next),onChange:()=>{zoom=orientation().zoom;updateViewport();}});
+ const touch=bindWorldTouch({surface:svg,enabled:()=>!inputBlocked()&&!trip,orbit,placing:()=>!!furnitureMode,onStart:stop,onItemDrag:e=>paintFurniture(furniturePointer(e)),onZoom:next=>setZoom(next),onChange:()=>{zoom=orientation().zoom;updateViewport();}});
  on(svg,'click',e=>{
   if(inputBlocked()||trip||touch.blocksClick())return;const person=e.target.closest('[data-world-resident]');if(person){const resident=neighbours.find(p=>String(p.id)===person.dataset.worldResident);if(resident)onResident(resident);return;}
-  const p=toWorld(e);if(furnitureMode){paintFurniture(p);return;}
+  const p=toWorld(e);if(furnitureMode){paintFurniture(furniturePointer(e));return;}
   const itemId=atHome&&canDecorate?characterRenderer?.pickFurniture?.(e.clientX,e.clientY):null;
   if(itemId){stop();onFurnitureSelect(itemId);return;}
   const target=e.target.closest('[data-world-target]');if(target){requestPoint(scene.interactables.find(point=>point.id===target.dataset.worldTarget));return;}moveTo(p.x,p.y);
@@ -365,6 +377,11 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
   const npcPositions=[];
   for(let i=0;i<npcNodes.length;i++){const n=scene.pedestrians[i],length=Math.max(.01,Math.hypot(n.toX-n.x,n.toY-n.y)),cycle=(elapsed*(30+i*2)+i*112)%(length*2),progress=cycle>length?2-cycle/length:cycle/length;const node=npcNodes[i];npcPositions.push({x:n.x+(n.toX-n.x)*progress,y:n.y+(n.toY-n.y)*progress,angle:n.stationary?90:Math.atan2(n.toY-n.y,n.toX-n.x)*180/Math.PI+(cycle>length?180:0),moving:!n.stationary,phase:elapsed*7+i,elevation:n.elevation||0,activity:n.activity?{name:n.activity,elapsed:elapsed*1000}:null});node.setAttribute('transform',`translate(${n.x+(n.toX-n.x)*progress} ${n.y+(n.toY-n.y)*progress}) scale(.85)`);node.querySelector('.walker-facing').setAttribute('transform',`scale(${cycle>length?-1:1} 1)`);node.querySelectorAll('.walker-leg').forEach((leg,j)=>leg.setAttribute('transform',`rotate(${Math.sin(elapsed*7+i+j*Math.PI)*17} ${j?7:-7} -27)`));}
   if(!blocked||preview)characterRenderer?.draw({player,camera,width:viewWidth,height:viewHeight,orientation:orientation(),angle,phase:walkPhase,time:elapsed,moving,transport,driving,activity,clock,weather,clubOpen:isClub&&clubSchedule(currentNow).isOpen,carColor,carStyle,ownVehicle,parked,trafficPositions,trip,npcPositions,onlinePositions:neighbours.map(person=>({...residentPoses.get(String(person.id)),phase:elapsed*8}))});
+  if(frameCount%6===0&&roofEntries.length){
+   const rect=container.getBoundingClientRect();
+   for(const {button,point} of roofEntries){const p=characterRenderer?.projectWorld?.(point);const visible=p&&p.z>=-1&&p.z<=1&&p.x>rect.left+32&&p.x<rect.right-32&&p.y>rect.top+110&&p.y<rect.bottom-150&&!furnitureMode;
+    button.hidden=!visible;if(visible){button.style.left=`${p.x-rect.left}px`;button.style.top=`${p.y-rect.top}px`;}}
+  }
   if(frameCount%5===0||moving){nearby=scene.interactables.filter(p=>!driving||p.action==='toggle-driving').filter(p=>distance(player,p)<(p.radius||76)).sort((a,b)=>distance(player,a)-distance(player,b))[0]||null;container.querySelectorAll('.world-point').forEach(node=>node.classList.toggle('is-nearby',node.dataset.worldTarget===nearby?.id));interactButton.querySelector('span').textContent=driving?'Park & get out':nearby?.label||'Explore';interactButton.classList.toggle('is-ready',driving||!!nearby);container.dataset.playerX=player.x.toFixed(2);container.dataset.playerY=player.y.toFixed(2);container.dataset.cameraX=camera.x.toFixed(2);container.dataset.cameraY=camera.y.toFixed(2);const screen=worldToScreen(player,{left:0,top:0,width:container.clientWidth,height:container.clientHeight},camera,viewport());container.dataset.playerScreenX=screen.x.toFixed(2);container.dataset.playerScreenY=screen.y.toFixed(2);container.dataset.moving=String(moving);container.dataset.distance=travelDistance.toFixed(1);container.dataset.nearby=nearby?.id||'';const miniPlayer=container.querySelector('.world-minimap-player'),miniView=container.querySelector('.world-minimap-view');miniPlayer?.setAttribute('cx',String(player.x));miniPlayer?.setAttribute('cy',String(player.y));if(miniView){miniView.setAttribute('x',String(camera.x-viewWidth/2));miniView.setAttribute('y',String(camera.y-viewHeight/2));miniView.setAttribute('width',String(viewWidth));miniView.setAttribute('height',String(viewHeight));}if(moving&&!pending&&!trip)say(driving?'Windows down. The city is yours.':keyboard.has('shift')||sprinting?'Picking up the pace.':nearby?`${nearby.label} · press E to interact`:'Going places.');}
   for(const person of neighbours){const pose=residentPoses.get(String(person.id)),node=container.querySelector(`[data-world-resident="${CSS.escape(String(person.id))}"]`);if(node&&pose)node.setAttribute('transform',`translate(${pose.x} ${pose.y})`);}
   if(frameCount%60===0)remember();

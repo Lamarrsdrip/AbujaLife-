@@ -1,0 +1,237 @@
+import crypto from 'node:crypto';
+import { GameError } from '../errors.mjs';
+
+const AD_PRICE_NGN = 2000;
+const AD_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
+const RESERVATION_MS = 24 * 60 * 60 * 1000;
+const MAX_CREATIVE_BYTES = 48 * 1024;
+const PLOT_IDS = Object.freeze(Array.from({ length: 40 }, (_, index) => `plot-${String(index + 1).padStart(2, '0')}`));
+const BILLBOARD_IDS = Object.freeze(Array.from({ length: 10 }, (_, index) => `billboard-${String(index + 1).padStart(2, '0')}`));
+const ALL_SPACES = Object.freeze([
+  ...PLOT_IDS.map((id, index) => ({ id, kind: 'plot', row: Math.floor(index / 8), column: index % 8 })),
+  ...BILLBOARD_IDS.map((id, index) => ({ id, kind: 'billboard', roadIndex: index })),
+]);
+
+const fail = (condition, message, status = 400, code = 'invalid_ad') => { if (!condition) throw new GameError(message, status, code); };
+const clean = (value, max = 200) => typeof value === 'string' ? value.trim().slice(0, max) : '';
+const requestKey = value => typeof value === 'string' && /^[A-Za-z0-9_-]{8,100}$/.test(value);
+const validSlot = (kind, id) => kind === 'plot' ? PLOT_IDS.includes(id) : BILLBOARD_IDS.includes(id);
+const nowDate = value => new Date(Number(value));
+
+export const AD_PRICING = Object.freeze({
+  currency: 'NGN',
+  amount: AD_PRICE_NGN,
+  durationDays: 7,
+  plotPackSize: 5,
+  billboardCount: 1,
+});
+export const AD_SPACES = ALL_SPACES;
+
+export function normalizeAdLink(value) {
+  let url;
+  try { url = new URL(String(value || '').trim()); } catch { throw new GameError('Add a valid website or X link', 400, 'invalid_ad_link'); }
+  const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  const ipv4 = hostname.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  const privateIpv4 = ipv4 && (() => { const octets = ipv4.slice(1).map(Number); return octets.some(value => value > 255) || octets[0] === 0 || octets[0] === 10 || octets[0] === 127 || (octets[0] === 169 && octets[1] === 254) || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) || (octets[0] === 192 && octets[1] === 168); })();
+  const privateIpv6 = hostname === '::1' || hostname.startsWith('fc') || hostname.startsWith('fd') || hostname.startsWith('fe8') || hostname.startsWith('fe9') || hostname.startsWith('fea') || hostname.startsWith('feb');
+  fail(url.protocol === 'https:' && hostname && !url.username && !url.password && url.href.length <= 500 && hostname !== 'localhost' && !hostname.endsWith('.localhost') && !hostname.endsWith('.local') && !hostname.endsWith('.internal') && !privateIpv4 && !privateIpv6, 'Ads must link to a secure public HTTPS website or X page', 400, 'invalid_ad_link');
+  return url.href;
+}
+
+function imageDimensions(mime, body) {
+  if (mime === 'image/png') {
+    fail(body.length >= 24 && body.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) && body.toString('ascii', 12, 16) === 'IHDR', 'Upload a valid PNG image', 400, 'invalid_ad_image');
+    return { width: body.readUInt32BE(16), height: body.readUInt32BE(20) };
+  }
+  if (mime === 'image/jpeg') {
+    fail(body.length >= 4 && body[0] === 0xff && body[1] === 0xd8, 'Upload a valid JPEG image', 400, 'invalid_ad_image');
+    for (let offset = 2; offset + 9 < body.length;) {
+      if (body[offset] !== 0xff) { offset += 1; continue; }
+      const marker = body[offset + 1]; offset += 2;
+      if (marker === 0xd8 || marker === 0xd9 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+      const length = body.readUInt16BE(offset); if (length < 2 || offset + length > body.length) break;
+      if ((marker >= 0xc0 && marker <= 0xc3) || (marker >= 0xc5 && marker <= 0xc7) || (marker >= 0xc9 && marker <= 0xcb) || (marker >= 0xcd && marker <= 0xcf)) return { width: body.readUInt16BE(offset + 5), height: body.readUInt16BE(offset + 3) };
+      offset += length;
+    }
+    throw new GameError('Upload a valid JPEG image', 400, 'invalid_ad_image');
+  }
+  fail(mime === 'image/webp' && body.length >= 30 && body.toString('ascii', 0, 4) === 'RIFF' && body.toString('ascii', 8, 12) === 'WEBP', 'Upload a valid WebP image', 400, 'invalid_ad_image');
+  const chunk = body.toString('ascii', 12, 16);
+  if (chunk === 'VP8X') return { width: 1 + body.readUIntLE(24, 3), height: 1 + body.readUIntLE(27, 3) };
+  if (chunk === 'VP8 ') {
+    const start = body.indexOf(Buffer.from([0x9d, 0x01, 0x2a]), 20); fail(start >= 0 && start + 7 < body.length, 'Upload a valid WebP image', 400, 'invalid_ad_image');
+    return { width: body.readUInt16LE(start + 3) & 0x3fff, height: body.readUInt16LE(start + 5) & 0x3fff };
+  }
+  if (chunk === 'VP8L') { fail(body.length >= 25, 'Upload a valid WebP image', 400, 'invalid_ad_image'); const bits = body.readUInt32LE(21); return { width: 1 + (bits & 0x3fff), height: 1 + ((bits >>> 14) & 0x3fff) }; }
+  throw new GameError('Upload a valid WebP image', 400, 'invalid_ad_image');
+}
+
+export function normalizeAdImage(value) {
+  fail(typeof value === 'string' && value.length > 30 && value.length <= Math.ceil(MAX_CREATIVE_BYTES * 1.45) + 64, 'Upload a smaller PNG, JPEG or WebP image', 413, 'ad_image_too_large');
+  const match = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/i.exec(value);
+  fail(match, 'Upload a PNG, JPEG or WebP image', 400, 'invalid_ad_image');
+  let body;
+  try { body = Buffer.from(match[2], 'base64'); } catch { body = Buffer.alloc(0); }
+  fail(body.length > 0 && body.length <= MAX_CREATIVE_BYTES, 'Upload a smaller image for the in-world advert', 413, 'ad_image_too_large');
+  const mime = match[1].toLowerCase() === 'jpeg' ? 'image/jpeg' : `image/${match[1].toLowerCase()}`;
+  const { width, height } = imageDimensions(mime, body);
+  fail(Number.isInteger(width) && Number.isInteger(height) && width > 0 && height > 0 && width <= 4096 && height <= 4096, 'Ad images must be between 1 and 4096 pixels per side', 400, 'invalid_ad_image');
+  return { dataUrl: `data:${mime};base64,${body.toString('base64')}`, bytes: body.length, sha256: crypto.createHash('sha256').update(body).digest('hex') };
+}
+
+function normalizeSelection(kind, raw) {
+  fail(['plot', 'billboard'].includes(kind), 'Choose ad land or a roadside billboard', 400, 'invalid_ad_kind');
+  const slots = [...new Set((Array.isArray(raw) ? raw : []).map(value => clean(value, 32)))];
+  const expected = kind === 'plot' ? AD_PRICING.plotPackSize : AD_PRICING.billboardCount;
+  fail(slots.length === expected && slots.every(id => validSlot(kind, id)), kind === 'plot' ? 'Choose exactly 5 available ad plots' : 'Choose one available roadside billboard', 400, 'invalid_ad_space');
+  return slots.sort();
+}
+
+const orderView = row => ({
+  purpose: 'ad', txRef: row.txRef, status: row.status, amount: row.amount, currency: 'NGN', mode: row.mode,
+  checkoutUrl: row.checkoutUrl || null, transactionId: row.transactionId || null, kind: row.kind, slots: row.slots,
+  title: row.title, link: row.link, createdAt: row.createdAt, startAt: row.startAt || null, endAt: row.endAt || null,
+});
+
+const string = { bsonType: 'string', minLength: 1 };
+const whole = { bsonType: ['int', 'long', 'double'], minimum: 0, maximum: Number.MAX_SAFE_INTEGER, multipleOf: 1 };
+const schema = (required, properties) => ({ $jsonSchema: { bsonType: 'object', required, properties: { _id: string, ...properties } } });
+
+export const MONGO_AD_VALIDATORS = Object.freeze({
+  ad_orders: schema(['_id','txRef','residentId','operationKey','fingerprint','amount','mode','status','kind','slots','title','link','imageDataUrl','imageHash','encryptedSecret','createdAt'], {
+    txRef:string,residentId:string,operationKey:string,fingerprint:string,amount:whole,mode:{enum:['test','live']},status:{enum:['creating','pending','checkout_failed','active']},kind:{enum:['plot','billboard']},slots:{bsonType:'array',items:string,minItems:1,maxItems:5},title:string,link:string,imageDataUrl:string,imageHash:string,encryptedSecret:string,checkoutUrl:{bsonType:['string','null']},transactionId:{bsonType:['string','null']},createdAt:whole,startAt:{anyOf:[whole,{bsonType:'null'}]},endAt:{anyOf:[whole,{bsonType:'null'}]}
+  }),
+  ad_slots: schema(['_id','kind','txRef','residentId','state','expiresAt'], {kind:{enum:['plot','billboard']},txRef:string,residentId:string,state:{enum:['reserved','active']},expiresAt:{bsonType:'date'}}),
+  ad_receipts: schema(['_id','provider','transactionId','txRef','residentId','amount','createdAt'], {provider:{enum:['flutterwave']},transactionId:string,txRef:string,residentId:string,amount:whole,createdAt:whole})
+});
+
+export const MONGO_AD_INDEXES = Object.freeze({
+  ad_orders: [[{ txRef:1 },{ unique:true }],[{ residentId:1,operationKey:1 },{ unique:true }],[{ transactionId:1 },{ unique:true,partialFilterExpression:{ transactionId:{ $type:'string' } } }],[{ status:1,endAt:1 },{}],[{ residentId:1,createdAt:-1 },{}]],
+  ad_slots: [[{ expiresAt:1 },{ expireAfterSeconds:0 }],[{ txRef:1 },{}]],
+  ad_receipts: [[{ provider:1,transactionId:1 },{ unique:true }],[{ txRef:1 },{ unique:true }]]
+});
+
+export async function ensureMongoAdSchema(db) {
+  for (const [name, validator] of Object.entries(MONGO_AD_VALIDATORS)) {
+    try { await db.createCollection(name, { validator, validationLevel:'strict', validationAction:'error' }); }
+    catch (error) { if (error.code !== 48) throw error; }
+    await db.command({ collMod:name, validator, validationLevel:'strict', validationAction:'error' });
+  }
+  for (const [name, definitions] of Object.entries(MONGO_AD_INDEXES)) for (const [definition, options] of definitions) await db.collection(name).createIndex(definition, options);
+}
+
+export class MongoAdStore {
+  #verifiedProofs = new WeakSet();
+  constructor({ store, admin, payments, log = () => {} } = {}) {
+    fail(store?.db && store?.transaction && admin && payments?.provider && payments?.config, 'Ad commerce requires game, admin and payment stores', 500, 'ads_unavailable');
+    this.store = store; this.db = store.db; this.admin = admin; this.payments = payments; this.log = log; this.clock = () => store.clock();
+  }
+  collection(name) { return this.db.collection(name); }
+  async init({ ensureIndexes = true } = {}) { if (ensureIndexes) await ensureMongoAdSchema(this.db); return this; }
+  async purgeExpiredSlots({ session = null } = {}) { await this.collection('ad_slots').deleteMany({ expiresAt:{ $lte:nowDate(this.clock()) } }, session ? { session } : {}); }
+  async publicState() {
+    const now = this.clock(); await this.purgeExpiredSlots();
+    const [locks, active] = await Promise.all([
+      this.collection('ad_slots').find({ expiresAt:{ $gt:nowDate(now) } }).toArray(),
+      this.collection('ad_orders').find({ status:'active', endAt:{ $gt:now } }).sort({ startAt:-1,txRef:-1 }).limit(60).toArray(),
+    ]);
+    const lockMap = new Map(locks.map(row => [row._id,row]));
+    const activeByRef = new Map(active.map(row => [row.txRef,row]));
+    return {
+      enabled:true,
+      pricing:AD_PRICING,
+      spaces:ALL_SPACES.map(space => { const lock=lockMap.get(space.id),order=lock&&activeByRef.get(lock.txRef); return { ...space, available:!lock, ...(order?{ad:{title:order.title,link:order.link,imageDataUrl:order.imageDataUrl,endAt:order.endAt}}:{}) }; }),
+      active:active.map(row => ({ txRef:row.txRef,kind:row.kind,slots:row.slots,title:row.title,link:row.link,imageDataUrl:row.imageDataUrl,startAt:row.startAt,endAt:row.endAt })),
+    };
+  }
+  async checkout(id, { kind, slots, title, link, imageDataUrl, email, idempotencyKey } = {}) {
+    fail(!await this.admin.isSuspended(id), 'This account is suspended', 403, 'account_suspended');
+    const profile = await this.store.profile(id); fail(requestKey(idempotencyKey), 'Use a valid ad payment request key');
+    const config = await this.payments.config(); fail(config?.enabled && config.secrets?.secretKey && config.publicOrigin, 'Flutterwave is not configured on this deployment', 503, 'payments_unavailable');
+    kind = clean(kind,20); slots = normalizeSelection(kind,slots); title = clean(title,70); fail(title.length >= 2, 'Add your business or campaign name');
+    link = normalizeAdLink(link); const image = normalizeAdImage(imageDataUrl); email = clean(email,254); fail(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email), 'Enter your payment receipt email');
+    const fingerprint = JSON.stringify({ kind, slots, title, link, imageHash:image.sha256, email }); let existing = false, order;
+    try {
+      order = await this.store.transaction(async session => {
+        const prior = await this.collection('ad_orders').findOne({ residentId:id, operationKey:idempotencyKey }, { session });
+        if (prior) { fail(prior.fingerprint === fingerprint, 'This ad payment key was already used for another advert', 409, 'idempotency_conflict'); existing = true; return prior; }
+        await this.purgeExpiredSlots({ session });
+        const txRef = 'abjl_ad_' + crypto.randomUUID(), expiresAt = nowDate(this.clock() + RESERVATION_MS);
+        try { await this.collection('ad_slots').insertMany(slots.map(slotId => ({ _id:slotId,kind,txRef,residentId:id,state:'reserved',expiresAt })), { session, ordered:true }); }
+        catch (error) { if (error.code === 11000) throw new GameError('Part of that ad space is already taken. Choose another area.',409,'ad_space_taken'); throw error; }
+        const row = { _id:txRef,txRef,residentId:id,operationKey:idempotencyKey,fingerprint,amount:AD_PRICE_NGN,mode:config.mode,status:'creating',kind,slots,title,link,imageDataUrl:image.dataUrl,imageHash:image.sha256,encryptedSecret:this.payments.encrypt({secretKey:config.secrets.secretKey},'ad-order:'+txRef),checkoutUrl:null,transactionId:null,createdAt:this.clock(),startAt:null,endAt:null };
+        await this.collection('ad_orders').insertOne(row,{session}); return row;
+      });
+    } catch (error) {
+      if (error.code !== 11000) throw error;
+      order = await this.collection('ad_orders').findOne({ residentId:id,operationKey:idempotencyKey });
+      fail(order && order.fingerprint === fingerprint, 'This ad payment key was already used for another advert',409,'idempotency_conflict'); existing = true;
+    }
+    if (existing) {
+      fail(order.status !== 'creating', 'This advert checkout is being created. Check its status before retrying',409,'checkout_processing');
+      fail(order.checkoutUrl, 'The previous advert checkout could not be created. Start a new request',502,'checkout_failed');
+      return { ok:true, checkout:orderView(order), replayed:true };
+    }
+    try {
+      const data = await this.payments.provider('/v3/payments',config.secrets.secretKey,{method:'POST',body:JSON.stringify({tx_ref:order.txRef,amount:AD_PRICE_NGN,currency:'NGN',redirect_url:`${config.publicOrigin}/?ad_payment_ref=${encodeURIComponent(order.txRef)}`,customer:{email,name:profile.displayName},customizations:{title:'AbujaLife Ads',description:kind==='plot'?'5 AbujaLife ad plots · 7 days':'Roadside billboard · 7 days'},meta:{abujalife_reference:order.txRef,purpose:'advertising',kind,slots}})});
+      let checkout; try { checkout = new URL(data.link); } catch { throw new GameError('Flutterwave returned an invalid checkout link',502,'invalid_checkout'); }
+      fail(checkout.protocol === 'https:' && (checkout.hostname === 'checkout.flutterwave.com' || checkout.hostname.endsWith('.flutterwave.com')) && !checkout.username && !checkout.password,'Flutterwave returned an untrusted checkout link',502,'invalid_checkout');
+      await this.collection('ad_orders').updateOne({_id:order.txRef,status:'creating'},{$set:{checkoutUrl:checkout.href,status:'pending'}});
+      return { ok:true, checkout:orderView(await this.collection('ad_orders').findOne({_id:order.txRef})), replayed:false };
+    } catch (error) {
+      await this.store.transaction(async session => { await this.collection('ad_orders').updateOne({_id:order.txRef,status:'creating'},{$set:{status:'checkout_failed'}},{session}); await this.collection('ad_slots').deleteMany({txRef:order.txRef,state:'reserved'},{session}); });
+      throw error;
+    }
+  }
+  async status(id, txRef) {
+    const row = await this.collection('ad_orders').findOne({ txRef:clean(txRef,100),residentId:id }); fail(row,'Advert payment not found',404,'payment_not_found');
+    const status = row.status === 'active' && row.endAt <= this.clock() ? 'expired' : row.status; return { ok:true,payment:{...orderView(row),status} };
+  }
+  async verifiedOrder(transactionId, txRef, id = null) {
+    transactionId = String(transactionId ?? ''); fail(/^\d{1,24}$/.test(transactionId),'Use the Flutterwave transaction ID',400,'invalid_transaction');
+    const order = await this.collection('ad_orders').findOne({ txRef:clean(txRef,100) }); fail(order && (!id || order.residentId === id),'Advert payment not found',404,'payment_not_found');
+    const secrets = this.payments.decrypt(order.encryptedSecret,'ad-order:'+order.txRef); fail(secrets?.secretKey,'Advert payment credentials are unavailable',503,'payments_unavailable');
+    const data = await this.payments.provider(`/v3/transactions/${transactionId}/verify`,secrets.secretKey);
+    fail(String(data?.id)===transactionId && data.status==='successful' && data.currency==='NGN' && Number(data.amount)===AD_PRICE_NGN && String(data?.tx_ref||'')===order.txRef,'This transaction does not match the advert checkout',409,'payment_verification_failed');
+    const proof={order:Object.freeze({...order}),transactionId};this.#verifiedProofs.add(proof);return Object.freeze(proof);
+  }
+  async activateVerified(proof, actor='provider') {
+    fail(this.#verifiedProofs.has(proof),'A server-verified provider receipt is required',403,'payment_verification_required');
+    const {order,transactionId}=proof; let replayed=false, activated;
+    try {
+      activated = await this.store.transaction(async session => {
+        const receiptId='flutterwave:'+transactionId,prior=await this.collection('ad_receipts').findOne({_id:receiptId},{session});
+        if (prior) { const existing=await this.collection('ad_orders').findOne({txRef:prior.txRef},{session}); replayed=true; return existing; }
+        const current=await this.collection('ad_orders').findOne({_id:order.txRef},{session}); fail(current&&current.residentId===order.residentId&&current.amount===AD_PRICE_NGN,'This advert checkout changed during verification',409,'payment_verification_failed');
+        if(current.status==='active'){fail(current.transactionId===transactionId,'This advert checkout was already activated by another payment',409,'payment_duplicate');replayed=true;return current;}
+        const locks=await this.collection('ad_slots').find({_id:{$in:current.slots},txRef:current.txRef},{session}).toArray(); fail(locks.length===current.slots.length,'Reserved ad space is no longer available. Contact support with your payment reference.',409,'ad_space_unavailable_after_payment');
+        const started=this.clock(),ends=started+AD_DURATION_MS;
+        await this.collection('ad_receipts').insertOne({_id:receiptId,provider:'flutterwave',transactionId,txRef:current.txRef,residentId:current.residentId,amount:AD_PRICE_NGN,createdAt:started},{session});
+        await this.collection('ad_orders').updateOne({_id:current.txRef,status:{$ne:'active'}},{$set:{status:'active',transactionId,startAt:started,endAt:ends}},{session});
+        await this.collection('ad_slots').updateMany({txRef:current.txRef},{$set:{state:'active',expiresAt:nowDate(ends)}},{session});
+        return {...current,status:'active',transactionId,startAt:started,endAt:ends};
+      });
+    } catch(error){if(error.code===11000)throw new GameError('This provider transaction has already activated an advert',409,'payment_duplicate');throw error;}
+    this.log(replayed?'ad_payment_replay':'ad_payment_grant',{provider:'flutterwave',residentId:order.residentId,reference:order.txRef,transactionId,kind:order.kind,slots:order.slots});
+    return {ok:true,replayed,ad:orderView(activated)};
+  }
+  async verify(id,{transactionId,txRef}={}) { fail(!await this.admin.isSuspended(id),'This account is suspended',403,'account_suspended'); await this.store.profile(id); return this.activateVerified(await this.verifiedOrder(transactionId,txRef,id),id); }
+  async handleWebhook(rawBody,signature) {
+    fail(Buffer.isBuffer(rawBody)&&rawBody.length<=65536,'Invalid webhook body'); let body; try{body=JSON.parse(rawBody.toString('utf8'));}catch{throw new GameError('Invalid webhook JSON');}
+    if(body.event!=='charge.completed')return{ok:true,ignored:true}; const txRef=clean(body.data?.tx_ref,100),order=await this.collection('ad_orders').findOne({txRef}); if(!order)return{ok:true,ignored:true};
+    fail(typeof signature==='string'&&/^[A-Za-z0-9+/]{43}=$/.test(signature),'Invalid Flutterwave webhook signature',401,'invalid_webhook_signature');
+    const config=await this.payments.config(order.mode);fail(config?.secrets.webhookSecret,'Advert webhook signing is not configured',503,'payments_unavailable'); const supplied=Buffer.from(signature,'base64'),expected=crypto.createHmac('sha256',config.secrets.webhookSecret).update(rawBody).digest();
+    fail(supplied.length===expected.length&&crypto.timingSafeEqual(supplied,expected),'Invalid Flutterwave webhook signature',401,'invalid_webhook_signature');
+    return this.activateVerified(await this.verifiedOrder(body.data?.id,txRef),'flutterwave-webhook');
+  }
+  attach() {
+    if(this.payments.__adsAttached)return this.payments; this.payments.__adsAttached=true;
+    const base={publicConfig:this.payments.publicConfig.bind(this.payments),checkout:this.payments.checkout.bind(this.payments),verify:this.payments.verify.bind(this.payments),status:this.payments.status.bind(this.payments),handleWebhook:this.payments.handleWebhook.bind(this.payments)};
+    this.payments.publicConfig=async()=>({...await base.publicConfig(),ads:await this.publicState()});
+    this.payments.checkout=async(id,body={})=>body?.purpose==='ad'?this.checkout(id,body):base.checkout(id,body);
+    this.payments.verify=async(id,body={})=>(body?.purpose==='ad'||String(body?.txRef||'').startsWith('abjl_ad_'))?this.verify(id,body):base.verify(id,body);
+    this.payments.status=async(id,txRef)=>String(txRef||'').startsWith('abjl_ad_')?this.status(id,txRef):base.status(id,txRef);
+    this.payments.handleWebhook=async(raw,signature)=>{const normal=await base.handleWebhook(raw,signature);return normal?.ignored?this.handleWebhook(raw,signature):normal;};
+    return this.payments;
+  }
+}

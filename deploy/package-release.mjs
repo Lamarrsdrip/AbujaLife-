@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const destination = path.resolve(process.argv[2] || path.join(os.tmpdir(), 'abujacity-release.tar.gz'));
 const stage = fs.mkdtempSync(path.join(os.tmpdir(), 'abujacity-release-'));
-const allowedRoots = ['app', 'src', 'deploy'];
+const allowedRoots = ['app', 'src', 'deploy', 'scripts', 'tests', 'preview'];
 const allowedFiles = ['Dockerfile', '.dockerignore', '.env.example', 'package.json', 'package-lock.json', 'docs/PRODUCTION_DEPLOYMENT.md', 'docs/ADMIN_PAYMENTS.md'];
 const exampleFiles = new Set(['.env.example','deploy/.env.example']);
 const privateFile = entry => !exampleFiles.has(entry) && /(^|\/)(\.env(?:\..*)?|\.local|\.secrets|backups|releases|node_modules|\.git)(\/|$)/.test(entry) || /\.(?:sqlite|db)(?:-.*)?$|\.(?:log|enc|partial)$|\.(?:tar\.gz|zip)$/i.test(entry);

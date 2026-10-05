@@ -134,6 +134,9 @@ export function createServer(options={}) {
       if(pathname==='/admin'){res.writeHead(303,{location:'/admin.html',...headers});res.end();return;}
       let rel;try{rel=decodeURIComponent(pathname);}catch{throw new GameError('Invalid URL');}
       let base=appRoot;
+      // Shared browser modules resolve authored helpers under /app/.
+      // Both routes expose only the same already-public app directory.
+      if(rel.startsWith('/app/'))rel=rel.slice(4);
       if(rel.startsWith('/src/shared/')){base=sharedRoot;rel=rel.slice('/src/shared'.length);if(path.extname(rel)!=='.mjs')return json(res,404,{error:'Not found'});}
       if(rel==='/')rel='/index.html';const target=path.resolve(base,`.${rel}`);if(target!==base&&!target.startsWith(base+path.sep))return json(res,403,{error:'Forbidden'});
       let data;try{data=await fs.readFile(target);}catch(error){if(error.code!=='ENOENT'&&error.code!=='EISDIR')throw error;if(base===sharedRoot||path.extname(rel))return json(res,404,{error:'Not found'});data=await fs.readFile(path.join(appRoot,'index.html'));rel='/index.html';}

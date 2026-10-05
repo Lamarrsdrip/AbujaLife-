@@ -82,12 +82,20 @@ integration('Mongo provider amount currency status identity and reference mismat
 });
 
 integration('Mongo concurrent verification and signed webhooks commit one receipt credit ledger entry and audit event', async t => {
-  const f = await fixture(t), order = await checkout(f), transactionId = providerSuccess(f, order), before = (await f.store.profile(f.resident)).wallet, { raw, signature } = webhook(f, order, transactionId);
+  const f = await fixture(t), order = await checkout(f), transactionId = providerSuccess(f, order), before = (await f.store.profile(f.resident)).wallet, { raw, signature } = webhook(f, order, transactionId), logs = [];
+  f.payments.log = (event, fields) => logs.push({ event, fields });
   const responses = await Promise.all(Array.from({ length: 10 }, (_, index) => index % 2 ? f.payments.verify(f.resident, { transactionId, txRef: order.txRef }) : f.payments.handleWebhook(raw, signature)));
   assert.equal(responses.filter(value => !value.replayed).length, 1); assert.ok(responses.every(value => value.profile.wallet === before + 10000 && value.payment.status === 'credited'));
   assert.equal((await f.store.profile(f.resident)).wallet, before + 10000); assert.equal(await f.connection.db.collection('payment_receipts').countDocuments({ transactionId, provider: 'flutterwave' }), 1);
   const ledger = await f.connection.db.collection('ledger').find({ residentId: f.resident, type: 'verified-payment' }).toArray(); assert.equal(ledger.length, 1); assert.equal(ledger[0].amount, 10000); assert.equal(ledger[0].balanceAfter, before + 10000);
   assert.equal(await f.connection.db.collection('admin_audit').countDocuments({ action: 'credit-verified-payment', 'details.txRef': order.txRef }), 1);
+  assert.equal(logs.filter(value => value.event === 'payment_grant').length, 1);
+  assert.equal(logs.filter(value => value.event === 'payment_replay').length, 9);
+  assert.ok(!JSON.stringify(logs).includes(SECRET));
+  for (const [collection, query] of [['payment_receipts', { transactionId }], ['economy_operations', { residentId: f.resident }], ['admin_audit', { 'details.txRef': order.txRef }]]) {
+    await assert.rejects(f.connection.db.collection(collection).updateOne(query, { $set: { tampered: true } }), error => error.code === 13);
+    await assert.rejects(f.connection.db.collection(collection).deleteOne(query), error => error.code === 13);
+  }
   const restarted = new MongoPaymentStore({ store: new MongoGameStore({ ...f.connection }), admin: new MongoAdminStore({ store: f.store }), configKey: f.key, fetchImpl: f.payments.fetch });
   const replay = await restarted.verify(f.resident, { transactionId, txRef: order.txRef }); assert.equal(replay.replayed, true); assert.equal(replay.profile.wallet, before + 10000);
 });

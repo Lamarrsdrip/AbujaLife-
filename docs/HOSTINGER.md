@@ -1,5 +1,5 @@
-# Hostinger hosting plan
+# Hostinger hosting
 
-The production architecture now uses the static frontend on **https://abujacity.life**, a separate **https://api.abujacity.life** Node 24 API, and an isolated authenticated MongoDB replica set/database. The former single-origin SQLite instructions are superseded.
+The confirmed production domain is **https://abujacity.life**. Its dedicated Hostinger PHP/HTML website serves only the static output of `npm run build`, uploaded to that website’s `public_html`. The API and persistent data run separately on the Windows VPS at **https://api.abujacity.life**.
 
-Follow [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md) for tested packaging, VPS separation, Hostinger upload, DNS/HTTPS, administration and encrypted backup/restore. The older local-preview ZIP remains device-only and is not the production frontend. Live deployment has not occurred: authorized read-only SSH to the supplied VPS returned connection refused, and no authenticated Hostinger access is exposed here.
+Use [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md) for the actual native Windows deployment, isolated MongoDB, Caddy, TLS, backups and updates. [PRODUCTION_ACCEPTANCE.md](PRODUCTION_ACCEPTANCE.md) records observed live checks and outstanding gates. The earlier account-free local-save preview ZIP is not the production frontend.

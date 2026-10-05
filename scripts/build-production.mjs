@@ -63,7 +63,7 @@ export async function buildProduction({ environment = process.env, outputDirecto
     }
     const result = await build({
       absWorkingDir: repository,
-      entryPoints: { app: 'app/app.js', admin: 'app/admin.js' },
+      entryPoints: { app: 'app/app.js', admin: 'app/admin.js', 'game-ui-kit': 'app/game-ui-kit.js', ads: 'app/ads.js', integrations: 'app/integrations.js' },
       outdir: staging,
       bundle: true,
       splitting: true,
@@ -100,7 +100,7 @@ export async function buildProduction({ environment = process.env, outputDirecto
     await fs.writeFile(path.join(staging, 'sw.js'), serviceWorker(shell, fingerprint.digest('hex').slice(0, 16)));
     await fs.rm(target, { recursive: true, force: true });
     await fs.rename(staging, target);
-    return { directory: target, configuration, files: await filesBelow(target) };
+    return { directory: target, configuration, files: (await filesBelow(target)).map(filename => filename.split(path.sep).join('/')) };
   } catch (error) {
     await fs.rm(staging, { recursive: true, force: true });
     throw error;

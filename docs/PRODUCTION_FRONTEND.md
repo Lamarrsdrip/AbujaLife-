@@ -1,6 +1,22 @@
 # Connected static frontend
 
-Run `npm ci` with Node 24 or newer, then `npm run build`. The build writes the connected game to `dist/`, ready to upload at the root of Hostinger's `public_html` for `https://abujacity.life`. It bundles the game, administrator client, shared game rules and the pinned Three.js renderer; the published directory needs no Node process or database. Upload the files inside `dist/`, including `.htaccess` when supplied by the deployment workflow.
+The public frontend is a static build of the full AbujaLife game. The source of
+truth remains `main`; the static output is published automatically by GitHub
+Actions to the generated `hostinger-production` artifact branch. Hostinger's
+Git auto-deployment watches that branch and replaces the domain's `public_html`
+after every successful build. No local ZIP upload is part of the normal release
+workflow.
+
+The first Hostinger connection is configured for repository
+`Lamarrsdrip/AbujaLife-`, branch `hostinger-production`, install path
+`public_html`, with auto-deployment enabled. Do not point Hostinger at `main`:
+that branch contains source files and is not a static document root.
+
+Run `npm ci` with Node 24 or newer, then `npm run build`. The build writes the
+connected game to `dist/`. GitHub Actions performs this build and publishes the
+contents to `hostinger-production`; the published directory needs no Node
+process or database. It bundles the game, administrator client, shared game
+rules and the pinned Three.js renderer.
 
 The build reads only two public variables:
 

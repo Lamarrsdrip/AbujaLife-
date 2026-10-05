@@ -101,6 +101,33 @@ async def ground_point(page, point):
     return await page.locator('#world-scene .world-ground').evaluate('''(el,p)=>{const value=new DOMPoint(p.x,p.y).matrixTransform(el.getScreenCTM());return {x:value.x,y:value.y};}''', point)
 
 
+async def elevated_point(page, point):
+    """Project a model-height point using the live orthographic floor transform."""
+    return await page.locator('#world-scene .world-ground').evaluate('''(el,p)=>{
+      const matrix=el.getScreenCTM(),value=new DOMPoint(p.x,p.y).matrixTransform(matrix);
+      const elevation=Number(document.querySelector('#world-scene').dataset.cameraElevation);
+      const scale=Math.hypot(matrix.a,matrix.b/Math.sin(elevation));
+      return {x:value.x,y:value.y-(p.elevation||0)*Math.cos(elevation)*scale};
+    }''', point)
+
+
+async def native_tap(page, point, mobile):
+    if mobile:
+        await page.touchscreen.tap(point['x'],point['y'])
+    else:
+        await page.mouse.click(point['x'],point['y'])
+    await native_frames(page,12)
+
+
+def catalogue_item(snapshot, item_id):
+    catalogue=snapshot['catalog']
+    return next(item for item in catalogue if item['id']==item_id) if isinstance(catalogue,list) else dict(catalogue[item_id],id=item_id)
+
+
+def economic_snapshot(profile):
+    return {key:profile.get(key) for key in ['id','wallet','inventory','furnitureLayout','storedFurniture']}
+
+
 async def touch_drag(page, start, end, steps=12, hold=0):
     session = await page.context.new_cdp_session(page)
     try:
@@ -150,6 +177,7 @@ def geometry_plan(profile, item_id, rotation=0):
     script = '''import fs from 'node:fs';
 import {buildInterior} from './app/world-interiors.js';
 import {furniturePlacementFeedback} from './src/shared/furniture-placement.mjs';
+import {furnitureSurface} from './src/shared/furniture-metadata.mjs';
 const {profile,itemId,rotation}=JSON.parse(fs.readFileSync(0,'utf8'));
 const scene=buildInterior({profile,id:'acceptance-read-only-plan'}),area=scene.furnishingArea;
 const options=[],invalid={};
@@ -160,7 +188,7 @@ if(feedback.valid)options.push({placement,point:{x:area.x+placement.x*area.w,y:a
 else if(!invalid[feedback.code])invalid[feedback.code]={placement,point:{x:area.x+placement.x*area.w,y:area.y+placement.y*area.h},code:feedback.code};
 }
 options.sort((a,b)=>Math.hypot(a.placement.x-.48,a.placement.y-.55)-Math.hypot(b.placement.x-.48,b.placement.y-.55));
-const objects=scene.objects.filter(o=>o.itemId).map(o=>({itemId:o.itemId,x:o.x,y:o.y,w:o.w,h:o.h,elevation:o.elevation||0,supportId:o.supportId||null}));
+const objects=scene.objects.filter(o=>o.itemId).map(o=>({itemId:o.itemId,x:o.x,y:o.y,w:o.w,h:o.h,elevation:o.elevation||0,supportId:o.supportId||null,surfaceHeight:furnitureSurface(o.itemId)?.height||0}));
 console.log(JSON.stringify({area,width:scene.width,height:scene.height,options:options.slice(0,32),invalid,objects}));'''
     result = subprocess.run(['node', '--input-type=module', '-e', script], cwd=REPO, input=json.dumps({'profile': profile, 'itemId': item_id, 'rotation': rotation}), text=True, capture_output=True)
     assert result.returncode == 0, 'Read-only furniture geometry planning failed'
@@ -396,6 +424,161 @@ async def furniture_check(page, label, mobile, report, actions):
     return saved
 
 
+async def tap_owned_mesh(page, item_id, mobile):
+    await native_frames(page,12)
+    current=await state(page)
+    plan=geometry_plan(current['profile'],item_id)
+    obj=next((item for item in plan['objects'] if item['itemId']==item_id),None)
+    assert obj, {'missing_actual_owned_model':item_id,'objects':plan['objects']}
+    # The table's exposed end remains selectable when a lamp occupies its center.
+    point={'x':obj['x']+obj['w']/2,'y':obj['y']+obj['h']/2+(obj['h']*.30 if item_id=='coffee-table' else 0),
+           'elevation':obj['elevation']+(obj['surfaceHeight'] if item_id=='coffee-table' else 41)}
+    screen=await elevated_point(page,point)
+    box=await page.locator('#world-scene').bounding_box()
+    assert box['x']+8<screen['x']<box['x']+box['width']-8 and box['y']+8<screen['y']<box['y']+box['height']-70, {'screen':screen,'model':obj,'scene':box}
+    await native_tap(page,screen,mobile)
+    await expect(page.locator('.furnish-item-panel')).to_be_visible()
+    await expect(page.locator('#furnish-item-title')).to_have_text(catalogue_item(current,item_id)['name'])
+    return {'model':obj,'point':point,'screen':screen}
+
+
+async def furniture_mesh_surface_check(page,label,mobile,report):
+    before=(await state(page))['profile']
+    selected=await tap_owned_mesh(page,'coffee-table',mobile)
+    for action in ['move','store','sell']:
+        await expect(page.locator(f'[data-furnish-action="{action}"]')).to_be_enabled()
+    await page.locator('[data-furnish-action="move"]').click()
+    await expect(page.locator('#world-scene')).to_have_attribute('data-furniture-mode','coffee-table')
+    await native_frames(page,12)
+    moved=await preview(page,'coffee-table')
+    assert moved['modelBounds']['width']>4,moved
+    await page.locator('[data-world-control="cancel-furniture"]').click()
+    assert economic_snapshot((await state(page))['profile'])==economic_snapshot(before)
+    await tap_owned_mesh(page,'coffee-table',mobile)
+    async with page.expect_response(lambda response:urlsplit(response.url).path=='/api/action' and response.request.method=='POST' and response.request.post_data_json.get('action')=='store-furniture') as observed:
+        await page.locator('[data-furnish-action="store"]').click()
+    response=await observed.value
+    assert response.status==200,await response.text()
+    stored=(await response.json())['profile']
+    assert 'coffee-table' in stored['inventory'] and 'coffee-table' in stored['storedFurniture'] and 'coffee-table' not in stored['furnitureLayout']
+    assert stored['wallet']==before['wallet']
+    await expect(page.locator('[data-furnish-action="store"]')).to_be_disabled()
+    await page.locator('[data-furnish-action="move"]').click()
+    pending=await preview(page,'coffee-table')
+    plan=geometry_plan((await state(page))['profile'],'coffee-table',pending['placement']['rotation'])
+    assert plan['options'],plan
+    candidate=plan['options'][0]
+    await aim_piece(page,'coffee-table',candidate,mobile)
+    table_saved=await confirm_place(page,'coffee-table')
+    assert (await state(page))['profile']['wallet']==before['wallet']
+    passed(report,f'{label} native mesh picking opens Move/Store/Sell; Move cancel preserves placement and Store/Place preserves ownership and balance',selected=selected,placement=table_saved)
+
+    await open_catalogue(page,'lighting')
+    current=await state(page)
+    lamp=catalogue_item(current,'table-lamp')
+    assert 'table-lamp' not in current['profile']['inventory'],'Fresh starter unexpectedly owns the lamp used for purchase acceptance'
+    purchase=await select_piece(page,'table-lamp',buy=True)
+    bought=(await state(page))['profile']
+    assert bought['wallet']==current['profile']['wallet']-lamp['price'] and 'table-lamp' in bought['inventory']
+    table=next(item for item in geometry_plan(bought,'table-lamp')['objects'] if item['itemId']=='coffee-table')
+    point={'x':table['x']+table['w']/2,'y':table['y']+table['h']/2,'elevation':table['surfaceHeight']}
+    assert point['elevation']==36.5,table
+    screen=await elevated_point(page,point)
+    await native_tap(page,screen,mobile)
+    ghost=await preview(page,'table-lamp')
+    assert ghost['valid'] is True and ghost['placement'].get('supportId')=='coffee-table' and ghost['elevation']==36.5,ghost
+    assert math.hypot(ghost['cursor']['x']-point['x'],ghost['cursor']['y']-point['y'])<3,{'target':point,'actual':ghost}
+    assert ghost['modelBounds']['width']>4 and ghost['modelBounds']['height']>4,ghost
+    await snapshot(page,f'{label}-lamp-on-real-table-ghost.png')
+    lamp_saved=await confirm_place(page,'table-lamp')
+    assert lamp_saved['supportId']=='coffee-table' and 'elevation' not in lamp_saved,lamp_saved
+    actual=next(item for item in geometry_plan((await state(page))['profile'],'table-lamp')['objects'] if item['itemId']=='table-lamp')
+    assert actual['elevation']==36.5 and actual['supportId']=='coffee-table',actual
+    picked_lamp=await tap_owned_mesh(page,'table-lamp',mobile)
+    before_sale=(await state(page))['profile']
+    await page.locator('[data-furnish-action="sell"]').click()
+    await expect(page.locator('[data-furnish-action="confirm-sell"]')).to_be_visible()
+    assert economic_snapshot((await state(page))['profile'])==economic_snapshot(before_sale)
+    await page.locator('[data-furnish-action="back"]').click()
+    assert economic_snapshot((await state(page))['profile'])==economic_snapshot(before_sale)
+    await page.locator('[data-furnish-action="sell"]').click()
+    async with page.expect_response(lambda response:urlsplit(response.url).path=='/api/action' and response.request.method=='POST' and response.request.post_data_json.get('action')=='sell-item') as observed:
+        await page.locator('[data-furnish-action="confirm-sell"]').click()
+    response=await observed.value
+    assert response.status==200,await response.text()
+    sold=await response.json()
+    sale_request=response.request.post_data_json
+    assert sold['sale']['amount']==math.floor(lamp['price']/2),sold['sale']
+    assert sold['profile']['wallet']==before_sale['wallet']+math.floor(lamp['price']/2)
+    assert set(sold['profile']['inventory'])==set(before_sale['inventory'])-{'table-lamp'}
+    assert sold['profile']['furnitureLayout']=={key:value for key,value in before_sale['furnitureLayout'].items() if key!='table-lamp'}
+    assert 'table-lamp' not in sold['profile']['storedFurniture'] and 'coffee-table' in sold['profile']['inventory']
+    assert sale_request['payload']['idempotencyKey']
+    assert (await api(page,'/api/action',sale_request))['replayed'] is True
+    assert economic_snapshot((await state(page))['profile'])==economic_snapshot(sold['profile'])
+    await expect(page.locator('.furnish-item-panel')).to_have_count(0)
+    passed(report,f'{label} native elevated tabletop tap places a lamp at trusted model height; mesh-selected confirmed resale credits half price once and preserves every other owned piece',purchase=purchase,ghost=ghost,placement=lamp_saved,picked_lamp=picked_lamp,sale=sold['sale'])
+    return economic_snapshot((await state(page))['profile'])
+
+
+async def chat_check(pages,profiles,report):
+    sender,receiver=pages
+    await sender.bring_to_front()
+    await phone.open_messages(sender)
+    await sender.locator('.ph-compose-new').click()
+    await sender.locator('#ph-search').fill(profiles[1]['username'])
+    async with sender.expect_response(lambda response:urlsplit(response.url).path=='/api/conversations' and response.request.method=='POST') as observed:
+        await sender.locator(f'[data-ph-action="dm"][data-id="{profiles[1]["id"]}"]').click()
+    response=await observed.value
+    assert response.status in [200,201],await response.text()
+    conversation=(await response.json())['conversation']['id']
+    text='My home is taking shape · '+base.RUN_ID
+    await sender.locator('#ph-message').fill(text)
+    async with sender.expect_response(lambda response:urlsplit(response.url).path==f'/api/conversations/{conversation}/messages' and response.request.method=='POST') as observed:
+        await sender.locator('.ph-send').click()
+    response=await observed.value
+    assert response.status in [200,201],await response.text()
+    await expect(sender.locator('.ph-bubble').filter(has_text=text)).to_have_count(1)
+    await receiver.bring_to_front()
+    await phone.open_messages(receiver)
+    await expect(receiver.locator(f'[data-ph-action="thread"][data-id="{conversation}"]')).to_be_visible()
+    await receiver.locator(f'[data-ph-action="thread"][data-id="{conversation}"]').click()
+    await expect(receiver.locator('.ph-bubble').filter(has_text=text)).to_have_count(1)
+    for page in pages:
+        await page.locator('.ph-header-close').click()
+    passed(report,'Both real accounts exchange and display one genuine phone DM',conversation=conversation,text=text)
+    return {'conversation':conversation,'text':text}
+
+
+async def persistence_check(pages,expected,chat,report):
+    for page,saved in zip(pages,expected):
+        await page.bring_to_front()
+        await page.reload(wait_until='domcontentloaded')
+        await helpers.wait_world(page)
+        assert economic_snapshot((await state(page))['profile'])==saved
+    passed(report,'Both authenticated accounts retain exact balances, placements, storage and ownership after a real page refresh')
+    assert owned_api is not None and owned_api.process.poll() is None,'This runner must own the API child it restarts'
+    starts=owned_api.starts
+    await asyncio.to_thread(owned_api.restart)
+    assert owned_api.starts==starts+1 and owned_api.process.poll() is None
+    for index,(page,saved) in enumerate(zip(pages,expected)):
+        await page.bring_to_front()
+        await page.reload(wait_until='domcontentloaded')
+        await helpers.wait_world(page)
+        current=await state(page)
+        assert current['authenticated'] is True and economic_snapshot(current['profile'])==saved
+        actual=next(item for item in geometry_plan(current['profile'],'coffee-table')['objects'] if item['itemId']=='coffee-table')
+        assert actual['elevation']==0 and actual['supportId'] is None,actual
+        await snapshot(page,f'account-{index+1}-mongodb-restart-persisted-home.png')
+        await phone.open_messages(page)
+        await expect(page.locator(f'[data-ph-action="thread"][data-id="{chat["conversation"]}"]')).to_be_visible()
+        await page.locator(f'[data-ph-action="thread"][data-id="{chat["conversation"]}"]').click()
+        await expect(page.locator('.ph-bubble').filter(has_text=chat['text'])).to_have_count(1)
+        await page.locator('.ph-header-close').click()
+        assert economic_snapshot((await state(page))['profile'])==saved
+    passed(report,'Restart of only this runner’s private production API preserves both Mongo sessions, exact wallet/layout/storage/inventory and the same single DM',api_starts=owned_api.starts)
+
+
 async def run_browser(report, certificate_spki):
     report['scope'] = 'Actual rebuilt static production client, two real Mongo accounts,390×844 touch and1280×900 desktop Chromium, local TLS/domain proxy, and one exclusively owned restartable production API child.'
     report['fixture_policy'] = 'No mocks, origin assignments, grants, clock/RAF substitution or client state edits; geometry planner is read-only and every successful purchase/placement/sale uses actual UI.'
@@ -423,8 +606,12 @@ async def run_browser(report, certificate_spki):
                 await page.bring_to_front()
                 await orbit_check(page, label, mobile, report, actions)
                 placements.append(await furniture_check(page, label, mobile, report, actions))
-            # Further item-ray, surface and social/restart checks are installed
-            # below once the root renderer's final public interfaces are frozen.
+            expected=[]
+            for page,label,mobile in zip(pages,['mobile','desktop'],[True,False]):
+                await page.bring_to_front()
+                expected.append(await furniture_mesh_surface_check(page,label,mobile,report))
+            chat=await chat_check(pages,profiles,report)
+            await persistence_check(pages,expected,chat,report)
             assert not errors, errors
             assert not any(row['origin']=='abujacity.life' and row['path'].startswith('/api/') for row in network)
             assert not any(row['origin']=='api.abujacity.life' and row['status']>=500 for row in network)

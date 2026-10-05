@@ -1,5 +1,7 @@
 # Administration and verified payments
 
+> Historical local SQLite/development guide. For the actual Windows/Mongo production deployment, use [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md). Production demo top-ups stay disabled regardless of administrator settings; production roles bind an existing resident through the private server bootstrap.
+
 The full Node/SQLite server has a separate administrator dashboard at `/admin.html`. The anonymous static preview does not expose administrator access, accept real payments or connect separate residents.
 
 ## Bind the first administrator

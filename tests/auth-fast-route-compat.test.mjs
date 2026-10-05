@@ -34,6 +34,23 @@ test('explicit core startup and account writes retain authoritative bootstrap an
   assert.deepEqual(calls,['/api/bootstrap?startup=1','/api/auth/register','/api/auth/login','/api/profile','/api/bootstrap']);
 });
 
+test('core startup owns its bounded transport deadline instead of inheriting the shell 8-second abort', async () => {
+  const shell = new AbortController();
+  shell.abort(new DOMException('shell timeout','TimeoutError'));
+  let observed;
+  await withFetch(async (url,init={})=>{
+    observed={url:String(url),signal:init.signal};
+    return new Response(JSON.stringify({authenticated:false,startup:true}),{status:200});
+  },async()=>{
+    const {apiFetch}=await freshClient('startup-deadline');
+    const response=await apiFetch('/api/bootstrap?startup=1',{signal:shell.signal});
+    assert.equal(response.status,200);
+  });
+  assert.equal(observed.url,'/api/bootstrap?startup=1');
+  assert.notEqual(observed.signal,shell.signal);
+  assert.equal(observed.signal.aborted,false);
+});
+
 test('unreachable bootstrap never presents cached authentication or a fake successful response', async () => {
   const original=globalThis.sessionStorage;
   let reads=0,removed=0;

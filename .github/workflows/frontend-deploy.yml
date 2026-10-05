@@ -30,17 +30,23 @@ jobs:
       - name: Build the connected production game
         run: npm run build
 
+      - name: Add release manifest and stage the static artifact
+        run: |
+          python3 deploy/package-frontend.py /tmp/abujacity-production-frontend.zip
+          mkdir -p /tmp/abujalife-frontend-artifact
+          unzip -q /tmp/abujacity-production-frontend.zip -d /tmp/abujalife-frontend-artifact
+
       - name: Publish the build artifact branch
         shell: bash
         run: |
           set -euo pipefail
-          test -f dist/index.html
-          test -f dist/RELEASE.json
-          test -f dist/runtime-config.js
+          test -f /tmp/abujalife-frontend-artifact/index.html
+          test -f /tmp/abujalife-frontend-artifact/RELEASE.json
+          test -f /tmp/abujalife-frontend-artifact/runtime-config.js
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           tmp_dir="$(mktemp -d)"
-          cp -R dist/. "$tmp_dir/"
+          cp -R /tmp/abujalife-frontend-artifact/. "$tmp_dir/"
           cd "$tmp_dir"
           git init -q
           git add -A

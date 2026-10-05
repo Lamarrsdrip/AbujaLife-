@@ -47,6 +47,12 @@ for(const [from,to] of [
   ['amount:1000000,idempotencyKey:key()','amount:10000000,idempotencyKey:key()'],
 ]) change('tests/mongo-social.integration.mjs',from,to);
 
+// Disposable production API must assert the same 10x server-authoritative item
+// price as every other runtime. The old expectation still assumed a ₦2,300 plant.
+change('tests/production-integration.mjs',
+  "assert.equal(action.data.profile.wallet,before.wallet-2300);",
+  "assert.equal(action.data.profile.wallet,before.wallet-23000);");
+
 let replacements=0;
 for(const [file,rules] of edits){
   let source=fs.readFileSync(file,'utf8');
@@ -56,4 +62,4 @@ for(const [file,rules] of edits){
   }
   fs.writeFileSync(file,source);
 }
-console.log(`Rebased ${replacements} Mongo economy assertions across ${edits.size} integration files.`);
+console.log(`Rebased ${replacements} Mongo/production economy assertions across ${edits.size} integration files.`);

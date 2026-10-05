@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { configuration, apiEnvironment, safeEnvironment, acquireLock, currentRelease, writeJson } from './runtime.mjs';
+import { configuration, apiEnvironment, mongoUri, safeEnvironment, acquireLock, currentRelease, writeJson } from './runtime.mjs';
 
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'abujalife-windows-runtime-'));
@@ -13,6 +13,7 @@ function fixture() {
   const values = { database: 'abujalife_prod', replicaSet: 'abujalife', mongoHost: '127.0.0.1:27017', apiPort: 18787, mongoService: 'AbujaLifeMongoDB', apiTask: 'AbujaLife-API', nodePath: process.execPath, mongodPath: process.execPath, mongoToolsDirectory: path.dirname(process.execPath), publicWebUrl: 'https://abujacity.life', apiPublicUrl: 'https://api.abujacity.life', corsOrigins: ['https://abujacity.life'], backupRetentionDays: 14, logRetentionDays: 14 };
   writeJson(path.join(shared, 'windows.json'), values);
   fs.writeFileSync(path.join(shared, '.secrets', 'mongo-app-password'), 'fixture-app-password');
+  fs.writeFileSync(path.join(shared, '.secrets', 'mongo-backup-password'), 'fixture-backup-password');
   fs.writeFileSync(path.join(shared, '.secrets', 'config-key'), 'a'.repeat(64));
   return { root, shared, values, cleanup: () => fs.rmSync(root, { recursive: true, force: true }) };
 }
@@ -45,6 +46,17 @@ test('API receives only its own secret files and approved provider keys', () => 
     assert.match(env.MONGODB_URI, /abujalife_app:fixture-app-password@127\.0\.0\.1:27017\/abujalife_prod/);
     assert.equal(safeEnvironment().OKRIKA_WHITE_AI_KEY, undefined);
   } finally { if (previous === undefined) delete process.env.OKRIKA_WHITE_AI_KEY; else process.env.OKRIKA_WHITE_AI_KEY = previous; data.cleanup(); }
+});
+
+test('backup URI can target the replica-set root without escaping the dedicated AbujaLife service', () => {
+  const data = fixture();
+  try {
+    const config = configuration(data.root);
+    const backup = mongoUri(config, 'abujalife_backup', 'mongo-backup-password', config.database, '');
+    assert.match(backup, /abujalife_backup:fixture-backup-password@127\.0\.0\.1:27017\/\?replicaSet=abujalife&authSource=abujalife_prod/);
+    assert.doesNotMatch(backup, /27017\/abujalife_prod\?/);
+    assert.throws(() => mongoUri(config, 'abujalife_backup', 'mongo-backup-password', config.database, 'okrika'), /only abujalife_prod/);
+  } finally { data.cleanup(); }
 });
 
 test('Operation locks reject a live owner and reclaim an exited worker', () => {

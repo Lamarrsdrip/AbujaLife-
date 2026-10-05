@@ -91,9 +91,11 @@ test('cheap drag feedback and authoritative confirmation disagree only on route 
   const scene={width:1760,height:1280,spawn:{x:857,y:1110},furnishingArea:{x:62,y:160,w:1636,h:1000},objects:[],walls:[],obstacles:[],interactables:[],furniturePlacements:[]};
   const p={location:{kind:'home'},home:{propertyId:'home'},inventory:['plant'],furnitureLayout:{},storedFurniture:['plant']};
   assert.equal(furniturePlacementFeedback(p,'plant',{x:.4,y:.5},{scene,checkRoutes:false}).valid,true);
-  assert.equal(furniturePlacementFeedback(p,'plant',{x:.4,y:.5,propertyId:'foreign'},{scene,checkRoutes:false}).code,'furniture_wrong_home');
+  assert.equal(furniturePlacementFeedback(p,'plant',{x:.4,y:.7,propertyId:'foreign'},{scene,checkRoutes:false}).code,'furniture_wrong_home');
   assert.equal(furnitureScenePlacementFeedback(scene,'plant',{x:0,y:0,rotation:0},{checkRoutes:false}).code,'furniture_outside_floor');
-  assert.ok(catalog.filter(item=>item.category==='furniture').length===40);
+  const furniture=catalog.filter(item=>item.category==='furniture');
+  assert.ok(furniture.length>=54);
+  for(const itemId of ['vanity-desk','kitchen-island','media-sideboard','floor-speaker','indoor-ficus','runner-rug'])assert.ok(furniture.some(item=>item.id===itemId),`${itemId} should be resident-owned 3D furniture`);
 });
 
 test('the server rejects a locally clear placement that seals the Maitama bedroom doorway',()=>{

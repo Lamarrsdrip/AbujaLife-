@@ -4,11 +4,17 @@ import fs from 'node:fs';
 
 const backup=fs.readFileSync(new URL('../deploy/backup.mjs',import.meta.url),'utf8');
 const restore=fs.readFileSync(new URL('../deploy/restore.mjs',import.meta.url),'utf8');
+const bootstrap=fs.readFileSync(new URL('../deploy/mongo-bootstrap.mjs',import.meta.url),'utf8');
 
 test('replica-set backup uses a full oplog dump instead of an invalid scoped dump',()=>{
   assert.match(backup,/runTool\('mongodump',[\s\S]*'--oplog'/);
   assert.doesNotMatch(backup,/mongodump[\s\S]{0,500}'--db'/);
   assert.match(backup,/consistent:true/);
+});
+
+test('backup role has only the extra transaction read required for oplog boundaries',()=>{
+  assert.match(bootstrap,/resource:\s*\{db:\s*'config',\s*collection:\s*'transactions'\},\s*actions:\s*\['find'\]/);
+  assert.doesNotMatch(bootstrap,/resource:\s*\{db:\s*'config',\s*collection:\s*''\}/);
 });
 
 test('consistent restore replays the captured oplog without namespace filters',()=>{

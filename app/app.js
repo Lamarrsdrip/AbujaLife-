@@ -39,6 +39,10 @@ const esc = value => String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'
 const money = n => new Intl.NumberFormat('en-NG',{maximumFractionDigits:0}).format(Number(n||0));
 const list = value => Array.isArray(value)?value:Object.entries(value||{}).map(([id,item])=>({id,...item}));
 const place = id => state.atlas?.find(p=>p.id===id);
+function locationKey(profile=state.profile){
+ const location=profile?.location||{};
+ return [profile?.district||'',location.kind||'',location.venueId||location.venue||'',location.ownerId||location.residentId||location.visitId||''].join(':');
+}
 const paths={world:'<path d="m3 10 9-7 9 7v11h-6v-8H9v8H3z"/>',map:'<path d="m3 5 6-2 6 3 6-2v16l-6 2-6-3-6 2zM9 3v16M15 6v16"/>',work:'<rect x="3" y="7" width="18" height="14" rx="2"/><path d="M8 7V3h8v4M3 12h18M10 12v3h4v-3"/>',phone:'<rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 18h4M10 5h4"/>',profile:'<circle cx="12" cy="8" r="4"/><path d="M4 21c0-5 3-8 8-8s8 3 8 8"/>',arrow:'<path d="M5 12h14m-6-6 6 6-6 6"/>',chat:'<path d="M3 4h18v13H9l-6 4zM7 9h10M7 13h6"/>',close:'<path d="m6 6 12 12M6 18 18 6"/>',check:'<path d="m5 12 4 4 10-10"/>',sun:'<circle cx="12" cy="12" r="4"/><path d="M12 1v2M12 21v2M1 12h2M21 12h2M4 4l2 2M18 18l2 2M4 20l2-2M18 6l2-2"/>'};
 const icon = name => `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round">${paths[name]||paths.world}</svg>`;
 
@@ -97,39 +101,40 @@ function navigate(destination,details={}){
 }
 addEventListener('popstate',()=>{view=(location.hash.slice(1)==='map'?'outside':location.hash.slice(1))||'world';phone.close();closeSheet();renderMain();});
 addEventListener('keydown',event=>{if(event.key==='Escape')closeSheet();});
+function scheduleRealtimeRefresh(){
+ const previousLocation=locationKey(state.profile);
+ clearTimeout(refreshTimer);
+ refreshTimer=setTimeout(()=>{
+  refresh({render:false}).then(next=>{
+   const locationChanged=previousLocation!==locationKey(next.profile);
+   if(locationChanged&&view==='world'){renderMain();return;}
+   if(!['world','outside'].includes(view)&&!document.querySelector('.sheet')&&!root.contains(document.activeElement))renderMain();
+  }).catch(()=>{});
+ },250);
+}
 function connectRealtime(){
  stream?.close();if(!state.authenticated||authRecovery.snapshot().kind&&!['idle','complete'].includes(authRecovery.snapshot().status))return;stream=createApiEventSource('/api/realtime');
  for(const type of ['ready','presence','event','location-chat','typing','message','notification','invitation','profile','receipt','world-pose','social-post','social-like','social-comment','home-visit','home-visit-request','home-visit-ended'])stream.addEventListener(type,event=>{
   let data;try{data=JSON.parse(event.data);}catch{return;}phone.handleEvent(type,data);
   if(type==='message'&&!data.receipt&&data.senderId!==state.profile?.id&&data.conversationId)api(`/api/conversations/${encodeURIComponent(data.conversationId)}/delivered`,{method:'POST',body:{...(Number.isSafeInteger(data.seq)?{uptoSeq:data.seq}:{}),createdAt:data.createdAt,uptoMessageId:data.id}}).catch(()=>{});
   if(type==='world-pose'){if(data.residentId!==state.profile?.id)cleanup?.updateResidentPose?.(data);return;}
-  if(type==='home-visit'||type==='home-visit-ended'){
-   // The visit state changes independently of the current modal. Refresh the
-   // data without tearing down a live world unless the resident's location
-   // actually changed; this keeps both players and their camera positions
-   // stable while still showing the new session immediately.
-   const wasVisiting=state.profile?.location?.kind==='visit';
-   refresh({render:false}).then(next=>{
-    const nowVisiting=next.profile?.location?.kind==='visit';
-    if(wasVisiting!==nowVisiting||type==='home-visit'&&view==='world'&&!document.querySelector('.sheet')||type==='home-visit-ended'&&((view!=='world')||!document.querySelector('.sheet')))renderMain();
-   }).catch(()=>{});
-   return;
-  }
   if(type==='location-chat'){chatMessages.push(data.message||data);chatMessages=chatMessages.slice(-60);if(chatOpen)renderChat();}
-  if(['presence','event','profile','message','notification','invitation','receipt','home-visit-request'].includes(type)){
-   clearTimeout(refreshTimer);refreshTimer=setTimeout(()=>refresh({render:!document.querySelector('.sheet')&&!root.contains(document.activeElement)}).catch(()=>{}),250);
-  }
+  if(['presence','event','profile','message','notification','invitation','receipt','home-visit','home-visit-request','home-visit-ended'].includes(type))scheduleRealtimeRefresh();
  });
  stream.onopen=()=>{document.documentElement.dataset.connection='online';};stream.onerror=()=>{document.documentElement.dataset.connection='reconnecting';};
 }
 async function action(name,payload={}){
- if(busy)return;busy=true;
+ if(busy)return;busy=true;const previousLocation=locationKey(state.profile);
  try{
   const result=await api('/api/action',{method:'POST',body:{action:name,payload}});
-  // The action response is authoritative. Apply it immediately and let the
-  // wider bootstrap reconcile quietly; rebuilding the whole world here made
-  // every interaction flash and feel network-bound.
-  if(result.profile){state.profile=result.profile;syncProfileChrome();}
+  // The action response is authoritative. Apply it immediately. Only a real
+  // location transition is allowed to rebuild the world; ordinary state
+  // changes reconcile in place so the WebGL scene never flashes away.
+  if(result.profile){
+   state.profile=result.profile;
+   if(previousLocation!==locationKey(result.profile)&&view==='world')renderMain();
+   else syncProfileChrome();
+  }
   void refresh({render:false}).catch(()=>{});
   return result;
  }
@@ -407,6 +412,14 @@ function travelSheet(district,returningHome=false,venueId=null){
  const form=sheetRoot.querySelector('#travel-form');let quoteSequence=0,quote=null,submitting=false;
  const getQuote=async()=>{
   const sequence=++quoteSequence,mode=form.elements.mode.value,button=form.querySelector('[type=submit]');quote=null;button.disabled=true;form.querySelector('#travel-quote').textContent='Checking your fare…';
+  // Walking to a venue in the neighbourhood is local gameplay. It does not
+  // need a network round trip just to enable the button.
+  if(mode==='walk'&&sameDistrict&&(venueId||returningHome)){
+   quote={district,mode,cost:0,seconds:0,...(venueId?{venueId}:{})};
+   form.querySelector('#travel-quote').innerHTML='<span>Walk to the entrance</span><strong>Free</strong>';
+   form.querySelector('#travel-fare-note').textContent='Within your neighbourhood · ready now.';
+   button.innerHTML=`Walk there${icon('arrow')}`;button.disabled=false;return;
+  }
   try{
    const result=await api(`/api/travel/quote?district=${encodeURIComponent(district)}&mode=${encodeURIComponent(mode)}${venueId?`&venueId=${encodeURIComponent(venueId)}`:''}`);
    if(sequence!==quoteSequence||!form.isConnected)return;

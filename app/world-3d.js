@@ -57,7 +57,9 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
     if(![x,y,width,height].every(Number.isFinite)||width<=0||height<=0)return false;
     viewWidth=width;viewHeight=height;return applyWorldCamera(camera,{x,y,width,height,yaw,elevation,oblique:true});
   };
-  const lose=()=>{lost=true;container.removeAttribute('data-character-renderer');container.removeAttribute('data-environment-renderer');};renderer.domElement.addEventListener('webglcontextlost',lose);
+  const lose=event=>{event.preventDefault();lost=true;container.dataset.webglContext='lost';container.removeAttribute('data-character-renderer');container.removeAttribute('data-environment-renderer');};
+  const restore=()=>{if(disposed)return;lost=false;previousWidth=0;previousHeight=0;container.dataset.webglContext='restored';container.dataset.characterRenderer='webgl-3d';if(environment)container.dataset.environmentRenderer='webgl-3d';};
+  renderer.domElement.addEventListener('webglcontextlost',lose);renderer.domElement.addEventListener('webglcontextrestored',restore);
   let onlineKey=JSON.stringify(neighbours.map(p=>[p.id,p.appearance]));
   return {
     setCameraViewport: updateCamera,
@@ -94,7 +96,11 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
     draw({player,camera:position,width,height,orientation={},angle,phase,time,moving,transport,driving,activity,clock,weather,clubOpen,carColor,carStyle,ownVehicle,parked,trafficPositions,trip,npcPositions=[],onlinePositions=[]}){
       if(lost||disposed)return;
       const rect=container.getBoundingClientRect();
-      if(rect.width!==previousWidth||rect.height!==previousHeight){renderer.setSize(rect.width,rect.height,false);previousWidth=rect.width;previousHeight=rect.height;}
+      // iOS can briefly report a zero-sized visual viewport while browser
+      // chrome/standalone UI changes. Never resize the drawing buffer to zero.
+      if(rect.width<2||rect.height<2)return;
+      const renderWidth=Math.round(rect.width),renderHeight=Math.round(rect.height);
+      if(renderWidth!==previousWidth||renderHeight!==previousHeight){renderer.setSize(renderWidth,renderHeight,false);previousWidth=renderWidth;previousHeight=renderHeight;}
       updateCamera({...position,width,height,...orientation});environment?.updateView?.(orientation);
       sun.position.set(position.x-550,1200,position.y/DEPTH+650);sun.target.position.set(position.x,0,position.y/DEPTH);
       const daylight=clock?.sunlight??1,night=clock?.isNight??false,cloud=weather?.condition==='rain'?.72:weather?.condition==='cloudy'?.84:1;
@@ -134,7 +140,7 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
         if(model?.visible){bounds.makeEmpty();model.traverse(part=>{if(part.isMesh&&!part.userData.excludeFromBounds){if(!part.geometry.boundingBox)part.geometry.computeBoundingBox();bounds.union(partBounds.copy(part.geometry.boundingBox).applyMatrix4(part.matrixWorld));}});let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;for(const x of [bounds.min.x,bounds.max.x])for(const y of [bounds.min.y,bounds.max.y])for(const z of [bounds.min.z,bounds.max.z]){projected.set(x,y,z).project(camera);const sx=rect.left+(projected.x+1)*rect.width/2,sy=rect.top+(1-projected.y)*rect.height/2;minX=Math.min(minX,sx);minY=Math.min(minY,sy);maxX=Math.max(maxX,sx);maxY=Math.max(maxY,sy);}container.dataset.playerModelBounds=JSON.stringify({x:minX,y:minY,width:maxX-minX,height:maxY-minY});}
       }
     },
-    dispose(){if(disposed)return;disposed=true;renderer.domElement.removeEventListener('webglcontextlost',lose);renderer.domElement.remove();container.removeAttribute('data-character-renderer');container.removeAttribute('data-environment-renderer');environment?.dispose?.();own.dispose?.();for(const rig of [...npcs,...online])rig.dispose?.();const geometrySet=new Set(),materialSet=new Set();scene.traverse(o=>{if(o.geometry)geometrySet.add(o.geometry);if(o.material)for(const m of Array.isArray(o.material)?o.material:[o.material])materialSet.add(m);});geometrySet.forEach(g=>g.dispose());materialSet.forEach(m=>m.dispose());sun.shadow.map?.dispose();renderer.dispose();renderer.forceContextLoss();}
+    dispose(){if(disposed)return;disposed=true;renderer.domElement.removeEventListener('webglcontextlost',lose);renderer.domElement.removeEventListener('webglcontextrestored',restore);renderer.domElement.remove();container.removeAttribute('data-character-renderer');container.removeAttribute('data-environment-renderer');environment?.dispose?.();own.dispose?.();for(const rig of [...npcs,...online])rig.dispose?.();const geometrySet=new Set(),materialSet=new Set();scene.traverse(o=>{if(o.geometry)geometrySet.add(o.geometry);if(o.material)for(const m of Array.isArray(o.material)?o.material:[o.material])materialSet.add(m);});geometrySet.forEach(g=>g.dispose());materialSet.forEach(m=>m.dispose());sun.shadow.map?.dispose();renderer.dispose();}
   };
 }
 

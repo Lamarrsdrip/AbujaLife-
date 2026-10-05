@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import {DATABASE,toolDatabasePath} from '../deploy/mongo-ops.mjs';
 
 const backup=fs.readFileSync(new URL('../deploy/backup.mjs',import.meta.url),'utf8');
 const restore=fs.readFileSync(new URL('../deploy/restore.mjs',import.meta.url),'utf8');
@@ -16,6 +17,12 @@ test('backup identity uses MongoDB supported minimal full-instance backup role',
   assert.match(bootstrap,/\['abujalife_backup','mongo-backup-password','backup','admin'\]/);
   assert.doesNotMatch(bootstrap,/createRole'\]: 'abujalife_backup'/);
   assert.doesNotMatch(bootstrap,/collection:\s*'transactions'/);
+});
+
+test('admin ops connection stays unscoped for oplog restore while app ops remain scoped',()=>{
+  assert.equal(toolDatabasePath('admin'), '');
+  assert.equal(toolDatabasePath(DATABASE), DATABASE);
+  assert.equal(toolDatabasePath('admin',DATABASE), DATABASE);
 });
 
 test('consistent restore replays the captured oplog without namespace filters',()=>{

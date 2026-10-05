@@ -555,7 +555,23 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
       render();if(opened && screen==='thread' && thread?.id===request.conversationId)scrollLatest({focus:true,markRead:false});
     }catch(error){if(profile().id===request.ownerId){request.status='failed';request.error=error.message || 'Connection interrupted. Retry when you’re ready.';render();}}
   }
-  async function startDM(id) { const result=await mutate('/api/conversations',{residentId:id});if(result?.conversation?.id)void openThread(result.conversation.id); }
+  async function startDM(id) {
+    const existing=conversations().find(c=>c.kind==='dm'&&(c.members||[]).some(m=>(m.id||m.residentId)===id));
+    if(existing?.id){void openThread(existing.id);return;}
+    const owner=profile().id,peer=resident(id),pendingId=`pending-dm:${id}`;
+    // Paint the conversation immediately. Creating the server conversation can
+    // finish behind this shell instead of making a resident card feel dead.
+    navigate('thread',id);
+    thread={id:pendingId,kind:'dm',members:[{id:owner,displayName:profile().displayName,username:profile().username,appearance:profile().appearance},...(peer?[{...peer,id}]:[])]};
+    messages=[];messageCursor=null;olderLoading=false;typing=null;clearTimeout(typingTimer);threadLoading=true;threadError='';unreadAnchor=null;newMessageCount=0;render();
+    try{
+      const result=await api('/api/conversations',{method:'POST',body:{residentId:id}});
+      if(profile().id!==owner||thread?.id!==pendingId)return;
+      if(!result?.conversation?.id)throw new Error('This conversation could not open.');
+      cachedConversations.set(result.conversation.id,result.conversation);
+      await openThread(result.conversation.id,false);
+    }catch(error){if(profile().id===owner&&thread?.id===pendingId){threadLoading=false;threadError=error.message||'This conversation could not open.';render();}}
+  }
   async function handleAction(el) {
     const {phAction:action,id,app,view,value,accept,tenure,key,venueId}=el.dataset;
     if(browser.handleAction(el))return;
@@ -614,7 +630,15 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
       case 'setting':await mutate('/api/profile',{settings:{[key]:profile().settings?.[key]===false}},'Settings saved');break;
       case 'sound':await mutate('/api/profile',{settings:{soundEnabled:profile().settings?.soundEnabled===false}},'Sound setting saved');break;
       case 'read-all':await mutate('/api/notifications/read',{});break;
-      case 'notice': { const n=entries(state().notifications).find(n=>n.id===id);await mutate('/api/notifications/read',{id});const convId=n?.conversationId || n?.data?.conversationId || n?.payload?.conversationId || (n?.link?.startsWith('conversation:')?n.link.slice(13):null); if(convId)await openThread(convId);else if(n?.link==='friends' || n?.kind==='friend-request')navigate('friends');else if(n?.eventId)navigate('event',n.eventId);break; }
+      case 'notice': {
+        const n=entries(state().notifications).find(n=>n.id===id);
+        const convId=n?.conversationId || n?.data?.conversationId || n?.payload?.conversationId || (n?.link?.startsWith('conversation:')?n.link.slice(13):null);
+        // Navigate first. Marking a notification read is housekeeping and must
+        // never sit between a tap and the destination screen.
+        if(convId)void openThread(convId);else if(n?.link==='friends' || n?.kind==='friend-request')navigate('friends');else if(n?.eventId)navigate('event',n.eventId);
+        void api('/api/notifications/read',{method:'POST',body:{id}}).then(()=>refreshInBackground()).catch(()=>{});
+        break;
+      }
       case 'invite-respond':await mutate('/api/invitations/respond',{id,accept:accept==='true'},accept==='true'?'Invitation accepted. Travel when you’re ready.':'Invitation declined');break;
       case 'rsvp':await mutate(`/api/events/${encodeURIComponent(id)}/rsvp`,{attending:value==='true'},value==='true'?'Your RSVP is saved':'RSVP cancelled');break;
       case 'purchase':{const item=entries(state().catalog).find(i=>i.id===id),color=draft(`vehicleColor-${id}`,item?.defaultColor);const result=await mutate('/api/action',{action:'purchase',payload:{itemId:id,...(item?.category==='vehicle'?{color,idempotencyKey:vehicleRequestKey('purchase',id,color)}:{})}},'Item added to your inventory');if(result){vehicleRequests.delete(`purchase:${id}:${color}`);if(item?.category==='furniture'){close();onNavigate?.('world',{furnishItemId:id,source:'phone'});}}else await refresh().catch(()=>{});break;}

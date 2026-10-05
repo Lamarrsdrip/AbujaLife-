@@ -207,9 +207,10 @@ export function animateCharacter(rig,{x,y,angle=90,moving=false,phase=0,time=0,a
     rig.arms.forEach((a,i)=>{a.shoulder.rotation.z=(i?1:-1)*(.5+(beat+1)*.46);a.elbow.rotation.x=-.65;});
     rig.legs.forEach(l=>{l.upper.rotation.x=-.16*(1-beat);l.knee.rotation.x=.33*(1-beat);});
   }else if(activity.name==='dance'){
-    rig.body.position.y=Math.abs(beat)*3.4;rig.body.rotation.z=Math.sin(t*3)*.11;rig.torso.rotation.y=Math.sin(t*3)*.2;
-    rig.arms.forEach((a,i)=>{a.shoulder.rotation.z=(i?1:-1)*(.48+Math.sin(t*4+i)*.3);a.shoulder.rotation.x=Math.sin(t*4+i*2)*.35;a.elbow.rotation.x=-.7;});
-    rig.legs.forEach((l,i)=>{l.upper.rotation.x=Math.sin(t*5+i*Math.PI)*.28;l.knee.rotation.x=Math.max(0,Math.sin(t*5+i*Math.PI))*.5;});
+    const bounce=(Math.sin(t*6.2)+1)*.5,sway=Math.sin(t*2.7),step=Math.sin(t*4.8);
+    rig.body.position.y=bounce*4.6;rig.body.rotation.z=sway*.16;rig.body.rotation.y=Math.sin(t*1.75)*.1;rig.torso.rotation.y=-sway*.3;rig.head.rotation.y=Math.sin(t*2.1+.7)*.13;
+    rig.arms.forEach((a,i)=>{const side=i?1:-1;a.shoulder.rotation.z=side*(.58+Math.sin(t*4.15+i*1.7)*.38);a.shoulder.rotation.x=Math.sin(t*3.6+i*2.2)*.46;a.elbow.rotation.x=-.82+Math.sin(t*5.1+i)*.2;});
+    rig.legs.forEach((l,i)=>{const leg=Math.sin(t*4.8+i*Math.PI);l.upper.rotation.x=leg*.36;l.upper.rotation.z=(i?1:-1)*step*.08;l.knee.rotation.x=Math.max(0,leg)*.62;});
   }else if(activity.name==='pray'){
     rig.root.rotation.y=Math.PI;rig.head.rotation.x=.23;
     rig.arms.forEach((a,i)=>{a.shoulder.rotation.x=-.75;a.shoulder.rotation.z=(i?-.3:.3);a.elbow.rotation.x=-1.12;});

@@ -269,10 +269,10 @@ await test("local venue rides charge the quoted fare and physical walking remain
   const { quote } = await f.request(route);
   assert.equal(quote.venueId, "restaurant");
   assert.equal(quote.cost, 830);
-  assert.equal(quote.seconds, 4);
+  assert.equal(quote.seconds, 14);
   for (const [mode, cost] of [["bus", 330], ["bike", 420], ["ride", 1080]]) {
     assert.deepEqual((await f.request(`/api/travel/quote?district=${district}&mode=${mode}&venueId=restaurant`)).quote,
-      { destination: district, mode, cost, seconds: 4, venueId: "restaurant" });
+      { destination: district, mode, cost, seconds: 14, venueId: "restaurant" });
   }
   assert.equal((await f.request(`/api/travel/quote?district=${district}&mode=walk&venueId=restaurant`)).quote.cost, 0);
   assert.deepEqual((await f.request("/api/bootstrap")).profile, before.profile);

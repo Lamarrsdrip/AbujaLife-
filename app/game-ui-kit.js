@@ -2,12 +2,12 @@ import { apiFetch } from './api-client.js';
 
 const appRoot = document.querySelector('#app');
 const needs = [
-  { key:'energy', label:'Energy', glyph:'⚡', good:value=>value >= 35 },
-  { key:'hunger', label:'Food', glyph:'◒', good:value=>value >= 35 },
-  { key:'hygiene', label:'Clean', glyph:'◇', good:value=>value >= 35 },
-  { key:'social', label:'Social', glyph:'◎', good:value=>value >= 35 },
-  { key:'fun', label:'Fun', glyph:'✦', good:value=>value >= 35 },
-  { key:'stress', label:'Stress', glyph:'⌁', good:value=>value <= 65, inverse:true },
+  { key:'energy', label:'Energy', glyph:'⚡' },
+  { key:'hunger', label:'Food', glyph:'◒' },
+  { key:'hygiene', label:'Clean', glyph:'◇' },
+  { key:'social', label:'Social', glyph:'◎' },
+  { key:'fun', label:'Fun', glyph:'✦' },
+  { key:'stress', label:'Stress', glyph:'⌁', inverse:true },
 ];
 
 let loading = false;
@@ -76,7 +76,9 @@ const observer = new MutationObserver(() => {
   }
 });
 
-if (appRoot) observer.observe(appRoot, { childList:true, subtree:true });
+// renderMain replaces the app root's direct child. Watching only that boundary avoids
+// reacting to our own HUD updates or animation DOM work inside the 3D scene.
+if (appRoot) observer.observe(appRoot, { childList:true });
 addEventListener('visibilitychange', () => { if (!document.hidden) scheduleRefresh(80); });
 addEventListener('focus', () => scheduleRefresh(80));
 setInterval(() => { if (!document.hidden) refresh(); }, 60000);

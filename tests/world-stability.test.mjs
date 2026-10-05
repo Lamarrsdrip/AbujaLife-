@@ -13,7 +13,7 @@ test('live 3D views reconcile realtime data without rebuilding the world',()=>{
 });
 
 test('only real location transitions rebuild the playable world',()=>{
-  assert.match(app,/previousLocation!==locationKey\(result\.profile\)&&view==='world'/);
+  assert.match(app,/previousLocation!==locationKey\(result\.profile\)&&\['world','outside'\]\.includes\(view\)/);
   assert.match(app,/mode==='walk'&&sameDistrict&&\(venueId\|\|returningHome\)/);
 });
 

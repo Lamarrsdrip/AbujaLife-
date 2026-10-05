@@ -10,10 +10,17 @@ export class MongoPresenceStore {
   clock(){return this.game.clock();}
   async isOnline(id){const now=this.clock(),entry=this.local.get(id);if(entry&&entry.expiresAt>now)return true;return Boolean(await this.db.collection('presence_sessions').findOne({residentId:id,expiresAt:{$gt:new Date(now)}},{projection:{_id:1}}));}
   async zone(id){return this.social.zone(id);}
-  async canShare(id,viewer,zone){if(id===viewer)return true;if(await this.social.blocked(id,viewer))return false;const p=await this.db.collection('residents').findOne({id},{projection:{settings:1}});if(!p||p.settings.presenceVisible===false)return false;try{return await this.zone(id)===zone&&await this.zone(viewer)===zone;}catch(error){if([401,403,404].includes(error.status))return false;throw error;}}
+  async canShare(id,viewer,zone){if(id===viewer)return true;if(await this.social.blocked(id,viewer))return false;const p=await this.db.collection('residents').findOne({id},{projection:{settings:1}});if(!p||p.settings?.presenceVisible===false)return false;try{return await this.zone(id)===zone&&await this.zone(viewer)===zone;}catch(error){if([401,403,404].includes(error.status))return false;throw error;}}
   validatePose(raw){check(raw&&typeof raw==='object'&&!Array.isArray(raw)&&['x','y','angle'].every(k=>typeof raw[k]==='number'&&Number.isFinite(raw[k]))&&raw.x>=0&&raw.y>=0&&raw.x<=20000&&raw.y<=20000&&Math.abs(raw.angle)<=36000,'Invalid world position');const activity=typeof raw.activity==='string'&&PRESENCE_ACTIVITIES.has(raw.activity)?raw.activity:null;return{x:raw.x,y:raw.y,angle:raw.angle,moving:raw.moving===true,driving:raw.driving===true,...(activity?{activity}:{})};}
   async minimalProfile(id){identifier(id);const [r,state]=await Promise.all([this.db.collection('residents').findOne({id},{projection:{id:1,settings:1}}),this.db.collection('player_state').findOne({residentId:id},{projection:{district:1,location:1,drivingVehicle:1}})]);check(r&&state,'Resident not found',404);return{...r,...state};}
   async touch(id,{pose,connectionId='heartbeat',profile=null,zone:trustedZone=null}={}){identifier(id);identifier(connectionId,'Choose a valid presence connection');const now=this.clock(),cached=this.profiles.get(id),initialProfile=profile||(cached&&now-cached.at<5000?cached.value:await this.minimalProfile(id));let p=initialProfile;check(p.id===id&&p.location&&p.settings,'Invalid presence context');this.profiles.set(id,{at:now,value:p});let derived=p.location.kind==='home'?`home:${id}`:p.location.kind==='venue'?`venue:${p.district}:${p.location.venue}`:p.location.kind==='public'?`district:${p.district}`:p.location.kind==='visit'?await this.zone(id):`transit:${id}`;if(!trustedZone)derived=await this.zone(id);if(trustedZone&&trustedZone!==derived){p=await this.minimalProfile(id);this.profiles.set(id,{at:now,value:p});derived=await this.zone(id);}check(!trustedZone||trustedZone===derived,'Presence zone is unavailable',403,'presence_unavailable');const zone=derived,prior=this.local.get(id),record={zone,expiresAt:now+this.leaseMs};check(typeof zone==='string'&&zone.length<=180,'Invalid presence zone');if(!this.connections.has(id))this.connections.set(id,new Set());this.connections.get(id).add(connectionId);this.local.set(id,record);if(prior?.zone!==zone)this.poses.delete(id);if(pose!==undefined){this.social.rate(id,'pose',240);const validated=this.validatePose(pose);if(validated.driving){const state=await this.db.collection('player_state').findOne({residentId:id},{projection:{drivingVehicle:1}});check(state?.drivingVehicle&&await this.db.collection('vehicles').findOne({residentId:id,itemId:state.drivingVehicle},{projection:{_id:1}}),'You must own and drive a car before sharing a driving pose',403,'vehicle_required');}this.poses.set(id,{zone,pose:validated,expiresAt:record.expiresAt});}
+    else if(this.poses.has(id)){
+      const previousPose=this.poses.get(id),resident=await this.db.collection('residents').findOne({id},{projection:{'settings.presenceVisible':1}});
+      // Only an unexpired pose in the same authoritative zone may be renewed.
+      // Privacy changes or a lapsed connection discard it instead of reviving it.
+      if(resident&&resident.settings?.presenceVisible!==false&&prior?.expiresAt>now&&previousPose.zone===zone&&previousPose.expiresAt>now)previousPose.expiresAt=record.expiresAt;
+      else this.poses.delete(id);
+    }
     const key=`${id}:${connectionId}`,last=this.lastPersisted.get(key);if(!last||now-last.at>=15000||last.zone!==zone){await this.db.collection('presence_sessions').updateOne({residentId:id,connectionId},{$set:{zone,expiresAt:new Date(record.expiresAt),touchedAt:now,presenceVisible:p.settings.presenceVisible!==false},$setOnInsert:{createdAt:now}},{upsert:true});this.lastPersisted.set(key,{at:now,zone});}this.prune();return{ok:true};}
   async connect(id,connectionId=crypto.randomUUID()){await this.touch(id,{connectionId});return{connectionId};}
   async disconnect(id,connectionId=null){identifier(id);const selected=connectionId?[identifier(connectionId)]:[...(this.connections.get(id)||[])];if(selected.length)await this.db.collection('presence_sessions').deleteMany({residentId:id,connectionId:{$in:selected}});for(const conn of selected){this.connections.get(id)?.delete(conn);this.lastPersisted.delete(`${id}:${conn}`);}if(!this.connections.get(id)?.size){this.connections.delete(id);this.local.delete(id);this.profiles.delete(id);this.poses.delete(id);}}
@@ -22,13 +29,17 @@ export class MongoPresenceStore {
     await this.social.authenticate(id);
     const now=this.clock(),zone=await this.zone(id),blocked=await this.social.blockedIds(id);
     const rows=await this.db.collection('presence_sessions').aggregate([{$match:{zone,presenceVisible:true,residentId:{$nin:[id,...blocked]},expiresAt:{$gt:new Date(now)}}},{$group:{_id:'$residentId'}},{$limit:this.maxNearby}]).toArray();
-    const ids=rows.map(row=>row._id),views=await Promise.all(ids.map(residentId=>this.social.resident(id,residentId).catch(()=>null)));
+    const ids=rows.map(row=>row._id),views=await Promise.all(ids.map(residentId=>this.social.resident(id,residentId).catch(error=>{if([401,403,404].includes(error.status))return null;throw error;})));
     const selfPose=this.poses.get(id)?.zone===zone?this.poses.get(id).pose:null;
     // A lease can outlive the player's last state write by up to 45 seconds.
-    // Re-check the authoritative public location before exposing a nearby
-    // resident so leaving a home/visit immediately removes them from the
-    // neighbourhood view instead of leaking a stale presence row.
-    const people=views.filter(person=>person?.online&&person.location?.kind==='public').map(person=>{const pose=this.poses.get(person.id);return{...person,pose:pose?.zone===zone&&pose.expiresAt>now?pose.pose:null};});
+    // Re-check both authoritative zones and visibility. The same rule supports
+    // streets, venue interiors and consented home visits without leaking a
+    // stale lease after travel, departure, blocking or a privacy change.
+    const people=(await Promise.all(views.map(async person=>{
+      if(!person?.online||!person.location||!await this.canShare(person.id,id,zone))return null;
+      const pose=this.poses.get(person.id);
+      return{...person,pose:pose?.zone===zone&&pose.expiresAt>now?pose.pose:null};
+    }))).filter(Boolean);
     if(selfPose)people.sort((a,b)=>{const ap=a.pose?Math.hypot(a.pose.x-selfPose.x,a.pose.y-selfPose.y):Infinity,bp=b.pose?Math.hypot(b.pose.x-selfPose.x,b.pose.y-selfPose.y):Infinity;return ap-bp;});
     return people;
   }

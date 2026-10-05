@@ -1,4 +1,5 @@
 import { apiFetch, createApiEventSource } from './api-client.js';
+import { createWorldPresencePublisher } from './world-presence.js';
 import { consumeAuthLink, createAuthRecovery, loginCredentials } from './auth-recovery.js';
 import { authenticateAccount, finishOnboarding, accountErrorMessage, mergeCoreBootstrap } from './auth-session.js';
 import { createInstallController } from './install.js';
@@ -10,7 +11,6 @@ import { vehicleIllustration } from './vehicle-art.js';
 import { createPhone } from './phone.js';
 import { renderWorld, avatarSVG } from './world.js';
 import { renderMap } from './map.js';
-import { renderOutside } from './outside-city.js';
 import { createHomeEditor } from './home-editor.js';
 import { createFurnitureCatalogue } from './furniture-catalogue.js';
 import { createLifePanels } from './life-panels.js';
@@ -32,7 +32,7 @@ let stateRequestEpoch=0;
 const referralResident = new URL(location.href).searchParams.get('resident')?.match(/^[A-Za-z0-9:_-]{1,80}$/)?.[0] || null;
 const authRecovery=createAuthRecovery({link:consumeAuthLink(location,history),api:(...args)=>api(...args)});
 let onboardingStep=0, onboardingDraft, pendingVenue;
-let quickHomeNavigating=false;
+let quickHomeNavigating=false,outsideNavigating=false;
 let pendingFurnitureItem;
 let serverClockAt=Date.now(), serverClockObservedAt=performance.now();
 function gameNow(){return serverClockAt+Math.max(0,performance.now()-serverClockObservedAt);}
@@ -50,7 +50,7 @@ const icon = name => `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" st
 
 async function api(path,options={}) {
  const opts={...options,headers:{...options.headers}};
- if(opts.method&&opts.method!=='GET')stateRequestEpoch++;
+ if(opts.method&&opts.method!=='GET'&&path!=='/api/presence')stateRequestEpoch++;
  if(path==='/api/action'&&opts.body&&typeof opts.body==='object'){opts.body.payload??={};if(!opts.body.payload.idempotencyKey)opts.body.payload.idempotencyKey=crypto.randomUUID();}
  if(path==='/api/wallet/transfer'&&opts.body&&typeof opts.body==='object'&&!opts.body.idempotencyKey)opts.body.idempotencyKey=crypto.randomUUID();
  if(opts.body!==undefined&&typeof opts.body!=='string')opts.body=JSON.stringify(opts.body);
@@ -98,18 +98,22 @@ function showWorkReminder(){
  const box=document.createElement('div');box.className='work-reminder';box.innerHTML=`<button type="button" aria-label="Dismiss work reminder">×</button><strong>Your ${esc(schedule.currentSlot)} shift is ready</strong><small>${esc(schedule.dayName)} · Abuja time</small><span>Tap to go to work ↗</span>`;
  box.querySelector('button').onclick=e=>{e.stopPropagation();dismissedWork.add(key);box.remove();};box.onclick=()=>{dismissedWork.add(key);navigate('work',{jobId:p.job});};scene.append(box);
 }
-let lastPublishedPose;
-setInterval(()=>{
- if(!state.authenticated||view!=='world'||document.hidden||document.querySelector('[aria-modal="true"]'))return;
- const motion=cleanup?.getMotionState?.();if(!motion)return;
- const pose={x:motion.x,y:motion.y,angle:motion.angle||0,moving:motion.moving,driving:motion.driving,...(motion.activity?{activity:motion.activity}:{})};
- if(lastPublishedPose&&!pose.moving&&pose.moving===lastPublishedPose.moving&&Math.hypot(pose.x-lastPublishedPose.x,pose.y-lastPublishedPose.y)<1)return;
- lastPublishedPose=pose;api('/api/presence',{method:'POST',body:{pose}}).catch(()=>{});
-},1000);
+const posePublisher=createWorldPresencePublisher({read:()=>{
+ if(!state.authenticated||!['world','outside'].includes(view)||document.hidden)return null;
+ const motion=cleanup?.getMotionState?.();if(!motion)return null;
+ return{key:`${state.profile.id}:${locationKey()}`,pose:{x:motion.x,y:motion.y,angle:motion.angle||0,moving:motion.moving&&!document.querySelector('[aria-modal="true"]'),driving:motion.driving,...(motion.activity?{activity:motion.activity}:{})}};
+},send:pose=>api('/api/presence',{method:'POST',body:{pose}})});
+setInterval(()=>void posePublisher.publish(),500);
 setInterval(()=>{if(state.authenticated&&!document.hidden&&!document.querySelector('[aria-modal="true"]'))refresh({render:false}).catch(()=>{});},60000);
 function navigate(destination,details={}){
  if(destination==='map'&&!details.utility)destination='outside';
  if(!['world','outside','map','work','market','property','profile'].includes(destination))destination='world';
+ if(destination==='outside'&&state.profile?.location?.kind!=='public'){
+  if(outsideNavigating)return;outsideNavigating=true;
+  phone.close();homeEditor.close();furnitureCatalogue.close({restoreFocus:false});closeSheet();
+  if(view!=='world')navigate('world');
+  void goOutdoors().then(ok=>{if(ok)navigate('outside');}).catch(error=>toast(accountErrorMessage(error))).finally(()=>{outsideNavigating=false;});return;
+ }
  if(details.jobId)selectedJob=details.jobId;
  if(details.tab&&destination==='property')propertyTab=details.tab==='investments'?'investments':'homes';
  phone.close();homeEditor.close();furnitureCatalogue.close({restoreFocus:false});closeSheet();view=destination;
@@ -129,7 +133,7 @@ function scheduleRealtimeRefresh(){
  refreshTimer=setTimeout(()=>{
   refresh({render:false}).then(next=>{
    const locationChanged=previousLocation!==locationKey(next.profile);
-   if(locationChanged&&view==='world'){renderMain();return;}
+   if(locationChanged&&['world','outside'].includes(view)){renderMain();return;}
    if(!['world','outside'].includes(view)&&!document.querySelector('.sheet')&&!root.contains(document.activeElement))renderMain();
   }).catch(()=>{});
  },250);
@@ -165,8 +169,10 @@ async function action(name,payload={}){
   // location transition is allowed to rebuild the world; ordinary state
   // changes reconcile in place so the WebGL scene never flashes away.
   if(result.profile){
+   if(previousLocation!==locationKey(result.profile))state.nearby=[];
    state.profile=result.profile;
-   if(previousLocation!==locationKey(result.profile)&&view==='world')renderMain();
+   if(view==='outside'&&result.profile.location?.kind!=='public')view='world';
+   if(previousLocation!==locationKey(result.profile)&&['world','outside'].includes(view))renderMain();
    else syncProfileChrome();
   }
   void refresh({render:false}).catch(()=>{});
@@ -251,11 +257,12 @@ function renderOnboarding(){
  form.onsubmit=async e=>{e.preventDefault();const values=Object.fromEntries(new FormData(form));if(values.displayName)onboardingDraft.displayName=values.displayName.trim();if(values.lifeGoal)onboardingDraft.lifeGoal=values.lifeGoal;if(onboardingStep<4){onboardingStep++;renderMain();window.scrollTo(0,0);return;}const submit=form.querySelector('[type=submit]');if(submit.disabled)return;submit.disabled=true;try{state.profile=await finishOnboarding({api,draft:onboardingDraft,residentId:state.profile.id,readSession:()=>api('/api/bootstrap?startup=1')});onboardingDraft=undefined;onboardingStep=0;view='world';renderMain();connectRealtime();hydrateStartup();toast('How far? Welcome to your Abuja life. Walk to your front door to explore.');}catch(error){if(error.status===401){expireAccount();return;}form.querySelector('#onboarding-error').textContent=accountErrorMessage(error);submit.disabled=false;}};
 }
 function header(){const p=state.profile;const needs=[['Energy','energy','⚡'],['Food','hunger','⌁'],['Fun','fun','◌'],['Toilet','bladder','◒'],['Clean','hygiene','✦'],['Social','social','♧']];return `<header class="game-header"><a href="#world" class="wordmark" data-view="world" aria-label="AbujaLife home">${brandMark({compact:true})}</a><span class="header-edition">YOUR CITY. YOUR STORY.</span><button class="needs-header" data-open-needs aria-label="Open your life needs">${needs.map(([label,key,icon])=>`<span class="needs-header-item"><i aria-hidden="true">${icon}</i><b>${label}</b><em style="--need:${Math.max(0,Math.min(100,Number(p[key]??(key==='bladder'?86:0))))}%"></em></span>`).join('')}</button><button class="wallet-button" data-phone="wallet" aria-label="Naira balance, ₦${money(p.wallet)}. Open wallet"><span>Naira balance</span><strong>₦${money(p.wallet)}</strong></button><button class="earn-header" data-phone="earn" aria-label="Open Earn Game Naira">+ Earn</button><button class="resident-button" data-view="profile" aria-label="Your resident profile">${avatarSVG(p.appearance,{size:40})}</button></header>`;}
-function nav(){const unread=list(state.conversations).reduce((n,c)=>n+Number(c.unread||0),0)+list(state.notifications).filter(n=>!n.readAt&&!n.read).length;return `<nav class="game-nav" aria-label="Game navigation"><button data-view="world" class="${view==='world'?'active':''}" ${view==='world'?'aria-current="page"':''}>${icon('world')}<span>Play</span></button><button data-nav-outside class="${view==='outside'?'active':''}">${icon('map')}<span>Map</span></button><button data-nav-life class="${['work','market','property','profile'].includes(view)?'active':''}">${icon('sun')}<span>My life</span></button><button data-phone="home" class="phone-launch">${icon('phone')}<span>Phone</span>${unread?`<i class="nav-badge">${unread}</i>`:''}</button></nav>`;}
+function nav(){const unread=list(state.conversations).reduce((n,c)=>n+Number(c.unread||0),0)+list(state.notifications).filter(n=>!n.readAt&&!n.read).length;return `<nav class="game-nav" aria-label="Game navigation"><button data-view="world" class="${view==='world'?'active':''}" ${view==='world'?'aria-current="page"':''}>${icon('world')}<span>Play</span></button><button data-nav-outside class="${view==='outside'?'active':''}">${icon('map')}<span>Outside</span></button><button data-nav-life class="${['work','market','property','profile'].includes(view)?'active':''}">${icon('sun')}<span>My life</span></button><button data-phone="home" class="phone-launch">${icon('phone')}<span>Phone</span>${unread?`<i class="nav-badge">${unread}</i>`:''}</button></nav>`;}
 function renderMain(){
  cleanup?.();cleanup=undefined;const recovery=authRecovery.snapshot();if(recovery.kind&&!['complete','idle'].includes(recovery.status)){renderAuthRecovery();return;}if(!state.authenticated){renderAuth();return;}
  if(!state.profile?.onboardingComplete){phone.close();renderOnboarding();return;}
  if(!['world','outside','map','work','market','property','profile'].includes(view))view='world';
+ if(view==='outside'&&state.profile.location?.kind!=='public')view='world';
  root.innerHTML=`<div class="game-shell ${['world','outside'].includes(view)?'is-playing':''}">${header()}<main class="game-content view-${view}">${({world:worldMarkup,outside:outsideMarkup,map:mapMarkup,work:workMarkup,market:marketMarkup,property:propertyMarkup,profile:profileMarkup})[view]()}</main>${nav()}</div>`;
  root.querySelectorAll('[data-view]').forEach(b=>b.onclick=e=>{e.preventDefault();navigate(b.dataset.view);});root.querySelectorAll('[data-phone]').forEach(b=>b.onclick=()=>{furnitureCatalogue.close({restoreFocus:false});phone.open(b.dataset.phone==='home'?undefined:b.dataset.phone);});
  root.querySelector('[data-nav-outside]').onclick=()=>navigate('outside');root.querySelectorAll('[data-open-needs]').forEach(b=>b.onclick=openNeeds);root.querySelector('[data-nav-life]').onclick=openLifeMenu;
@@ -291,7 +298,7 @@ function openLifeMenu(){
 function bindWorld(){
  const p=state.profile,owner=state.homeVisit?.ownerHome,renderProfile=p.location?.kind==='visit'&&owner?{...p,home:owner.home,inventory:owner.inventory,furnitureLayout:owner.furnitureLayout,storedFurniture:owner.storedFurniture,canDecorate:false}:p;
  cleanup=renderWorld(document.querySelector('#world-scene'),{profile:renderProfile,place:place(p.district),people:list(state.nearby),serverNow:gameNow(),weather:state.weather,venues:list(state.venues),venueActions:list(state.venueActions),catalog:list(state.catalog),onInteract:interact,onResident:residentSheet,onFurnitureSelect:itemId=>furnitureCatalogue.showItem(itemId),onDestination:destination=>destination.home?goHome():goToVenue(destination.venueId),onArrive:tripId=>{if(p.activeTrip&&gameNow()>=Number(p.activeTrip.arrivesAt))return completeTrip(tripId||p.activeTrip.id);}});
- queueMicrotask(()=>void refreshNearbyPresence().catch(()=>{}));
+ queueMicrotask(()=>{void posePublisher.publish();void refreshNearbyPresence().catch(()=>{});});
  root.querySelector('[data-open-local-chat]')?.addEventListener('click',openLocalChat);
  root.querySelector('[data-open-visits]')?.addEventListener('click',()=>lifePanels.openVisits());
  root.querySelector('[data-life-leave]')?.addEventListener('click',()=>homeDoor());
@@ -355,7 +362,7 @@ function openCityPlaces(){
  const venue=currentVenue();
  openSheet(`<span class="eyebrow">${esc(place(state.profile.district)?.name||'YOUR NEIGHBOURHOOD')}</span><h2 id="sheet-title">Where shall we go?</h2><p class="muted">Choose a place, then choose how to get there: walk, bus, taxi, bike or your own car.</p><div class="city-places">${list(state.venues).map(v=>`<button class="city-place ${venue?.id===v.id?'current':''}" data-city-venue="${esc(v.id)}"><span class="venue-marker venue-${esc(v.id)}">${icon(v.id==='park'?'sun':v.id==='gym'?'profile':v.id==='restaurant'||v.id==='cafe'?'world':'map')}</span><span><small>${esc(v.category||'Around the city')}</small><strong>${esc(v.name)}</strong><p>${esc(v.description||'Explore this neighbourhood spot.')}</p></span>${icon('arrow')}</button>`).join('')}</div><button class="secondary full" data-city-map>Explore another district${icon('map')}</button>`,{wide:true});
  sheetRoot.querySelectorAll('[data-city-venue]').forEach(button=>button.onclick=()=>goToVenue(button.dataset.cityVenue));
- sheetRoot.querySelector('[data-city-map]').onclick=()=>navigate('map');
+ sheetRoot.querySelector('[data-city-map]').onclick=()=>navigate('map',{utility:true});
 }
 function effectLabel(activity){return Object.entries(activity.effects||{}).map(([key,value])=>`${value>0?'+':''}${value} ${({hunger:'food',hygiene:'cleanliness'})[key]||key}`).join(' · ');}
 function openVenueMenu(venue){
@@ -433,8 +440,13 @@ function manageOwnedItem(itemId){
  openSheet(`<span class="eyebrow">YOUR INVENTORY</span><h2 id="sheet-title">${esc(item.name)}</h2><p class="muted">${esc(item.description||'An item you own.')}</p>${item.category==='clothing'?'<button class="primary full" data-wear-owned>Wear this item</button>':''}<button class="secondary full" data-sell-item="${esc(item.id)}">Sell for ₦${money(systemResaleValue(item))}</button><p class="economy-note">System buyback pays 50% of the listed game price.</p>`);
  sheetRoot.querySelector('[data-wear-owned]')?.addEventListener('click',async()=>{if(await action('equip',{itemId})){closeSheet();toast('Outfit updated.');}});bindSellButtons(sheetRoot);
 }
-function outsideMarkup(){return `<section class="outside-world world-stage" id="outside-root" aria-label="Explore AbujaLife outside in 3D"></section>`;}
-function bindOutside(){cleanup=renderOutside(root.querySelector('#outside-root'),{atlas:list(state.atlas),venues:list(state.venues),profile:state.profile,serverNow:gameNow(),onSelect:({districtId,venueId,adPlotId})=>{if(adPlotId){globalThis.dispatchEvent(new CustomEvent('abj:open-ad-studio',{detail:{plotId:adPlotId}}));return;}travelSheet(districtId,false,venueId||null);},onHome:()=>goHome()});}
+// Outside uses the same playable street, poses and camera as leaving home.
+function outsideMarkup(){return worldMarkup();}
+function bindOutside(){
+ bindWorld();
+ const button=document.createElement('button');button.type='button';button.className='world-catalogue-button';button.dataset.outsideDestinations='';button.innerHTML=`${icon('map')}<span>Destinations</span>`;button.onclick=openCityPlaces;
+ root.querySelector('#world-scene')?.append(button);
+}
 function mapMarkup(){return `<div class="page-heading map-page-heading"><span class="eyebrow">ABUJA & THE WIDER FCT</span><h1>See the city. Choose your next chapter.</h1><p>Use this optional district guide, or explore the live 3D city from Outside.</p></div><section class="map-stage" id="map-root" aria-label="Abuja map"></section>`;}
 function bindMap(){cleanup=renderMap(document.querySelector('#map-root'),{atlas:state.atlas,venues:list(state.venues),profile:state.profile,onSelect:()=>{},onTravel:(id,venueId)=>travelSheet(typeof id==='string'?id:id.id,false,venueId||null)});}
 function travelSheet(district,returningHome=false,venueId=null){

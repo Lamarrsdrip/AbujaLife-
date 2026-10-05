@@ -312,7 +312,7 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
     };
     return (drawings[item.id] || (item.category==='vehicle'?drawings['compact-car']:null))?`<svg class="ph-product-illustration" viewBox="0 0 130 130" role="img" aria-label="${esc(item.name)}">${drawings[item.id] || drawings['compact-car']}</svg>`:icon(item.category==='vehicle'?'ride':item.category==='furniture'?'property':'market');
   }
-  function marketScreen() {return `${headline('MAKE IT YOURS','Okrika Marketplace','Furniture, fashion and cars for your life in Abuja.')} ${searchField('Search Okrika Marketplace')}<div class="ph-market-grid">${entries(state().catalog).filter(match).map(i=>`<button class="ph-product" data-ph-action="item" data-id="${esc(i.id)}"><span class="ph-product-art ${esc(i.kind || i.category || '')}">${productArt(i)}</span><small>${esc(i.category || i.kind || 'VIRTUAL ITEM')}</small><strong>${esc(i.name || i.title)}</strong><span>${currency(i.price || i.cost)}</span></button>`).join('')}</div>`;}
+  function marketScreen() {return `${headline('MAKE IT YOURS','Okrika Marketplace','Furniture, fashion and cars for your life in Abuja.')}<button class="ph-market-wallet" data-ph-action="app" data-app="wallet" aria-label="Open Naira wallet"><span><small>YOUR ABUJA NAIRA</small><strong>${currency(profile().wallet)}</strong></span><i>${icon('wallet')}</i><em>Open wallet</em></button>${searchField('Search Okrika Marketplace')}<div class="ph-market-grid">${entries(state().catalog).filter(match).map(i=>`<button class="ph-product" data-ph-action="item" data-id="${esc(i.id)}"><span class="ph-product-art ${esc(i.kind || i.category || '')}">${productArt(i)}</span><small>${esc(i.category || i.kind || 'VIRTUAL ITEM')}</small><strong>${esc(i.name || i.title)}</strong><span>${currency(i.price || i.cost)}</span></button>`).join('')}</div>`;}
   function itemScreen() {
     const i=entries(state().catalog).find(i=>i.id===selected); if(!i) return empty('market','Item unavailable');
     const own=entries(profile().inventory).some(r=>r.id===i.id || r.itemId===i.id) || (profile().inventory || []).includes?.(i.id);
@@ -641,10 +641,24 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
   };
   function syncChatViewport() {
     const viewport=window.visualViewport;
-    if(!opened || screen!=='thread' || !viewport){root.style.removeProperty('--ph-chat-viewport-height');root.style.removeProperty('--ph-chat-viewport-top');return;}
+    if(!opened || screen!=='thread' || !viewport){
+      root.style.removeProperty('--ph-chat-viewport-height');root.style.removeProperty('--ph-chat-viewport-top');
+      root.style.removeProperty('--ph-chat-device-height');root.classList.remove('phone-keyboard-open');return;
+    }
     root.style.setProperty('--ph-chat-viewport-height',`${viewport.height}px`);root.style.setProperty('--ph-chat-viewport-top',`${viewport.offsetTop}px`);
+    // Keep the device frame at its normal size. Only the conversation column is
+    // resized when iOS reduces the visual viewport for the native keyboard.
+    const keyboardOpen=Boolean(document.activeElement?.matches?.('#ph-message')) && viewport.height < Math.max(520,window.innerHeight-120);
+    if(keyboardOpen && !root.style.getPropertyValue('--ph-chat-device-height')){
+      const device=root.querySelector('.ph-device');
+      const height=device?.getBoundingClientRect?.().height;
+      if(height)root.style.setProperty('--ph-chat-device-height',`${height}px`);
+    }
+    if(!keyboardOpen)root.style.removeProperty('--ph-chat-device-height');
+    root.classList.toggle('phone-keyboard-open',keyboardOpen);
   }
   const onViewport=()=>{syncChatViewport();const input=root.querySelector('#ph-message');if(document.activeElement===input)resizeComposer();};
-  root.hidden=true;root.classList.add('phone-root');root.addEventListener('click',onClick);root.addEventListener('input',onInput);root.addEventListener('change',onChange);root.addEventListener('submit',onSubmit);root.addEventListener('scroll',onScroll,true);window.visualViewport?.addEventListener('resize',onViewport);window.visualViewport?.addEventListener('scroll',onViewport);document.addEventListener('keydown',onKey);
-  return {open,close,render,handleEvent,dispose(){close();clearInterval(clockTimer);clearTimeout(typingTimer);clearTimeout(bannerTimer);clearTimeout(residentSearchTimer);root.removeEventListener('click',onClick);root.removeEventListener('input',onInput);root.removeEventListener('change',onChange);root.removeEventListener('submit',onSubmit);root.removeEventListener('scroll',onScroll,true);window.visualViewport?.removeEventListener('resize',onViewport);window.visualViewport?.removeEventListener('scroll',onViewport);document.removeEventListener('keydown',onKey);}};
+  const onFocusIn=event=>{if(event.target?.matches?.('#ph-message')){syncChatViewport();requestAnimationFrame(()=>{const scroll=root.querySelector('.ph-thread-scroll');if(scroll && scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight<96)scroll.scrollTop=scroll.scrollHeight;});}};
+  root.hidden=true;root.classList.add('phone-root');root.addEventListener('click',onClick);root.addEventListener('input',onInput);root.addEventListener('change',onChange);root.addEventListener('submit',onSubmit);root.addEventListener('scroll',onScroll,true);root.addEventListener('focusin',onFocusIn);window.visualViewport?.addEventListener('resize',onViewport);window.visualViewport?.addEventListener('scroll',onViewport);document.addEventListener('keydown',onKey);
+  return {open,close,render,handleEvent,dispose(){close();clearInterval(clockTimer);clearTimeout(typingTimer);clearTimeout(bannerTimer);clearTimeout(residentSearchTimer);root.removeEventListener('click',onClick);root.removeEventListener('input',onInput);root.removeEventListener('change',onChange);root.removeEventListener('submit',onSubmit);root.removeEventListener('scroll',onScroll,true);root.removeEventListener('focusin',onFocusIn);window.visualViewport?.removeEventListener('resize',onViewport);window.visualViewport?.removeEventListener('scroll',onViewport);document.removeEventListener('keydown',onKey);}};
 }

@@ -46,7 +46,19 @@ export function createOutsideLayout(atlas = [], venues = [], includeLandmarks = 
       height:venue.id === 'hotel' ? 150 : venue.id === 'mosque' ? 136 : 86,
       destination:{districtId:district.id,venueId:venue.id}}];
   });
-  return {width,depth,columns,rows,districts,venues:destinations};
+  // The open apron around the city is purposeful advertising land. These are persistent
+  // plot identities matching the server ad store; campaigns are painted into the plot
+  // at runtime when an approved placement is active.
+  const adPlots = Array.from({length:40},(_,index)=>({
+    id:`plot-${String(index+1).padStart(2,'0')}`,
+    key:`ad:plot-${String(index+1).padStart(2,'0')}`,
+    name:`Ad land ${String.fromCharCode(65+Math.floor(index/8))}${(index%8)+1}`,
+    category:'Advertising plot', kind:'ad-plot', adPlotId:`plot-${String(index+1).padStart(2,'0')}`,
+    format:index%9===0?'Mega board':index%4===0?'Digital screen':'Billboard',
+    x:-width/2-150+(index%8)*116, z:-depth/2-145+Math.floor(index/8)*105,
+    height:72, destination:{adPlotId:`plot-${String(index+1).padStart(2,'0')}`}, available:true
+  }));
+  return {width,depth,columns,rows,districts,venues:destinations,adPlots};
 }
 
 /** A view selection requests travel. It cannot edit a resident or create a trip. */
@@ -149,6 +161,20 @@ function buildCity(layout) {
       if(id==='banex')for(let i=0;i<3;i++) {box('#517d8a',x-26+i*26,20,z+38,23,28,3);box('#c8b38b',x-26+i*26,39,z+43,25,3,16);}
     }
   }
+  // A landscaped advertising apron sits beyond the last road, with varied structures
+  // so the open space reads as a destination instead of an unfinished backdrop.
+  const liveAdSpaces=new Map((globalThis.__ABJ_ADS__?.spaces||[]).map(space=>[space.id,space]));
+  for (const plot of layout.adPlots || []) {
+    const live=liveAdSpaces.get(plot.adPlotId), occupied=live && live.available===false && live.ad;
+    const premium=plot.format==='Mega board', digital=plot.format==='Digital screen';
+    box(occupied?'#6f8267':premium?'#b8a36f':'#9bb486',plot.x,3,plot.z,102,4,78);
+    box('#d7d6b7',plot.x,5,plot.z-39,108,2,5);
+    box('#d7d6b7',plot.x,5,plot.z+39,108,2,5);
+    for (const side of [-1,1]) box('#698266',plot.x+side*48,13,plot.z,4,20,4);
+    const boardW=premium?82:digital?68:57, boardH=premium?35:digital?27:24;
+    box(occupied?'#31564a':digital?'#263d46':premium?'#394d49':'#506a5c',plot.x,72,plot.z-25,boardW,boardH,4);
+    box('#5b715f',plot.x,39,plot.z-25,4,61,4);
+  }
   // City landmarks on the promenade: a rocky ridge, stadium and water gardens.
   const edgeZ=layout.depth/2+135;
   for(let i=0;i<7;i++)add('sphere',i%2?'#8c9e8b':'#a0ad96',layout.width/2-200+i*69,55+(i%3)*12,-layout.depth/2-90,76,88+(i%3)*25,69);
@@ -208,10 +234,10 @@ function buildCity(layout) {
 }
 
 export function renderOutside(root,{atlas=[],venues=[],profile={},onSelect=()=>{},onHome,serverNow}={}) {
-  const layout=createOutsideLayout(atlas,venues,true),all=[...layout.venues,...layout.districts];
-  root.innerHTML=`<section class="outside-city" aria-label="Outside · Abuja city"><div class="outside-stage" tabindex="0" role="application" aria-label="3D Abuja city. Drag to pan, use two fingers to zoom, or switch to orbit. Arrow keys pan, plus and minus zoom."></div><div class="outside-roof-labels"></div><header class="outside-heading"><span class="outside-eyebrow">ABUJA LIFE · OUTSIDE</span><h2>Your city, alive.</h2><p>${layout.districts.length} districts & towns · ${layout.venues.length} places</p></header><div class="outside-tools"><button type="button" data-outside-action="overview" aria-label="Show the whole city">↗ <span>Whole city</span></button><button type="button" data-outside-action="mode" aria-pressed="false">↻ <span>Orbit</span></button><button type="button" data-outside-action="in" aria-label="Zoom in">+</button><button type="button" data-outside-action="out" aria-label="Zoom out">−</button>${onHome?'<button type="button" data-outside-action="home" aria-label="Go home">⌂</button>':''}</div><div class="outside-directory"><label class="outside-search"><span aria-hidden="true">⌕</span><input type="search" placeholder="Find a place or district" aria-label="Search all city destinations" autocomplete="off"><button type="button" data-outside-action="directory" aria-label="Browse all destinations" aria-expanded="false">☷</button></label><div class="outside-results" hidden></div></div><aside class="outside-selection" hidden></aside><p class="outside-hint">Drag to explore · scroll or pinch to zoom <span>Original Abuja-inspired game city</span></p><div class="outside-status" aria-live="polite"></div></section>`;
+  const layout=createOutsideLayout(atlas,venues,true),all=[...layout.venues,...layout.districts,...layout.adPlots];
+  root.innerHTML=`<section class="outside-city" aria-label="Outside · Abuja city"><div class="outside-stage" tabindex="0" role="application" aria-label="3D Abuja city. Drag to pan, use two fingers to zoom, or switch to orbit. Arrow keys pan, plus and minus zoom."></div><div class="outside-roof-labels"></div><header class="outside-heading"><span class="outside-eyebrow">ABUJA LIFE · OUTSIDE</span><h2>Your city, alive.</h2><p>${layout.districts.length} districts & towns · ${layout.venues.length} places · ${layout.adPlots.length} ad plots</p></header><div class="outside-tools"><button type="button" data-outside-action="overview" aria-label="Show the whole city">↗ <span>Whole city</span></button><button type="button" data-outside-action="mode" aria-pressed="false">↻ <span>Orbit</span></button><button type="button" data-outside-action="in" aria-label="Zoom in">+</button><button type="button" data-outside-action="out" aria-label="Zoom out">−</button>${onHome?'<button type="button" data-outside-action="home" aria-label="Go home">⌂</button>':''}</div><div class="outside-directory"><label class="outside-search"><span aria-hidden="true">⌕</span><input type="search" placeholder="Find a place or district" aria-label="Search all city destinations" autocomplete="off"><button type="button" data-outside-action="directory" aria-label="Browse all destinations" aria-expanded="false">☷</button></label><div class="outside-results" hidden></div></div><aside class="outside-selection" hidden></aside><p class="outside-hint">Drag to explore · scroll or pinch to zoom <span>Original Abuja-inspired game city</span></p><div class="outside-status" aria-live="polite"></div></section>`;
   const shell=root.querySelector('.outside-city'),stage=root.querySelector('.outside-stage'),labelsRoot=root.querySelector('.outside-roof-labels'),input=root.querySelector('input'),results=root.querySelector('.outside-results'),selection=root.querySelector('.outside-selection'),status=root.querySelector('.outside-status');
-  root.dataset.outsideDistricts=String(layout.districts.length);root.dataset.outsideVenues=String(layout.venues.length);
+  root.dataset.outsideDistricts=String(layout.districts.length);root.dataset.outsideVenues=String(layout.venues.length);root.dataset.outsideAdPlots=String(layout.adPlots.length);
   root.dataset.outsideLimits=JSON.stringify({minZoom:1,maxZoom:9,minElevation:.5,maxElevation:1.18,width:layout.width,depth:layout.depth});
   const listeners=[],listen=(target,event,fn,options)=>{target.addEventListener(event,fn,options);listeners.push(()=>target.removeEventListener(event,fn,options));};
   let disposed=false,renderer,model,camera,raf=0,last=0,elapsed=0,selected=null,directoryOpen=false,orbitMode=false,pinchBase=null;
@@ -223,9 +249,11 @@ export function renderOutside(root,{atlas=[],venues=[],profile={},onSelect=()=>{
   const bounds=Math.max(layout.width,layout.depth),maxZoom=9;
   const suppliedTime=Number(serverNow)||Date.parse(serverNow),clockOffset=Number.isFinite(suppliedTime)?suppliedTime-Date.now():0;
   let clockMinute=-1;
+  const liveAdSpaces=new Map((globalThis.__ABJ_ADS__?.spaces||[]).map(space=>[space.id,space]));
   const labels=all.map(place=>{
-    const button=document.createElement('button');button.type='button';button.className=`outside-roof-label ${place.venueId?'outside-venue-label':'outside-district-label'}`;
-    button.textContent=place.venueId?`${icons[place.id]||'•'} ${place.name}`:place.name;
+    const ad=Boolean(place.adPlotId);
+    const button=document.createElement('button');button.type='button';button.className=`outside-roof-label ${ad?'outside-ad-label':place.venueId?'outside-venue-label':'outside-district-label'}`;
+    button.textContent=ad?`▧ ${place.name}`:place.venueId?`${icons[place.id]||'•'} ${place.name}`:place.name;
     button.setAttribute('aria-label',`${place.name}${place.districtName?`, ${place.districtName}`:''}. View destination`);button.dataset.destinationKey=place.key;labelsRoot.append(button);
     return {place,button,point:new THREE.Vector3(place.x,place.height+20,place.z)};
   });
@@ -233,9 +261,9 @@ export function renderOutside(root,{atlas=[],venues=[],profile={},onSelect=()=>{
   const overview=()=>{Object.assign(target,{x:0,z:0,zoom:1,yaw:.39,elevation:.84});selected=null;selection.hidden=true;status.textContent='Whole city overview';};
   const choose=place=>{
     selected=place;target.x=place.x;target.z=place.z;target.zoom=Math.max(4,target.zoom);
-    const isClub=place.category?.toLowerCase().includes('club')||['club','club-cage','magic-city','bear-barn'].includes(place.id), schedule=isClub?clubSchedule(serverNow):null;
+    const liveAd=place.adPlotId?liveAdSpaces.get(place.adPlotId):null,isAd=Boolean(place.adPlotId),isClub=place.category?.toLowerCase().includes('club')||['club','club-cage','magic-city','bear-barn'].includes(place.id), schedule=isClub?clubSchedule(serverNow):null;
     const timing=schedule?`<small class="outside-hours ${schedule.isOpen?'is-open':''}">${schedule.isOpen?'Open tonight · DJ set is live.':schedule.reason}</small>`:'';
-    selection.hidden=false;selection.innerHTML=`<button type="button" class="outside-selection-close" data-outside-action="close" aria-label="Close destination">×</button><span>${place.venueId?esc(place.category||'A place in your city'):'NEIGHBOURHOOD'}</span><h3>${esc(place.name)}</h3><p>${esc(place.districtName||place.vibe||'Explore this neighbourhood')}</p>${timing}<button type="button" class="outside-travel" data-outside-action="travel">Choose transport <span aria-hidden="true">→</span></button>`;
+    selection.hidden=false;selection.innerHTML=`<button type="button" class="outside-selection-close" data-outside-action="close" aria-label="Close destination">×</button><span>${isAd?'ADVERTISING LAND':place.venueId?esc(place.category||'A place in your city'):'NEIGHBOURHOOD'}</span><h3>${esc(place.name)}</h3><p>${isAd?`${esc(place.format)} · Prime Outside location · ${liveAd?.available===false?'Currently occupied':'Available'}`:esc(place.districtName||place.vibe||'Explore this neighbourhood')}</p>${timing}${isAd?'<button type="button" class="outside-travel" data-outside-action="advertise">View advertising space <span aria-hidden="true">→</span></button>':'<button type="button" class="outside-travel" data-outside-action="travel">Choose transport <span aria-hidden="true">→</span></button>'}`;
     input.value='';directoryOpen=false;results.hidden=true;root.querySelector('[data-outside-action="directory"]').setAttribute('aria-expanded','false');status.textContent=`${place.name} selected. Choose transport to travel.`;
   };
   const renderDirectory=()=>{
@@ -255,6 +283,7 @@ export function renderOutside(root,{atlas=[],venues=[],profile={},onSelect=()=>{
       case 'close':selected=null;selection.hidden=true;break;
       case 'home':onHome?.();break;
       case 'travel':{const destination=outsideDestination(layout,selected?.destination);if(destination)onSelect(destination);break;}
+      case 'advertise':{if(selected?.adPlotId)onSelect({adPlotId:selected.adPlotId});break;}
     }
   });
   try {
@@ -306,10 +335,10 @@ export function renderOutside(root,{atlas=[],venues=[],profile={},onSelect=()=>{
   const observer=globalThis.ResizeObserver?new ResizeObserver(resize):null;observer?.observe(stage);listen(globalThis,'resize',resize);resize();
   const projected=new THREE.Vector3();let frameCount=0,lastLabelPose='';
   const drawLabels=()=>{
-    const occupied=[],ordered=[...labels].sort((a,b)=>(b.place===selected?100:0)+(b.place.venueId?10:0)-(a.place===selected?100:0)-(a.place.venueId?10:0));
+    const occupied=[],ordered=[...labels].sort((a,b)=>(b.place===selected?100:0)+(b.place.adPlotId?12:b.place.venueId?10:0)-(a.place===selected?100:0)-(a.place.adPlotId?12:a.place.venueId?10:0));
     for(const label of ordered){
       projected.copy(label.point).project(camera);const x=(projected.x+1)*size.width/2,y=(1-projected.y)*size.height/2;
-      const isSelected=label.place===selected,w=Math.min(260,label.place.name.length*(label.place.venueId?7.5:6.2)+29),h=label.place.venueId?44:25;
+      const isSelected=label.place===selected,w=Math.min(label.place.adPlotId?150:260,label.place.name.length*(label.place.adPlotId?6.1:label.place.venueId?7.5:6.2)+29),h=label.place.adPlotId?28:label.place.venueId?44:25;
       const rect={left:x-w/2,right:x+w/2,top:y-h,bottom:y+3};
       const compact=size.width<700;
       const underHeading=rect.left<(compact?210:340)&&rect.top<133,underTools=rect.right>size.width-(compact?172:290)&&rect.top<(compact?125:80);

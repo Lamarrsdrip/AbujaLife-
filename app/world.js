@@ -152,7 +152,20 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
  const now=()=>realTimeStart+(performance.now()-localTimeStart);
  const venue=VENUES.find(v=>v.id===profile.location?.venue),isClub=venue?.kind==='club'||['club','club-cage','magic-city','bear-barn'].includes(venue?.id);
  const scene=trip?buildJourney({profile,place,id}):interior?buildInterior({profile:kind==='visit'?{...profile,location:{...profile.location,kind:'home',venue:'home'}}:profile,venue:kind==='visit'?undefined:venue,id}):buildCity({profile,place,id,venues:venuesForDistrict(profile.district||place.id)});
- scene.obstacles ||= [];scene.interactables ||= [];if(kind==='visit'){scene.interactables=scene.interactables.filter(p=>p.action==='leave-home');scene.interactables.forEach(p=>{p.action='leave-visit';p.label='Leave this home';});}scene.pedestrians ||= [];scene.traffic ||= [];
+ scene.obstacles ||= [];scene.interactables ||= [];
+ // A guest sees the owner's real floor plan, but every interaction must stay
+ // read-only. Keep the door as the authoritative leave action and turn the
+ // home's furniture/activity points into local inspection moments instead of
+ // silently dropping them (which made a visit feel empty and disconnected).
+ if(kind==='visit'){
+  scene.interactables.forEach(point=>{
+   if(point.action==='leave-home'){point.action='leave-visit';point.label='Leave this home';return;}
+   point.payload={...point.payload,visitAction:point.action,visitLabel:point.label};
+   point.action='visit-interact';
+   point.label=point.label?.replace(/^Arrange your home$/i,'Look around the room')||'Look around the room';
+  });
+ }
+ scene.pedestrians ||= [];scene.traffic ||= [];
  const ownVehicle=typeof profile.drivingVehicle==='string'?profile.drivingVehicle:vehicleIds.find(v=>profile.inventory?.includes(v));
  const driving=!!profile.drivingVehicle&&!interior&&!trip,transport=trip?trip.mode!=='walk':driving;
  const key=[profile.id||'preview',profile.createdAt||0,profile.district||place.id||'garki',kind,atHome?profile.home?.propertyId:venue?.id||'',trip?.id||''].join(':');
@@ -197,8 +210,8 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
  if(driving)container.querySelector('[data-world-target="your-car"].world-point')?.setAttribute('display','none');
  const timeChip=document.createElement('div');timeChip.className='world-time-chip';timeChip.setAttribute('aria-label','Actual Abuja time and weather');container.append(timeChip);
  let clock=abujaTime(now()),weather=reportedWeather||seasonalWeather(now()),lastClockSecond=-1;
- const sound=isClub?createClubAudio({enabled:profile.settings?.soundEnabled===true,onState:playing=>{const button=container.querySelector('.world-sound-toggle');if(button){button.textContent=playing?'Music on':'Music off';button.setAttribute('aria-pressed',String(playing));}}}):null;
- if(sound){const button=document.createElement('button');button.className='world-sound-toggle';button.type='button';button.textContent='Music off';button.setAttribute('aria-pressed','false');button.setAttribute('aria-label','Toggle original synthesized club music');button.disabled=profile.settings?.soundEnabled!==true;button.title=button.disabled?'Enable sound in Settings first':'Original club beats · tap to listen';button.onclick=()=>sound.toggle();container.append(button);}
+ const sound=createClubAudio({enabled:profile.settings?.soundEnabled!==false,mode:isClub?'club':'ambient',onState:playing=>{const button=container.querySelector('.world-sound-toggle');if(button){const label=isClub?'Music':'Ambience';button.textContent=playing?`${label} on`:`${label} off`;button.setAttribute('aria-pressed',String(playing));}}});
+ {const button=document.createElement('button');button.className='world-sound-toggle';button.type='button';button.textContent=isClub?'Music off':'Ambience off';button.setAttribute('aria-pressed','false');button.setAttribute('aria-label',isClub?'Toggle original synthesized club music':'Toggle original Abuja city ambience');button.disabled=profile.settings?.soundEnabled===false;button.title=button.disabled?'Enable sound in Settings first':isClub?'Original club beats · tap to listen':'Original Abuja ambience · tap to listen';button.onclick=()=>sound.toggle();container.append(button);}
  const characterRenderer=createCharacterRenderer(container,{appearance:profile.appearance,pedestrians:scene.pedestrians,neighbours,scene,profile,kind,venue,place});
  let oblique=container.dataset.environmentRenderer==='webgl-3d';
  const roofLabels=document.createElement('div');roofLabels.className='world-roof-labels';container.append(roofLabels);
@@ -353,9 +366,9 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
  };
  const tick=time=>{
   raf=0;if(disposed)return;if(playbackBlocked()){syncPlayback();return;}raf=requestAnimationFrame(tick);let dt=lastTime?Math.min(.12,(time-lastTime)/1000):0;lastTime=time;frameCount++;
-  const currentNow=now();if(Math.floor(currentNow/1000)!==lastClockSecond){lastClockSecond=Math.floor(currentNow/1000);clock=abujaTime(currentNow);weather=reportedWeather||seasonalWeather(currentNow);const musicButton=container.querySelector('.world-sound-toggle');if(musicButton){const closed=!clubSchedule(currentNow).isOpen;musicButton.disabled=closed||profile.settings?.soundEnabled!==true;if(closed){musicButton.textContent='DJ off duty';musicButton.title=clubSchedule(currentNow).openingHours;}else if(musicButton.textContent==='DJ off duty'){musicButton.textContent='Music off';musicButton.title='Original club beats · tap to listen';}}container.dataset.timeOfDay=clock.isNight?'night':'day';container.dataset.abujaTime=clock.label;container.dataset.weather=weather.condition||'clear';timeChip.innerHTML=`<time datetime="${new Date(currentNow).toISOString()}">${clock.label} WAT</time><span title="${escape(weather.label||'Seasonal game weather')}">${weather.condition==='rain'?'Rain':weather.condition==='cloudy'?'Cloudy':weather.condition==='hazy'?'Hazy':'Clear'} · ${Math.round(weather.temperatureC??28)}° <small>${weather.source==='seasonal-simulation'?'game weather':'weather'}</small></span>`;}
+  const currentNow=now();if(Math.floor(currentNow/1000)!==lastClockSecond){lastClockSecond=Math.floor(currentNow/1000);clock=abujaTime(currentNow);weather=reportedWeather||seasonalWeather(currentNow);const musicButton=container.querySelector('.world-sound-toggle');if(musicButton){const closed=isClub&&!clubSchedule(currentNow).isOpen;musicButton.disabled=closed||profile.settings?.soundEnabled===false;if(closed){musicButton.textContent='DJ off duty';musicButton.title=clubSchedule(currentNow).openingHours;}else if(musicButton.textContent==='DJ off duty'){musicButton.textContent=isClub?'Music off':'Ambience off';musicButton.title=isClub?'Original club beats · tap to listen':'Original Abuja ambience · tap to listen';}}container.dataset.timeOfDay=clock.isNight?'night':'day';container.dataset.abujaTime=clock.label;container.dataset.weather=weather.condition||'clear';timeChip.innerHTML=`<time datetime="${new Date(currentNow).toISOString()}">${clock.label} WAT</time><span title="${escape(weather.label||'Seasonal game weather')}">${weather.condition==='rain'?'Rain':weather.condition==='cloudy'?'Cloudy':weather.condition==='hazy'?'Hazy':'Clear'} · ${Math.round(weather.temperatureC??28)}° <small>${weather.source==='seasonal-simulation'?'game weather':'weather'}</small></span>`;}
   if(oblique&&container.dataset.environmentRenderer!=='webgl-3d'){oblique=false;updateViewport();}
-  const blocked=inputBlocked();sound?.setActive(!blocked&&clubSchedule(currentNow).isOpen);if(blocked&&!preview)dt=0;elapsed+=dt;if(blocked){keyboard.clear();joy.x=joy.y=0;}
+  const blocked=inputBlocked();sound.setActive(!blocked&&(!isClub||clubSchedule(currentNow).isOpen));if(blocked&&!preview)dt=0;elapsed+=dt;if(blocked){keyboard.clear();joy.x=joy.y=0;}
   const orbitState=orbit.tick(dt);zoom=orbitState.zoom;if(orbitState.changed)updateViewport();
   const old={...player};moving=false;
   if(trip){const duration=Math.max(1,Number(trip.seconds)||30)*1000,start=Number(trip.arrivesAt)-duration,progress=clamp((currentNow-start)/duration,0,1);player.x=450+progress*(scene.width-1000);player.y=889+Math.sin(elapsed*.6)*3;angle=0;moving=progress<1;walkPhase+=dt*10;if(progress>=1&&!arrived){arrived=true;say('You have arrived. Welcome to your next chapter.');if(onArrive)onArrive(trip.id);}}

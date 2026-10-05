@@ -27,3 +27,7 @@ The normal release path is now `main` → GitHub Actions QA/build → generated 
 Email verification/password reset delivery remains disabled without a dedicated Resend key and verified sender. Flutterwave live checkout remains disabled without configured merchant verification credentials. Apple/Google verification remains fail-closed pending real platform adapters. These optional provider omissions must remain visible in the final report.
 
 See [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md) for actual Windows resource isolation and operational commands. No secrets or user database snapshots belong in this record.
+
+## 2026-10-05 live re-check (not a release acceptance)
+
+From the owner’s Mac, `https://abujacity.life` returned 200 (0.59s) and the live release manifest identified `c4e476c7aede532fe13b3fbcf82b3d0f80a9fb07`. The API `/health` returned 200 but varied from 1.88–3.70s across sampled requests; anonymous `/api/bootstrap/fast` returned 200 in 0.80–1.92s. `/ready` returned 404 on that deployed release. A direct request to public `/api/ads/world` returned 500, matching repeated sanitized `request_error` records in the VPS API log. Okrika API and White Studio health checks both returned 200. The API service task was running. These findings mean the public site was reachable but the runtime was not fully healthy; the earlier acceptance above is historical and must not be read as proof that the c4e476c release passed current end-to-end acceptance.

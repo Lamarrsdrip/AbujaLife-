@@ -93,7 +93,7 @@ Mongo authentication is enabled with a dedicated private replica set. The applic
 
 The server chooses prices, ownership, income and balances. Credits/transfers use Mongo transactions and unique references. Demo top-ups are disabled in production. Flutterwave grants require server/provider verification; `verified: true` is never fulfillment evidence. Apple/Google verification endpoints fail closed until real platform adapters exist. Native store purchases remain unavailable rather than accepting fake receipts.
 
-Realtime is authenticated **Server-Sent Events**, with REST for client actions, presence, messaging, typing, delivered/read state, notifications and events. Caddy flushes streams immediately. The API bounds connections and event/request rates; it does not poll Mongo every second. Redis is unnecessary for this single-process release. Multiple API replicas will require shared fanout/presence infrastructure before horizontal scaling.
+Realtime is authenticated **Server-Sent Events**, with REST for client actions, presence, messaging, typing, delivered/read state, notifications and events. Caddy flushes streams immediately. The API bounds connections and event/request rates; it does not poll Mongo every second. Redis is unnecessary for this single-process release. Multiple API replicas will require shared fanout/presence infrastructure before horizontal scaling. `GET /health` and `GET /ready` return 200 only when the Mongo health check succeeds (503 otherwise); `/ready` is suitable for a load-balancer readiness probe. Both return a fixed safe response without database details. Auth success and request failure logs include elapsed milliseconds alongside the request ID, but do not log credentials or request bodies.
 
 ## DNS, HTTPS and Hostinger
 
@@ -112,6 +112,7 @@ Hostinger manages frontend TLS/renewal. Caddy obtains and renews the API certifi
 
 ```bash
 curl --fail https://api.abujacity.life/health
+curl --fail https://api.abujacity.life/ready
 node deploy/health-check.mjs https://api.abujacity.life
 curl --fail https://okrika.store/health
 curl --fail https://white-ai.okrika.store/health

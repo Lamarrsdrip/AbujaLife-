@@ -162,7 +162,9 @@ export class MongoAdStore {
   async init({ ensureIndexes = true } = {}) { if (ensureIndexes) await ensureMongoAdSchema(this.db); return this; }
   async purgeExpiredSlots({ session = null } = {}) { await this.collection('ad_slots').deleteMany({ expiresAt:{ $lte:nowDate(this.clock()) } }, session ? { session } : {}); }
   async world({zoneId=null,page=0,limit=96,zoom=1}={}) {
-    await this.purgeExpiredSlots();
+    // Map discovery is a high-frequency, read-only path. Expired rows are
+    // excluded by the query and Mongo's TTL index reclaims them asynchronously;
+    // checkout still performs transactional cleanup before reserving a slot.
     const zones=AD_ZONES.map(zone=>({id:zone.id,name:zone.name,subtitle:zone.subtitle,region:zone.region,tier:zone.tier,bounds:{x:zone.x,y:zone.y,width:zone.width,height:zone.height}}));
     const selected=zoneId?zoneFor(zoneId):null;
     const generated=selected?adZoneSpaces(selected.id,{page,limit}):AD_ZONES.slice(0,4).flatMap(zone=>adZoneSpaces(zone.id,{page:0,limit:12}));
@@ -179,7 +181,7 @@ export class MongoAdStore {
     return {ok:true,ads:rows.map(orderView)};
   }
   async publicState() {
-    const now = this.clock(); await this.purgeExpiredSlots();
+    const now = this.clock();
     const [locks, active] = await Promise.all([
       this.collection('ad_slots').find({ expiresAt:{ $gt:nowDate(now) } }).toArray(),
       this.collection('ad_orders').find({ status:'active', endAt:{ $gt:now } }).sort({ startAt:-1,txRef:-1 }).limit(60).toArray(),

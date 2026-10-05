@@ -9,6 +9,7 @@ import { MongoPaymentStore } from './mongo/paymentStore.mjs';
 import { MongoAdStore } from './mongo/adStore.mjs';
 import { MongoAuthStore } from './mongo/authStore.mjs';
 import { MongoRewardStore } from './mongo/rewardStore.mjs';
+import { installMongoReadOptimizer } from './mongo/readOptimizer.mjs';
 import { createEmailDelivery } from './emailDelivery.mjs';
 import { createProductionServer, productionLog } from './production-http.mjs';
 import { attachXIntegration } from './xIntegration.mjs';
@@ -34,6 +35,7 @@ export async function createProductionApplication({env=process.env,clock=Date.no
     const store=new MongoGameStore({client:database.client,db:database.db,clock,originRandomInt,production:true,auth});
     const social=new MongoSocialStore(store);await social.init({ensureIndexes:false});social.attachToGame();
     const directory=new MongoDirectoryStore(store,social);
+    installMongoReadOptimizer({store,social});
     const presence=new MongoPresenceStore(store,social);await presence.init({ensureIndexes:false});
     const admin=new MongoAdminStore({store,bootstrapUsername:config.adminUsername});await admin.init({ensureIndexes:false});
     social.authorizeModeration=id=>admin.requirePermission(id,'moderation');

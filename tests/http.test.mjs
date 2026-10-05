@@ -35,9 +35,9 @@ test('two real residents persist friendship, messages, unread state and purchase
   state=await app.request('/api/bootstrap',{cookie:bello.cookie});assert.equal(state.data.conversations[0].unread,1);assert.ok(state.data.notifications.some(n=>n.kind==='message'&&!n.readAt));
   const thread=await app.request(`/api/conversations/${conversation.id}/messages`,{cookie:bello.cookie});assert.equal(thread.data.messages[0].text,'Meet at Jabi after work?');assert.ok(thread.data.messages[0].readBy.includes(bello.id));
   state=await app.request('/api/bootstrap',{cookie:bello.cookie});assert.equal(state.data.conversations[0].unread,0);assert.ok(state.data.notifications.filter(n=>n.kind==='message').every(n=>n.readAt));
-  const purchase=await app.request('/api/action',{cookie:ada.cookie,body:{action:'purchase',payload:{itemId:'plant',price:1}}});assert.equal(purchase.data.profile.wallet,ada.startingWallet-2300);
+  const purchase=await app.request('/api/action',{cookie:ada.cookie,body:{action:'purchase',payload:{itemId:'plant',price:1}}});assert.equal(purchase.data.profile.wallet,ada.startingWallet-23000);
   await app.close();app=await start(dataDir);
-  state=await app.request('/api/bootstrap',{cookie:ada.cookie});assert.equal(state.data.authenticated,true);assert.equal(state.data.profile.wallet,ada.startingWallet-2300);assert.deepEqual(state.data.profile.inventory,['plant']);assert.equal(state.data.friends[0].id,bello.id);
+  state=await app.request('/api/bootstrap',{cookie:ada.cookie});assert.equal(state.data.authenticated,true);assert.equal(state.data.profile.wallet,ada.startingWallet-23000);assert.deepEqual(state.data.profile.inventory,['plant']);assert.equal(state.data.friends[0].id,bello.id);
   assert.equal((await app.request(`/api/conversations/${conversation.id}/messages`,{cookie:bello.cookie})).data.messages.length,1);
   const badLogin=await app.request('/api/auth/login',{body:{username:'ada',password:'wrong-password'}});assert.equal(badLogin.status,401);
   const login=await app.request('/api/auth/login',{body:{username:'ada',password:'test-password-123'}});assert.equal(login.data.profile.id,ada.id);

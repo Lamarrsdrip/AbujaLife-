@@ -71,7 +71,7 @@ await test("WebCrypto rejection sampling and one-time durable origins", async ()
   const f = fixture({ random: [1, 4294967295, 0] }), state = await f.request("/api/bootstrap");
   assert.ok(f.randomCalls >= 3, "Origin rejection sampling and randomized avatar both use secure entropy");
   assert.equal(state.profile.origin.id, "lapo");
-  assert.equal(state.profile.wallet, 1e5);
+  assert.equal(state.profile.wallet, 1e7);
   assert.equal(state.profile.home.district, "lugbe");
   assert.equal(state.profile.home.layoutId, "garki-studio");
   assert.equal(state.properties.at(-1).id, state.profile.home.propertyId);
@@ -85,7 +85,7 @@ await test("WebCrypto rejection sampling and one-time durable origins", async ()
   assert.equal(second.randomCalls, 0);
   const nepo = await fixture({ random: [0, 2] }).request("/api/bootstrap");
   assert.equal(nepo.profile.origin.id, "nepo");
-  assert.equal(nepo.profile.wallet, 1e6);
+  assert.equal(nepo.profile.wallet, 1e8);
   assert.equal(nepo.profile.home.district, "maitama");
   assert.ok(nepo.profile.ownedProperties.includes(nepo.profile.home.propertyId));
 });
@@ -93,7 +93,7 @@ await test("consenting loan borrowing, repayment and reload-safe idempotency", a
   const f = fixture(), payload = { amount: 1e5, consent: true, consentVersion: "game-loan-v1", idempotencyKey: key() };
   assert.equal((await f.action("borrow-loan", { ...payload, consent: false }, 400)).code, "loan_consent_required");
   const borrowed = await f.action("borrow-loan", payload);
-  assert.equal(borrowed.profile.wallet, 2e5);
+  assert.equal(borrowed.profile.wallet, 101e5);
   assert.equal(borrowed.loan.fee, 5e3);
   assert.equal(borrowed.loan.outstanding, 105e3);
   const partial = { loanId: borrowed.loan.id, amount: 3e4, idempotencyKey: key() };
@@ -101,7 +101,7 @@ await test("consenting loan borrowing, repayment and reload-safe idempotency", a
   const reopened = fixture({ storage: f.storage });
   assert.equal((await reopened.action("borrow-loan", payload)).replayed, true);
   assert.equal((await reopened.action("repay-loan", partial)).replayed, true);
-  assert.equal((await reopened.request("/api/wallet")).profile.wallet, 17e4);
+  assert.equal((await reopened.request("/api/wallet")).profile.wallet, 1007e4);
   assert.equal((await reopened.request("/api/wallet")).loans[0].outstanding, 75e3);
   const before = await reopened.request("/api/wallet");
   await reopened.action("repay-loan", { ...partial, amount: 75001, idempotencyKey: key() }, 400);
@@ -113,7 +113,7 @@ await test("uncapped game funds and rent, exact overflow rollback, vehicle/dice 
   const f = fixture({ random: [1, 0, 0] }), funds = { amount: 25e7, idempotencyKey: key() };
   await f.request("/api/wallet/topup", funds);
   assert.equal((await f.request("/api/wallet/topup", funds)).replayed, true);
-  assert.equal((await f.request("/api/wallet")).profile.wallet, 2501e5);
+  assert.equal((await f.request("/api/wallet")).profile.wallet, 260e6);
   const overflow = { amount: Number.MAX_SAFE_INTEGER, idempotencyKey: key() }, before = await f.request("/api/wallet");
   assert.equal((await f.request("/api/wallet/topup", overflow, 409)).code, "numeric_limit");
   assert.deepEqual(await f.request("/api/wallet"), before);
@@ -250,15 +250,15 @@ await test("legacy adapter saves retain money/home and remain origin-free until 
   assert.deepEqual(after.profile.home, before.profile.home);
   assert.equal(after.profile.origin, null);
   const bought = await upgraded.action("purchase", { itemId: "plant" });
-  assert.equal(bought.profile.wallet, 23700);
+  assert.equal(bought.profile.wallet, 3000);
   const again = await fixture({ storage }).request("/api/bootstrap");
-  assert.equal(again.profile.wallet, 23700);
+  assert.equal(again.profile.wallet, 3000);
   assert.ok(again.profile.inventory.includes("plant"));
   assert.equal(again.profile.origin, null);
   upgraded.reset();
   const fresh = await upgraded.request("/api/bootstrap");
   assert.equal(fresh.profile.origin.id, "lapo");
-  assert.equal(fresh.profile.wallet, 1e5);
+  assert.equal(fresh.profile.wallet, 1e7);
   assert.deepEqual(fresh.profile.inventory, []);
 });
 

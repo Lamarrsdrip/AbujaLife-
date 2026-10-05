@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 
-const source=fs.readFileSync(new URL('../app/app.js',import.meta.url),'utf8');
+// Windows runners may check the repository out with CRLF; normalize before
+// extracting the self-contained boot function used by this VM fixture.
+const source=fs.readFileSync(new URL('../app/app.js',import.meta.url),'utf8').replace(/\r\n/g,'\n');
 const start=source.indexOf('async function boot(){');
 const boot=source.slice(start,source.indexOf('\n}\n',start)+2);
 function fixture(refresh){

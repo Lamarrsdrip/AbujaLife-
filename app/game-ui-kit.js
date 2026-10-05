@@ -97,7 +97,7 @@ function seedCharacterControls(){
   const seed=readSeed();
   for(const [name,values] of Object.entries(choices)){
     if(seed[name]===undefined)seed[name]=pick(values);
-    const control=form.querySelector(`[name="${name}"]`);if(!control||control.dataset.characterSeeded)return;
+    const control=form.querySelector(`[name="${name}"]`);if(!control||control.dataset.characterSeeded)continue;
     control.dataset.characterSeeded='true';
     if([...control.options||[]].some(option=>option.value===seed[name])){control.value=seed[name];control.dispatchEvent(new Event('change',{bubbles:true}));}
     control.addEventListener('change',()=>{const current=readSeed();current[name]=control.value;writeSeed(current);});
@@ -117,7 +117,7 @@ function seedCharacterControls(){
 function diversifyAmbientResidents(){
   appRoot?.querySelectorAll('[data-city-npc]').forEach((npc,index)=>{
     npc.classList.remove('npc-variant-wide','npc-variant-tall','npc-variant-small');
-    npc.classList.add(['npc-variant-wide','npc-variant-tall','npc-variant-small',''][index%4]);
+    const variant=['npc-variant-wide','npc-variant-tall','npc-variant-small',null][index%4];if(variant)npc.classList.add(variant);
     const face=npc.querySelector('.walker-face');if(!face||face.querySelector('[data-npc-detail]'))return;
     const ns='http://www.w3.org/2000/svg',detail=document.createElementNS(ns,'g');detail.dataset.npcDetail='';
     if(index%5===1){detail.innerHTML='<circle cx="-13" cy="-60" r="1.8" fill="#d8b86d"/><circle cx="13" cy="-60" r="1.8" fill="#d8b86d"/>';}

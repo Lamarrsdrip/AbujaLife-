@@ -6,6 +6,12 @@ export function mergeCoreBootstrap(current,next) {
   const merged={...next};
   const locationKey=p=>[p?.district,p?.location?.kind,p?.location?.venue,p?.location?.ownerId,p?.location?.visitId].join(':');
   for(const key of deferredFields)if(current[key]!==undefined && (key!=='nearby'||locationKey(current.profile)===locationKey(next.profile)))merged[key]=current[key];
+  // `startup` means optional account/social state still needs one background
+  // hydration. Once that full hydration has landed, later core refreshes must
+  // stay lightweight instead of fanning back out across social/notification
+  // collections every minute or on bursts of realtime events. If the first
+  // hydration failed, current.startup remains true and a later refresh retries.
+  if(current.startup!==true)delete merged.startup;
   return merged;
 }
 

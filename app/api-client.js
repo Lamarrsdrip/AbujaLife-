@@ -57,10 +57,15 @@ async function compatibleFetch(primaryPath, fallbackPath, init) {
 }
 
 export function apiFetch(path, options = {}) {
-  const deadline=AbortSignal.timeout(15000);
-  const signal=options.signal?AbortSignal.any([options.signal,deadline]):deadline;
   const method=String(options.method||'GET').toUpperCase();
   const startupBootstrapQuery=method==='GET'&&path==='/api/bootstrap?startup=1';
+  // The app shell historically put an 8-second timeout around every bootstrap.
+  // Fast startup should be quick, but a brief mobile/VPS stall must not turn a
+  // healthy authoritative request into the full-screen “city is taking too
+  // long” state. Startup owns this single bounded transport deadline; every
+  // other request still honours caller cancellation plus the same 15s ceiling.
+  const deadline=AbortSignal.timeout(15000);
+  const signal=options.signal&&!startupBootstrapQuery?AbortSignal.any([options.signal,deadline]):deadline;
   const bootstrapRequest=method==='GET'&&(path==='/api/bootstrap'||startupBootstrapQuery);
   const loginRequest=method==='POST'&&path==='/api/auth/login';
   const registerRequest=method==='POST'&&path==='/api/auth/register';
@@ -75,7 +80,10 @@ export function apiFetch(path, options = {}) {
   // joins, so a slow feed can never block login or signup.
   const fastLogin=loginRequest,fastRegister=registerRequest;
   const primaryPath=fastBootstrapRequest?'/api/bootstrap/fast':fastLogin?'/api/auth/login/fast':fastRegister?'/api/auth/register/fast':logoutRequest?'/api/auth/logout/fast':path;
-  const fallbackPath=fastBootstrapRequest?'/api/bootstrap':fastLogin?'/api/auth/login':fastRegister?'/api/auth/register':logoutRequest?'/api/auth/logout':null;
+  // During a staggered frontend/API rollout, preserve the lightweight startup
+  // query when the new fast route is not present. Falling back to bare
+  // /api/bootstrap would reintroduce the expensive all-social startup path.
+  const fallbackPath=fastBootstrapRequest?(startupBootstrapQuery?'/api/bootstrap?startup=1':'/api/bootstrap'):fastLogin?'/api/auth/login':fastRegister?'/api/auth/register':logoutRequest?'/api/auth/logout':null;
   const url=apiURL(primaryPath);
   const init={...options,signal,credentials:'include',cache:'no-store'};
 

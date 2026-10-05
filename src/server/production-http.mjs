@@ -75,7 +75,7 @@ export function createProductionServer({store,social,directory,presence,admin,pa
       const url=new URL(req.url,'https://api.abujacity.life');pathname=url.pathname;const method=req.method||'GET',origin=req.headers.origin;
       if(origin){fail(allowedOrigins.has(origin),'This origin is not permitted',403,'cross_origin');res.setHeader('access-control-allow-origin',origin);res.setHeader('access-control-allow-credentials','true');res.setHeader('vary','Origin');}
       if(method==='OPTIONS'){fail(origin&&allowedOrigins.has(origin),'This origin is not permitted',403,'cross_origin');const wanted=(req.headers['access-control-request-headers']||'').toLowerCase().split(',').map(v=>v.trim()).filter(Boolean);fail(wanted.every(v=>['content-type','authorization','x-request-id'].includes(v)),'Requested headers are not permitted',403);res.writeHead(204,{...SECURITY_HEADERS,'access-control-allow-methods':'GET, POST, OPTIONS','access-control-allow-headers':'Content-Type, Authorization, X-Request-ID','access-control-max-age':'600'});res.end();return;}
-      if(['/health','/api/health'].includes(pathname)&&method==='GET'){const result=await database.health(),healthy=typeof result==='boolean'?result:result.ok===true;return json(res,healthy?200:503,{ok:healthy,service:'AbujaLife API',storage:'mongodb'});}
+      if(['/health','/api/health'].includes(pathname)&&method==='GET'){const result=await database.health(),healthy=result?.ok===true;return json(res,healthy?200:503,{ok:healthy,service:'AbujaLife API',storage:'mongodb',database:healthy?'connected':'disconnected'});}
       if(pathname==='/api/payments/webhook'&&method==='POST'){rateLimit(req,'webhook',120);return json(res,200,await payments.handleWebhook(await rawBody(req),req.headers['flutterwave-signature']));}
       fail(['GET','POST'].includes(method),'Method is not permitted',405);
       if(method==='POST'){fail((req.headers['content-type']||'').toLowerCase().startsWith('application/json'),'Send JSON for this action',415);if(req.headers.cookie&&!req.headers.authorization)fail(origin&&allowedOrigins.has(origin),'This action must originate from AbujaLife',403,'cross_origin');if(req.headers['sec-fetch-site']==='cross-site')fail(origin&&allowedOrigins.has(origin),'Open AbujaLife to perform this action',403,'cross_origin');}
@@ -202,7 +202,7 @@ export function createProductionServer({store,social,directory,presence,admin,pa
         if(pathname==='/api/moderation/report'&&method==='POST')return json(res,201,(await store.report(id,body)));
         if(pathname==='/api/notifications/read'&&method==='POST')return json(res,200,(await store.readNotifications(id,body.id)));
         if(pathname==='/api/invitations'&&method==='POST')return json(res,201,(await store.invite(id,body)));
-        if(pathname==='/api/invitations/respond'&&method==='POST')return json(res,200,(await store.respondInvite(id,body.id,body.accept===true)));
+        if(pathname==='/api/invitations/respond'&&method==='POST'){const oldZone=await store.zone(id);const result=await store.respondInvite(id,body.id,body.accept===true);if(result.joined)safeTask(broadcastPresence(id,oldZone));return json(res,200,result);}
         if(pathname==='/api/events'&&method==='POST')return json(res,201,(await store.createEvent(id,body)));
         const eventRoute=pathname.match(/^\/api\/events\/([^/]+)\/rsvp$/);if(eventRoute&&method==='POST')return json(res,200,(await store.rsvp(id,eventRoute[1],body.attending!==false)));
         return json(res,404,{ok:false,error:'Not found',code:'not_found'});
@@ -215,8 +215,9 @@ export function createProductionServer({store,social,directory,presence,admin,pa
     }
   });
   let heartbeatRunning=false;
-  const heartbeat=setInterval(()=>safeTask((async()=>{if(heartbeatRunning||closed)return;heartbeatRunning=true;try{for(const[res,client]of clients){if(!(await store.session(client.token))||await admin.isSuspended(client.id)){res.end();continue;}lastSeen.set(client.id,Date.now());if(presence)await presence.touch(client.id,{connectionId:client.connectionId});res.write(': heartbeat\n\n');}for(const[id,time]of lastSeen)if(Date.now()-time>45000){lastSeen.delete(id);await broadcastPresence(id);}}finally{heartbeatRunning=false;}})()),20000);heartbeat.unref();
-  server.requestTimeout=30000;server.headersTimeout=15000;server.keepAliveTimeout=5000;
+  const runPool=async(items,limit,fn)=>{let cursor=0;const workers=Array.from({length:Math.min(limit,items.length)},async()=>{while(cursor<items.length){const item=items[cursor++];await fn(item);}});await Promise.all(workers);};
+  const heartbeat=setInterval(()=>safeTask((async()=>{if(heartbeatRunning||closed)return;heartbeatRunning=true;try{const entries=[...clients.entries()];for(const [res] of entries){try{res.write(': heartbeat\n\n');}catch{}}await runPool(entries,6,async([res,client])=>{try{const now=Date.now();if(!client.sessionCheckedAt||now-client.sessionCheckedAt>60000){if(!(await store.session(client.token))||await admin.isSuspended(client.id)){res.end();return;}client.sessionCheckedAt=now;}lastSeen.set(client.id,now);if(presence)await presence.touch(client.id,{connectionId:client.connectionId});}catch{}});for(const[id,time]of lastSeen)if(Date.now()-time>45000){lastSeen.delete(id);await broadcastPresence(id);}}finally{heartbeatRunning=false;}})()),20000);heartbeat.unref();
+  server.requestTimeout=60000;server.headersTimeout=65000;server.keepAliveTimeout=10000;
   server.store=store;server.admin=admin;server.social=social;server.payments=payments;
   server.closeRealtime=()=>{closed=true;clearInterval(heartbeat);for(const res of clients.keys())res.end();};
   server.on('close',server.closeRealtime);return server;

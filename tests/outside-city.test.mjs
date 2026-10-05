@@ -12,6 +12,14 @@ test('Outside includes every authored district and venue once with unique scener
   assert.equal(new Set([...layout.districts,...layout.venues].map(p=>p.key)).size,143);
   assert.equal(new Set(layout.districts.map(p=>`${p.x},${p.z}`)).size,123);
   for(const place of [...layout.districts,...layout.venues]){assert.ok(Number.isFinite(place.x)&&Number.isFinite(place.z));assert.ok(Math.abs(place.x)<layout.width/2);assert.ok(Math.abs(place.z)<layout.depth/2);}
+  assert.ok(layout.adPlots.length>40);
+  assert.equal(layout.adPlots.filter(plot=>plot.id.startsWith('plot-')).length,40);
+  const city=layout.width/2, depth=layout.depth/2;
+  for(const plot of layout.adPlots){
+    assert.ok(Math.abs(plot.x)>city+36||Math.abs(plot.z)>depth+36, plot.id);
+    assert.ok(plot.x>=layout.bounds.minX&&plot.x<=layout.bounds.maxX&&plot.z>=layout.bounds.minZ&&plot.z<=layout.bounds.maxZ);
+  }
+  assert.equal(new Set(layout.adPlots.map(plot=>plot.id)).size,layout.adPlots.length);
 });
 
 test('restricted destinations preserve their authored district associations',()=>{

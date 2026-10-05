@@ -22,6 +22,8 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Repair temporary patch quoting
         run: python3 scripts/fix-live-city-script.py
+      - name: Repair fast startup patch target
+        run: python3 scripts/fix-live-city-server-script.py
       - name: Validate integration patch syntax
         run: node --check scripts/finish-live-city-integration.mjs
       - name: Apply reviewed integration patch

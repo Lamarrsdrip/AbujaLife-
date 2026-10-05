@@ -20,11 +20,15 @@ function geometricSignature(model) {
   return createHash('sha256').update(points.sort().join(';')).digest('hex');
 }
 
-test('new named cars enter the same authoritative catalogue without changing existing cars or colours',()=>{
+test('new named cars keep their authored models while the playable catalogue uses the 10x economy price',()=>{
   const legacy=[['used-hatchback',28000],['starter-hatchback',95000],['compact-car',240000],['city-sedan',380000],['premium-suv',890000],['mercedes-c-class',520000],['bmw-x5',1150000],['mercedes-g63',1650000]];
   for(const[id,price]of legacy)assert.equal(vehicleFor(id).price,price);
   assert.equal(new Set(VEHICLE_CATALOG.map(i=>i.id)).size,VEHICLE_CATALOG.length);
-  for(const car of models){assert.ok(car);assert.equal(catalog.find(i=>i.id===car.id),car);assert.equal(car.category,'vehicle');assert.ok(Number.isSafeInteger(car.price)&&car.price>0);assert.ok(car.dimensions.wheelbaseMm<car.dimensions.lengthMm);assert.deepEqual(car.availableColors,VEHICLE_COLORS.map(c=>c.id));assert.ok(car.availableColors.includes(car.defaultColor));assert.match(car.description,/virtual/i);assert.match(car.description,/approximation/i);for(const sections of[car.renderShape.body,car.renderShape.cabin])for(const section of sections)assert.ok(section[1]>section[2],car.id+' positive panel thickness');}
+  for(const car of models){
+    assert.ok(car);
+    const listed=catalog.find(i=>i.id===car.id);assert.ok(listed);assert.notEqual(listed,car);assert.equal(listed.price,car.price*10);
+    assert.equal(car.category,'vehicle');assert.ok(Number.isSafeInteger(car.price)&&car.price>0);assert.ok(car.dimensions.wheelbaseMm<car.dimensions.lengthMm);assert.deepEqual(car.availableColors,VEHICLE_COLORS.map(c=>c.id));assert.ok(car.availableColors.includes(car.defaultColor));assert.match(car.description,/virtual/i);assert.match(car.description,/approximation/i);for(const sections of[car.renderShape.body,car.renderShape.cabin])for(const section of sections)assert.ok(section[1]>section[2],car.id+' positive panel thickness');
+  }
   assert.deepEqual(new Set(models.map(i=>i.brand)),new Set(['Ferrari','Lamborghini','Bugatti','Porsche']));
 });
 

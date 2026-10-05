@@ -77,7 +77,7 @@ test('transfers reject forged amounts, absent or blocked recipients and insuffic
 });
 
 test('branded vehicles preserve existing prices, validate chosen paint and retain owned colours after restart',async t=>{
-  const f=await fixture(t);f.store.topup(f.ada,{amount:2000000,idempotencyKey:key()});
+  const f=await fixture(t);f.store.topup(f.ada,{amount:10000000,idempotencyKey:key()});
   assert.deepEqual(VEHICLE_CATALOG.slice(0,5).map(item=>item.price),[28000,95000,240000,380000,890000]);
   assert.equal(catalog.find(item=>item.id==='used-hatchback').brand,'Toyota');
   assert.ok(VEHICLE_CATALOG.some(item=>item.brand==='Mercedes-AMG'&&item.bodyStyle==='offroad'));
@@ -175,7 +175,7 @@ test('purchased home upgrades improve real rest and relaxation, lower bills and 
   assert.throws(()=>f.store.action(f.bello,'place-furniture',{itemId:'king-bed',x:.5,y:.5}),/Buy this furniture/);
   const start=f.store.profile(f.ada).wallet;
   for(const item of HOME_UPGRADES)f.store.action(f.ada,'purchase',{itemId:item.id});
-  assert.equal(f.store.profile(f.ada).wallet,start-HOME_UPGRADES.reduce((sum,item)=>sum+item.price,0));
+  const playableUpgradeCost=HOME_UPGRADES.reduce((sum,item)=>sum+catalog.find(listed=>listed.id===item.id).price,0);assert.equal(f.store.profile(f.ada).wallet,start-playableUpgradeCost);
   f.store.action(f.ada,'place-furniture',{itemId:'king-bed',x:.4,y:.6,rotation:90});
   f.store.action(f.ada,'take-job',{jobId:'restaurant-host'});f.store.action(f.ada,'leave-home');
   assert.throws(()=>f.store.action(f.ada,'place-furniture',{itemId:'portable-ac',x:.5,y:.5}),/Go home/);

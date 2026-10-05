@@ -26,7 +26,7 @@ async function fixture(t,branch=1,index=0) {
 test('new Lapo residents start bare and Nepo residents own only moderate furnishings',async t=>{
   for(const [branch,originId] of ['nepo','lapo'].entries()){
     const f=await fixture(t,branch),p=f.store.profile(f.id),nepo=originId==='nepo';
-    assert.equal(p.origin.id,originId);assert.equal(p.wallet,nepo?1000000:100000);
+    assert.equal(p.origin.id,originId);assert.equal(p.wallet,nepo?100000000:10000000);
     assert.equal(p.home.furnishingPreset,nepo?'nepo-furnished':'lapo-basic');assert.equal(p.home.starterVersion,1);
     assert.deepEqual(p.inventory,nepo?gifts:[]);assert.deepEqual(p.furnitureLayout,{});assert.deepEqual(p.storedFurniture,[]);
     assert.ok(!p.inventory.includes('king-bed'));assert.ok(!p.inventory.includes('premium-sofa'));
@@ -48,10 +48,10 @@ test('Lapo furnishing progresses through actual purchases and saved placements',
   const f=await fixture(t),before=f.store.profile(f.id);
   assert.throws(()=>f.store.action(f.id,'place-furniture',{itemId:'plant',x:.4,y:.5}),/Buy this furniture/);
   const bought=f.store.action(f.id,'purchase',{itemId:'plant'}).profile;
-  assert.equal(bought.wallet,before.wallet-2300);assert.deepEqual(bought.inventory,['plant']);
+  assert.equal(bought.wallet,before.wallet-catalog.find(item=>item.id==='plant').price);assert.deepEqual(bought.inventory,['plant']);
   const placed=f.store.action(f.id,'place-furniture',{itemId:'plant',x:.4,y:.5,rotation:0}).profile;
   f.reopen();assert.deepEqual(f.store.profile(f.id).inventory,['plant']);assert.deepEqual(f.store.profile(f.id).furnitureLayout,placed.furnitureLayout);
-  assert.equal(f.store.profile(f.id).home.furnishingPreset,'lapo-basic');assert.equal(f.store.profile(f.id).wallet,before.wallet-2300);
+  assert.equal(f.store.profile(f.id).home.furnishingPreset,'lapo-basic');assert.equal(f.store.profile(f.id).wallet,before.wallet-catalog.find(item=>item.id==='plant').price);
 });
 
 test('moderate Nepo gifts remain owned and stored gifts are not reseeded on restart',async t=>{
@@ -180,7 +180,7 @@ test('the actual browser adapter matches server fresh-home seeds and preserves p
     assert.deepEqual(browser.inventory,server.inventory);
     await adapter.request('/api/action',{action:'purchase',payload:{itemId:'plant'}});
     const reloaded=preview(1-branch,0,adapter.storage),saved=(await reloaded.request('/api/bootstrap')).profile;
-    assert.deepEqual(saved.inventory,[...server.inventory,'plant']);assert.equal(saved.wallet,server.wallet-2300);assert.equal(reloaded.randomCalls,0);
+    assert.deepEqual(saved.inventory,[...server.inventory,'plant']);assert.equal(saved.wallet,server.wallet-catalog.find(item=>item.id==='plant').price);assert.equal(reloaded.randomCalls,0);
   }
 });
 

@@ -25,13 +25,13 @@ const place=(f,itemId,x=.4,y=.5,extra={})=>f.store.action(f.id,'place-furniture'
 integration('Mongo concurrent furniture purchase grants one real owned stored item and one immutable debit',async t=>{
   const f=await fixture(t),payload={itemId:'coffee-table',price:0,verified:true,idempotencyKey:key()};
   const bought=await Promise.all(Array.from({length:6},()=>f.store.action(f.id,'purchase',payload)));
-  assert.ok(bought.every(result=>result.profile.wallet===92000));
+  assert.ok(bought.every(result=>result.profile.wallet===9920000));
   const p=await f.store.profile(f.id);assert.deepEqual(p.inventory,['coffee-table']);assert.deepEqual(p.storedFurniture,['coffee-table']);
   assert.equal(await f.connection.db.collection('inventory').countDocuments({residentId:f.id,itemId:'coffee-table'}),1);
-  assert.equal(await f.connection.db.collection('ledger').countDocuments({residentId:f.id,amount:-8000}),1);
+  assert.equal(await f.connection.db.collection('ledger').countDocuments({residentId:f.id,amount:-80000}),1);
   assert.equal(buildInterior({profile:p}).furniturePlacements.length,0);
   const secondConnection=await connectMongo({uri,database,production:true});t.after(()=>secondConnection.close());
-  const restarted=new MongoGameStore({...secondConnection});const replay=await restarted.action(f.id,'purchase',payload);assert.equal(replay.replayed,true);assert.equal(replay.profile.wallet,92000);
+  const restarted=new MongoGameStore({...secondConnection});const replay=await restarted.action(f.id,'purchase',payload);assert.equal(replay.replayed,true);assert.equal(replay.profile.wallet,9920000);
 });
 
 integration('Mongo enforces owned-home geometry and persists exact surface layouts across separate backend connections',async t=>{
@@ -40,7 +40,7 @@ integration('Mongo enforces owned-home geometry and persists exact surface layou
   await assert.rejects(place(f,'plant'),error=>error.code==='furniture_object_overlap');
   await assert.rejects(place(f,'table-lamp',.4,.5,{supportId:'coffee-table',propertyId:'forged-home'}),error=>error.code==='furniture_wrong_home');
   await assert.rejects(f.store.action(f.guestId,'place-furniture',{itemId:'coffee-table',x:.4,y:.5,ownerId:f.id,inventory:['coffee-table']}),/Buy this furniture/);
-  assert.deepEqual(await f.store.profile(f.id),before);assert.equal((await f.store.profile(f.guestId)).wallet,100000);
+  assert.deepEqual(await f.store.profile(f.id),before);assert.equal((await f.store.profile(f.guestId)).wallet,10000000);
   const result=await place(f,'table-lamp',.4,.5,{supportId:'coffee-table',elevation:90000});
   await place(f,'coffee-table',.6,.6,{rotation:90});const p=await f.store.profile(f.id);
   assert.equal(p.furnitureLayout['table-lamp'].propertyId,p.home.propertyId);assert.equal(p.furnitureLayout['table-lamp'].supportId,'coffee-table');assert.equal(p.furnitureLayout['table-lamp'].x,.6);assert.equal(p.furnitureLayout['table-lamp'].rotation,90);
@@ -55,7 +55,7 @@ integration('Mongo storage and system resale keep supported items owned and neve
   const f=await fixture(t);await purchase(f,'coffee-table');await purchase(f,'ceramic-vase');await place(f,'coffee-table');await place(f,'ceramic-vase',.4,.5,{supportId:'coffee-table'});
   const stored=await f.store.action(f.id,'store-furniture',{itemId:'coffee-table'});assert.deepEqual(stored.profile.storedFurniture.sort(),['ceramic-vase','coffee-table']);assert.deepEqual(stored.profile.furnitureLayout,{});
   await place(f,'coffee-table');await place(f,'ceramic-vase',.4,.5,{supportId:'coffee-table'});const before=await f.store.profile(f.id),payload={itemId:'coffee-table',amount:999999999,idempotencyKey:key()};
-  const sold=await f.store.action(f.id,'sell-item',payload);assert.equal(sold.profile.wallet,before.wallet+4000);assert.deepEqual(sold.profile.inventory,['ceramic-vase']);assert.deepEqual(sold.profile.storedFurniture,['ceramic-vase']);assert.deepEqual(sold.profile.furnitureLayout,{});
+  const sold=await f.store.action(f.id,'sell-item',payload);assert.equal(sold.profile.wallet,before.wallet+40000);assert.deepEqual(sold.profile.inventory,['ceramic-vase']);assert.deepEqual(sold.profile.storedFurniture,['ceramic-vase']);assert.deepEqual(sold.profile.furnitureLayout,{});
   const replay=await new MongoGameStore({...f.connection}).action(f.id,'sell-item',payload);assert.equal(replay.replayed,true);assert.equal(replay.profile.wallet,sold.profile.wallet);
-  assert.equal(await f.connection.db.collection('ledger').countDocuments({residentId:f.id,amount:4000}),1);assert.equal(await f.connection.db.collection('inventory').countDocuments({residentId:f.id,itemId:'ceramic-vase'}),1);
+  assert.equal(await f.connection.db.collection('ledger').countDocuments({residentId:f.id,amount:40000}),1);assert.equal(await f.connection.db.collection('inventory').countDocuments({residentId:f.id,itemId:'ceramic-vase'}),1);
 });

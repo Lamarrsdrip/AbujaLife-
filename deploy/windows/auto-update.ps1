@@ -23,8 +23,8 @@ try {
     if ($current -and [string]$current.revision -eq $sha) { exit 0 }
 
     $checks = Invoke-RestMethod -Uri "https://api.github.com/repos/Lamarrsdrip/AbujaLife-/commits/$sha/check-runs" -Headers $headers -Method Get
-    $required = @($checks.check_runs | Where-Object { $_.name -in @('AbujaLife CI', 'AbujaLife frontend deploy') })
-    if ($required.Count -lt 2 -or @($required | Where-Object { $_.status -ne 'completed' -or $_.conclusion -ne 'success' }).Count) {
+    $required = @($checks.check_runs | Where-Object { $_.name -in @('qa', 'windows', 'build-and-publish') })
+    if ($required.Count -lt 3 -or @($required | Where-Object { $_.status -ne 'completed' -or $_.conclusion -ne 'success' }).Count) {
         Write-State @{ status = 'waiting-for-ci'; revision = $sha; checkedAt = (Get-Date).ToUniversalTime().ToString('o') }
         exit 0
     }

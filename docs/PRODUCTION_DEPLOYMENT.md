@@ -75,7 +75,8 @@ connected game, adds the release manifest and force-updates the generated
 that branch and publishes it to the AbujaLife-specific `public_html`. The VPS
 task `AbujaLife-AutoDeploy` checks the public GitHub check-runs API every five
 minutes, waits for both AbujaLife CI and frontend deployment to be successful,
-then clones that exact `main` revision and invokes the same candidate-based
+then requires the `qa`, `windows` and `build-and-publish` check-runs to be
+successful, clones that exact `main` revision and invokes the same candidate-based
 `deploy.ps1` promotion. A failed build, check or health test leaves the current
 release running. This is the normal production path; the ZIP commands above
 remain private release/debug tooling and recovery fallback only.

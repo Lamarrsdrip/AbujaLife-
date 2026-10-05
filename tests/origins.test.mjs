@@ -80,6 +80,29 @@ test('loans require versioned consent, calculate fees on the server and replay o
   f.advance(LOAN_META.termMs); assert.equal(f.store.wallet(f.id).loans[0].overdue, true); assert.equal(f.store.wallet(f.id).loans[0].outstanding, 210000);
 });
 
+test('game borrowing caps new principal at ₦10m per Abuja day, caps total principal at ₦100m, and allows redraw after half repayment', async t => {
+  const f=await fixture(t),borrow=(amount,key)=>f.store.action(f.id,'borrow-loan',{amount,consent:true,consentVersion:LOAN_META.consentVersion,idempotencyKey:key});
+  assert.equal(LOAN_META.dailyPrincipalCap,10_000_000);assert.equal(LOAN_META.maxOutstandingPrincipal,100_000_000);
+  rejects(()=>borrow(10_000_001,operationKey()),'daily_loan_limit');
+  const first=borrow(10_000_000,operationKey()).loan;
+  f.store.action(f.id,'repay-loan',{loanId:first.id,amount:4_999_999,idempotencyKey:operationKey()});
+  rejects(()=>borrow(1,operationKey()),'active_loan');
+  f.store.action(f.id,'repay-loan',{loanId:first.id,amount:1,idempotencyKey:operationKey()});
+  f.advance(16*60*60*1000);
+  const redraw=borrow(10_000_000,operationKey()).loan;
+  assert.equal(redraw.principal,10_000_000);
+  f.store.action(f.id,'repay-loan',{loanId:redraw.id,amount:5_000_000,idempotencyKey:operationKey()});
+  rejects(()=>borrow(1,operationKey()),'daily_loan_limit');
+});
+
+test('a valid resident invite creates an accepted friendship on signup; unknown or self referrals do nothing', async t => {
+  const f=await fixture(t),friend=(await f.store.register({username:'referral_friend',password:'a-test-password'})).residentId;
+  const referred=(await f.store.register({username:'referral_signup',password:'a-test-password',referrerId:friend})).residentId;
+  assert.ok(f.store.friendIds(friend).includes(referred));assert.ok(f.store.friendIds(referred).includes(friend));
+  const ordinary=(await f.store.register({username:'referral_unknown',password:'a-test-password',referrerId:'missing-resident'})).residentId;
+  assert.deepEqual(f.store.friendIds(ordinary),[]);
+});
+
 test('partial loan repayments remain exact, reject overpayments atomically, and allow a new loan once settled', async t => {
   const f = await fixture(t);
   const loan = f.store.action(f.id, 'borrow-loan', { amount: 200000, consent: true, consentVersion: LOAN_META.consentVersion, idempotencyKey: operationKey() }).loan;

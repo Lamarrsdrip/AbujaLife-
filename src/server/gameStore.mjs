@@ -67,12 +67,13 @@ export class GameStore {
   save(profile){const origin=this.get('SELECT origin FROM resident_origins WHERE resident_id=?',profile.id);if(origin)profile.origin=JSON.parse(origin.origin);this.run('UPDATE residents SET profile=? WHERE id=?',JSON.stringify(profile),profile.id);return structuredClone(profile);}
   propertiesFor(id){const p=typeof id==='string'?this.profile(id):id;return p?.origin?.residence?[...properties,p.origin.residence]:[...properties];}
   propertyFor(profile,propertyId=profile.home.propertyId){return this.propertiesFor(profile).find(item=>item.id===propertyId);}
-  async register({username,displayName,password,appearance}) {
+  async register({username,displayName,password,appearance,referrerId}) {
     username=clean(username,24).toLowerCase();displayName=clean(displayName,40)||username;check(/^[a-z0-9_]{3,24}$/.test(username),'Use 3–24 letters, numbers or underscores for your username');check(typeof password==='string'&&password.length>=8&&password.length<=128,'Choose a password of 8–128 characters');check(!this.get('SELECT id FROM residents WHERE username=?',username),'That username is already taken',409);
+    referrerId=/^[A-Za-z0-9:_-]{1,80}$/.test(String(referrerId||''))?String(referrerId):null;
     const salt=crypto.randomBytes(16).toString('hex');const hash=(await scrypt(password,salt,64)).toString('hex');const id=uid(),timestamp=this.clock();
     const origin=createOrigin({residentId:id,now:timestamp,randomInt:this.originRandomInt,properties,atlas:ABUJA_ATLAS}),seed=starterHomeSeed(origin),home={...originHome(origin),...seed.homeStyle};
     const profile={id,username,displayName,origin,appearance:updateAppearance(variedAppearance({presentation:appearanceOptions.presentation.includes(appearance?.presentation)?appearance.presentation:'neutral',randomInt:max=>crypto.randomInt(max)}),appearance),wallet:origin.startingBalance,energy:82,hunger:72,hygiene:88,social:58,fun:64,stress:12,mood:76,reputation:0,district:home.district,location:{kind:'home',district:home.district,venue:'home'},home,job:null,careerLevel:1,skills:{},inventory:seed.inventory,ownedProperties:origin.giftedHome?[home.propertyId]:[],propertyInvestments:{},vehicleColors:{},gambleHistory:[],lastGambleRound:null,loans:[],workDays:{},furnitureLayout:seed.furnitureLayout,storedFurniture:seed.storedFurniture,drivingVehicle:null,onboardingComplete:false,lifeGoal:'explore',settings:{presenceVisible:true,allowInvites:true,soundEnabled:true},activeTrip:null,activeShift:null,completedShifts:0,nextShiftAt:0,lastActionAt:timestamp,billsPaidAt:timestamp,rentPaidAt:timestamp,createdAt:timestamp};
-    try{this.transaction(()=>{this.run('INSERT INTO residents VALUES(?,?,?,?,?)',id,username,`${salt}:${hash}`,JSON.stringify(profile),timestamp);this.run('INSERT INTO resident_origins VALUES(?,?,?)',id,JSON.stringify(origin),timestamp);this.run('INSERT INTO ledger VALUES(?,?,?,?,?)',uid(),id,origin.startingBalance,'Resident starting balance',timestamp);});}catch(error){if(error.message.includes('UNIQUE'))throw new GameError('That username is already taken',409);throw error;}
+    try{this.transaction(()=>{this.run('INSERT INTO residents VALUES(?,?,?,?,?)',id,username,`${salt}:${hash}`,JSON.stringify(profile),timestamp);this.run('INSERT INTO resident_origins VALUES(?,?,?)',id,JSON.stringify(origin),timestamp);this.run('INSERT INTO ledger VALUES(?,?,?,?,?)',uid(),id,origin.startingBalance,'Resident starting balance',timestamp);if(referrerId&&referrerId!==id&&this.get('SELECT id FROM residents WHERE id=?',referrerId))this.run("INSERT OR IGNORE INTO friendship VALUES(?,?,?,'accepted',?)",uid(),referrerId,id,timestamp);});}catch(error){if(error.message.includes('UNIQUE'))throw new GameError('That username is already taken',409);throw error;}
     this.notify(id,'welcome','Welcome home',`Your ${home.name} is ready. Settle in, then explore your neighbourhood.`,'home');return this.createSession(id);
   }
   async login({username,password}) {
@@ -227,7 +228,14 @@ export class GameStore {
       check(payload.consent===true&&payload.consentVersion===LOAN_META.consentVersion,'Read and accept the game loan terms before borrowing',400,'loan_consent_required');
       let quote;try{quote=loanQuote(amount);}catch(error){throw new GameError(error.message,409,'numeric_limit');}
       return this.economyOperation(id,action,payload,{amount,consent:true,consentVersion:LOAN_META.consentVersion},(p,timestamp)=>{
-        check(!p.loans.some(loan=>loan.outstanding>0),'Repay your current game loan before borrowing again',409,'active_loan');
+        const active=p.loans.find(loan=>loan.outstanding>0);
+        if(active)check(active.repaid*100>=active.principal*LOAN_META.redrawAfterRepaymentPercent,'Repay at least 50% of your current game loan before requesting more',409,'active_loan');
+        check(amount<=LOAN_META.maxOutstandingPrincipal,'The largest game loan is ₦100m',400,'loan_limit');
+        const day=abujaTime(timestamp).dateKey;
+        const borrowedToday=p.loans.filter(loan=>abujaTime(loan.borrowedAt).dateKey===day).reduce((sum,loan)=>sum+loan.principal,0);
+        check(borrowedToday+amount<=LOAN_META.dailyPrincipalCap,'Your new borrowing is capped at ₦10m per day',409,'daily_loan_limit');
+        const principalOutstanding=p.loans.reduce((sum,loan)=>sum+Math.max(0,loan.principal-Math.min(loan.principal,loan.repaid)),0);
+        check(principalOutstanding+amount<=LOAN_META.maxOutstandingPrincipal,'Your total outstanding game loans cannot exceed ₦100m',409,'loan_limit');
         const loan={id:uid(),lenderId:LOAN_META.id,...quote,outstanding:quote.totalRepayment,repaid:0,borrowedAt:timestamp,dueAt:timestamp+LOAN_META.termMs,consentVersion:LOAN_META.consentVersion,consentedAt:timestamp,virtual:true};
         p.wallet+=amount;p.loans=[loan,...p.loans.filter(item=>item.outstanding===0).slice(0,49)];
         return{loan,loans:loanView(p,timestamp),ledgerReason:'Game loan · borrowed principal'};

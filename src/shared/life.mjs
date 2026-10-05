@@ -70,7 +70,8 @@ export const DICE_META = {
 export const LOAN_META = {
   id: 'lapo-style', name: 'LAPO-style game loan', virtual: true, optional: true,
   consentVersion: 'game-loan-v1', feeBasisPoints: 500, termDays: 28, termMs: 28 * 86400000,
-  description: 'Optional fictional game borrowing: a one-time 5% fee, due in 28 real days. Repay any amount early; fees do not compound.',
+  dailyPrincipalCap: 10_000_000, maxOutstandingPrincipal: 100_000_000, redrawAfterRepaymentPercent: 50,
+  description: 'Optional fictional game borrowing: up to ₦10m of new principal per real day, with ₦100m total outstanding. Repay at least 50% before requesting another advance; a one-time 5% fee is due in 28 real days.',
   affiliation: 'This simulated game lender has no affiliation with LAPO Microfinance Bank.',
 };
 export function loanQuote(amount) {

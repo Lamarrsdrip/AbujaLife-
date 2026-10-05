@@ -96,6 +96,8 @@ export class MongoGameStore {
       for(const [name,value] of [['appearances',p.appearance],['needs',pick(p,needsKeys)],['progression',pick(p,progressionKeys)],['player_state',pick(p,stateKeys)],['homes',{...p.home,furnitureLayout:p.furnitureLayout,storedFurniture:p.storedFurniture,billsPaidAt:timestamp,rentPaidAt:timestamp}],['origins',{origin}],['wallets',{balance:p.wallet,version:0}]])await this.collection(name).insertOne({_id:id,residentId:id,...value},{session});
       for(const itemId of p.inventory){const item=catalog.find(item=>item.id===itemId);await this.collection('inventory').insertOne({_id:`${id}:${itemId}`,residentId:id,itemId,category:item.category,acquiredAt:timestamp},{session});}
       for(const propertyId of p.ownedProperties)await this.collection('properties').insertOne({_id:`${id}:${propertyId}`,residentId:id,propertyId,owned:true},{session});
+      const referrerId=/^[A-Za-z0-9:_-]{1,80}$/.test(String(body.referrerId||''))?String(body.referrerId):null;
+      if(referrerId&&referrerId!==id&&await this.collection('residents').findOne({id:referrerId},{session}))await this.collection('friendships').updateOne({pair:[referrerId,id].sort().join(':')},{$set:{sender:referrerId,recipient:id,status:'accepted',createdAt:timestamp},$setOnInsert:{id:uid(),pair:[referrerId,id].sort().join(':')}},{upsert:true,session});
       await this.appendLedger(id,p.wallet,'Resident starting balance',timestamp,`registration:${id}`,0,session,'starting_balance');
       return this.auth.createSession(id,{session});
     });}catch(error){if(error.code===11000)throw new GameError('That username or email is already taken',409,'account_exists');throw error;}
@@ -229,7 +231,14 @@ export class MongoGameStore {
       check(payload.consent===true&&payload.consentVersion===LOAN_META.consentVersion,'Read and accept the game loan terms before borrowing',400,'loan_consent_required');
       let quote;try{quote=loanQuote(amount);}catch(error){throw new GameError(error.message,409,'numeric_limit');}
       return this.economyOperation(id,action,payload,{amount,consent:true,consentVersion:LOAN_META.consentVersion},(p,timestamp)=>{
-        check(!p.loans.some(loan=>loan.outstanding>0),'Repay your current game loan before borrowing again',409,'active_loan');
+        const active=p.loans.find(loan=>loan.outstanding>0);
+        if(active)check(active.repaid*100>=active.principal*LOAN_META.redrawAfterRepaymentPercent,'Repay at least 50% of your current game loan before requesting more',409,'active_loan');
+        check(amount<=LOAN_META.maxOutstandingPrincipal,'The largest game loan is ₦100m',400,'loan_limit');
+        const day=abujaTime(timestamp).dateKey;
+        const borrowedToday=p.loans.filter(loan=>abujaTime(loan.borrowedAt).dateKey===day).reduce((sum,loan)=>sum+loan.principal,0);
+        check(borrowedToday+amount<=LOAN_META.dailyPrincipalCap,'Your new borrowing is capped at ₦10m per day',409,'daily_loan_limit');
+        const principalOutstanding=p.loans.reduce((sum,loan)=>sum+Math.max(0,loan.principal-Math.min(loan.principal,loan.repaid)),0);
+        check(principalOutstanding+amount<=LOAN_META.maxOutstandingPrincipal,'Your total outstanding game loans cannot exceed ₦100m',409,'loan_limit');
         const loan={id:uid(),lenderId:LOAN_META.id,...quote,outstanding:quote.totalRepayment,repaid:0,borrowedAt:timestamp,dueAt:timestamp+LOAN_META.termMs,consentVersion:LOAN_META.consentVersion,consentedAt:timestamp,virtual:true};
         p.wallet+=amount;p.loans=[loan,...p.loans.filter(item=>item.outstanding===0).slice(0,49)];
         return{loan,loans:loanView(p,timestamp),ledgerReason:'Game loan · borrowed principal'};

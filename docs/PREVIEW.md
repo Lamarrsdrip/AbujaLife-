@@ -10,7 +10,7 @@ Use the Pro Max-inspired fictional phone for free local game-Naira top-ups and t
 
 Borrowing is optional: the fictional LAPO-style game loan requires consent to a one-time 5% fee, due after 28 real days, with early or partial repayment. It has no affiliation with LAPO Microfinance Bank. Preview loan and dice outcomes are saved locally; the full server validates its own economy operations and random die results.
 
-The phone browser offers official X and TikTok links. These open in your usual browser; official-site access returned proxy CONNECT 403 here, so embedding and live site behaviour are not verified. Xshare captures an actual 3D PNG of your home and saved design, lets you edit the caption and offers native sharing, PNG download or an X text draft. You choose whether to publish and attach the downloaded image on X.
+The phone browser offers official X and TikTok links. Xshare captures an actual 3D PNG of your home and saved design, lets you edit the caption, opens the installed X app composer with a resident referral link when available, and uses the native share sheet for WhatsApp Status. A new account created from a resident link is automatically connected to that resident as a friend after server validation.
 
 You can also publish your own photos, posts and 24-hour statuses through the preview's Okrika social screens. They stay on this device, with local likes and comments; other people opening the public link cannot see them. The full server stores and shares actual residents' content and applies blocking, expiry and moderation rules.
 

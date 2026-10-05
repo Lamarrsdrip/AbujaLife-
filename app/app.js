@@ -139,7 +139,7 @@ addEventListener('abujalife:resident-action',async event=>{
   if(residentAction==='profile'){residentSheet(resident);return;}
   if(residentAction==='message'){const result=await api('/api/conversations',{method:'POST',body:{residentId:resident.id}});phone.open('messages',{conversationId:result.conversation.id});return;}
   if(residentAction==='friend'){await api('/api/friends/request',{method:'POST',body:{residentId:resident.id}});toast('Friend request sent.');return;}
-  if(residentAction==='visit'){await api('/api/home-visits/requests',{method:'POST',body:{residentId:resident.id}});toast('Visit request sent.');return;}
+  if(residentAction==='visit'){await api('/api/home/visits/request',{method:'POST',body:{residentId:resident.id,idempotencyKey:crypto.randomUUID()}});toast('Visit request sent.');return;}
  }catch(error){toast(error.message);}
 });
 async function action(name,payload={}){

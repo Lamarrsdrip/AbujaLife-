@@ -54,6 +54,13 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
   const shower=new THREE.Group();const dropMaterial=new THREE.MeshStandardMaterial({color:'#b3e3ea',transparent:true,opacity:.7,roughness:.1,emissive:'#5c9aa7',emissiveIntensity:.2});for(let i=0;i<28;i++)ellipsoid(shower,dropMaterial,0,0,0,.7,2.8,.7,6);scene.add(shower);
   const isClub=venue?.kind==='club'||['club','club-cage','magic-city','bear-barn'].includes(venue?.id);
   const indoors=kind==='home'||kind==='visit'||kind==='venue'&&!['park','jabi-lake'].includes(venue?.id);
+  const clubPalette=venue?.id==='club-cage'?['#42ddff','#8e72ff','#ff4d9d','#78f0b0']:venue?.id==='magic-city'?['#ff63ca','#bd8bff','#ffd36c','#70d8ff']:venue?.id==='bear-barn'?['#ffb35d','#d97683','#82a58f','#f0d28e']:['#ff43ad','#5ce2ff','#b27cff','#ffc95f'];
+  const clubColors=clubPalette.map(value=>new THREE.Color(value));
+  const clubLights=[];
+  if(isClub){
+    const lightCount=mobile?2:4;
+    for(let i=0;i<lightCount;i++){const light=new THREE.PointLight(clubPalette[i%clubPalette.length],0,mobile?430:560,2);light.castShadow=false;scene.add(light);clubLights.push(light);}
+  }
   let previousWidth=0,previousHeight=0,lost=false,disposed=false,frames=0,viewWidth=0,viewHeight=0;
   let qualityStart=performance.now(),qualityFrames=0;
   let lastRender=-Infinity,lastShadow=-Infinity,shadowDirty=true,cameraDirty=true,previousCamera=null;
@@ -67,7 +74,9 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
     if(previousCamera&&previousCamera.x===x&&previousCamera.y===y&&previousCamera.width===width&&previousCamera.height===height&&previousCamera.yaw===yaw&&previousCamera.elevation===elevation)return true;
     previousCamera={x,y,width,height,yaw,elevation};cameraDirty=true;return applyWorldCamera(camera,{x,y,width,height,yaw,elevation,oblique:true});
   };
-  const lose=()=>{lost=true;container.removeAttribute('data-character-renderer');container.removeAttribute('data-environment-renderer');};renderer.domElement.addEventListener('webglcontextlost',lose);
+  const lose=event=>{event.preventDefault();lost=true;container.dataset.webglContext='lost';container.removeAttribute('data-character-renderer');container.removeAttribute('data-environment-renderer');};
+  const restore=()=>{if(disposed)return;lost=false;previousWidth=0;previousHeight=0;cameraDirty=true;shadowDirty=true;previousCamera=null;container.dataset.webglContext='restored';container.dataset.characterRenderer='webgl-3d';if(environment)container.dataset.environmentRenderer='webgl-3d';};
+  renderer.domElement.addEventListener('webglcontextlost',lose);renderer.domElement.addEventListener('webglcontextrestored',restore);
   let onlineKey=JSON.stringify(neighbours.map(p=>[p.id,p.appearance]));
   return {
     setCameraViewport: updateCamera,
@@ -113,8 +122,11 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
       if(!dynamic&&!shadowDirty&&now-lastRender<1000/30-1)return;
       lastRender=now;
       const rect=container.getBoundingClientRect();
-      if(!rect.width||!rect.height)return;
-      if(rect.width!==previousWidth||rect.height!==previousHeight){renderer.setSize(rect.width,rect.height,false);previousWidth=rect.width;previousHeight=rect.height;}
+      // iOS can briefly report a zero-sized visual viewport while browser
+      // chrome/standalone UI changes. Never resize the drawing buffer to zero.
+      if(rect.width<2||rect.height<2)return;
+      const renderWidth=Math.round(rect.width),renderHeight=Math.round(rect.height);
+      if(renderWidth!==previousWidth||renderHeight!==previousHeight){renderer.setSize(renderWidth,renderHeight,false);previousWidth=renderWidth;previousHeight=renderHeight;}
       updateCamera({...position,width,height,...orientation});environment?.updateView?.(orientation);
       sun.position.set(position.x-550,1200,position.y/DEPTH+650);sun.target.position.set(position.x,0,position.y/DEPTH);
       const daylight=clock?.sunlight??1,night=clock?.isNight??false,cloud=weather?.condition==='rain'?.72:weather?.condition==='cloudy'?.84:1;
@@ -127,6 +139,18 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
       sun.color.set(indoors?'#ffe7c3':night?'#a6bdea':daylight<.3?'#edbf91':'#fff5e4');rim.intensity=indoors?.68:night?.52:.6;
       litDaylight=daylight;litNight=night;litCloud=cloud;litClub=clubOpen;
       }
+      if(isClub){
+        const partyOn=Boolean(clubOpen),clubTime=Number(time)||0;
+        renderer.toneMappingExposure=partyOn?1.16:1.04;
+        clubLights.forEach((light,i)=>{
+          light.visible=partyOn;if(!partyOn)return;
+          const phase=(clubTime*.34+i*.83)%clubColors.length,index=Math.floor(phase),mix=phase-index;
+          light.color.copy(clubColors[index]).lerp(clubColors[(index+1)%clubColors.length],mix);
+          light.intensity=(mobile?3.2:4.8)*(0.78+Math.sin(clubTime*3.1+i*1.7)*.22);
+          light.position.set(765+Math.sin(clubTime*.72+i*2.05)*430,205+Math.sin(clubTime*1.45+i)*55,(585+Math.cos(clubTime*.88+i*1.31)*285)/DEPTH);
+        });
+        rim.color.set(partyOn?clubPalette[1]:'#ceddec');
+      }else renderer.toneMappingExposure=1.1;
       rain.visible=!indoors&&weather?.condition==='rain';if(rain.visible){for(let i=0;i<180;i++){const j=i*6,rx=position.x+((i*137.51+time*28)%width)-width/2,rz=position.y/DEPTH+((i*89.23)%(height/DEPTH))-height/DEPTH/2,ry=410-(i*61.5+time*330)%410;rainPositions.set([rx,ry,rz,rx-1.3,ry+16,rz],j);}rainGeometry.attributes.position.needsUpdate=true;}
       own.root.visible=!transport;animate(own,{...player,angle,phase,time,moving,activity,scale:1.6});
       npcPositions.forEach((p,i)=>{const club=isClub;npcs[i].root.visible=!club||clubOpen||i===0;animate(npcs[i],{...p,activity:club&&!clubOpen?null:p.activity,time,scale:1.28});});
@@ -162,7 +186,7 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
         if(model?.visible){bounds.makeEmpty();model.traverse(part=>{if(part.isMesh&&!part.userData.excludeFromBounds){if(!part.geometry.boundingBox)part.geometry.computeBoundingBox();bounds.union(partBounds.copy(part.geometry.boundingBox).applyMatrix4(part.matrixWorld));}});let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;for(const x of [bounds.min.x,bounds.max.x])for(const y of [bounds.min.y,bounds.max.y])for(const z of [bounds.min.z,bounds.max.z]){projected.set(x,y,z).project(camera);const sx=rect.left+(projected.x+1)*rect.width/2,sy=rect.top+(1-projected.y)*rect.height/2;minX=Math.min(minX,sx);minY=Math.min(minY,sy);maxX=Math.max(maxX,sx);maxY=Math.max(maxY,sy);}container.dataset.playerModelBounds=JSON.stringify({x:minX,y:minY,width:maxX-minX,height:maxY-minY});}
       }
     },
-    dispose(){if(disposed)return;disposed=true;renderer.domElement.removeEventListener('webglcontextlost',lose);renderer.domElement.remove();container.removeAttribute('data-character-renderer');container.removeAttribute('data-environment-renderer');if(environment){scene.remove(environment.group);environment.dispose();}scene.remove(own.root);own.dispose();for(const rig of [...npcs,...online]){scene.remove(rig.root);rig.dispose();}characterSurfaces.dispose();const geometrySet=new Set(),materialSet=new Set();scene.traverse(o=>{if(o.geometry)geometrySet.add(o.geometry);if(o.material)for(const m of Array.isArray(o.material)?o.material:[o.material])materialSet.add(m);});geometrySet.forEach(g=>g.dispose());materialSet.forEach(m=>m.dispose());sun.shadow.map?.dispose();renderer.dispose();renderer.forceContextLoss();}
+    dispose(){if(disposed)return;disposed=true;renderer.domElement.removeEventListener('webglcontextlost',lose);renderer.domElement.removeEventListener('webglcontextrestored',restore);renderer.domElement.remove();container.removeAttribute('data-character-renderer');container.removeAttribute('data-environment-renderer');if(environment){scene.remove(environment.group);environment.dispose();}scene.remove(own.root);own.dispose();for(const rig of [...npcs,...online]){scene.remove(rig.root);rig.dispose();}characterSurfaces.dispose();const geometrySet=new Set(),materialSet=new Set();scene.traverse(o=>{if(o.geometry)geometrySet.add(o.geometry);if(o.material)for(const m of Array.isArray(o.material)?o.material:[o.material])materialSet.add(m);});geometrySet.forEach(g=>g.dispose());materialSet.forEach(m=>m.dispose());sun.shadow.map?.dispose();renderer.dispose();}
   };
 }
 

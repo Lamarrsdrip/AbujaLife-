@@ -16,6 +16,8 @@
   <meta name="twitter:description" content="Make Abuja home. Create a resident, find your people, and build a life in AbujaLife." />
   <meta name="twitter:image" content="https://abujacity.life/icons/icon-512.png?v=abuja-city-gate-20261005-4" />
   <title>AbujaLife · Your city, your story</title>
+  <link rel="dns-prefetch" href="//api.abujacity.life" />
+  <link rel="preconnect" href="https://api.abujacity.life" crossorigin />
   <link rel="icon" href="/icon.svg?v=abuja-city-gate-20261005-4" type="image/svg+xml" />
   <link rel="manifest" href="/manifest.webmanifest?v=abuja-city-gate-20261005-4" />
   <link rel="apple-touch-icon" sizes="180x180" type="image/png" href="/icons/apple-touch-icon.png?v=abuja-city-gate-20261005-4" />
@@ -36,18 +38,50 @@
   <link rel="stylesheet" href="/game-status-hud.css" />
   <link rel="stylesheet" href="/ads.css" />
   <link rel="stylesheet" href="/integrations.css" />
+  <link rel="stylesheet" href="/jackpot.css" />
   <link rel="stylesheet" href="/furniture-catalogue.css" />
   <link rel="stylesheet" href="/game-kit.css" />
   <link rel="stylesheet" href="/outside-city.css" />
+  <link rel="stylesheet" href="/outside-quick-access.css" />
+  <link rel="stylesheet" href="/living-city.css" />
 </head>
 <body>
   <div id="app" class="app-shell"></div>
   <div id="phone-root"></div>
   <div id="sheet-root"></div>
   <div id="toast" role="status" aria-live="polite"></div>
+  <script>
+    // iOS Safari can strand an async hosted-checkout pre-open on about:blank.
+    // Keep the existing payment API flow, but send that exact pre-open handoff
+    // through the current AbujaLife tab once Flutterwave returns its checkout URL.
+    (() => {
+      const nativeOpen = window.open.bind(window);
+      window.open = (url = '', target = '', features = '') => {
+        if (url === 'about:blank' && target === '_blank') {
+          let closed = false;
+          return {
+            opener: null,
+            get closed() { return closed; },
+            close() { closed = true; },
+            location: {
+              replace(nextUrl) {
+                if (!closed && typeof nextUrl === 'string' && /^https:\/\//i.test(nextUrl)) {
+                  window.location.assign(nextUrl);
+                }
+              }
+            }
+          };
+        }
+        return nativeOpen(url, target, features);
+      };
+    })();
+  </script>
   <script type="module" src="/app.js"></script>
   <script type="module" src="/game-ui-kit.js"></script>
   <script type="module" src="/ads.js"></script>
   <script type="module" src="/integrations.js"></script>
+  <script type="module" src="/jackpot.js"></script>
+  <script type="module" src="/outside-quick-access.js"></script>
+  <script type="module" src="/living-city.js"></script>
 </body>
 </html>

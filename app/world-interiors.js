@@ -95,7 +95,28 @@ function sceneBase(width,height,id,{floor='oak',name='',accent='#e9e6d7'}={}) {
     plant(x,y,scale=1){this.object(x-20*scale,y-22*scale,40*scale,37*scale,group(20*scale,22*scale,plantArt(scale)));},
     rug(x,y,w,h,color='#b1b59a'){floorAreas.push({x,y,w,h,material:'rug',color});art.push(rect(x,y,w,h,color,7)+rect(x+9,y+9,w-18,h-18,`url(#${id}-rug)`,3)+rect(x+8,y+8,w-16,h-16,'none',3,'stroke="#e4d3ac" stroke-width="3" opacity=".65"'));},
     window(x,w=220,view='garden'){art.push(group(x,84,rect(0,0,w,54,`url(#${id}-glass)`,2)+path(`M3 33Q${w/4} 12 ${w/2} 28Q${w*.8} 9 ${w-3} 29V51H3Z`,view==='lake'?'#699a92':'#7c9d74')+line(w/2,0,w/2,54,'#f1ebd5',5)+rect(-5,-5,w+10,64,'none',1,'stroke="#f3eedb" stroke-width="7"')+rect(-8,54,w+16,8,'#b4bba5')));art.push(path(`M${x} 149H${x+w}L${x+w+170} 470H${x+105}Z`,`url(#${id}-light)`));},
-    door(x=width/2,label='OUTSIDE',action='leave-home'){art.push(rect(x-54,height-109,108,24,'#a69773',3)+rect(x-49,height-106,98,15,'#cab68c',2)+rect(x-47,height-158,94,38,'#c4ae80',4)+line(x-38,height-149,x+38,height-149,'#af946a',2)+line(x-38,height-140,x+38,height-140,'#af946a',2)+text(x,height-89,label,10,'#596650','text-anchor="middle" letter-spacing="2"'));this.spawn={x,y:height-170};this.point('exit',x,height-137,'Head outside',action);},
+    door(x=width/2,label='OUTSIDE',action='leave-home'){
+      // The exit is a real, readable piece of the room rather than a tiny
+      // interaction dot. It stays visible in the wide camera view so new
+      // residents can immediately understand where the street is.
+      const sign=label==='OUTSIDE'?'EXIT · HEAD OUTSIDE':label;
+      art.push(`<g class="world-front-door" data-scene-prop="front-door" role="img" aria-label="${esc(sign)}">`+
+        shadow(x-82,height-126,164,43)+
+        rect(x-78,height-132,156,45,'#315943',8,'stroke="#f2e5bd" stroke-width="4"')+
+        rect(x-60,height-239,120,112,'#315943',8,'stroke="#f6e9c0" stroke-width="6"')+
+        rect(x-48,height-226,96,99,'#8fb39a',5)+
+        rect(x-38,height-214,76,39,'#a9c7aa',3,'opacity=".72"')+
+        line(x,height-226,x,height-127,'#577d67',3)+
+        line(x-48,height-177,x+48,height-177,'#577d67',3)+
+        ellipse(x+28,height-178,6,6,'#e8d09a')+
+        rect(x-104,height-288,208,37,'#f2dfaa',9,'stroke="#315943" stroke-width="4"')+
+        text(x,height-264,sign,12,'#315943','text-anchor="middle" font-weight="800" letter-spacing="1.3"')+
+        path(`M${x-19} ${height-111}L${x} ${height-96}L${x+19} ${height-111}`,'none','stroke="#d8ba72" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"')+
+        text(x,height-82,label,10,'#315943','text-anchor="middle" letter-spacing="2" font-weight="800"')+
+      `</g>`);
+      this.spawn={x,y:height-170};
+      this.point('exit',x,height-137,'Head outside',action);
+    },
     finish(){for(const item of [...objects,...(this.furniturePlacements||[])])if(item.itemId){item.surfaceHeight=furnitureSurface(item.itemId)?.height||0;item.elevation||=0;item.propertyId||=this.homePropertyId;}this.art.push(...this.items.sort((a,b)=>a.y-b.y).map(item=>item.art));this.art.push(rect(48,height-83,width-96,14,'#ece5cb',2));return {width,height,floorMaterial:floor,spawn:this.spawn,objects,walls,floorAreas,pedestrians,art:this.art.join(''),obstacles,interactables,title:this.title,subtitle:this.subtitle,furnishingArea:this.furnishingArea,furniturePlacements:this.furniturePlacements||[],storedFurniture:this.storedFurniture||[],homePropertyId:this.homePropertyId};}
   };
   return s;
@@ -655,21 +676,26 @@ function buildVenue(profile,venue,id) {
     const tokyo=raw.id==='club',cage=raw.id==='club-cage',magic=raw.id==='magic-city',bear=raw.id==='bear-barn';
     const title=bear?'BEAR BARN':magic?'MAGIC CITY':cage?'CAGE':'TOKYO';
     const accent=bear?'#8e795c':magic?'#99758f':cage?'#798c98':'#7d8171';
-    s.art.push(rect(63,145,1404,964,bear?`url(#${id}-darkoak)`:'#637779'));
+    s.art.push(rect(63,145,1404,964,bear?`url(#${id}-darkoak)`:'#26353a'));
+    if(!bear){
+      s.art.push(rect(371,393,696,455,accent,18,'opacity=".3"'),rect(395,417,648,8,'#f7d6ff',4,'opacity=".8"'),rect(395,806,648,8,'#a8ecff',4,'opacity=".8"'));
+      for(let x=419;x<=1019;x+=120)s.art.push(line(x,430,x,790,x%240===179?'#ff8fd1':'#85dfff',3,'opacity=".45"'));
+      for(let y=454;y<=766;y+=78)s.art.push(line(410,y,1028,y,y%156===142?'#ccb0ff':'#ffd58a',3,'opacity=".38"'));
+    }
     wallSign(s,485,110,title,bear?'A GOOD EVENING · GOOD COMPANY':magic?'LIVE PERFORMANCE · LOUNGE':cage?'MUSIC · MOVEMENT':'THE LATE LOUNGE');
     if(bear){
       s.floor(63,145,1404,964,'darkoak');s.object(388,244,684,100,counterArt(684,100,'#8d795d'),{kind:'pub-bar'});
       for(const x of [410,594,778,962])s.object(x,404,64,66,chairArt('#967f61'));
       for(const [x,y] of [[199,648],[674,648],[1120,648]])s.object(x,y,185,139,tableArt(137,106));
       s.object(156,930,290,86,sofaArt(290,86,'#957451'));s.object(1080,930,290,86,sofaArt(290,86,'#8b997c'));
-      s.pedestrians.push({x:741,y:208,toX:741,toY:208,stationary:true,activity:'social'},{x:537,y:722,toX:537,toY:722,stationary:true,activity:'social'},{x:1012,y:862,toX:1012,toY:862,stationary:true,activity:'social'});
+      s.pedestrians.push({x:741,y:208,toX:741,toY:208,stationary:true,activity:'social'},{x:537,y:722,toX:537,toY:722,stationary:true,activity:'social'},{x:1012,y:862,toX:1012,toY:862,stationary:true,activity:'social'},{x:823,y:704,toX:823,toY:704,stationary:true,activity:'social'},{x:1164,y:718,toX:1164,toY:718,stationary:true,activity:'dance'},{x:337,y:830,toX:337,toY:830,stationary:true,activity:'social'});
       anchors.push({x:727,y:879},{x:1158,y:438});
     }else{
       s.rug(371,393,696,455,accent);
       if(magic){
         s.object(428,270,650,268,rect(0,0,650,268,'#81667c',17)+rect(12,-20,626,258,'#b68a9d',15),{kind:'performance-stage'});
         s.object(125,643,213,120,tableArt(165,92));s.object(1162,643,213,120,tableArt(165,92));
-        s.pedestrians.push({x:638,y:401,toX:638,toY:401,stationary:true,activity:'dance',elevation:36},{x:868,y:396,toX:868,toY:396,stationary:true,activity:'dance',elevation:36});
+        s.pedestrians.push({x:575,y:401,toX:575,toY:401,stationary:true,activity:'dance',elevation:36},{x:706,y:392,toX:706,toY:392,stationary:true,activity:'dance',elevation:36},{x:837,y:402,toX:837,toY:402,stationary:true,activity:'dance',elevation:36},{x:959,y:391,toX:959,toY:391,stationary:true,activity:'dance',elevation:36});
       }else{
         s.object(477,221,486,97,counterArt(486,97,tokyo?'#666854':'#4d6064'),{kind:'dj-booth'});
         s.pedestrians.push({x:720,y:220,toX:720,toY:220,stationary:true,activity:'dj'});
@@ -678,7 +704,7 @@ function buildVenue(profile,venue,id) {
       for(const x of [355,1104])s.object(x,199,73,135,rect(0,-82,73,210,'#34444a',6)+ellipse(36,-21,23,23,'#566771')+ellipse(36,68,28,28,'#263c42'),{kind:'speaker'});
       s.object(1110,880,264,88,counterArt(264,88));s.object(122,879,270,83,sofaArt(270,83,tokyo?'#b69a72':'#8d7c90'),{kind:tokyo?'premium-sofa':'sofa'});
       if(tokyo){s.object(107,490,230,83,sofaArt(230,83,'#ab9675'),{kind:'premium-sofa'});s.object(1162,490,230,83,sofaArt(230,83,'#ab9675'),{kind:'premium-sofa'});s.label(133,646,'VIP LOUNGE');}
-      s.pedestrians.push({x:510,y:722,toX:510,toY:722,stationary:true,activity:'dance'},{x:908,y:715,toX:908,toY:715,stationary:true,activity:'dance'},{x:740,y:610,toX:740,toY:610,stationary:true,activity:'dance'});
+      s.pedestrians.push({x:470,y:730,toX:470,toY:730,stationary:true,activity:'dance'},{x:585,y:635,toX:585,toY:635,stationary:true,activity:'dance'},{x:700,y:748,toX:700,toY:748,stationary:true,activity:'dance'},{x:817,y:622,toX:817,toY:622,stationary:true,activity:'dance'},{x:934,y:733,toX:934,toY:733,stationary:true,activity:'dance'},{x:611,y:822,toX:611,toY:822,stationary:true,activity:'social'},{x:883,y:824,toX:883,toY:824,stationary:true,activity:'social'});
       anchors.push({x:738,y:905},{x:1233,y:1018});
     }
   } else if(type==='games-lounge') {

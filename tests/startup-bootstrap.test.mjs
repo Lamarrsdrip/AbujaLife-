@@ -30,24 +30,27 @@ test('Mongo startup bootstrap keeps authoritative playable state without running
 });
 
 async function fixture(t){
-  const calls=[],token='a'.repeat(48),state={suspended:false,storageError:false,visitRow:null,guest:false,visitDenied:false,reconcileWait:null,reconcileEntered:null};
+  const calls=[],token='a'.repeat(48),state={suspended:false,storageError:false,visitRow:null,guest:false,visitDenied:false,reconcileWait:null,reconcileEntered:null,broadcastWait:null,broadcastEntered:null,actionDone:false};
   const store={clock:()=>Date.UTC(2026,9,5,10),publicJobs:()=>({}),
     session:async candidate=>{if(state.storageError)throw new Error('Storage unavailable');return candidate===token?'resident':null;},
     register:async body=>{assert.equal(Object.hasOwn(body,'startup'),false);calls.push(['register',body]);return{token,residentId:'resident'};},
     login:async body=>{assert.equal(Object.hasOwn(body,'startup'),false);calls.push(['login',body]);return{token,residentId:'resident'};},
     logout:async()=>{calls.push(['logout']);},
     updateProfile:async(id,body)=>{assert.equal(Object.hasOwn(body,'startup'),false);calls.push(['updateProfile',body]);return{...profile(),onboardingComplete:body.onboardingComplete===true};},
-    friendIds:async()=>[],
+    friendIds:async()=>{state.broadcastEntered?.();if(state.broadcastWait)await state.broadcastWait;return[];},
+    action:async(id,action)=>{assert.equal(action,'leave-home');calls.push(['action']);state.actionDone=true;return{ok:true,profile:{...profile(),location:{kind:'public',district:'garki'}}};},
     bootstrap:async(id,options={})=>{calls.push(['bootstrap',options.startup===true]);const p=profile();if(state.guest)p.location={kind:'visit',ownerId:'owner',visitId:'active-visit'};return{authenticated:true,...(options.startup?{startup:true}:{}),profile:p,properties:[{id:'origin-home'}],workSchedule:{completedToday:1},activeChallenge:{id:'resume-shift'},...Object.fromEntries(socialNames.map(name=>[name,options.startup?[]:[{id:name}]]))};},
-    zone:async()=>{calls.push(['zone']);return'district:garki';}
+    zone:async()=>{calls.push(['zone']);return state.guest?'home:owner':state.actionDone?'district:garki':'home:resident';}
   };
   const social={reconcileVisits:async()=>{calls.push(['reconcile']);state.reconcileEntered?.();if(state.reconcileWait)await state.reconcileWait;},visitState:async()=>{calls.push(['visitState']);return{visit:null,requests:[{id:'request'}],visitors:[]};},
     collection:name=>{assert.equal(name,'home_visit_sessions');return{findOne:async query=>{assert.deepEqual(query,{id:'active-visit',guestId:'resident',ownerId:'owner',endedAt:null});return state.visitRow;}};},
+    leaveVisit:async()=>{assert.equal(state.guest,true);state.guest=false;state.actionDone=true;calls.push(['leaveVisit']);return{ok:true,profile:{...profile(),location:{kind:'public',district:'garki'}},visit:null};},
+    answerVisit:async(id,requestId)=>{if(requestId!=='owned-request')throw new GameError('Visit unavailable',403,'visit_unavailable');calls.push(['answerVisit']);return{ok:true,visit:{guestId:'guest'}};},
     visitView:async(id,row)=>{if(state.visitDenied)throw new GameError('Home visit is unavailable',403,'visit_unavailable');return{id:row.id,ownerHome:{id:'owner',home:{propertyId:'owners-home'},inventory:['sofa'],furnitureLayout:{sofa:{x:.5,y:.5}}}};}
   };
   const admin={isSuspended:async id=>Boolean(id&&state.suspended),status:async()=>({role:null,permissions:[]}),publicSettings:async()=>({registrationOpen:true})};
   const payments={publicConfig:async()=>{calls.push(['payments']);return{enabled:true};}};
-  const server=createProductionServer({store,social,directory:{},admin,payments,database:{health:async()=>true},corsOrigins:['https://game.example'],publicWebUrl:'https://game.example',log:()=>{}});
+  const server=createProductionServer({store,social,directory:{},admin,payments,rewards:{},ads:{},database:{health:async()=>true},corsOrigins:['https://game.example'],publicWebUrl:'https://game.example',log:()=>{}});
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   t.after(async()=>{server.closeRealtime();await new Promise(resolve=>server.close(resolve));});
   const request=async(path,{body,cookie}={})=>{const response=await fetch(`http://127.0.0.1:${server.address().port}${path}`,{method:body?'POST':'GET',headers:{origin:'https://game.example',...(body?{'content-type':'application/json'}:{}),...(cookie?{cookie}: {})},...(body?{body:JSON.stringify(body)}:{})});return{status:response.status,data:await response.json(),cookie:response.headers.get('set-cookie')};};
@@ -123,4 +126,33 @@ test('Home onboarding returns committed profile before presence work while priva
   const pending=f.request('/api/profile',{cookie,body:{startup:true,onboardingComplete:true,settings:{presenceVisible:false}}}).then(result=>{completed=true;return result;});
   await privacyEntered;assert.equal(completed,false,'Privacy changes must finish reconciliation before returning');
   release();assert.equal((await pending).status,200);
+});
+
+test('Committed house exit and visit actions return while presence fan-out waits, retaining reconciliation and authorization',async t=>{
+  const f=await fixture(t),cookie=`abujalife_session=${f.token}`;
+  for(const [path,body] of [
+    ['/api/action',{action:'leave-home',payload:{}}],
+    ['/api/home/visits/leave',{}],
+    ['/api/home/visits/respond',{requestId:'owned-request',accept:true}]
+  ]){
+    if(path.endsWith('/leave'))f.state.guest=true;
+    let release,entered;
+    f.state.broadcastWait=new Promise(resolve=>{release=resolve;});
+    const broadcastEntered=new Promise(resolve=>{entered=resolve;});
+    f.state.broadcastEntered=entered;
+    const before=f.calls.length;
+    try{
+      const result=await Promise.race([f.request(path,{cookie,body}),new Promise((_,reject)=>{const timer=setTimeout(()=>reject(new Error('Committed action waited for presence fan-out')),1000);timer.unref();})]);
+      assert.equal(result.status,200);assert.equal(result.data.ok,true);
+      await broadcastEntered;
+      if(path==='/api/action'){
+        assert.equal(result.data.profile.location.kind,'public');
+        const actionCalls=f.calls.slice(before).filter(row=>['reconcile','action'].includes(row[0])).map(row=>row[0]);
+        assert.deepEqual(actionCalls,['reconcile','action','reconcile']);
+      }
+      if(path.endsWith('/leave'))assert.equal(result.data.profile.location.kind,'public');
+    }finally{release();f.state.broadcastWait=null;await new Promise(resolve=>setImmediate(resolve));}
+  }
+  const denied=await f.request('/api/home/visits/respond',{cookie,body:{requestId:'another-residents-request',accept:true}});
+  assert.equal(denied.status,403);assert.equal(denied.data.code,'visit_unavailable');
 });

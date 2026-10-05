@@ -144,7 +144,15 @@ export class MongoSocialStore {
   async conversations(id){return(await this.conversationPage(id,{limit:50})).conversations;}
   async createConversation(id,body={}){await this.authenticate(id);this.rate(id,'conversation',20);const kind=body.kind??'dm';check(['dm','group'].includes(kind),'Choose a conversation type');let targets,name='';if(kind==='dm'){const target=identifier(body.residentId);check(target!==id,'Choose another resident');await this.authenticate(target);check(!await this.blocked(id,target),'This resident is unavailable',403);targets=[target];}else{check(Array.isArray(body.memberIds)&&body.memberIds.length>=1&&body.memberIds.length<SOCIAL_META.maxGroupMembers,'Choose 1–49 friends for your group');targets=[...new Set(body.memberIds.map(t=>identifier(t)))].filter(t=>t!==id);check(targets.length,'Choose another friend');name=textValue(body.name,60,'Group name');check(name.length>=2,'Give your group a name');const friends=new Set(await this.friendIds(id));check(targets.every(t=>friends.has(t)),'Group members must be accepted friends');}
     let conversationId;try{await this.transaction(async session=>{if(kind==='dm'){const prior=await this.collection('conversations').findOne({dmKey:pair(id,targets[0])},opts(session));if(prior){conversationId=prior.id;return;}}for(const t of targets)check(!await this.blocked(id,t,session),'This resident is unavailable',403);const now=this.clock();conversationId=uid();await this.collection('conversations').insertOne({id:conversationId,kind,name,ownerId:id,participantIds:[id,...targets],...(kind==='dm'?{dmKey:pair(id,targets[0])}:{}),seq:0,createdAt:now,updatedAt:now},opts(session));await this.collection('members').insertMany([id,...targets].map(residentId=>({id:conversationId,conversationId,residentId,role:residentId===id?'owner':'member',joinedAt:now,updatedAt:now,joinSeq:0,readSeq:0,deliveredSeq:0,readAt:0,deliveredAt:0,leftAt:null})),opts(session));});}catch(e){if(e.code===11000&&kind==='dm'){conversationId=(await this.collection('conversations').findOne({dmKey:pair(id,targets[0])}))?.id;if(!conversationId)throw e;}else throw e;}
-    if(kind==='group')for(const target of targets)await this.notify(target,'group','New group',`${(await this.displayName(id))} added you to ${name}.`,`conversation:${conversationId}`,id);return{ok:true,conversation:await this.conversation(id,conversationId)};
+    if(kind==='group')for(const target of targets)await this.notify(target,'group','New group',`${(await this.displayName(id))} added you to ${name}.`,`conversation:${conversationId}`,id);
+    // A new DM only needs its id to open instantly. Hydration of member names,
+    // unread counts and the latest message happens in the messages request;
+    // avoid the old multi-query conversation read on this latency-sensitive
+    // button path.
+    const conversation=kind==='dm'
+      ? {id:conversationId,kind:'dm',members:[{id},{id:targets[0]}],memberCount:2,unread:0,lastMessage:null}
+      : await this.conversation(id,conversationId);
+    return{ok:true,conversation};
   }
   async receiptPage(row,viewer,options={}){
     const {limit,after}=pageOptions(options),blocked=viewer?await this.blockedIds(viewer):[],base={conversationId:row.conversationId,leftAt:null,residentId:{$nin:[row.senderId,...blocked]},$and:[{$or:[{joinSeq:{$lt:row.seq}},{joinSeq:{$exists:false}}]}]},filter={...base,deliveredSeq:{$gte:row.seq},...membershipKeyset(after)};
@@ -166,7 +174,68 @@ export class MongoSocialStore {
       yield member;
     }
   }
-  async sendMessage(id,conversationId,input,body={}){check(input!==null,'Message must be text');const text=textValue(typeof input==='object'?input.text:input,4000,'Message');check(text.length,'Write a message first');this.rate(id,'message',90);body=typeof input==='object'?input:body;const key=body.idempotencyKey===undefined?null:operationKey(body.idempotencyKey),hash=fingerprint({conversationId,text});let row,replayed=false;await this.transaction(async session=>{await this.conversationAccess(id,conversationId,session);if(key){row=await this.collection('messages').findOne({senderId:id,operationKey:key},opts(session));if(row){check(row.fingerprint===hash,'This message key was already used for different content',409,'idempotency_conflict');replayed=true;return;}}const conv=await this.collection('conversations').findOneAndUpdate({id:conversationId},{$inc:{seq:1}},{returnDocument:'after',...opts(session)});const now=Math.max(this.clock(),(conv.updatedAt??0)+1);await this.collection('conversations').updateOne({id:conversationId},{$set:{updatedAt:now}},opts(session));row={id:uid(),conversationId,senderId:id,kind:'text',text,seq:conv.seq,createdAt:now,...(key?{operationKey:key,fingerprint:hash}:{})};await this.collection('messages').insertOne(row,opts(session));await this.collection('members').updateMany({conversationId,leftAt:null},{$set:{updatedAt:now}},opts(session));await this.collection('members').updateOne({conversationId,residentId:id},{$max:{readSeq:row.seq,deliveredSeq:row.seq,readAt:now,deliveredAt:now}},opts(session));});const view=await this.messageView(row,id);if(!replayed){const members=await this.fanoutMembers(conversationId,id),name=(await this.displayName(id));for await(const member of members){this.game.emitUser?.(member.residentId,'message',this.messageEvent(row));if(member.residentId!==id)await this.notify(member.residentId,'message',name,text.slice(0,140),`conversation:${conversationId}`,id);}}return{ok:true,message:view,replayed};}
+  async sendMessage(id,conversationId,input,body={}){
+    check(input!==null,'Message must be text');
+    const text=textValue(typeof input==='object'?input.text:input,4000,'Message');
+    check(text.length,'Write a message first');
+    this.rate(id,'message',90);
+    body=typeof input==='object'?input:body;
+    const key=body.idempotencyKey===undefined?null:operationKey(body.idempotencyKey),hash=fingerprint({conversationId,text});
+    let row,replayed=false;
+    await this.transaction(async session=>{
+      await this.conversationAccess(id,conversationId,session);
+      if(key){
+        row=await this.collection('messages').findOne({senderId:id,operationKey:key},opts(session));
+        if(row){check(row.fingerprint===hash,'This message key was already used for different content',409,'idempotency_conflict');replayed=true;return;}
+      }
+      const conv=await this.collection('conversations').findOneAndUpdate({id:conversationId},{$inc:{seq:1}},{returnDocument:'after',...opts(session)});
+      const now=Math.max(this.clock(),(conv.updatedAt??0)+1);
+      await this.collection('conversations').updateOne({id:conversationId},{$set:{updatedAt:now}},opts(session));
+      row={id:uid(),conversationId,senderId:id,kind:'text',text,seq:conv.seq,createdAt:now,...(key?{operationKey:key,fingerprint:hash}:{})};
+      await this.collection('messages').insertOne(row,opts(session));
+      await this.collection('members').updateMany({conversationId,leftAt:null},{$set:{updatedAt:now}},opts(session));
+      await this.collection('members').updateOne({conversationId,residentId:id},{$max:{readSeq:row.seq,deliveredSeq:row.seq,readAt:now,deliveredAt:now}},opts(session));
+    });
+
+    // Replays need the canonical receipt view. A fresh send has no recipient
+    // receipts yet, so avoid three extra aggregate queries on the hot path.
+    const view=replayed?await this.messageView(row,id):{...this.messageEvent(row),deliveredTo:[],readBy:[],deliveredCount:0,readCount:0,nextReceiptsCursor:null};
+    if(!replayed)await this.fanoutMessage(row,id);
+    return{ok:true,message:view,replayed};
+  }
+
+  /**
+   * Fan out a saved message with bounded Mongo work. The old implementation
+   * walked members serially and called notify() for each recipient, making the
+   * sender wait on N authorization queries and N inserts. We fetch the live
+   * membership once, emit realtime messages immediately, then insert notices
+   * as one batch. Block and mute checks remain server-side and are applied
+   * before either delivery path.
+   */
+  async fanoutMessage(row,senderId){
+    const conversation=await this.collection('conversations').findOne({id:row.conversationId},{projection:{kind:1,ownerId:1}});
+    if(!conversation)return;
+    const blocked=new Set(await this.blockedIds(senderId));
+    if(conversation.kind==='community'&&conversation.ownerId)for(const residentId of await this.blockedIds(conversation.ownerId))blocked.add(residentId);
+    // Include the sender's other sessions in the realtime fanout. The sender
+    // still skips its own durable notification below, but every active client
+    // should receive the canonical message event for instant multi-device UI.
+    const members=await this.collection('members').find({conversationId:row.conversationId,leftAt:null,residentId:{$nin:[...blocked]}},{projection:{residentId:1}}).toArray();
+    const memberIds=[...new Set(members.map(member=>member.residentId).filter(residentId=>!blocked.has(residentId)))];
+    const event=this.messageEvent(row);
+    // Include the sender so other signed-in devices receive the same event;
+    // the phone de-duplicates it against its optimistic message bubble.
+    for(const residentId of memberIds)this.game.emitUser?.(residentId,'message',event);
+    const recipientIds=memberIds.filter(residentId=>residentId!==senderId);
+    if(!recipientIds.length)return;
+    const muted=await this.collection('moderation').find({kind:'mute',owner:{$in:recipientIds},target:senderId},{projection:{owner:1}}).toArray();
+    const mutedIds=new Set(muted.map(row=>row.owner));
+    const name=await this.displayName(senderId),now=this.clock();
+    const notices=recipientIds.filter(residentId=>!mutedIds.has(residentId)).map(residentId=>({id:uid(),residentId,kind:'message',title:name,body:row.text.slice(0,140),link:`conversation:${row.conversationId}`,createdAt:now,readAt:null,senderId}));
+    if(!notices.length)return;
+    await this.collection('notifications').insertMany(notices,{ordered:false});
+    for(const notice of notices)this.game.emitUser?.(notice.residentId,'notification',this.noticeView(notice));
+  }
   async recordTransferReceipt(senderId,recipientId,conversationId,transfer,session){
     check(session,'Transfer receipts require the wallet transaction',500,'transaction_required');await this.conversationAccess(senderId,conversationId,session);
     const conversation=await this.collection('conversations').findOne({id:conversationId},opts(session));check(conversation?.kind==='dm'&&conversation.dmKey===pair(senderId,recipientId),'Choose your direct conversation with this recipient',403,'transfer_conversation_mismatch');

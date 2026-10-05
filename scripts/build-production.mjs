@@ -19,7 +19,6 @@ export function publicOrigin(value, name) {
 }
 
 export function publicConfiguration(environment = process.env) {
-  // Do not spread process.env: the frontend receives exactly these two values.
   return {
     API_PUBLIC_URL: publicOrigin(environment.API_PUBLIC_URL || 'https://api.abujacity.life', 'API_PUBLIC_URL'),
     PUBLIC_WEB_URL: publicOrigin(environment.PUBLIC_WEB_URL || 'https://abujacity.life', 'PUBLIC_WEB_URL'),
@@ -63,7 +62,7 @@ export async function buildProduction({ environment = process.env, outputDirecto
     }
     const result = await build({
       absWorkingDir: repository,
-      entryPoints: { app: 'app/app.js', admin: 'app/admin.js', 'game-ui-kit': 'app/game-ui-kit.js', ads: 'app/ads.js', integrations: 'app/integrations.js' },
+      entryPoints: { app: 'app/app.js', admin: 'app/admin.js', 'game-ui-kit': 'app/game-ui-kit.js', ads: 'app/ads.js', integrations: 'app/integrations.js', jackpot: 'app/jackpot.js', 'jackpot-admin': 'app/jackpot-admin.js' },
       outdir: staging,
       bundle: true,
       splitting: true,

@@ -1,9 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {authenticateAccount,finishOnboarding,accountErrorMessage} from '../app/auth-session.js';
+import {authenticateAccount,finishOnboarding,accountErrorMessage,mergeCoreBootstrap} from '../app/auth-session.js';
 
 const timeout=()=>new DOMException('Fetch is aborted','TimeoutError');
 const session={authenticated:true,profile:{id:'one',username:'ada',onboardingComplete:true,wallet:100000}};
+test('core refresh keeps loaded social cards while committed wallet and location update immediately',()=>{
+ const current={...session,conversations:[{id:'dm-one',unread:2}],payments:{enabled:true},homeVisit:{owner:'old'}};
+ const next={authenticated:true,startup:true,profile:{...session.profile,wallet:95000,location:{kind:'public'}},conversations:[],payments:null,homeVisit:null};
+ const merged=mergeCoreBootstrap(current,next);
+ assert.equal(merged.profile,next.profile);assert.equal(merged.homeVisit,null);assert.equal(merged.conversations,current.conversations);assert.equal(merged.payments,current.payments);
+});
+test('core refresh never carries private cards between different or expired accounts',()=>{
+ const current={...session,conversations:[{id:'private-dm'}]};
+ for(const next of [{authenticated:true,startup:true,profile:{id:'other'},conversations:[]},{authenticated:false,startup:true},{authenticated:true,profile:session.profile,conversations:[]}])assert.equal(mergeCoreBootstrap(current,next),next);
+});
 test('lost signup response recovers its genuine session without repeating registration',async()=>{
  const writes=[];let reads=0;
  const result=await authenticateAccount({mode:'register',credentials:{username:'Ada',password:'private'},api:async(path,options)=>{writes.push({path,options});throw timeout();},readSession:async()=>{reads++;return session;}});
@@ -14,6 +24,9 @@ test('wrong credentials and another resident never masquerade as successful sign
  await assert.rejects(authenticateAccount({mode:'login',credentials:{username:'ada'},api:async()=>{throw denied;},readSession:async()=>{reads++;return session;}}),error=>error===denied);
  assert.equal(reads,0);
  await assert.rejects(authenticateAccount({mode:'register',credentials:{username:'bello'},api:async()=>{throw timeout();},readSession:async()=>session}),{name:'TimeoutError'});
+});
+test('interrupted email login does not adopt an unrelated existing session',async()=>{
+ await assert.rejects(authenticateAccount({mode:'login',credentials:{email:'other@example.com'},api:async()=>{throw timeout();},readSession:async()=>session}),{name:'TimeoutError'});
 });
 test('committed onboarding renders its returned profile without another blocking bootstrap',async()=>{
  let reads=0;
@@ -29,5 +42,6 @@ test('lost onboarding response recovers only confirmed completion for the same r
 test('friendly errors distinguish a lost connection from an expired session',()=>{
  assert.doesNotMatch(accountErrorMessage(timeout()),/Fetch is aborted/);
  assert.match(accountErrorMessage({status:401}),/sign in again/);
+ assert.equal(accountErrorMessage({status:401,code:'invalid_credentials',message:'Username or password is incorrect'}),'Username or password is incorrect');
  assert.equal(accountErrorMessage({status:403,message:'Account suspended'}),'Account suspended');
 });

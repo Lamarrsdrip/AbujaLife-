@@ -669,3 +669,32 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 }
 
 @keyframes game-sheet-up{from{opacity:.8;transform:translateY(38px)}to{opacity:1;transform:none}}
+
+/* Long pages keep the navigation in the document flow instead of leaving a
+   floating dock stranded over the middle of scrolled content. */
+.game-shell:not(.is-playing){display:flex;flex-direction:column;min-height:100dvh}
+.game-shell:not(.is-playing) .game-content{flex:1;width:100%}
+.game-shell:not(.is-playing) .game-nav{position:sticky;left:auto;right:auto;bottom:auto;transform:none;align-self:center;margin:18px auto 0}
+@media(max-width:700px){.game-shell:not(.is-playing) .game-nav{width:calc(100% - 24px);margin-top:18px;margin-bottom:max(10px,env(safe-area-inset-bottom));}}
+
+/* Primary play controls are deliberately large enough for thumbs and glances. */
+@media(max-width:700px){
+  .game-shell.is-playing .world-game-controls{bottom:calc(84px + env(safe-area-inset-bottom));}
+  .game-shell.is-playing .world-actions{gap:10px;max-width:232px;}
+  .game-shell.is-playing .world-sprint-button{width:58px;height:58px;min-height:58px;border-radius:17px;font-size:11px;}
+  .game-shell.is-playing .world-interact-button{min-height:58px;max-width:232px;padding:11px 14px;border-radius:17px;font-size:12px;font-weight:800;}
+  .game-shell.is-playing .world-interact-button>span{max-width:175px;}
+  .game-shell.is-playing .world-joystick{width:116px;height:116px;}
+  .game-shell.is-playing .world-joystick-knob{left:36px;top:36px;width:44px;height:44px;}
+}
+
+/* A visit is a shared social moment, so keep its context and nearby chat
+   reachable without covering the camera or movement controls. */
+#app .play-visit-card{position:absolute;z-index:5;left:16px;top:118px;display:grid;gap:4px;width:min(270px,calc(100% - 32px));padding:11px 13px;border:1px solid #fff9;border-radius:14px;background:#f8f3e8e8;color:#31513d;box-shadow:0 8px 24px #203b2514;backdrop-filter:blur(10px);pointer-events:auto}
+#app .play-visit-card .eyebrow{font-size:7px;letter-spacing:.13em;color:#a27f49}
+#app .play-visit-card strong{font-size:12px;line-height:1.3}
+#app .play-visit-card small{font-size:9px;line-height:1.45;color:#71806f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#app .play-visit-card>div{display:flex;align-items:center;gap:8px;margin-top:4px}
+#app .play-visit-card button{min-height:32px;padding:7px 10px;font-size:9px;border-radius:9px}
+#app .play-visit-card .text-button{min-height:30px;padding:5px;color:#8c6e45}
+@media(max-width:650px){#app .play-visit-card{top:112px;left:13px;width:min(245px,calc(100% - 26px));padding:9px 11px;border-radius:12px}#app .play-visit-card strong{font-size:11px}#app .play-visit-card small{font-size:8px}#app .play-visit-card button{min-height:30px;font-size:8px}}

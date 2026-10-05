@@ -1,5 +1,13 @@
 // Recover ambiguous network outcomes by reading the genuine session. Never
 // replay registration or another write simply because its response was lost.
+const deferredFields=['people','friends','friendRequests','conversations','notifications','invitations','nearby','events','blocked','muted','transactions','homeVisitRequests','homeVisitors','payments'];
+export function mergeCoreBootstrap(current,next) {
+  if(!next.startup || !current.authenticated || current.profile?.id!==next.profile?.id)return next;
+  const merged={...next};
+  for(const key of deferredFields)if(current[key]!==undefined)merged[key]=current[key];
+  return merged;
+}
+
 export function interruptedRequest(error) {
   return error?.name === 'AbortError' || error?.name === 'TimeoutError' ||
     (error?.name === 'TypeError' && !error?.status);
@@ -7,6 +15,7 @@ export function interruptedRequest(error) {
 
 export function accountErrorMessage(error) {
   if (interruptedRequest(error)) return 'The connection was interrupted. Your progress is saved if the server received it. Please try again.';
+  if (error?.status === 401 && error?.code === 'invalid_credentials') return error.message || 'Username or password is incorrect.';
   if (error?.status === 401) return 'Your session has expired. Please sign in again.';
   return error?.message || 'We could not complete this request. Please try again.';
 }
@@ -19,8 +28,10 @@ export async function authenticateAccount({api, mode, credentials, readSession})
     let recovered;
     try { recovered = await readSession(); } catch { throw error; }
     const expected = credentials.username?.trim().toLowerCase();
-    if (recovered.authenticated && recovered.profile &&
-        (!expected || recovered.profile.username?.toLowerCase() === expected)) return recovered;
+    const matchesIdentity = expected
+      ? recovered.profile?.username?.toLowerCase() === expected
+      : credentials.email && recovered.profile?.email?.toLowerCase() === credentials.email.trim().toLowerCase();
+    if (recovered.authenticated && recovered.profile && matchesIdentity) return recovered;
     throw error;
   }
 }

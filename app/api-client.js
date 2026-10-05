@@ -16,10 +16,81 @@ export function apiURL(path) {
   return new URL(path, url.origin).href;
 }
 
+// Keep compatibility routes for earlier clients. New clients explicitly request
+// the authoritative core bootstrap and then load optional services separately.
+let startupBootstrapPending = true;
+let postProfileBootstrapPending = false;
+const FAST_ROUTE_MISSING = new Set([404,405,501]);
+// Remove obsolete private-state snapshots. A stored profile cannot prove that
+// an account is still authenticated or that its wallet is current.
+try { globalThis.sessionStorage?.removeItem('abujalife.fast-bootstrap.v1'); } catch {}
+function requestsCoreState(options) {
+  if(typeof options.body !== 'string')return options.body?.startup === true;
+  try { return JSON.parse(options.body)?.startup === true; } catch { return false; }
+}
+
+// Realtime events can cause several surfaces to ask for the same fresh state at
+// once. Share only the in-flight GET; never cache a settled response, so a later
+// interaction always reaches the server and mutations are never hidden.
+const inFlightGets = new Map();
+
+async function fastRouteUnavailable(response) {
+  if (FAST_ROUTE_MISSING.has(response.status)) return true;
+  if (response.status !== 401) return false;
+  try {
+    const body = await response.clone().json();
+    // Older AbujaLife API builds route unknown /api/* paths through the generic
+    // authentication guard, so a missing fast route appears as this exact 401.
+    // Genuine bad-password 401s use invalid_credentials and must NOT retry.
+    return body?.code === 'authentication_required';
+  } catch {
+    return false;
+  }
+}
+
+async function compatibleFetch(primaryPath, fallbackPath, init) {
+  const response = await globalThis.fetch(apiURL(primaryPath), init);
+  if (fallbackPath && await fastRouteUnavailable(response)) {
+    return globalThis.fetch(apiURL(fallbackPath), init);
+  }
+  return response;
+}
+
 export function apiFetch(path, options = {}) {
   const deadline=AbortSignal.timeout(15000);
   const signal=options.signal?AbortSignal.any([options.signal,deadline]):deadline;
-  return globalThis.fetch(apiURL(path), { ...options, signal, credentials: 'include', cache: 'no-store' });
+  const method=String(options.method||'GET').toUpperCase();
+  const bootstrapRequest=method==='GET'&&path==='/api/bootstrap';
+  const loginRequest=method==='POST'&&path==='/api/auth/login';
+  const registerRequest=method==='POST'&&path==='/api/auth/register';
+  const logoutRequest=method==='POST'&&path==='/api/auth/logout';
+  const profileWrite=method==='POST'&&path==='/api/profile';
+  const coreWrite=requestsCoreState(options);
+  const coreAuth=(loginRequest||registerRequest)&&coreWrite;
+  if((method==='GET'&&path==='/api/bootstrap?startup=1')||coreAuth){startupBootstrapPending=false;postProfileBootstrapPending=false;}
+  const fastBootstrapRequest=bootstrapRequest&&(startupBootstrapPending||postProfileBootstrapPending);
+  const fastLogin=loginRequest&&!coreAuth,fastRegister=registerRequest&&!coreAuth;
+  const primaryPath=fastBootstrapRequest?'/api/bootstrap/fast':fastLogin?'/api/auth/login/fast':fastRegister?'/api/auth/register/fast':logoutRequest?'/api/auth/logout/fast':path;
+  const fallbackPath=fastBootstrapRequest?'/api/bootstrap':fastLogin?'/api/auth/login':fastRegister?'/api/auth/register':logoutRequest?'/api/auth/logout':null;
+  const url=apiURL(primaryPath);
+  const init={...options,signal,credentials:'include',cache:'no-store'};
+
+  if(method!=='GET'||options.body!==undefined||Object.keys(options.headers||{}).length){
+    return compatibleFetch(primaryPath,fallbackPath,init).then(async response=>{
+      if(profileWrite&&response.ok)postProfileBootstrapPending=!coreWrite;
+      return response;
+    });
+  }
+
+  let pending=inFlightGets.get(url);
+  if(!pending){
+    pending=compatibleFetch(primaryPath,fallbackPath,init).then(response=>{
+      if(fastBootstrapRequest&&response.ok){startupBootstrapPending=false;postProfileBootstrapPending=false;}
+      return response;
+    }).finally(()=>inFlightGets.delete(url));
+    inFlightGets.set(url,pending);
+  }
+  return pending.then(response=>response.clone());
 }
 
 export function createApiEventSource(path, options = {}) {

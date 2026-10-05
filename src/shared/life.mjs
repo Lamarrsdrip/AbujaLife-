@@ -47,7 +47,7 @@ export function travelPricing(originPlace, destinationPlace, mode, { venueId = n
   const same = originPlace.id === destinationPlace.id;
   const distance = same ? venueId ? 4 : 0 : Math.max(4, Math.round(((destinationPlace.commute || 35) + (originPlace.commute || 35)) / 3));
   const cost = mode === 'walk' || !distance ? 0 : mode === 'bus' ? 250 + distance * 20 : mode === 'car' ? 350 + distance * 20 : mode === 'taxi' ? 650 + distance * 45 : mode === 'bike' ? 300 + distance * 30 : 900 + distance * 45;
-  const seconds = mode === 'walk' || !distance ? 1 : Math.min(14, Math.max(4, Math.round(distance / (mode === 'bus' ? 2.5 : 4))));
+  const seconds = mode === 'walk' || !distance ? 1 : 10 + Math.min(14, Math.max(4, Math.round(distance / (mode === 'bus' ? 2.5 : 4))));
   return { destination: destinationPlace.id, mode, cost, seconds, ...(venueId ? { venueId } : {}) };
 }
 
@@ -70,7 +70,8 @@ export const DICE_META = {
 export const LOAN_META = {
   id: 'lapo-style', name: 'LAPO-style game loan', virtual: true, optional: true,
   consentVersion: 'game-loan-v1', feeBasisPoints: 500, termDays: 28, termMs: 28 * 86400000,
-  description: 'Optional fictional game borrowing: a one-time 5% fee, due in 28 real days. Repay any amount early; fees do not compound.',
+  dailyPrincipalCap: 10_000_000, maxOutstandingPrincipal: 100_000_000, redrawAfterRepaymentPercent: 50,
+  description: 'Optional fictional game borrowing: up to ₦10m of new principal per real day, with ₦100m total outstanding. Repay at least 50% before requesting another advance; a one-time 5% fee is due in 28 real days.',
   affiliation: 'This simulated game lender has no affiliation with LAPO Microfinance Bank.',
 };
 export function loanQuote(amount) {
@@ -125,34 +126,34 @@ export const LIFE_GOALS = [
 ];
 
 export const VENUE_ACTIONS = [
-  { id: 'jollof-chicken', venueId: 'restaurant', name: 'Jollof rice & chicken', cost: 1800, duration: 5, animation: 'eat', effects: { hunger: 42, mood: 5 } },
-  { id: 'suya-plate', venueId: 'restaurant', name: 'Suya & a chilled drink', cost: 2200, duration: 5, animation: 'eat', effects: { hunger: 35, fun: 8, social: 5 } },
-  { id: 'egusi-pounded-yam', venueId: 'restaurant', name: 'Egusi & pounded yam', cost: 2500, duration: 6, animation: 'eat', effects: { hunger: 52, energy: 5, mood: 5 } },
-  { id: 'hotel-rest', venueId: 'hotel', name: 'Book a room & rest', cost: 6500, duration: 7, animation: 'rest', effects: { energy: 60, stress: -22, hunger: -12, mood: 8 } },
-  { id: 'hotel-shower', venueId: 'hotel', name: 'Freshen up at the spa', cost: 1900, duration: 5, animation: 'shower', effects: { hygiene: 50, stress: -12, mood: 5 } },
-  { id: 'gym-workout', venueId: 'gym', name: 'Train at the gym', cost: 1600, duration: 8, animation: 'exercise', effects: { energy: -16, hunger: -12, hygiene: -12, stress: -18, fun: 20, mood: 8 }, skill: 'Fitness' },
-  { id: 'gym-recovery', venueId: 'gym', name: 'Stretch & recovery', cost: 800, duration: 5, animation: 'exercise', effects: { energy: 8, stress: -16, fun: 10 } },
-  { id: 'cinema-film', venueId: 'cinema', name: 'Watch a film', cost: 3800, duration: 8, animation: 'watch', effects: { fun: 42, stress: -15, social: 8, hunger: -6 } },
-  { id: 'groceries', venueId: 'grocery', name: 'Pick up a meal & essentials', cost: 1400, duration: 4, animation: 'shop', effects: { hunger: 28, mood: 4 } },
-  { id: 'park-walk', venueId: 'park', name: 'Take a gentle walk', cost: 0, duration: 6, animation: 'walk', effects: { stress: -14, fun: 14, energy: -3, mood: 5 } },
-  { id: 'park-picnic', venueId: 'park', name: 'Relax with a picnic', cost: 1200, duration: 6, animation: 'eat', effects: { hunger: 26, fun: 22, stress: -12 } },
-  { id: 'coffee-break', venueId: 'cafe', name: 'Coffee & a small chop plate', cost: 1500, duration: 5, animation: 'eat', effects: { energy: 15, hunger: 20, social: 12, stress: -8 } },
-  { id: 'salon-cut', venueId: 'salon', name: 'Grooming & a fresh look', cost: 2100, duration: 5, animation: 'groom', effects: { hygiene: 28, mood: 10, social: 7 } },
-  { id: 'mosque-prayer', venueId: 'mosque', name: 'Take time for prayer', cost: 0, duration: 6, animation: 'pray', effects: { stress: -18, mood: 10 } },
-  { id: 'mosque-community', venueId: 'mosque', name: 'Meet the community', cost: 0, duration: 6, animation: 'social', effects: { social: 20, mood: 6 } },
-  { id: 'church-reflect', venueId: 'church', name: 'Prayer & quiet reflection', cost: 0, duration: 6, animation: 'pray', effects: { stress: -18, mood: 10 } },
-  { id: 'church-community', venueId: 'church', name: 'Spend time with the community', cost: 0, duration: 6, animation: 'social', effects: { social: 20, mood: 6 } },
-  { id: 'lake-walk', venueId: 'jabi-lake', name: 'Walk by the lake', cost: 0, duration: 7, animation: 'walk', effects: { stress: -22, fun: 20, energy: -4 } },
-  { id: 'lake-picnic', venueId: 'jabi-lake', name: 'Lakeside picnic', cost: 1500, duration: 6, animation: 'eat', effects: { hunger: 28, social: 12, fun: 22 } },
-  { id: 'club-dance', venueId: 'club', name: 'Tokyo · dance to the DJ set', cost: 8000, duration: 8, animation: 'dance', effects: { fun: 40, social: 20, energy: -12, hygiene: -8 } },
-  { id: 'club-refreshment', venueId: 'club', name: 'Tokyo · refreshments & small chops', cost: 6000, duration: 5, animation: 'eat', effects: { hunger: 25, energy: 8, social: 10 } },
-  { id: 'tokyo-vip', venueId: 'club', name: 'Tokyo · VIP lounge & music', cost: 16000, duration: 7, animation: 'social', effects: { fun: 35, social: 30, stress: -12, energy: -4 } },
-  { id: 'cage-dance', venueId: 'club-cage', name: 'Cage · dance floor', cost: 4000, duration: 8, animation: 'dance', effects: { fun: 35, social: 18, energy: -12, hygiene: -8 } },
-  { id: 'cage-drinks', venueId: 'club-cage', name: 'Cage · drinks & music', cost: 8000, duration: 5, animation: 'eat', effects: { hunger: 18, fun: 20, social: 16, energy: 6 } },
-  { id: 'magic-city-stage', venueId: 'magic-city', name: 'Magic City · stage entertainment', cost: 6000, duration: 8, animation: 'watch', effects: { fun: 40, social: 15, stress: -10, energy: -5 } },
-  { id: 'magic-city-vip', venueId: 'magic-city', name: 'Magic City · VIP lounge', cost: 12000, duration: 7, animation: 'social', effects: { fun: 30, social: 30, stress: -12, energy: -4 } },
-  { id: 'bear-barn-relax', venueId: 'bear-barn', name: 'Bear Barn · unwind with music', cost: 2500, duration: 6, animation: 'social', effects: { fun: 24, social: 20, stress: -16, energy: -3 } },
-  { id: 'bear-barn-drinks', venueId: 'bear-barn', name: 'Bear Barn · drinks & small chops', cost: 4500, duration: 5, animation: 'eat', effects: { hunger: 24, fun: 16, social: 12, energy: 6 } },
+  { id: 'jollof-chicken', venueId: 'restaurant', name: 'Jollof rice & chicken', cost: 1800, duration: 15, animation: 'eat', effects: { hunger: 42, mood: 5 } },
+  { id: 'suya-plate', venueId: 'restaurant', name: 'Suya & a chilled drink', cost: 2200, duration: 15, animation: 'eat', effects: { hunger: 35, fun: 8, social: 5 } },
+  { id: 'egusi-pounded-yam', venueId: 'restaurant', name: 'Egusi & pounded yam', cost: 2500, duration: 16, animation: 'eat', effects: { hunger: 52, energy: 5, mood: 5 } },
+  { id: 'hotel-rest', venueId: 'hotel', name: 'Book a room & rest', cost: 6500, duration: 17, animation: 'rest', effects: { energy: 60, stress: -22, hunger: -12, mood: 8 } },
+  { id: 'hotel-shower', venueId: 'hotel', name: 'Freshen up at the spa', cost: 1900, duration: 15, animation: 'shower', effects: { hygiene: 50, stress: -12, mood: 5 } },
+  { id: 'gym-workout', venueId: 'gym', name: 'Train at the gym', cost: 1600, duration: 18, animation: 'exercise', effects: { energy: -16, hunger: -12, hygiene: -12, stress: -18, fun: 20, mood: 8 }, skill: 'Fitness' },
+  { id: 'gym-recovery', venueId: 'gym', name: 'Stretch & recovery', cost: 800, duration: 15, animation: 'exercise', effects: { energy: 8, stress: -16, fun: 10 } },
+  { id: 'cinema-film', venueId: 'cinema', name: 'Watch a film', cost: 3800, duration: 18, animation: 'watch', effects: { fun: 42, stress: -15, social: 8, hunger: -6 } },
+  { id: 'groceries', venueId: 'grocery', name: 'Pick up a meal & essentials', cost: 1400, duration: 14, animation: 'shop', effects: { hunger: 28, mood: 4 } },
+  { id: 'park-walk', venueId: 'park', name: 'Take a gentle walk', cost: 0, duration: 16, animation: 'walk', effects: { stress: -14, fun: 14, energy: -3, mood: 5 } },
+  { id: 'park-picnic', venueId: 'park', name: 'Relax with a picnic', cost: 1200, duration: 16, animation: 'eat', effects: { hunger: 26, fun: 22, stress: -12 } },
+  { id: 'coffee-break', venueId: 'cafe', name: 'Coffee & a small chop plate', cost: 1500, duration: 15, animation: 'eat', effects: { energy: 15, hunger: 20, social: 12, stress: -8 } },
+  { id: 'salon-cut', venueId: 'salon', name: 'Grooming & a fresh look', cost: 2100, duration: 15, animation: 'groom', effects: { hygiene: 28, mood: 10, social: 7 } },
+  { id: 'mosque-prayer', venueId: 'mosque', name: 'Take time for prayer', cost: 0, duration: 16, animation: 'pray', effects: { stress: -18, mood: 10 } },
+  { id: 'mosque-community', venueId: 'mosque', name: 'Meet the community', cost: 0, duration: 16, animation: 'social', effects: { social: 20, mood: 6 } },
+  { id: 'church-reflect', venueId: 'church', name: 'Prayer & quiet reflection', cost: 0, duration: 16, animation: 'pray', effects: { stress: -18, mood: 10 } },
+  { id: 'church-community', venueId: 'church', name: 'Spend time with the community', cost: 0, duration: 16, animation: 'social', effects: { social: 20, mood: 6 } },
+  { id: 'lake-walk', venueId: 'jabi-lake', name: 'Walk by the lake', cost: 0, duration: 17, animation: 'walk', effects: { stress: -22, fun: 20, energy: -4 } },
+  { id: 'lake-picnic', venueId: 'jabi-lake', name: 'Lakeside picnic', cost: 1500, duration: 16, animation: 'eat', effects: { hunger: 28, social: 12, fun: 22 } },
+  { id: 'club-dance', venueId: 'club', name: 'Tokyo · dance to the DJ set', cost: 8000, duration: 18, animation: 'dance', effects: { fun: 40, social: 20, energy: -12, hygiene: -8 } },
+  { id: 'club-refreshment', venueId: 'club', name: 'Tokyo · refreshments & small chops', cost: 6000, duration: 15, animation: 'eat', effects: { hunger: 25, energy: 8, social: 10 } },
+  { id: 'tokyo-vip', venueId: 'club', name: 'Tokyo · VIP lounge & music', cost: 16000, duration: 17, animation: 'social', effects: { fun: 35, social: 30, stress: -12, energy: -4 } },
+  { id: 'cage-dance', venueId: 'club-cage', name: 'Cage · dance floor', cost: 4000, duration: 18, animation: 'dance', effects: { fun: 35, social: 18, energy: -12, hygiene: -8 } },
+  { id: 'cage-drinks', venueId: 'club-cage', name: 'Cage · drinks & music', cost: 8000, duration: 15, animation: 'eat', effects: { hunger: 18, fun: 20, social: 16, energy: 6 } },
+  { id: 'magic-city-stage', venueId: 'magic-city', name: 'Magic City · stage entertainment', cost: 6000, duration: 18, animation: 'watch', effects: { fun: 40, social: 15, stress: -10, energy: -5 } },
+  { id: 'magic-city-vip', venueId: 'magic-city', name: 'Magic City · VIP lounge', cost: 12000, duration: 17, animation: 'social', effects: { fun: 30, social: 30, stress: -12, energy: -4 } },
+  { id: 'bear-barn-relax', venueId: 'bear-barn', name: 'Bear Barn · unwind with music', cost: 2500, duration: 16, animation: 'social', effects: { fun: 24, social: 20, stress: -16, energy: -3 } },
+  { id: 'bear-barn-drinks', venueId: 'bear-barn', name: 'Bear Barn · drinks & small chops', cost: 4500, duration: 15, animation: 'eat', effects: { hunger: 24, fun: 16, social: 12, energy: 6 } },
 ];
 
 const venue = (id, name, category, description) => ({
@@ -176,10 +177,10 @@ export const VENUES = [
   venue('mosque', 'Neighbourhood Mosque', 'Faith & community', 'A respectful, peaceful space for prayer and community.'),
   venue('church', 'Community Church', 'Faith & community', 'Make time for prayer, reflection and community.'),
   { ...venue('jabi-lake', 'Jabi Lake', 'Outdoors', 'An authored lakeside game setting for walks, picnics and time by the water.'), districts: ['jabi'] },
-  { ...venue('club', 'Tokyo', 'Nightlife', 'A premium game club with a DJ floor and VIP lounge. A game interpretation of the name supplied by a player.'), kind: 'club', style: 'premium', settingSource: 'authored-game-scenery', nameSource: 'player-provided', pricesVerified: false },
-  { ...venue('club-cage', 'Cage', 'Nightlife', 'A high-energy game dance club with a drinks bar and music. A game interpretation of the name supplied by a player.'), kind: 'club', style: 'dance', districts: ['wuse-ii-a07'], settingSource: 'authored-game-scenery', nameSource: 'player-provided', pricesVerified: false },
-  { ...venue('magic-city', 'Magic City', 'Nightlife', 'A game stage and lounge with evening entertainment and a VIP corner. A game interpretation of the name supplied by a player.'), kind: 'club', style: 'stage-lounge', districts: ['garki-ii'], settingSource: 'authored-game-scenery', nameSource: 'player-provided', pricesVerified: false },
-  { ...venue('bear-barn', 'Bear Barn', 'Nightlife', 'A relaxed game bar and music lounge for drinks, small chops and conversation. A game interpretation of the name supplied by a player.'), kind: 'club', style: 'casual-bar', districts: ['jabi'], settingSource: 'authored-game-scenery', nameSource: 'player-provided', pricesVerified: false },
+  { ...venue('club', 'Tokyo', 'Nightlife', 'A late-night AbujaLife club built around a packed LED dance floor, live DJ booth, moving colour, VIP seating and a full bar.'), kind: 'club', style: 'premium', settingSource: 'authored-game-scenery', nameSource: 'player-provided', pricesVerified: false },
+  { ...venue('club-cage', 'Cage', 'Nightlife', 'A high-energy dance room with a packed floor, lighting rig, DJ sound, drinks bar and nonstop movement.'), kind: 'club', style: 'dance', districts: ['wuse-ii-a07'], settingSource: 'authored-game-scenery', nameSource: 'player-provided', pricesVerified: false },
+  { ...venue('magic-city', 'Magic City', 'Nightlife', 'A vivid performance club with a lit stage, dancers, audience energy, lounge seating and a premium VIP corner.'), kind: 'club', style: 'stage-lounge', districts: ['garki-ii'], settingSource: 'authored-game-scenery', nameSource: 'player-provided', pricesVerified: false },
+  { ...venue('bear-barn', 'Bear Barn', 'Nightlife', 'A warm late-night music bar with a busy counter, groups hanging out, small chops, conversation and a relaxed dance corner.'), kind: 'club', style: 'casual-bar', districts: ['jabi'], settingSource: 'authored-game-scenery', nameSource: 'player-provided', pricesVerified: false },
   venue('games-lounge', 'Dice & Chill Lounge', 'Games', 'A simple chance game with virtual Naira, plus space to unwind.'),
 ];
 

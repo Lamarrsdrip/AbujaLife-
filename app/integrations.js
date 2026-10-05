@@ -79,6 +79,42 @@ function xIntent(text, url = '') {
   return target.href;
 }
 
+function openAppScheme(scheme, fallback) {
+  return new Promise(resolve => {
+    let leftPage = false;
+    const markLeft = () => { leftPage = true; };
+    addEventListener('blur', markLeft, {once:true});
+    const anchor = document.createElement('a');
+    anchor.href = scheme; anchor.rel = 'noopener'; anchor.style.display = 'none';
+    document.body.append(anchor); anchor.click(); anchor.remove();
+    setTimeout(() => { if (!leftPage) location.assign(fallback); resolve(leftPage); }, 1100);
+  });
+}
+
+export async function openXComposer(text = '', url = '') {
+  const message = `${String(text || '').trim()}${url ? `${text ? '\n\n' : ''}${url}` : ''}`.trim();
+  const fallback = xIntent(text, url);
+  // X/Twitter keeps both schemes for installed iOS and Android clients. The
+  // browser intent is only a fallback when no native client claims the URL.
+  return openAppScheme(`twitter://post?message=${encodeURIComponent(message)}`, fallback);
+}
+
+export async function openWhatsAppShare({text = '', url = '', imageDataUrl = ''} = {}) {
+  const message = `${String(text || '').trim()}${url ? `${text ? '\n\n' : ''}${url}` : ''}`.trim();
+  const file = dataURLFile(imageDataUrl, 'abujalife-home.png');
+  try {
+    // On mobile this opens the native share sheet, where WhatsApp Status is a
+    // first-class target and the captured home image remains attached.
+    if (navigator.share) {
+      const payload = {title:'AbujaLife', text:message};
+      if (file && navigator.canShare?.({files:[file]})) payload.files = [file];
+      await navigator.share(payload); return {shared:true};
+    }
+  } catch (error) { if (error?.name === 'AbortError') return {cancelled:true}; }
+  const fallback = `https://wa.me/?text=${encodeURIComponent(message)}`;
+  return openAppScheme(`whatsapp://send?text=${encodeURIComponent(message)}`, fallback);
+}
+
 function removeQueryFlag(name) {
   const url = new URL(location.href);
   if (!url.searchParams.has(name)) return;
@@ -227,8 +263,13 @@ async function handleCaptureClick(event) {
   if (button.matches('[data-ph-action="home-share-x"]')) {
     event.preventDefault(); event.stopImmediatePropagation();
     const {caption} = readShareDraft(button), profile = await currentProfile(), url = shareURL('home',{residentId:profile?.id,district:profile?.district});
-    if (xStatus?.connected || xOpened) void openX(`${caption}\n\n${url}`);
-    else void openX(`${caption}\n\n${url}`);
+    void openXComposer(caption, url);
+    return;
+  }
+  if (button.matches('[data-ph-action="home-share-whatsapp"]')) {
+    event.preventDefault(); event.stopImmediatePropagation();
+    const {caption,image} = readShareDraft(button), profile = await currentProfile(), url = shareURL('home',{residentId:profile?.id,district:profile?.district});
+    void openWhatsAppShare({text:caption,url,imageDataUrl:image});
   }
 }
 

@@ -1,6 +1,6 @@
 import { apiFetch, createApiEventSource } from './api-client.js';
 import { consumeAuthLink, createAuthRecovery, loginCredentials } from './auth-recovery.js';
-import { authenticateAccount, finishOnboarding, accountErrorMessage } from './auth-session.js';
+import { authenticateAccount, finishOnboarding, accountErrorMessage, mergeCoreBootstrap } from './auth-session.js';
 import { createInstallController } from './install.js';
 import { brandMark } from './brand.js';
 import { installPageViewport } from './page-viewport.js';
@@ -29,6 +29,7 @@ let authUsernameEdited=false;
 let authDraft={displayName:'',username:'',email:'',password:''}, authError='', authNotice='', garagePaint={}, garageIntents={};
 let authConfig={emailVerificationEnabled:false,passwordResetEnabled:false};
 let stateRequestEpoch=0;
+const referralResident = new URL(location.href).searchParams.get('resident')?.match(/^[A-Za-z0-9:_-]{1,80}$/)?.[0] || null;
 const authRecovery=createAuthRecovery({link:consumeAuthLink(location,history),api:(...args)=>api(...args)});
 let onboardingStep=0, onboardingDraft, pendingVenue;
 let quickHomeNavigating=false;
@@ -40,6 +41,10 @@ const esc = value => String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'
 const money = n => new Intl.NumberFormat('en-NG',{maximumFractionDigits:0}).format(Number(n||0));
 const list = value => Array.isArray(value)?value:Object.entries(value||{}).map(([id,item])=>({id,...item}));
 const place = id => state.atlas?.find(p=>p.id===id);
+function locationKey(profile=state.profile){
+ const location=profile?.location||{};
+ return [profile?.district||'',location.kind||'',location.venueId||location.venue||'',location.ownerId||location.residentId||location.visitId||''].join(':');
+}
 const paths={world:'<path d="m3 10 9-7 9 7v11h-6v-8H9v8H3z"/>',map:'<path d="m3 5 6-2 6 3 6-2v16l-6 2-6-3-6 2zM9 3v16M15 6v16"/>',work:'<rect x="3" y="7" width="18" height="14" rx="2"/><path d="M8 7V3h8v4M3 12h18M10 12v3h4v-3"/>',phone:'<rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 18h4M10 5h4"/>',profile:'<circle cx="12" cy="8" r="4"/><path d="M4 21c0-5 3-8 8-8s8 3 8 8"/>',arrow:'<path d="M5 12h14m-6-6 6 6-6 6"/>',chat:'<path d="M3 4h18v13H9l-6 4zM7 9h10M7 13h6"/>',close:'<path d="m6 6 12 12M6 18 18 6"/>',check:'<path d="m5 12 4 4 10-10"/>',sun:'<circle cx="12" cy="12" r="4"/><path d="M12 1v2M12 21v2M1 12h2M21 12h2M4 4l2 2M18 18l2 2M4 20l2-2M18 6l2-2"/>'};
 const icon = name => `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round">${paths[name]||paths.world}</svg>`;
 
@@ -55,7 +60,7 @@ async function api(path,options={}) {
  return body;
 }
 function toast(message){const el=document.querySelector('#toast');el.textContent=message;el.classList.add('visible');clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.classList.remove('visible'),4000);}
-async function refresh({render=true,startup=false}={}){const epoch=++stateRequestEpoch,next=await api(startup?'/api/bootstrap?startup=1':'/api/bootstrap');if(epoch!==stateRequestEpoch)return state;state=next;serverClockAt=Number(state.serverTime)||Date.now();serverClockObservedAt=performance.now();if(render)renderMain();else{const balance=root.querySelector('.wallet-button');if(balance){balance.querySelector('strong').textContent=`₦${money(state.profile?.wallet)}`;balance.setAttribute('aria-label',`Naira balance, ₦${money(state.profile?.wallet)}. Open wallet`);}cleanup?.updateResidents?.(list(state.nearby));}phone.render();showWorkReminder();void install.refresh();return state;}
+async function refresh({render=true,startup=true}={}){const epoch=++stateRequestEpoch,next=await api(startup?'/api/bootstrap?startup=1':'/api/bootstrap');if(epoch!==stateRequestEpoch)return state;state=mergeCoreBootstrap(state,next);serverClockAt=Number(state.serverTime)||Date.now();serverClockObservedAt=performance.now();if(render)renderMain();else{const balance=root.querySelector('.wallet-button');if(balance){balance.querySelector('strong').textContent=`₦${money(state.profile?.wallet)}`;balance.setAttribute('aria-label',`Naira balance, ₦${money(state.profile?.wallet)}. Open wallet`);}cleanup?.updateResidents?.(list(state.nearby));}phone.render();showWorkReminder();void install.refresh();if(startup&&state.profile?.onboardingComplete)hydrateStartup();return state;}
 function expireAccount(){stream?.close();phone.close();stateRequestEpoch++;state={authenticated:false};authMode='login';authDraft.password='';authNotice='Your session has expired. Sign in to continue with your saved resident.';renderMain();}
 function hydrateStartup(){
  if(!state.authenticated||!state.startup)return;
@@ -68,6 +73,13 @@ function hydrateStartup(){
   state={...next,profile:state.profile};phone.render();cleanup?.updateResidents?.(list(state.nearby));
  }).catch(error=>{if(epoch===stateRequestEpoch&&error.status===401)expireAccount();});
 }
+let nearbyRefreshTimer=null,nearbyRefreshPromise=null;
+function dispatchLivingCity(type,detail={}){window.dispatchEvent(new CustomEvent('abujalife:living-city',{detail:{type,...detail}}));}
+async function refreshNearbyPresence({fallback=true}={}){
+ if(!state.authenticated||document.hidden)return null;if(nearbyRefreshPromise)return nearbyRefreshPromise;
+ nearbyRefreshPromise=(async()=>{try{const result=await api('/api/presence/nearby');state.nearby=result.nearby||[];cleanup?.updateResidents?.(list(state.nearby));dispatchLivingCity('snapshot',{nearby:state.nearby,stats:result.stats,serverTime:result.serverTime});return result;}catch(error){if(fallback&&[404,405,501].includes(error.status)){scheduleRealtimeRefresh();return null;}throw error;}finally{nearbyRefreshPromise=null;}})();return nearbyRefreshPromise;
+}
+function scheduleNearbyPresenceRefresh(delay=80){clearTimeout(nearbyRefreshTimer);nearbyRefreshTimer=setTimeout(()=>void refreshNearbyPresence().catch(()=>{}),delay);}
 const phone=createPhone({root:document.querySelector('#phone-root'),getState:()=>state,api,onUpdate:refresh,onNavigate:navigate,toast});
 const install=createInstallController({shouldShow:()=>!!(state.authenticated&&state.profile?.onboardingComplete)&&!phone.isOpen?.()&&!document.querySelector('#sheet-root .sheet'),localProgress:()=>!!state.preview,onAvailabilityChange:available=>document.querySelectorAll('[data-install-app]').forEach(button=>button.hidden=!available)});
 const furnitureCatalogue=createFurnitureCatalogue({getState:()=>state,mutate:action,onSelect:beginFurniturePlacement,getFurnitureState:()=>cleanup?.getFurnitureState?.(),toast,enhancePreviews:scope=>enhanceProductPreviews(scope,{appearance:state.profile?.appearance}),onUse:itemId=>{
@@ -90,7 +102,7 @@ let lastPublishedPose;
 setInterval(()=>{
  if(!state.authenticated||view!=='world'||document.hidden||document.querySelector('[aria-modal="true"]'))return;
  const motion=cleanup?.getMotionState?.();if(!motion)return;
- const pose={x:motion.x,y:motion.y,angle:motion.angle||0,moving:motion.moving,driving:motion.driving};
+ const pose={x:motion.x,y:motion.y,angle:motion.angle||0,moving:motion.moving,driving:motion.driving,...(motion.activity?{activity:motion.activity}:{})};
  if(lastPublishedPose&&!pose.moving&&pose.moving===lastPublishedPose.moving&&Math.hypot(pose.x-lastPublishedPose.x,pose.y-lastPublishedPose.y)<1)return;
  lastPublishedPose=pose;api('/api/presence',{method:'POST',body:{pose}}).catch(()=>{});
 },1000);
@@ -111,24 +123,61 @@ function navigate(destination,details={}){
 }
 addEventListener('popstate',()=>{view=(location.hash.slice(1)==='map'?'outside':location.hash.slice(1))||'world';phone.close();closeSheet();renderMain();});
 addEventListener('keydown',event=>{if(event.key==='Escape')closeSheet();});
+function scheduleRealtimeRefresh(){
+ const previousLocation=locationKey(state.profile);
+ clearTimeout(refreshTimer);
+ refreshTimer=setTimeout(()=>{
+  refresh({render:false}).then(next=>{
+   const locationChanged=previousLocation!==locationKey(next.profile);
+   if(locationChanged&&view==='world'){renderMain();return;}
+   if(!['world','outside'].includes(view)&&!document.querySelector('.sheet')&&!root.contains(document.activeElement))renderMain();
+  }).catch(()=>{});
+ },250);
+}
 function connectRealtime(){
  stream?.close();if(!state.authenticated||authRecovery.snapshot().kind&&!['idle','complete'].includes(authRecovery.snapshot().status))return;stream=createApiEventSource('/api/realtime');
- for(const type of ['ready','presence','event','location-chat','typing','message','notification','invitation','profile','receipt','world-pose','social-post','social-like','social-comment','home-visit','home-visit-request'])stream.addEventListener(type,event=>{
+ for(const type of ['ready','presence','event','location-chat','typing','message','notification','invitation','profile','receipt','world-pose','player-emote','club-spray','social-post','social-like','social-comment','home-visit','home-visit-request','home-visit-ended'])stream.addEventListener(type,event=>{
   let data;try{data=JSON.parse(event.data);}catch{return;}phone.handleEvent(type,data);
   if(type==='message'&&!data.receipt&&data.senderId!==state.profile?.id&&data.conversationId)api(`/api/conversations/${encodeURIComponent(data.conversationId)}/delivered`,{method:'POST',body:{...(Number.isSafeInteger(data.seq)?{uptoSeq:data.seq}:{}),createdAt:data.createdAt,uptoMessageId:data.id}}).catch(()=>{});
-  if(type==='world-pose'){if(data.residentId!==state.profile?.id)cleanup?.updateResidentPose?.(data);return;}
-  if(type==='home-visit'){refresh().catch(()=>{});return;}
+  if(type==='world-pose'){if(data.residentId!==state.profile?.id)cleanup?.updateResidentPose?.(data);dispatchLivingCity('world-pose',{data});return;}
+  if(type==='player-emote'||type==='club-spray'){dispatchLivingCity(type,{data});return;}
+  if(type==='presence'){scheduleNearbyPresenceRefresh();return;}
+  if(type==='ready'){scheduleNearbyPresenceRefresh(0);return;}
   if(type==='location-chat'){chatMessages.push(data.message||data);chatMessages=chatMessages.slice(-60);if(chatOpen)renderChat();}
-  if(['presence','event','profile','message','notification','invitation','receipt','home-visit-request'].includes(type)){
-   clearTimeout(refreshTimer);refreshTimer=setTimeout(()=>refresh({render:!document.querySelector('.sheet')&&!root.contains(document.activeElement)}).catch(()=>{}),250);
-  }
+  if(['event','profile','message','notification','invitation','receipt','home-visit','home-visit-request','home-visit-ended'].includes(type))scheduleRealtimeRefresh();
  });
  stream.onopen=()=>{document.documentElement.dataset.connection='online';};stream.onerror=()=>{document.documentElement.dataset.connection='reconnecting';};
 }
+addEventListener('abujalife:resident-action',async event=>{
+ const {action:residentAction,residentId}=event.detail||{},resident=list(state.nearby).find(person=>String(person.id)===String(residentId));if(!resident){toast('That resident is no longer nearby.');return;}
+ try{
+  if(residentAction==='profile'){residentSheet(resident);return;}
+  if(residentAction==='message'){const result=await api('/api/conversations',{method:'POST',body:{residentId:resident.id}});phone.open('messages',{conversationId:result.conversation.id});return;}
+  if(residentAction==='friend'){await api('/api/friends/request',{method:'POST',body:{residentId:resident.id}});toast('Friend request sent.');return;}
+  if(residentAction==='visit'){await api('/api/home/visits/request',{method:'POST',body:{residentId:resident.id,idempotencyKey:crypto.randomUUID()}});toast('Visit request sent.');return;}
+ }catch(error){toast(error.message);}
+});
 async function action(name,payload={}){
- if(busy)return;busy=true;
- try{const result=await api('/api/action',{method:'POST',body:{action:name,payload}});if(result.profile)state.profile=result.profile;await refresh();return result;}
+ if(busy)return;busy=true;const previousLocation=locationKey(state.profile);
+ try{
+  const result=await api('/api/action',{method:'POST',body:{action:name,payload}});
+  // The action response is authoritative. Apply it immediately. Only a real
+  // location transition is allowed to rebuild the world; ordinary state
+  // changes reconcile in place so the WebGL scene never flashes away.
+  if(result.profile){
+   state.profile=result.profile;
+   if(previousLocation!==locationKey(result.profile)&&view==='world')renderMain();
+   else syncProfileChrome();
+  }
+  void refresh({render:false}).catch(()=>{});
+  return result;
+ }
  catch(error){toast(error.message);return null;}finally{busy=false;}
+}
+function syncProfileChrome(){
+ const p=state.profile;if(!p)return;
+ const wallet=root.querySelector('.wallet-button strong');if(wallet)wallet.textContent=`₦${money(p.wallet)}`;
+ root.querySelectorAll('.play-needs span').forEach(node=>{const label=node.querySelector('small')?.textContent?.toLowerCase();const key=label==='food'?'hunger':label==='toilet'?'bladder':label;const meter=node.querySelector('.need-track b');if(!meter||!key)return;meter.style.width=`${Math.max(0,Math.min(100,Number(p[key]??0)))}%`;});
 }
 function currentVenue(){return list(state.venues).find(v=>v.id===(state.profile?.location?.venueId||state.profile?.location?.venue));}
 function venueActions(venue){const all=list(state.venueActions);return all.filter(a=>a.venueId===venue?.id||(venue?.activities||venue?.actions||[]).includes(a.id));}
@@ -168,7 +217,7 @@ function renderAuth(){
  root.querySelector('[data-forgot-password]')?.addEventListener('click',()=>{authMode='forgot';authError='';authNotice='';authDraft.password='';renderMain();});
  const form=root.querySelector('#auth-form');form.addEventListener('input',e=>{if(e.target.name)authDraft[e.target.name]=e.target.value;if(e.target.name==='username')authUsernameEdited=!!e.target.value;if(registering&&e.target.name==='displayName'&&!authUsernameEdited){const stem=e.target.value.normalize('NFKD').replace(/\p{Diacritic}/gu,'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');if(stem){authDraft.username=stem.slice(0,20)+'_abj';form.elements.username.value=authDraft.username;}}});
  bindPasswordVisibility(form);
- form.onsubmit=async e=>{e.preventDefault();const submit=form.querySelector('[type=submit]');if(submit.disabled)return;submit.disabled=true;submit.setAttribute('aria-busy','true');authError='';form.querySelector('#auth-error').textContent='';const fields=Object.fromEntries(new FormData(form)),values=registering?{...fields,appearance:draft}:loginCredentials(fields.username,fields.password);try{state=await authenticateAccount({api,mode:registering?'register':'login',credentials:values,readSession:()=>api('/api/bootstrap?startup=1')});authDraft.password='';authNotice='';view='world';renderMain();connectRealtime();hydrateStartup();if(registering&&fields.email&&authConfig.emailVerificationEnabled){toast('Your account is ready. Check your email to confirm your address.');}}catch(error){authError=accountErrorMessage(error);form.querySelector('#auth-error').textContent=authError;submit.disabled=false;submit.removeAttribute('aria-busy');}};
+ form.onsubmit=async e=>{e.preventDefault();const submit=form.querySelector('[type=submit]');if(submit.disabled)return;submit.disabled=true;submit.setAttribute('aria-busy','true');authError='';form.querySelector('#auth-error').textContent='';const fields=Object.fromEntries(new FormData(form)),values=registering?{...fields,appearance:draft,...(referralResident?{referrerId:referralResident}:{})}:loginCredentials(fields.username,fields.password);try{state=await authenticateAccount({api,mode:registering?'register':'login',credentials:values,readSession:()=>api('/api/bootstrap?startup=1')});authDraft.password='';authNotice='';view='world';renderMain();connectRealtime();hydrateStartup();if(registering&&fields.email&&authConfig.emailVerificationEnabled){toast('Your account is ready. Check your email to confirm your address.');}}catch(error){authError=accountErrorMessage(error);form.querySelector('#auth-error').textContent=authError;submit.disabled=false;submit.removeAttribute('aria-busy');}};
 }
 function renderPasswordRequest(){
  renderAuthPage(`<span class="eyebrow">ACCOUNT RECOVERY</span><h2>Find your way home.</h2><p class="auth-intro">Enter your username or email. If your account has an email address, we will send a password reset link.</p><form id="password-request-form"><label>Username or email<input name="username" required maxlength="254" autocomplete="username" autocapitalize="none" spellcheck="false" value="${esc(authDraft.username)}"></label><p class="form-error" role="alert"></p><p class="auth-success" role="status"></p><button class="primary auth-submit" type="submit">Send reset link${icon('arrow')}</button></form><button class="text-button auth-back" type="button" data-back-to-login>Back to sign in</button>`);
@@ -201,8 +250,8 @@ function renderOnboarding(){
  form.querySelector('[data-onboarding-back]')?.addEventListener('click',()=>{onboardingStep--;renderMain();});
  form.onsubmit=async e=>{e.preventDefault();const values=Object.fromEntries(new FormData(form));if(values.displayName)onboardingDraft.displayName=values.displayName.trim();if(values.lifeGoal)onboardingDraft.lifeGoal=values.lifeGoal;if(onboardingStep<4){onboardingStep++;renderMain();window.scrollTo(0,0);return;}const submit=form.querySelector('[type=submit]');if(submit.disabled)return;submit.disabled=true;try{state.profile=await finishOnboarding({api,draft:onboardingDraft,residentId:state.profile.id,readSession:()=>api('/api/bootstrap?startup=1')});onboardingDraft=undefined;onboardingStep=0;view='world';renderMain();connectRealtime();hydrateStartup();toast('How far? Welcome to your Abuja life. Walk to your front door to explore.');}catch(error){if(error.status===401){expireAccount();return;}form.querySelector('#onboarding-error').textContent=accountErrorMessage(error);submit.disabled=false;}};
 }
-function header(){const p=state.profile;const needs=[['Energy','energy','⚡'],['Food','hunger','⌁'],['Clean','hygiene','✦'],['Fun','fun','◌']];return `<header class="game-header"><a href="#world" class="wordmark" data-view="world" aria-label="AbujaLife home">${brandMark({compact:true})}</a><span class="header-edition">YOUR CITY. YOUR STORY.</span><button class="needs-header" data-open-needs aria-label="Open your life needs">${needs.map(([label,key,icon])=>`<span class="needs-header-item"><i aria-hidden="true">${icon}</i><b>${label}</b><em style="--need:${Math.max(0,Math.min(100,Number(p[key]??0)))}%"></em></span>`).join('')}</button><button class="wallet-button" data-phone="wallet" aria-label="Naira balance, ₦${money(p.wallet)}. Open wallet"><span>Naira balance</span><strong>₦${money(p.wallet)}</strong></button><button class="resident-button" data-view="profile" aria-label="Your resident profile">${avatarSVG(p.appearance,{size:40})}</button></header>`;}
-function nav(){const unread=list(state.conversations).reduce((n,c)=>n+Number(c.unread||0),0)+list(state.notifications).filter(n=>!n.readAt&&!n.read).length;return `<nav class="game-nav" aria-label="Game navigation"><button data-view="world" class="${view==='world'?'active':''}" ${view==='world'?'aria-current="page"':''}>${icon('world')}<span>Play</span></button><button data-nav-outside class="${view==='outside'?'active':''}">${icon('map')}<span>Outside</span></button><button data-nav-life class="${['work','market','property','profile'].includes(view)?'active':''}">${icon('sun')}<span>My life</span></button><button data-phone="home" class="phone-launch">${icon('phone')}<span>Phone</span>${unread?`<i class="nav-badge">${unread}</i>`:''}</button></nav>`;}
+function header(){const p=state.profile;const needs=[['Energy','energy','⚡'],['Food','hunger','⌁'],['Fun','fun','◌'],['Toilet','bladder','◒'],['Clean','hygiene','✦'],['Social','social','♧']];return `<header class="game-header"><a href="#world" class="wordmark" data-view="world" aria-label="AbujaLife home">${brandMark({compact:true})}</a><span class="header-edition">YOUR CITY. YOUR STORY.</span><button class="needs-header" data-open-needs aria-label="Open your life needs">${needs.map(([label,key,icon])=>`<span class="needs-header-item"><i aria-hidden="true">${icon}</i><b>${label}</b><em style="--need:${Math.max(0,Math.min(100,Number(p[key]??(key==='bladder'?86:0))))}%"></em></span>`).join('')}</button><button class="wallet-button" data-phone="wallet" aria-label="Naira balance, ₦${money(p.wallet)}. Open wallet"><span>Naira balance</span><strong>₦${money(p.wallet)}</strong></button><button class="earn-header" data-phone="earn" aria-label="Open Earn Game Naira">+ Earn</button><button class="resident-button" data-view="profile" aria-label="Your resident profile">${avatarSVG(p.appearance,{size:40})}</button></header>`;}
+function nav(){const unread=list(state.conversations).reduce((n,c)=>n+Number(c.unread||0),0)+list(state.notifications).filter(n=>!n.readAt&&!n.read).length;return `<nav class="game-nav" aria-label="Game navigation"><button data-view="world" class="${view==='world'?'active':''}" ${view==='world'?'aria-current="page"':''}>${icon('world')}<span>Play</span></button><button data-nav-outside class="${view==='outside'?'active':''}">${icon('map')}<span>Map</span></button><button data-nav-life class="${['work','market','property','profile'].includes(view)?'active':''}">${icon('sun')}<span>My life</span></button><button data-phone="home" class="phone-launch">${icon('phone')}<span>Phone</span>${unread?`<i class="nav-badge">${unread}</i>`:''}</button></nav>`;}
 function renderMain(){
  cleanup?.();cleanup=undefined;const recovery=authRecovery.snapshot();if(recovery.kind&&!['complete','idle'].includes(recovery.status)){renderAuthRecovery();return;}if(!state.authenticated){renderAuth();return;}
  if(!state.profile?.onboardingComplete){phone.close();renderOnboarding();return;}
@@ -214,9 +263,9 @@ function renderMain(){
  enhanceProductPreviews(root,{appearance:state.profile?.appearance});
  void install.refresh();
 }
-function worldMarkup(){const p=state.profile;const needs=[['Energy','energy','⚡'],['Food','hunger','⌁'],['Clean','hygiene','✦'],['Fun','fun','◌']];return `<section class="world-stage playable-stage" aria-label="Your playable location"><div id="world-scene"></div><div class="play-hud" aria-label="Your current life needs"><button class="play-needs" data-open-needs aria-label="Open your life needs">${needs.map(([label,key,icon])=>`<span><small><i aria-hidden="true">${icon}</i>${label}</small><i class="need-track"><b style="width:${Math.max(0,Math.min(100,Number(p[key]??0)))}%"></b></i></span>`).join('')}</button></div><div class="play-guide"><span class="eyebrow">LIVE CAMERA</span><p>Drag to orbit your space · pinch to zoom · tap the floor to move.</p></div>${state.profile.activeTrip?tripMarkup(state.profile.activeTrip):''}</section>`;}
+function worldMarkup(){const p=state.profile,visiting=p.location?.kind==='visit',visit=state.homeVisit,visitors=list(state.homeVisitors);const needs=[['Energy','energy','⚡'],['Food','hunger','⌁'],['Fun','fun','◌'],['Toilet','bladder','◒'],['Clean','hygiene','✦'],['Social','social','♧']];const visitName=visiting?visit?.owner?.displayName:'your home';const visitorNames=visitors.map(row=>row.guest?.displayName).filter(Boolean);return `<section class="world-stage playable-stage" aria-label="Your playable location"><div id="world-scene"></div><div class="play-hud" aria-label="Your current life needs"><button class="play-needs" data-open-needs aria-label="Open your life needs">${needs.map(([label,key,icon])=>{const value=Number(p[key]??(key==='bladder'?86:0));return `<span><small><i aria-hidden="true">${icon}</i>${label}</small><i class="need-track"><b style="width:${Math.max(0,Math.min(100,value))}%"></b></i></span>`;}).join('')}</button></div><div class="play-guide"><span class="eyebrow">LIVE CAMERA</span><p>Drag to orbit your space · pinch to zoom · tap the floor to move.</p></div>${visiting||visitorNames.length?`<aside class="play-visit-card" aria-live="polite"><span class="eyebrow">${visiting?'HOME VISIT':'YOUR HOME'}</span><strong>${visiting?`At ${esc(visitName||'your host')}’s home`:`${visitorNames.length} ${visitorNames.length===1?'visitor':'visitors'} in your home`}</strong><small>${visiting?'Walk around, see each other and say hello.':esc(visitorNames.join(' · ')||'Your visitors are here.')}</small><div><button type="button" class="secondary" data-open-local-chat>Talk nearby</button>${visiting?'<button type="button" class="text-button" data-life-leave>Leave</button>':'<button type="button" class="text-button" data-open-visits>Visit details</button>'}</div></aside>`:''}${state.profile.activeTrip?tripMarkup(state.profile.activeTrip):''}</section>`;}
 function tripMarkup(trip){const venue=list(state.venues).find(v=>v.id===trip.venueId),mode=TRANSPORT_MODES.find(m=>m.id===trip.mode);return `<div class="trip-banner" role="status"><span class="trip-route-icon">${icon('arrow')}</span><div><strong>${esc(venue?.name||place(trip.destination)?.name||trip.destination)}</strong><span class="trip-mode">${esc(mode?.name||'Journey')} · ₦${money(trip.cost)}</span><span data-trip-countdown>On the way</span></div><button class="primary" data-arrive disabled>Arrive</button></div>`;}
-function openNeeds(){const p=state.profile;openSheet(`<span class="eyebrow">YOUR DAY · ${playTime()}</span><h2 id="sheet-title">A little care goes a long way.</h2><div class="daily-needs">${[['Energy','energy'],['Food','hunger'],['Cleanliness','hygiene'],['Social','social'],['Fun','fun'],['Stress','stress']].map(([label,key])=>`<div><label>${label}<span>${p[key]??0}%</span></label><progress max="100" value="${p[key]??0}" aria-label="${label}"></progress></div>`).join('')}</div><p class="muted">Rest at home, get something to eat, or spend time in the city. Find a rhythm that works for you.</p>`);}
+function openNeeds(){const p=state.profile;openSheet(`<span class="eyebrow">YOUR DAY · ${playTime()}</span><h2 id="sheet-title">A little care goes a long way.</h2><div class="daily-needs">${[['Energy','energy'],['Food','hunger'],['Fun','fun'],['Toilet','bladder'],['Cleanliness','hygiene'],['Social','social'],['Stress','stress']].map(([label,key])=>{const value=Number(p[key]??(key==='bladder'?86:0));return `<div><label>${label}<span>${Math.round(value)}%</span></label><progress max="100" value="${value}" aria-label="${label}"></progress></div>`;}).join('')}</div><p class="muted">Rest at home, get something to eat, freshen up, or spend time in the city. Find a rhythm that works for you.</p>`);}
 function homeDoor(){const p=state.profile;closeSheet();if(view!=='world')navigate('world');if(p.location?.kind==='visit'){perform('leave-visit');return;}if(p.location?.kind==='home'){perform('leave-home');return;}if(currentVenue()){perform('exit-venue');return;}if(p.district===p.home.district){perform('enter-home');return;}travelSheet(p.home.district,true);}
 async function goHome(){
  if(quickHomeNavigating||state.profile.activeTrip)return;
@@ -242,6 +291,10 @@ function openLifeMenu(){
 function bindWorld(){
  const p=state.profile,owner=state.homeVisit?.ownerHome,renderProfile=p.location?.kind==='visit'&&owner?{...p,home:owner.home,inventory:owner.inventory,furnitureLayout:owner.furnitureLayout,storedFurniture:owner.storedFurniture,canDecorate:false}:p;
  cleanup=renderWorld(document.querySelector('#world-scene'),{profile:renderProfile,place:place(p.district),people:list(state.nearby),serverNow:gameNow(),weather:state.weather,venues:list(state.venues),venueActions:list(state.venueActions),catalog:list(state.catalog),onInteract:interact,onResident:residentSheet,onFurnitureSelect:itemId=>furnitureCatalogue.showItem(itemId),onDestination:destination=>destination.home?goHome():goToVenue(destination.venueId),onArrive:tripId=>{if(p.activeTrip&&gameNow()>=Number(p.activeTrip.arrivesAt))return completeTrip(tripId||p.activeTrip.id);}});
+ queueMicrotask(()=>void refreshNearbyPresence().catch(()=>{}));
+ root.querySelector('[data-open-local-chat]')?.addEventListener('click',openLocalChat);
+ root.querySelector('[data-open-visits]')?.addEventListener('click',()=>lifePanels.openVisits());
+ root.querySelector('[data-life-leave]')?.addEventListener('click',()=>homeDoor());
  if(p.location?.kind==='home'){
   const catalogueButton=document.createElement('button');catalogueButton.type='button';catalogueButton.className='world-catalogue-button';catalogueButton.dataset.homeCatalogue='';
   catalogueButton.innerHTML=`${icon('work')}<span>Catalogue</span>`;catalogueButton.onclick=()=>{cleanup?.setFurnitureMode?.(null);furnitureCatalogue.open();};
@@ -261,6 +314,11 @@ async function completeTrip(tripId){if(await action('arrive',{tripId})){pendingV
 function bindTrip(trip){const update=()=>{const left=Math.max(0,Math.ceil((Number(trip.arrivesAt)-gameNow())/1000));const el=root.querySelector('[data-trip-countdown]'),button=root.querySelector('[data-arrive]');if(el&&button){el.textContent=left?`${left}s to go`:'You’ve arrived';button.disabled=left>0;}};update();const timer=setInterval(update,250),previous=cleanup;cleanup=Object.assign(()=>{clearInterval(timer);previous?.();},previous);root.querySelector('[data-arrive]').onclick=()=>completeTrip(trip.id);}
 async function interact(name,payload={}){
  if(name==='leave-visit'){try{const result=await api('/api/home/visits/leave',{method:'POST',body:{}});await refresh();toast('You stepped outside.');return result;}catch(error){toast(error.message);return false;}}
+ if(name==='visit-interact'){
+  const label=String(payload.visitLabel||payload.label||'this part of the home').replace(/^Arrange your home$/i,'the room');
+  toast(`You explored ${label.toLowerCase()}. Home visits are read-only, so the owner’s layout stays safe.`);
+  return true;
+ }
  if(name==='enter-venue'){const result=await action(name,payload);if(result)toast(`You’re inside ${currentVenue()?.name||'your destination'}.`);return result;}
  if(name==='exit-venue'){return await action(name,payload);}
  if(name==='play-dice'||name==='dice'){openDice();return;}
@@ -277,7 +335,7 @@ async function interact(name,payload={}){
  const info={eat:['In the kitchen','Make a meal','A warm plate and a little time to yourself.','₦1,200'],sleep:['In the bedroom','Get some rest','Put your feet up and recharge.','Free'],shower:['In the bathroom','Freshen up','A shower makes a difference to your day.','Free'],relax:['On the sofa','Take a breather','Switch off for a moment.','Free'],hangout:['Out in the city','Spend time out','Enjoy the neighbourhood. Invite a friend from your phone.','₦2,400'],exercise:['In the fresh air','Go for a run','Clear your head and get moving.','₦800'],cinema:['An evening out','Watch a film','A little escape from your usual day.','₦3,800']}[name];if(!info)return;
  const cost=state.activities?.[name]?.cost;const costLabel=cost===undefined?info[3]:cost===0?'Free':`₦${money(cost)}`;
  openSheet(`<span class="eyebrow">${info[0]}</span><h2 id="sheet-title">${info[1]}</h2><p class="muted">${info[2]}</p><div class="detail-line"><span>Virtual cost</span><strong>${costLabel}</strong></div><button class="primary full" id="confirm-interaction">${info[1]}${icon('arrow')}</button>`);
- document.querySelector('#confirm-interaction').onclick=()=>{closeSheet();const complete=async()=>{if(await action(name))toast('A little better than before.');};if(cleanup?.animateActivity)cleanup.animateActivity(name==='relax'?'rest':name,({sleep:8,shower:6,relax:6,eat:5,exercise:8})[name]||5,complete);else complete();};
+ document.querySelector('#confirm-interaction').onclick=()=>{closeSheet();const complete=async()=>{if(await action(name))toast('A little better than before.');};if(cleanup?.animateActivity)cleanup.animateActivity(name==='relax'?'rest':name,({sleep:18,shower:16,relax:16,eat:15,exercise:18})[name]||15,complete);else complete();};
 }
 async function goOutdoors(){
  if(state.profile.activeTrip)return false;
@@ -304,7 +362,7 @@ function openVenueMenu(venue){
  if(!venue)return;
  if(venue.id==='games-lounge'){openDice();return;}if(venue.id==='dealership'){openGarage();return;}if(venue.id==='banex'){openBanexMarket();return;}if(venue.id==='furniture-store'){openMarketplace();return;}if(venue.id==='estate-office'){navigate('property');return;}
  const activities=venueActions(venue),closed=venue.kind==='club'&&!state.clubSchedule?.isOpen;
- openSheet(`<span class="eyebrow">${esc(venue.category||'YOUR DESTINATION')}</span><h2 id="sheet-title">${esc(venue.name)}</h2><p class="muted">${esc(venue.description||'Take your time and enjoy the city.')}</p>${venue.kind==='club'?`<p class="club-schedule-note">${esc(state.clubSchedule?.openingHours||'Wed, Fri & Sat · 20:00–02:00')} Abuja time. ${closed?'The DJ is off duty; look around and come back for the night.':'The set is on.'}</p>`:''}<div class="venue-menu">${activities.map(activity=>`<article class="venue-menu-item"><div><strong>${esc(activity.name||activity.title)}</strong><small>${esc(effectLabel(activity))}</small><span>${activity.cost?`₦${money(activity.cost)}`:'Free'} · ${activity.duration||5}s activity</span></div><button class="primary" data-venue-activity="${esc(activity.id)}" ${closed||state.profile.wallet<(activity.cost||0)?'disabled':''}>${activity.cost?'Choose':'Start'}</button></article>`).join('')||'<p class="muted">Explore the room, then walk to the exit when you are ready.</p>'}</div><p class="economy-note">Virtual game prices. Activities change your resident’s needs.</p>`);
+ openSheet(`<span class="eyebrow">${esc(venue.category||'YOUR DESTINATION')}</span><h2 id="sheet-title">${esc(venue.name)}</h2><p class="muted">${esc(venue.description||'Take your time and enjoy the city.')}</p>${venue.kind==='club'?`<p class="club-schedule-note">${esc(state.clubSchedule?.openingHours||'Wed, Fri & Sat · 20:00–02:00')} Abuja time. ${closed?'House lights are up; explore the room and come back when the night starts.':'DJ live · dance floor active · lights moving.'}</p>`:''}<div class="venue-menu">${activities.map(activity=>`<article class="venue-menu-item"><div><strong>${esc(activity.name||activity.title)}</strong><small>${esc(effectLabel(activity))}</small><span>${activity.cost?`₦${money(activity.cost)}`:'Free'} · ${activity.duration||5}s activity</span></div><button class="primary" data-venue-activity="${esc(activity.id)}" ${closed||state.profile.wallet<(activity.cost||0)?'disabled':''}>${activity.cost?'Choose':'Start'}</button></article>`).join('')||'<p class="muted">Explore the room, then walk to the exit when you are ready.</p>'}</div><p class="economy-note">Virtual game prices. Activities change your resident’s needs.</p>`);
  sheetRoot.querySelectorAll('[data-venue-activity]').forEach(button=>button.onclick=()=>{const activityId=button.dataset.venueActivity;closeSheet();perform('venue-action',{activityId});});
 }
 function openMarketplace(){openSheet(`<span class="eyebrow">GOOD FINDS. YOUR STYLE.</span><h2 id="sheet-title">Okrika Marketplace</h2><p class="muted">A fresh look or a finishing touch for home. Make it yours.</p><div class="market-departments"><button data-department="clothing">${icon('profile')}<strong>Clothes & style</strong><span>Find your next look</span>${icon('arrow')}</button><button data-department="furniture">${icon('world')}<strong>Room & living</strong><span>Pieces for your place</span>${icon('arrow')}</button><button data-department="all">${icon('sun')}<strong>Browse everything</strong><span>A little of everything</span>${icon('arrow')}</button></div>`);sheetRoot.querySelectorAll('[data-department]').forEach(b=>b.onclick=()=>{if(b.dataset.department==='furniture'){openFurniture();return;}marketFilter=b.dataset.department;navigate('market');});}
@@ -376,7 +434,7 @@ function manageOwnedItem(itemId){
  sheetRoot.querySelector('[data-wear-owned]')?.addEventListener('click',async()=>{if(await action('equip',{itemId})){closeSheet();toast('Outfit updated.');}});bindSellButtons(sheetRoot);
 }
 function outsideMarkup(){return `<section class="outside-world world-stage" id="outside-root" aria-label="Explore AbujaLife outside in 3D"></section>`;}
-function bindOutside(){cleanup=renderOutside(root.querySelector('#outside-root'),{atlas:list(state.atlas),venues:list(state.venues),profile:state.profile,serverNow:gameNow(),onSelect:({districtId,venueId})=>travelSheet(districtId,false,venueId||null),onHome:()=>goHome()});}
+function bindOutside(){cleanup=renderOutside(root.querySelector('#outside-root'),{atlas:list(state.atlas),venues:list(state.venues),profile:state.profile,serverNow:gameNow(),onSelect:({districtId,venueId,adPlotId})=>{if(adPlotId){globalThis.dispatchEvent(new CustomEvent('abj:open-ad-studio',{detail:{plotId:adPlotId}}));return;}travelSheet(districtId,false,venueId||null);},onHome:()=>goHome()});}
 function mapMarkup(){return `<div class="page-heading map-page-heading"><span class="eyebrow">ABUJA & THE WIDER FCT</span><h1>See the city. Choose your next chapter.</h1><p>Use this optional district guide, or explore the live 3D city from Outside.</p></div><section class="map-stage" id="map-root" aria-label="Abuja map"></section>`;}
 function bindMap(){cleanup=renderMap(document.querySelector('#map-root'),{atlas:state.atlas,venues:list(state.venues),profile:state.profile,onSelect:()=>{},onTravel:(id,venueId)=>travelSheet(typeof id==='string'?id:id.id,false,venueId||null)});}
 function travelSheet(district,returningHome=false,venueId=null){
@@ -389,6 +447,14 @@ function travelSheet(district,returningHome=false,venueId=null){
  const form=sheetRoot.querySelector('#travel-form');let quoteSequence=0,quote=null,submitting=false;
  const getQuote=async()=>{
   const sequence=++quoteSequence,mode=form.elements.mode.value,button=form.querySelector('[type=submit]');quote=null;button.disabled=true;form.querySelector('#travel-quote').textContent='Checking your fare…';
+  // Walking to a venue in the neighbourhood is local gameplay. It does not
+  // need a network round trip just to enable the button.
+  if(mode==='walk'&&sameDistrict&&(venueId||returningHome)){
+   quote={district,mode,cost:0,seconds:0,...(venueId?{venueId}:{})};
+   form.querySelector('#travel-quote').innerHTML='<span>Walk to the entrance</span><strong>Free</strong>';
+   form.querySelector('#travel-fare-note').textContent='Within your neighbourhood · ready now.';
+   button.innerHTML=`Walk there${icon('arrow')}`;button.disabled=false;return;
+  }
   try{
    const result=await api(`/api/travel/quote?district=${encodeURIComponent(district)}&mode=${encodeURIComponent(mode)}${venueId?`&venueId=${encodeURIComponent(venueId)}`:''}`);
    if(sequence!==quoteSequence||!form.isConnected)return;

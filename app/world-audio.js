@@ -1,5 +1,5 @@
 // Original synthesized club rhythm. No recordings, samples, or third-party songs.
-export function createClubAudio({enabled=true,onState=()=>{}}={}) {
+export function createClubAudio({enabled=true,onState=()=>{},mode='club'}={}) {
   let context,master,timer,next=0,step=0,optedIn=false,active=false,disposed=false;
   function note(frequency,at,duration,type='sine',volume=.08,endFrequency){
     const oscillator=context.createOscillator(),gain=context.createGain();oscillator.type=type;
@@ -8,6 +8,15 @@ export function createClubAudio({enabled=true,onState=()=>{}}={}) {
     oscillator.connect(gain);gain.connect(master);oscillator.onended=()=>{oscillator.disconnect();gain.disconnect();};oscillator.start(at);oscillator.stop(at+duration+.01);
   }
   function schedule(){if(!active||!context||disposed)return;while(next<context.currentTime+.12){
+    if(mode!=='club'){
+      // A restrained, original Abuja ambience: a warm pad with occasional
+      // bell-like city texture. It is intentionally sparse for mobile battery.
+      const beat=step%16;
+      if(beat===0)note(196,next,.52,'sine',.035,220);
+      if(beat===6||beat===14)note(523.25,next,.12,'triangle',.018,659.25);
+      if(beat===10)note(392,next,.16,'sine',.012,349.23);
+      step++;next+=60/72/4;continue;
+    }
     const beat=step%16;
     if(beat%4===0)note(125,next,.23,'sine',.3,42);
     if(beat===4||beat===12){note(195,next,.09,'triangle',.06);note(1420,next+.018,.055,'triangle',.03);}

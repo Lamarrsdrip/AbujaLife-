@@ -9,6 +9,7 @@ import { GameStore, GameError, catalog, properties, transportModes, appearanceOp
 import { SocialStore } from './socialStore.mjs';
 import { AdminStore } from './adminStore.mjs';
 import { PaymentStore } from './paymentStore.mjs';
+import { RewardStore } from './rewardStore.mjs';
 import { ResidentDirectory } from './residentDirectory.mjs';
 import { abujaTime, jobSchedule, clubSchedule, seasonalWeather } from '../shared/simulation.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
@@ -27,6 +28,7 @@ export function createServer(options={}) {
   const store=options.store||new GameStore(options),clients=new Map(),lastSeen=new Map(),limits=new Map(),byUser=new Map(),byZone=new Map(),poses=new Map();
   const admin=options.admin||new AdminStore({store,bootstrapUsername:options.adminUsername}),social=options.social||new SocialStore(store),directory=new ResidentDirectory(store);
   const payments=options.payments||new PaymentStore({store,admin,fetchImpl:options.paymentFetch||fetch,configKey:options.configKey,publicOrigin:options.publicOrigin});
+  const rewards=options.rewards||new RewardStore({store,admin,publicWebUrl:options.publicOrigin||'https://abujacity.life'});
   social.authorizeModeration=id=>admin.requirePermission(id,'moderation');
   let closed=false;
   const writeEvent=(res,event,data)=>{if(!res.writableEnded)res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);};
@@ -81,6 +83,12 @@ export function createServer(options={}) {
         if(pathname==='/api/home/visits/respond'&&method==='POST'){const result=social.answerVisit(id,body.requestId,body.accept===true);for(const residentId of new Set([id,result.visit?.guestId,...(result.visitors||[]).map(v=>v.guestId)].filter(Boolean)))broadcastPresence(residentId);return json(res,200,result);}
         if(pathname==='/api/home/visits/leave'&&method==='POST'){const oldZone=store.zone(id),result=social.leaveVisit(id);broadcastPresence(id,oldZone);return json(res,200,result);}
         if(pathname==='/api/payments/checkout'&&method==='POST')return json(res,200,await payments.checkout(id,body));
+        if(pathname==='/api/rewards/share/start'&&method==='POST')return json(res,200,await rewards.start(id,body));
+        if(pathname==='/api/rewards/share/complete'&&method==='POST')return json(res,200,await rewards.complete(id,body));
+        if(pathname==='/api/rewards/earn'&&method==='GET')return json(res,200,await rewards.earnOverview(id));
+        if(pathname==='/api/rewards/activity/start'&&method==='POST')return json(res,200,await rewards.startActivity(id,body));
+        if(pathname==='/api/rewards/activity/complete'&&method==='POST')return json(res,200,await rewards.completeActivity(id,body));
+        if(pathname==='/api/rewards/campaigns'&&method==='GET')return json(res,200,rewards.campaigns(id));
         if(pathname==='/api/payments/verify'&&method==='POST')return json(res,200,await payments.verify(id,body));
         if(pathname==='/api/payments/status'&&method==='GET')return json(res,200,payments.status(id,url.searchParams.get('txRef')));
         if(pathname==='/api/admin/status'&&method==='GET')return json(res,200,admin.status(id));
@@ -100,6 +108,8 @@ export function createServer(options={}) {
         if(pathname==='/api/admin/payments/config'&&method==='POST')return json(res,200,payments.configure(id,body));
         if(pathname==='/api/admin/payments'&&method==='GET')return json(res,200,payments.list(id,{cursor:url.searchParams.get('cursor')}));
         if(pathname==='/api/admin/payments/verify'&&method==='POST')return json(res,200,await payments.adminVerify(id,body));
+        if(pathname==='/api/admin/rewards/campaigns'&&method==='GET')return json(res,200,await rewards.adminList(id));
+        if(pathname==='/api/admin/rewards/campaigns'&&method==='POST')return json(res,200,await rewards.adminSave(id,body));
         if(pathname==='/api/admin/social/posts'&&method==='GET')return json(res,200,social.moderationPosts(id,{cursor:url.searchParams.get('cursor'),includeDeleted:url.searchParams.get('includeDeleted')==='true',limit:url.searchParams.get('limit')??undefined}));
         if(pathname==='/api/admin/social/delete'&&method==='POST')return json(res,200,social.moderateDeletePost(id,body.postId,body));
         const adminSocialDelete=pathname.match(/^\/api\/admin\/social\/posts\/([^/]+)\/delete$/);if(adminSocialDelete&&method==='POST')return json(res,200,social.moderateDeletePost(id,adminSocialDelete[1],body));
@@ -144,5 +154,5 @@ export function createServer(options={}) {
     }catch(error){if(res.headersSent){res.end();return;}if(!(error instanceof GameError))console.error('AbujaLife request error:',error);json(res,error.status||500,{ok:false,error:error instanceof GameError?error.message:'Something went wrong. Please try again.',code:error.code||'server_error'});}
   });
   const heartbeat=setInterval(()=>{for(const [res,client] of clients){if(!store.session(client.token)||admin.isSuspended(client.id)){res.end();continue;}lastSeen.set(client.id,Date.now());res.write(': heartbeat\n\n');}for(const [id,time] of lastSeen)if(Date.now()-time>45000){lastSeen.delete(id);broadcastPresence(id);}},20000);heartbeat.unref();
-  server.store=store;server.admin=admin;server.social=social;server.payments=payments;server.closeRealtime=()=>{for(const res of clients.keys())res.end();};server.on('close',()=>{closed=true;clearInterval(heartbeat);store.close();});return server;
+  server.store=store;server.admin=admin;server.social=social;server.payments=payments;server.rewards=rewards;server.closeRealtime=()=>{for(const res of clients.keys())res.end();};server.on('close',()=>{closed=true;clearInterval(heartbeat);store.close();});return server;
 }

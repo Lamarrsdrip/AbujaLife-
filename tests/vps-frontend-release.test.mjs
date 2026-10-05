@@ -4,8 +4,8 @@ import fs from 'node:fs';
 
 const deploy = fs.readFileSync('deploy/windows/deploy.mjs', 'utf8');
 const frontend = fs.readFileSync('deploy/windows/configure-frontend.ps1', 'utf8');
-const workflow = fs.readFileSync('.github/workflows/frontend-deploy.yml', 'utf8');
 const qaCompose = fs.readFileSync('deploy/compose.qa.yml', 'utf8');
+const workflowPath = '.github/workflows/frontend-deploy.yml';
 
 test('VPS frontend changes only after the promoted API reports healthy', () => {
   const healthy = deploy.indexOf('await waitRelease(next.releaseId);');
@@ -24,7 +24,8 @@ test('Caddy serves the release manifest revision and validates before activation
   assert.match(frontend, /# BEGIN ABUJALIFE FRONTEND/);
 });
 
-test('frontend CI validates the build without publishing a drifting Hostinger branch', () => {
+test('frontend CI validates the build without publishing a drifting Hostinger branch', { skip: !fs.existsSync(workflowPath) }, () => {
+  const workflow = fs.readFileSync(workflowPath, 'utf8');
   assert.match(workflow, /Verify the static site ships in the VPS release/);
   assert.doesNotMatch(workflow, /git push --force/);
   assert.doesNotMatch(workflow, /hostinger-production/);

@@ -6,6 +6,19 @@ import { fileURLToPath } from 'node:url';
 
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const publicAssetExtensions = new Set(['.css', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.avif', '.ico', '.woff', '.woff2', '.ttf', '.otf', '.eot', '.mp3', '.wav', '.ogg', '.glb', '.gltf', '.bin']);
+export const productionEntryPoints = Object.freeze({
+  app: 'app/app.js',
+  admin: 'app/admin.js',
+  'game-ui-kit': 'app/game-ui-kit.js',
+  ads: 'app/ads.js',
+  integrations: 'app/integrations.js',
+  jackpot: 'app/jackpot.js',
+  'jackpot-admin': 'app/jackpot-admin.js',
+  'outside-quick-access': 'app/outside-quick-access.js',
+  'living-city': 'app/living-city.js',
+  'game-map': 'app/game-map.js',
+  'game-experience': 'app/game-experience.js',
+});
 
 export function publicOrigin(value, name) {
   let url;
@@ -62,7 +75,7 @@ export async function buildProduction({ environment = process.env, outputDirecto
     }
     const result = await build({
       absWorkingDir: repository,
-      entryPoints: { app: 'app/app.js', admin: 'app/admin.js', 'game-ui-kit': 'app/game-ui-kit.js', ads: 'app/ads.js', integrations: 'app/integrations.js', jackpot: 'app/jackpot.js', 'jackpot-admin': 'app/jackpot-admin.js' },
+      entryPoints: productionEntryPoints,
       outdir: staging,
       bundle: true,
       splitting: true,

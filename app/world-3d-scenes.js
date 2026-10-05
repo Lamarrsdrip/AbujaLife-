@@ -7,6 +7,7 @@ import { createWorldMaterialLibrary } from './world-materials.js';
 // Combine rigid, opaque pieces with identical materials. Vertex normals, UVs,
 // triangles and joints are preserved; moving parts and transparent surfaces stay separate.
 export function batchRigidMeshes(T, root, {recursive = false, disposeSources = false, preserveFurniture = false} = {}) {
+  const mergedGeometries=[];
   root.updateMatrixWorld(true);
   const inverse = new T.Matrix4().copy(root.matrixWorld).invert(), buckets = new Map();
   const collect = part => {
@@ -35,17 +36,31 @@ export function batchRigidMeshes(T, root, {recursive = false, disposeSources = f
       combined.setIndex(new T.BufferAttribute(indices,1));
     }
     combined.computeBoundingBox();combined.computeBoundingSphere();
+    mergedGeometries.push(combined);
     const merged=new T.Mesh(combined,parts[0].material);merged.castShadow=parts[0].castShadow;merged.receiveShadow=parts[0].receiveShadow;merged.renderOrder=parts[0].renderOrder;merged.layers.mask=parts[0].layers.mask;
     merged.name='Rigid authored pieces';root.add(merged);
     for(const part of parts){part.removeFromParent();if(disposeSources)part.geometry.dispose();}
     transformed.forEach(g=>g.dispose());
   }
+  return mergedGeometries;
 }
 
 export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, venue, place, depthScale = Math.SQRT2, modelOnly} = {}) {
   const group = new T.Group();
   group.name = 'AbujaLife authored 3D environment';
   const geometries = new Map(), materials = new Map(), textures = [];
+  const mergedGeometries=new Set(),furnitureGeometries=new WeakMap();
+  function batch(parent,options){const result=batchRigidMeshes(T,parent,options);for(const geometry of result)mergedGeometries.add(geometry);return result;}
+  let released=false;
+  function disposeResources(){
+    if(released)return;released=true;
+    setFurniturePreview(null);
+    const owned=new Set([...geometries.values(),...mergedGeometries]);group.traverse(part=>{if(part.geometry)owned.add(part.geometry);});
+    for(const geometry of owned)geometry.dispose();
+    for(const material of new Set(materials.values()))material.dispose();
+    for(const texture of new Set(textures))texture.dispose();surfaces.dispose();
+    geometries.clear();mergedGeometries.clear();materials.clear();furniture.clear();
+  }
   const surfaces = createWorldMaterialLibrary(T), furniture = new Map(), cutawayWalls = [], contactInstances = new Map();
   const water = [], movingCars = [], nightBeams=[], clubLights=[];
   const ds = depthScale;
@@ -500,7 +515,7 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     if(!modelOnly){p.add(beams);nightBeams.push(beams);}
     p.name=item.name;p.userData={vehicleId:item.id,modelStyle:item.modelStyle,signature:shape.signature,dimensions:{...dimensions},authoredApproximation:true};
     // The four wheel Groups stay separate so every model retains wheel motion.
-    batchRigidMeshes(T,p);for(const wheel of wheels)batchRigidMeshes(T,wheel);
+    batch(p);for(const wheel of wheels)batch(wheel);
     return{group:p,wheels};
   }
   function carModel(color,style='sedan',vehicleId) {
@@ -542,7 +557,7 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     if(style==='taxi')box(p,-5,98,0,29,11,20,'#d7c083',true);
     const beams=new T.Group(),beamMat=new T.MeshBasicMaterial({color:'#fff0b5',transparent:true,opacity:.035,depthWrite:false,side:T.DoubleSide});materials.set(`beams:${materials.size}`,beamMat);for(const z of [-width*.34,width*.34]){const cone=mesh(beams,geo('headlightcone',()=>new T.ConeGeometry(39,170,12,1,true)),beamMat,length/2+85,33,z,false);cone.rotation.z=Math.PI/2;cone.userData.excludeFromBounds=true;}beams.visible=false;if(!modelOnly){p.add(beams);nightBeams.push(beams);}
     p.name=vehicleFor(vehicleId)?.name||style;
-    batchRigidMeshes(T,p);for(const wheel of wheels)batchRigidMeshes(T,wheel);
+    batch(p);for(const wheel of wheels)batch(wheel);
     return {group:p,wheels};
   }
   function bikeModel() {
@@ -568,7 +583,7 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
       const thigh=box(p,-4,58,z,40,10,10,'#3c4247',true);thigh.rotation.z=-.28;
       const shin=box(p,13,41,z,9,30,9,'#3c4247',true);shin.rotation.z=.1;box(p,20,24,z,21,8,12,tire,true);
     }
-    p.name='Original Abuja bike ride';batchRigidMeshes(T,p);return {group:p,wheels};
+    p.name='Original Abuja bike ride';batch(p);return {group:p,wheels};
   }
   function createFurnitureModel(item) {
     const type=item.kind||item.itemId||'fixture';
@@ -579,7 +594,7 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     p.name=item.itemId?`Owned furniture: ${item.itemId}`:type;
     p.userData={kind:type,itemId:item.itemId||null,propertyId:item.propertyId||null,supportId:item.supportId||null,
       surfaceHeight:item.surfaceHeight||null,footprint:{x:item.x,y:item.y,w:item.w,h:item.h,rotation:item.rotation||0},elevation:Number(item.elevation)||0};
-    if(item.itemId)batchRigidMeshes(T,p,{recursive:true});
+    if(item.itemId)furnitureGeometries.set(p,batch(p,{recursive:true}));
     return p;
   }
   function placeObject(item) {
@@ -587,7 +602,7 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
   }
   let preview = null, previewKey = null, previewMaterials = [];
   function setFurniturePreview(item, {valid = true} = {}) {
-    if(!item){if(preview){preview.removeFromParent();for(const entry of previewMaterials)entry.material.dispose();preview.userData.feedbackGeometry?.dispose();preview.userData.feedbackMaterial?.dispose();}preview=null;previewKey=null;previewMaterials=[];return null;}
+    if(!item){if(preview){preview.removeFromParent();for(const geometry of furnitureGeometries.get(preview)||[]){geometry.dispose();mergedGeometries.delete(geometry);}for(const entry of previewMaterials)entry.material.dispose();preview.userData.feedbackGeometry?.dispose();preview.userData.feedbackMaterial?.dispose();}preview=null;previewKey=null;previewMaterials=[];return null;}
     const key=JSON.stringify([item.itemId,item.kind,item.w,item.h,item.rotation||0]);
     if(previewKey!==key){
       setFurniturePreview(null);preview=createFurnitureModel(item);preview.name='Furniture arrangement preview';preview.userData.preview=true;
@@ -686,7 +701,7 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
         cylinder(fixture,0,0,7,8,22,mat('#e3c797',.68,0,{emissive:'#ddaa62',emissiveIntensity:.24}),8,12);
         for(const y of[-12,12])box(fixture,0,y,7,17,2,13,metal,true);
       }
-      for(const wall of cutawayWalls)batchRigidMeshes(T,wall,{recursive:true});
+      for(const wall of cutawayWalls)batch(wall,{recursive:true});
     }
     for(const item of layout.objects||[])placeObject(item);
     // Soft textiles and objects that do not block a route still appear in 3D.
@@ -793,7 +808,7 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
           const awning=box(p,x,79,b.h*ds/2+7,b.w*.27,5,35,'#af9871');awning.rotation.x=-.12;
           for(let i=0;i<3;i++)box(p,x-b.w*.075+i*b.w*.075,80,b.h*ds/2+7,b.w*.037,2,33,'#476c72');
         }
-        batchRigidMeshes(T,p);
+        batch(p);
       }
       if(b.id==='mosque') {const dome=ball(p,0,height+11,0,b.w*.3,70,b.h*ds*.3,'#749180');const minaret=cylinder(p,b.w*.36,height*.85,-b.h*.2*ds,19,height*1.7,'#dcd1b6',17);cylinder(p,b.w*.36,height*1.73,-b.h*.2*ds,27,21,'#729180',15);}
       if(b.id==='church'){box(p,0,height+34,b.h*.12*ds,7,72,7,'#796c52');box(p,0,height+51,b.h*.12*ds,47,7,7,'#796c52');}
@@ -816,12 +831,15 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
   if(modelOnly) {
     const model=modelOnly.category==='vehicle'?carModel(modelOnly.color,modelOnly.bodyStyle,modelOnly.id).group:objectModel(modelOnly.kind,modelOnly.width||110,modelOnly.depth||80,modelOnly);
     group.add(model);
-    if(modelOnly.category!=='vehicle')batchRigidMeshes(T,model,{recursive:true});
-    return {group,dispose(){surfaces.dispose();for(const texture of textures)texture.dispose();}};
+    if(modelOnly.category!=='vehicle')batch(model,{recursive:true});
+    return {group,dispose:disposeResources};
   }
   if(kind==='transit')journeySet();else if(kind==='home'||kind==='visit'||kind==='venue')interiorSet();else citySet();
   // Static set pieces batch before the animated vehicles are added.
-  batchRigidMeshes(T,group,{recursive:true,preserveFurniture:true});
+  batch(group,{recursive:true,preserveFurniture:true});
+  // Authored scenery is rigid. Keep the cutaway roots and later-added vehicles
+  // dynamic, while avoiding thousands of identical local matrix multiplications.
+  group.traverse(part=>{if(part!==group&&(part.isMesh||part.isGroup)&&!part.userData.cameraCutaway){part.updateMatrix();part.matrixAutoUpdate=false;}});
   let ownCar,parkedCar;
   if(profile.drivingVehicle||profile.activeTrip||profile.inventory?.some(id=>vehicleFor(id))) {
     const ownId=profile.drivingVehicle||profile.activeTrip?.vehicleId||profile.inventory?.find(id=>vehicleFor(id));
@@ -832,6 +850,7 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
   for(const traffic of layout.traffic||[]){const car=carModel(traffic.color,traffic.type||'sedan');group.add(car.group);movingCars.push(car);}
   const attachedGeometry=new Set();group.traverse(o=>{if(o.geometry)attachedGeometry.add(o.geometry);});
   for(const [key,geometry]of geometries)if(!attachedGeometry.has(geometry)){geometry.dispose();geometries.delete(key);}
+  for(const geometry of mergedGeometries)if(!attachedGeometry.has(geometry)){geometry.dispose();mergedGeometries.delete(geometry);}
   // WebGL scene metadata supports acceptance checks without replacing gameplay.
   group.userData={environment:'true-3d',indoor,objects:(layout.objects||[]).map(o=>o.kind),materials:'authored wood grain, woven fabric, stone, tile, glass and metal',surfaceTextures:surfaces.stats().textures};
   function updateView({yaw=31*Math.PI/180,elevation=38*Math.PI/180,delta=0}={}) {
@@ -873,6 +892,6 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
       trafficPositions.forEach((p,i)=>positionCar(movingCars[i],p,p.angle,true,true,elapsed));
       for(const material of water)material.opacity=.91+Math.sin(elapsed*.7)*.025;
     },
-    dispose(){setFurniturePreview(null);surfaces.dispose();for(const texture of textures)texture.dispose();for(const geometry of geometries.values())geometry.dispose();geometries.clear();materials.clear();furniture.clear();}
+    dispose:disposeResources
   };
 }

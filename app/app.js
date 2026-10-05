@@ -1,5 +1,6 @@
 import { apiFetch, createApiEventSource } from './api-client.js';
 import { consumeAuthLink, createAuthRecovery, loginCredentials } from './auth-recovery.js';
+import { authenticateAccount, finishOnboarding, accountErrorMessage } from './auth-session.js';
 import { createInstallController } from './install.js';
 import { brandMark } from './brand.js';
 import { installPageViewport } from './page-viewport.js';
@@ -27,6 +28,7 @@ let authMode='register', selectedJob, marketFilter='all', propertyTab='homes', c
 let authUsernameEdited=false;
 let authDraft={displayName:'',username:'',email:'',password:''}, authError='', authNotice='', garagePaint={}, garageIntents={};
 let authConfig={emailVerificationEnabled:false,passwordResetEnabled:false};
+let stateRequestEpoch=0;
 const authRecovery=createAuthRecovery({link:consumeAuthLink(location,history),api:(...args)=>api(...args)});
 let onboardingStep=0, onboardingDraft, pendingVenue;
 let quickHomeNavigating=false;
@@ -43,16 +45,29 @@ const icon = name => `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" st
 
 async function api(path,options={}) {
  const opts={...options,headers:{...options.headers}};
+ if(opts.method&&opts.method!=='GET')stateRequestEpoch++;
  if(path==='/api/action'&&opts.body&&typeof opts.body==='object'){opts.body.payload??={};if(!opts.body.payload.idempotencyKey)opts.body.payload.idempotencyKey=crypto.randomUUID();}
  if(path==='/api/wallet/transfer'&&opts.body&&typeof opts.body==='object'&&!opts.body.idempotencyKey)opts.body.idempotencyKey=crypto.randomUUID();
  if(opts.body!==undefined&&typeof opts.body!=='string')opts.body=JSON.stringify(opts.body);
  if(opts.body!==undefined)opts.headers['content-type']='application/json';
- const response=await apiFetch(path,{...opts,signal:opts.signal||AbortSignal.timeout(path==='/api/bootstrap'?8000:15000)}),body=await response.json();
+ const response=await apiFetch(path,{...opts,signal:opts.signal||AbortSignal.timeout(path.startsWith('/api/bootstrap')?8000:15000)}),body=await response.json();
  if(!response.ok||body.ok===false){const error=new Error(body.error||'Please try again.');error.status=response.status;error.code=body.code;throw error;}
  return body;
 }
 function toast(message){const el=document.querySelector('#toast');el.textContent=message;el.classList.add('visible');clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.classList.remove('visible'),4000);}
-async function refresh({render=true}={}){state=await api('/api/bootstrap');serverClockAt=Number(state.serverTime)||Date.now();serverClockObservedAt=performance.now();if(render)renderMain();else{const balance=root.querySelector('.wallet-button');if(balance){balance.querySelector('strong').textContent=`₦${money(state.profile?.wallet)}`;balance.setAttribute('aria-label',`Naira balance, ₦${money(state.profile?.wallet)}. Open wallet`);}cleanup?.updateResidents?.(list(state.nearby));}phone.render();showWorkReminder();void install.refresh();return state;}
+async function refresh({render=true,startup=false}={}){const epoch=++stateRequestEpoch,next=await api(startup?'/api/bootstrap?startup=1':'/api/bootstrap');if(epoch!==stateRequestEpoch)return state;state=next;serverClockAt=Number(state.serverTime)||Date.now();serverClockObservedAt=performance.now();if(render)renderMain();else{const balance=root.querySelector('.wallet-button');if(balance){balance.querySelector('strong').textContent=`₦${money(state.profile?.wallet)}`;balance.setAttribute('aria-label',`Naira balance, ₦${money(state.profile?.wallet)}. Open wallet`);}cleanup?.updateResidents?.(list(state.nearby));}phone.render();showWorkReminder();void install.refresh();return state;}
+function expireAccount(){stream?.close();phone.close();stateRequestEpoch++;state={authenticated:false};authMode='login';authDraft.password='';authNotice='Your session has expired. Sign in to continue with your saved resident.';renderMain();}
+function hydrateStartup(){
+ if(!state.authenticated||!state.startup)return;
+ const epoch=stateRequestEpoch,owner=state.profile.id;
+ void api('/api/bootstrap').then(next=>{
+  if(epoch!==stateRequestEpoch||state.profile?.id!==owner)return;
+  if(!next.authenticated){expireAccount();return;}
+  if(next.profile?.id!==owner)return;
+  // Background social data must never overwrite a newer wallet or placement.
+  state={...next,profile:state.profile};phone.render();cleanup?.updateResidents?.(list(state.nearby));
+ }).catch(error=>{if(epoch===stateRequestEpoch&&error.status===401)expireAccount();});
+}
 const phone=createPhone({root:document.querySelector('#phone-root'),getState:()=>state,api,onUpdate:refresh,onNavigate:navigate,toast});
 const install=createInstallController({shouldShow:()=>!!(state.authenticated&&state.profile?.onboardingComplete)&&!phone.isOpen?.()&&!document.querySelector('#sheet-root .sheet'),localProgress:()=>!!state.preview,onAvailabilityChange:available=>document.querySelectorAll('[data-install-app]').forEach(button=>button.hidden=!available)});
 const furnitureCatalogue=createFurnitureCatalogue({getState:()=>state,mutate:action,onSelect:beginFurniturePlacement,getFurnitureState:()=>cleanup?.getFurnitureState?.(),toast,enhancePreviews:scope=>enhanceProductPreviews(scope,{appearance:state.profile?.appearance}),onUse:itemId=>{
@@ -153,7 +168,7 @@ function renderAuth(){
  root.querySelector('[data-forgot-password]')?.addEventListener('click',()=>{authMode='forgot';authError='';authNotice='';authDraft.password='';renderMain();});
  const form=root.querySelector('#auth-form');form.addEventListener('input',e=>{if(e.target.name)authDraft[e.target.name]=e.target.value;if(e.target.name==='username')authUsernameEdited=!!e.target.value;if(registering&&e.target.name==='displayName'&&!authUsernameEdited){const stem=e.target.value.normalize('NFKD').replace(/\p{Diacritic}/gu,'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');if(stem){authDraft.username=stem.slice(0,20)+'_abj';form.elements.username.value=authDraft.username;}}});
  bindPasswordVisibility(form);
- form.onsubmit=async e=>{e.preventDefault();const submit=form.querySelector('[type=submit]');submit.disabled=true;submit.setAttribute('aria-busy','true');authError='';form.querySelector('#auth-error').textContent='';const fields=Object.fromEntries(new FormData(form)),values=registering?{...fields,appearance:draft}:loginCredentials(fields.username,fields.password);try{state=await api(`/api/auth/${registering?'register':'login'}`,{method:'POST',body:values});authDraft.password='';authNotice='';view='world';renderMain();connectRealtime();if(registering&&fields.email&&authConfig.emailVerificationEnabled){toast('Your account is ready. Check your email to confirm your address.');}}catch(error){authError=error.message;form.querySelector('#auth-error').textContent=authError;submit.disabled=false;submit.removeAttribute('aria-busy');}};
+ form.onsubmit=async e=>{e.preventDefault();const submit=form.querySelector('[type=submit]');if(submit.disabled)return;submit.disabled=true;submit.setAttribute('aria-busy','true');authError='';form.querySelector('#auth-error').textContent='';const fields=Object.fromEntries(new FormData(form)),values=registering?{...fields,appearance:draft}:loginCredentials(fields.username,fields.password);try{state=await authenticateAccount({api,mode:registering?'register':'login',credentials:values,readSession:()=>api('/api/bootstrap?startup=1')});authDraft.password='';authNotice='';view='world';renderMain();connectRealtime();hydrateStartup();if(registering&&fields.email&&authConfig.emailVerificationEnabled){toast('Your account is ready. Check your email to confirm your address.');}}catch(error){authError=accountErrorMessage(error);form.querySelector('#auth-error').textContent=authError;submit.disabled=false;submit.removeAttribute('aria-busy');}};
 }
 function renderPasswordRequest(){
  renderAuthPage(`<span class="eyebrow">ACCOUNT RECOVERY</span><h2>Find your way home.</h2><p class="auth-intro">Enter your username or email. If your account has an email address, we will send a password reset link.</p><form id="password-request-form"><label>Username or email<input name="username" required maxlength="254" autocomplete="username" autocapitalize="none" spellcheck="false" value="${esc(authDraft.username)}"></label><p class="form-error" role="alert"></p><p class="auth-success" role="status"></p><button class="primary auth-submit" type="submit">Send reset link${icon('arrow')}</button></form><button class="text-button auth-back" type="button" data-back-to-login>Back to sign in</button>`);
@@ -184,7 +199,7 @@ function renderOnboarding(){
  form.querySelector('[name=displayName]')?.addEventListener('input',e=>{onboardingDraft.displayName=e.target.value;root.querySelector('#onboarding-resident-name').textContent=e.target.value||'Your resident';});
  form.querySelectorAll('[name=lifeGoal]').forEach(input=>input.onchange=()=>{onboardingDraft.lifeGoal=input.value;});
  form.querySelector('[data-onboarding-back]')?.addEventListener('click',()=>{onboardingStep--;renderMain();});
- form.onsubmit=async e=>{e.preventDefault();const values=Object.fromEntries(new FormData(form));if(values.displayName)onboardingDraft.displayName=values.displayName.trim();if(values.lifeGoal)onboardingDraft.lifeGoal=values.lifeGoal;if(onboardingStep<4){onboardingStep++;renderMain();window.scrollTo(0,0);return;}const submit=form.querySelector('[type=submit]');submit.disabled=true;try{await api('/api/profile',{method:'POST',body:{...onboardingDraft,onboardingComplete:true}});onboardingDraft=undefined;onboardingStep=0;view='world';await refresh();toast('How far? Welcome to your Abuja life. Walk to your front door to explore.');}catch(error){root.querySelector('#onboarding-error').textContent=error.message;submit.disabled=false;}};
+ form.onsubmit=async e=>{e.preventDefault();const values=Object.fromEntries(new FormData(form));if(values.displayName)onboardingDraft.displayName=values.displayName.trim();if(values.lifeGoal)onboardingDraft.lifeGoal=values.lifeGoal;if(onboardingStep<4){onboardingStep++;renderMain();window.scrollTo(0,0);return;}const submit=form.querySelector('[type=submit]');if(submit.disabled)return;submit.disabled=true;try{state.profile=await finishOnboarding({api,draft:onboardingDraft,residentId:state.profile.id,readSession:()=>api('/api/bootstrap?startup=1')});onboardingDraft=undefined;onboardingStep=0;view='world';renderMain();connectRealtime();hydrateStartup();toast('How far? Welcome to your Abuja life. Walk to your front door to explore.');}catch(error){if(error.status===401){expireAccount();return;}form.querySelector('#onboarding-error').textContent=accountErrorMessage(error);submit.disabled=false;}};
 }
 function header(){const p=state.profile;const needs=[['Energy','energy','⚡'],['Food','hunger','⌁'],['Clean','hygiene','✦'],['Fun','fun','◌']];return `<header class="game-header"><a href="#world" class="wordmark" data-view="world" aria-label="AbujaLife home">${brandMark({compact:true})}</a><span class="header-edition">YOUR CITY. YOUR STORY.</span><button class="needs-header" data-open-needs aria-label="Open your life needs">${needs.map(([label,key,icon])=>`<span class="needs-header-item"><i aria-hidden="true">${icon}</i><b>${label}</b><em style="--need:${Math.max(0,Math.min(100,Number(p[key]??0)))}%"></em></span>`).join('')}</button><button class="wallet-button" data-phone="wallet" aria-label="Naira balance, ₦${money(p.wallet)}. Open wallet"><span>Naira balance</span><strong>₦${money(p.wallet)}</strong></button><button class="resident-button" data-view="profile" aria-label="Your resident profile">${avatarSVG(p.appearance,{size:40})}</button></header>`;}
 function nav(){const unread=list(state.conversations).reduce((n,c)=>n+Number(c.unread||0),0)+list(state.notifications).filter(n=>!n.readAt&&!n.read).length;return `<nav class="game-nav" aria-label="Game navigation"><button data-view="world" class="${view==='world'?'active':''}" ${view==='world'?'aria-current="page"':''}>${icon('world')}<span>Play</span></button><button data-nav-outside class="${view==='outside'?'active':''}">${icon('map')}<span>Outside</span></button><button data-nav-life class="${['work','market','property','profile'].includes(view)?'active':''}">${icon('sun')}<span>My life</span></button><button data-phone="home" class="phone-launch">${icon('phone')}<span>Phone</span>${unread?`<i class="nav-badge">${unread}</i>`:''}</button></nav>`;}
@@ -458,13 +473,14 @@ async function boot(){
  // Optional account features never hold the city behind a second request.
  void api('/api/auth/config',{signal:AbortSignal.timeout(5000)}).then(config=>{authConfig=config;}).catch(()=>{});
  try{
-  await refresh({render:false});
-  renderMain();connectRealtime();
+  await refresh({render:false,startup:true});
+  renderMain();connectRealtime();hydrateStartup();
   if(authRecovery.snapshot().kind==='verify-email'&&authRecovery.snapshot().status==='pending'){
    try{await authRecovery.verify();authNotice='Your email address is confirmed.';if(state.authenticated)toast(authNotice);renderMain();}catch{}
   }
   if(state.authenticated&&new URLSearchParams(location.search).get('payment')==='return')phone.open('paymentcheckout');
  }catch(error){
+  if(error.status===401){expireAccount();return;}
   const slow=error.name==='TimeoutError'||error.name==='AbortError';
   root.innerHTML=`<div class="loading-state"><span class="wordmark">${brandMark()}</span><h1>${slow?'The city is taking too long.':'Let’s try that again.'}</h1><p>${slow?'Your connection timed out. Reconnect to pick up where you left off.':error.status?esc(error.message):'We can’t reach the city right now. Check your connection and try again.'}</p><button class="primary" id="retry-start">Reconnect</button></div>`;
   root.querySelector('#retry-start').onclick=boot;

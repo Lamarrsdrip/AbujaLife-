@@ -33,8 +33,27 @@ export function createProductionServer({store,social,directory,presence,admin,pa
   store.emitZone=(id,event,data)=>safeTask((async()=>{const zone=await reindex(id);for(const res of byZone.get(zone)||[]){const target=clients.get(res)?.id;if(target&&!(await store.blocked(id,target)))writeEvent(res,event,data);}})());
   async function broadcastPresence(id,previousZone=null){const zone=await reindex(id),targets=new Set([...(byZone.get(zone)||[]),...(byZone.get(previousZone)||[])]);for(const friend of await store.friendIds(id))for(const res of byUser.get(friend)||[])targets.add(res);for(const res of targets){const target=clients.get(res)?.id;if(target&&target!==id&&!(await store.blocked(id,target)))writeEvent(res,'presence',{resident:await store.resident(target,id)});}}
   function rateLimit(req,kind,limit=90,principal=''){const forwarded=trustProxy?req.headers['x-forwarded-for']?.split(',').at(-1)?.trim():null;const ip=forwarded&&/^[\da-fA-F:.]+$/.test(forwarded)?forwarded:req.socket.remoteAddress;const key=`${principal||ip}:${kind}`,now=Date.now(),previous=limits.get(key),bucket=previous&&now-previous.at<60000?previous:{at:now,count:0};bucket.count++;limits.set(key,bucket);if(bucket.count>limit)throw new GameError('Please wait before trying again',429,'rate_limited');if(limits.size>5000)for(const[k,v]of limits)if(now-v.at>60000)limits.delete(k);}
-  async function publicBootstrap(){const now=store.clock();return{authenticated:false,atlas:ABUJA_ATLAS,councils:AREA_COUNCILS,landmarks:LANDMARKS,atlasMeta:ATLAS_META,jobs:store.publicJobs(),catalog,properties,events:[],transportModes,appearanceOptions,activities,venues:VENUES,venueActions:VENUE_ACTIONS,lifeGoals:LIFE_GOALS,economyMeta:ECONOMY_META,walletMeta:{...WALLET_META,topupMode:'flutterwave',demoTopupEnabled:false},investmentMeta:INVESTMENT_META,diceMeta:DICE_META,vehicleColors:VEHICLE_COLORS,homeUpgrades:HOME_UPGRADES,payments:await payments.publicConfig(),serverTime:now,clock:abujaTime(now),weather:seasonalWeather(now),clubSchedule:clubSchedule(now)};}
-  async function bootstrap(id){const publicState=await publicBootstrap();if(!id)return publicState;await social.reconcileVisits(id);const [base,visits,zone,adminState]=await Promise.all([store.bootstrap(id),social.visitState(id),store.zone(id),admin.status(id)]);return{...publicState,...base,nearby:(base.nearby||[]).map(person=>({...person,pose:poses.get(person.id)?.zone===zone?poses.get(person.id).pose:null})),properties:base.properties||properties,workSchedules:Object.fromEntries(Object.keys(store.publicJobs()).map(key=>[key,jobSchedule(key,base.profile,store.clock())])),homeVisit:visits.visit,homeVisitRequests:visits.requests,homeVisitors:visits.visitors,admin:adminState};}
+  async function publicBootstrap({startup=false}={}){const now=store.clock();return{authenticated:false,...(startup?{startup:true}:{}),atlas:ABUJA_ATLAS,councils:AREA_COUNCILS,landmarks:LANDMARKS,atlasMeta:ATLAS_META,jobs:store.publicJobs(),catalog,properties,events:[],transportModes,appearanceOptions,activities,venues:VENUES,venueActions:VENUE_ACTIONS,lifeGoals:LIFE_GOALS,economyMeta:ECONOMY_META,walletMeta:{...WALLET_META,topupMode:'flutterwave',demoTopupEnabled:false},investmentMeta:INVESTMENT_META,diceMeta:DICE_META,vehicleColors:VEHICLE_COLORS,homeUpgrades:HOME_UPGRADES,payments:startup?null:await payments.publicConfig(),serverTime:now,clock:abujaTime(now),weather:seasonalWeather(now),clubSchedule:clubSchedule(now)};}
+  async function bootstrap(id,{startup=false}={}){
+    if(startup){
+      const [publicState,initial,adminState]=await Promise.all([publicBootstrap({startup:true}),id?store.bootstrap(id,{startup:true}):null,id?admin.status(id):null]);
+      if(!id)return publicState;
+      let base=initial,visit=null;
+      // An active guest still needs the owner's validated home before rendering.
+      // Requests, visitors, resident directory and message history load separately.
+      if(base.profile.location?.kind==='visit'){
+        await social.reconcileVisits(id);base=await store.bootstrap(id,{startup:true});
+        if(base.profile.location?.kind==='visit'){
+          const location=base.profile.location;
+          const row=await social.collection('home_visit_sessions').findOne({id:location.visitId,guestId:id,ownerId:location.ownerId,endedAt:null});
+          fail(row,'This home visit is unavailable',403,'visit_unavailable');
+          visit=await social.visitView(id,row);
+        }
+      }
+      return{...publicState,...base,properties:base.properties||properties,workSchedules:Object.fromEntries(Object.keys(store.publicJobs()).map(key=>[key,jobSchedule(key,base.profile,store.clock())])),homeVisit:visit,homeVisitRequests:[],homeVisitors:[],admin:adminState};
+    }
+    const publicState=await publicBootstrap();if(!id)return publicState;await social.reconcileVisits(id);const [base,visits,zone,adminState]=await Promise.all([store.bootstrap(id),social.visitState(id),store.zone(id),admin.status(id)]);return{...publicState,...base,nearby:(base.nearby||[]).map(person=>({...person,pose:poses.get(person.id)?.zone===zone?poses.get(person.id).pose:null})),properties:base.properties||properties,workSchedules:Object.fromEntries(Object.keys(store.publicJobs()).map(key=>[key,jobSchedule(key,base.profile,store.clock())])),homeVisit:visits.visit,homeVisitRequests:visits.requests,homeVisitors:visits.visitors,admin:adminState};
+  }
   const server=http.createServer(async(req,res)=>{
     const requestId=crypto.randomUUID();res.setHeader('x-request-id',requestId);let pathname='';
     try{
@@ -48,12 +67,12 @@ export function createProductionServer({store,social,directory,presence,admin,pa
       if(method==='POST'){fail((req.headers['content-type']||'').toLowerCase().startsWith('application/json'),'Send JSON for this action',415);if(req.headers.cookie&&!req.headers.authorization)fail(origin&&allowedOrigins.has(origin),'This action must originate from AbujaLife',403,'cross_origin');if(req.headers['sec-fetch-site']==='cross-site')fail(origin&&allowedOrigins.has(origin),'Open AbujaLife to perform this action',403,'cross_origin');}
       const token=tokenFor(req),id=await store.session(token);
       if(id&&await admin.isSuspended(id))throw new GameError('This account is suspended',403,'account_suspended');
-      if(pathname==='/api/bootstrap'&&method==='GET')return json(res,200,await bootstrap(id));
+      if(pathname==='/api/bootstrap'&&method==='GET')return json(res,200,await bootstrap(id,{startup:url.searchParams.get('startup')==='1'}));
       if(pathname==='/api/payments/config'&&method==='GET')return json(res,200,await payments.publicConfig());
       if(pathname==='/api/auth/config'&&method==='GET')return json(res,200,store.auth.configuration());
       if(pathname==='/payments/return'&&method==='GET'){const query=new URLSearchParams({payment:'return',transaction_id:(url.searchParams.get('transaction_id')||'').slice(0,100),tx_ref:(url.searchParams.get('tx_ref')||'').slice(0,160),status:(url.searchParams.get('status')||'').slice(0,40)});res.writeHead(303,{...SECURITY_HEADERS,location:`${publicWebUrl}/?${query}`});res.end();return;}
-      if(pathname==='/api/auth/register'&&method==='POST'){rateLimit(req,'auth',12);fail((await admin.publicSettings()).registrationOpen,'Registration is temporarily paused',503);const session=await store.register(await readBody(req));setSession(res,session.token);log('signup',{requestId});return json(res,201,await bootstrap(session.residentId));}
-      if(pathname==='/api/auth/login'&&method==='POST'){rateLimit(req,'auth',12);const session=await store.login(await readBody(req));if(await admin.isSuspended(session.residentId)){await store.logout(session.token);throw new GameError('This account is suspended',403,'account_suspended');}setSession(res,session.token);log('login',{requestId});return json(res,200,await bootstrap(session.residentId));}
+      if(pathname==='/api/auth/register'&&method==='POST'){rateLimit(req,'auth',12);fail((await admin.publicSettings()).registrationOpen,'Registration is temporarily paused',503);const {startup,...credentials}=await readBody(req),session=await store.register(credentials);setSession(res,session.token);log('signup',{requestId});return json(res,201,await bootstrap(session.residentId,{startup:startup===true}));}
+      if(pathname==='/api/auth/login'&&method==='POST'){rateLimit(req,'auth',12);const {startup,...credentials}=await readBody(req),session=await store.login(credentials);if(await admin.isSuspended(session.residentId)){await store.logout(session.token);throw new GameError('This account is suspended',403,'account_suspended');}setSession(res,session.token);log('login',{requestId});return json(res,200,await bootstrap(session.residentId,{startup:startup===true}));}
       if(pathname==='/api/auth/logout'&&method==='POST'){await readBody(req);await store.logout(token);setSession(res,'');if(id){for(const[stream,client]of clients)if(client.token===token)stream.end();if(!byUser.has(id))lastSeen.delete(id);await broadcastPresence(id);}return json(res,200,{ok:true,authenticated:false});}
       if(pathname==='/api/auth/refresh'&&method==='POST'){await readBody(req);const session=await store.refreshSession(token);setSession(res,session.token);for(const[stream,client]of clients)if(client.token===token)stream.end();return json(res,200,{ok:true});}
       if(pathname==='/api/auth/logout-all'&&method==='POST'){fail(id,'Sign in',401,'authentication_required');await readBody(req);await store.logoutAll(id);for(const stream of byUser.get(id)||[])stream.end();setSession(res,'');return json(res,200,{ok:true});}
@@ -126,7 +145,14 @@ export function createProductionServer({store,social,directory,presence,admin,pa
         if(pathname==='/api/admin/social/posts'&&method==='GET')return json(res,200,(await social.moderationPosts(id,{cursor:url.searchParams.get('cursor'),includeDeleted:url.searchParams.get('includeDeleted')==='true',limit:url.searchParams.get('limit')??undefined})));
         if(pathname==='/api/admin/social/delete'&&method==='POST')return json(res,200,(await social.moderateDeletePost(id,body.postId,body)));
         const adminSocialDelete=pathname.match(/^\/api\/admin\/social\/posts\/([^/]+)\/delete$/);if(adminSocialDelete&&method==='POST')return json(res,200,(await social.moderateDeletePost(id,adminSocialDelete[1],body)));
-        if(pathname==='/api/profile'&&method==='POST'){const profile=(await store.updateProfile(id,body));(await social.reconcileVisits(id));await broadcastPresence(id);return json(res,200,{ok:true,profile});}
+        if(pathname==='/api/profile'&&method==='POST'){
+          const {startup,...profileBody}=body,profile=await store.updateProfile(id,profileBody);
+          if(startup===true&&profileBody.onboardingComplete===true&&profile.location?.kind==='home'&&!Object.hasOwn(profileBody,'settings')){
+            json(res,200,{ok:true,profile});
+            safeTask((async()=>{await social.reconcileVisits(id);await broadcastPresence(id);})());return;
+          }
+          await social.reconcileVisits(id);await broadcastPresence(id);return json(res,200,{ok:true,profile});
+        }
         if(pathname==='/api/wallet'&&method==='GET')return json(res,200,(await store.wallet(id)));
         if(pathname==='/api/wallet/topup'&&method==='POST')throw new GameError('Use a verified payment provider to top up',403,'provider_required');
         if(pathname==='/api/wallet/transfer'&&method==='POST')return json(res,200,(await store.transfer(id,body)));

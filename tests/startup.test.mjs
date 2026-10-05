@@ -11,7 +11,7 @@ function fixture(refresh){
   const calls=[];
   const context=vm.createContext({root,state:{authenticated:false},authConfig:{},AbortSignal,
     api:(path,options)=>{calls.push({path,options});return new Promise(()=>{});},
-    refresh,renderMain:()=>calls.push('render'),connectRealtime:()=>calls.push('realtime'),
+    refresh,renderMain:()=>calls.push('render'),connectRealtime:()=>calls.push('realtime'),hydrateStartup:()=>{},expireAccount:()=>calls.push('login'),
     brandMark:()=>'<b>AbujaLife</b>',esc:String,
     authRecovery:{snapshot:()=>({kind:null})},location:new URL('https://abujacity.life'),
     URLSearchParams,phone:{open:()=>{}},toast:()=>{}});
@@ -25,6 +25,12 @@ test('a stalled optional account configuration cannot hold a ready city on the l
   assert.deepEqual(f.calls.filter(value=>typeof value==='string'),['render','realtime']);
   assert.equal(f.calls[0].path,'/api/auth/config');
   assert.ok(f.calls[0].options.signal instanceof AbortSignal);
+});
+
+test('an expired startup session opens sign-in instead of a reconnect loop',async()=>{
+  const f=fixture(async()=>{throw Object.assign(new Error('Sign in'),{status:401});});
+  await f.start();assert.deepEqual(f.calls.filter(value=>typeof value==='string'),['login']);
+  assert.doesNotMatch(f.root.innerHTML,/Reconnect/);
 });
 
 test('bootstrap timeout replaces the loader with a working reconnect action',async()=>{

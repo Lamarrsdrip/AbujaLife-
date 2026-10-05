@@ -6,8 +6,10 @@ import { applyWorldCamera } from './world-camera.js';
 import { createCharacter as character, animateCharacter as animate } from './world-character.js';
 import { ambientAppearance } from '../src/shared/avatars.mjs';
 import { furnitureSurfaceRect } from '../src/shared/furniture-metadata.mjs';
+import { createWorldMaterialLibrary } from './world-materials.js';
 
 const DEPTH = Math.SQRT1_2;
+const avatarPreviews=new WeakMap();
 const palette = {
   skinTone:{deep:'#694632',brown:'#a06c4b',warm:'#c69069',light:'#ddb28d'},
   top:{ochre:'#bc7848',forest:'#406b57',cream:'#e9e0ca',navy:'#374957',agbada:'#c9ad77'},
@@ -34,6 +36,7 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
   const maxPixelRatio=Math.min(globalThis.devicePixelRatio||1,mobile?1.25:1.75);
   renderer.setPixelRatio(maxPixelRatio);
   renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.1;renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  renderer.shadowMap.autoUpdate=false;
   renderer.setClearColor(0x000000,0);renderer.domElement.className='world-character-layer';renderer.domElement.setAttribute('aria-hidden','true');
   container.append(renderer.domElement);container.dataset.characterRenderer='webgl-3d';
   const scene=new THREE.Scene(),camera=new THREE.OrthographicCamera(-500,500,325,-325,1,12000);
@@ -42,27 +45,34 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
   const ambient=new THREE.HemisphereLight('#fff1d4','#556553',1.65);scene.add(ambient);
   const sun=new THREE.DirectionalLight('#fff5e4',2.2);sun.position.set(-550,1200,650);sun.castShadow=true;sun.shadow.mapSize.set(mobile?512:1024,mobile?512:1024);sun.shadow.camera.left=-1050;sun.shadow.camera.right=1050;sun.shadow.camera.top=1050;sun.shadow.camera.bottom=-1050;sun.shadow.camera.near=10;sun.shadow.camera.far=3200;sun.shadow.bias=-.00035;sun.shadow.normalBias=.7;sun.shadow.radius=3;scene.add(sun,sun.target);
   const rim=new THREE.DirectionalLight('#ceddec',.75);rim.position.set(300,300,-600);scene.add(rim);
-  const own=character(appearance);scene.add(own.root);
-  const npcs=pedestrians.map((n,i)=>{const rig=character(ambientAppearance(`${gameScene?.title||'Abuja'}:${i}`));scene.add(rig.root);return rig;});
-  let online=neighbours.map(p=>{const rig=character(p.appearance);scene.add(rig.root);return rig;});
+  const characterSurfaces=createWorldMaterialLibrary(THREE,{size:64}),resident=appearance=>character(appearance,{materials:characterSurfaces});
+  const own=resident(appearance);scene.add(own.root);
+  const npcs=pedestrians.map((n,i)=>{const rig=resident(ambientAppearance(`${gameScene?.title||'Abuja'}:${i}`));scene.add(rig.root);return rig;});
+  let online=neighbours.map(p=>{const rig=resident(p.appearance);scene.add(rig.root);return rig;});
+  let onlineById=new Map(neighbours.map((person,i)=>[String(person.id),{rig:online[i],appearance:JSON.stringify(person.appearance)}]));
   const rainGeometry=new THREE.BufferGeometry(),rainPositions=new Float32Array(180*6);rainGeometry.setAttribute('position',new THREE.BufferAttribute(rainPositions,3));const rainMaterial=new THREE.LineBasicMaterial({color:'#c3d9e8',transparent:true,opacity:.36,depthWrite:false});const rain=new THREE.LineSegments(rainGeometry,rainMaterial);rain.frustumCulled=false;scene.add(rain);
   const shower=new THREE.Group();const dropMaterial=new THREE.MeshStandardMaterial({color:'#b3e3ea',transparent:true,opacity:.7,roughness:.1,emissive:'#5c9aa7',emissiveIntensity:.2});for(let i=0;i<28;i++)ellipsoid(shower,dropMaterial,0,0,0,.7,2.8,.7,6);scene.add(shower);
   const isClub=venue?.kind==='club'||['club','club-cage','magic-city','bear-barn'].includes(venue?.id);
   const indoors=kind==='home'||kind==='visit'||kind==='venue'&&!['park','jabi-lake'].includes(venue?.id);
   let previousWidth=0,previousHeight=0,lost=false,disposed=false,frames=0,viewWidth=0,viewHeight=0;
   let qualityStart=performance.now(),qualityFrames=0;
+  let lastRender=-Infinity,lastShadow=-Infinity,shadowDirty=true,cameraDirty=true,previousCamera=null;
+  let litDaylight,litNight,litCloud,litClub;
   const bounds=new THREE.Box3(),partBounds=new THREE.Box3(),projected=new THREE.Vector3();
   const groundPlane=new THREE.Plane(new THREE.Vector3(0,1,0),0),pickRay=new THREE.Raycaster(),pickPoint=new THREE.Vector3(),pickNdc=new THREE.Vector2();
+  const surfacePlane=new THREE.Plane(new THREE.Vector3(0,1,0),0);
   const updateCamera=({x,y,width,height,yaw,elevation})=>{
     if(![x,y,width,height].every(Number.isFinite)||width<=0||height<=0)return false;
-    viewWidth=width;viewHeight=height;return applyWorldCamera(camera,{x,y,width,height,yaw,elevation,oblique:true});
+    viewWidth=width;viewHeight=height;
+    if(previousCamera&&previousCamera.x===x&&previousCamera.y===y&&previousCamera.width===width&&previousCamera.height===height&&previousCamera.yaw===yaw&&previousCamera.elevation===elevation)return true;
+    previousCamera={x,y,width,height,yaw,elevation};cameraDirty=true;return applyWorldCamera(camera,{x,y,width,height,yaw,elevation,oblique:true});
   };
   const lose=()=>{lost=true;container.removeAttribute('data-character-renderer');container.removeAttribute('data-environment-renderer');};renderer.domElement.addEventListener('webglcontextlost',lose);
   let onlineKey=JSON.stringify(neighbours.map(p=>[p.id,p.appearance]));
   return {
     setCameraViewport: updateCamera,
     setFurniturePreview(item,options){return environment?.setFurniturePreview?.(item,options);},
-    setFurnitureHidden(itemId,hidden){environment?.setFurnitureHidden?.(itemId,hidden);},
+    setFurnitureHidden(itemId,hidden){environment?.setFurnitureHidden?.(itemId,hidden);shadowDirty=true;},
     pickFurniture(clientX,clientY){
       if(lost||disposed||!viewWidth)return null;
       const rect=container.getBoundingClientRect();pickNdc.set((clientX-rect.left)/rect.width*2-1,1-(clientY-rect.top)/rect.height*2);pickRay.setFromCamera(pickNdc,camera);
@@ -79,8 +89,8 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
       for(const item of environment?.furnitureObjects?.()||[]){
         if(!item.visible||item.userData.itemId===excludeId)continue;
         const data=item.userData,area=furnitureSurfaceRect({...data.footprint,itemId:data.itemId});if(!area)continue;
-        const height=area.height+(data.elevation||0),plane=new THREE.Plane(new THREE.Vector3(0,1,0),-height);
-        if(!pickRay.ray.intersectPlane(plane,pickPoint))continue;
+        const height=area.height+(data.elevation||0);surfacePlane.constant=-height;
+        if(!pickRay.ray.intersectPlane(surfacePlane,pickPoint))continue;
         const x=pickPoint.x,y=pickPoint.z*DEPTH;
         if(x<area.x||x>area.x+area.w||y<area.y||y>area.y+area.h)continue;
         const distance=pickRay.ray.origin.distanceToSquared(pickPoint);
@@ -90,20 +100,33 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
     },
     projectWorld(point){if(lost||disposed||!viewWidth)return null;const rect=container.getBoundingClientRect();projected.set(point.x,point.elevation||0,point.y/DEPTH).project(camera);return {x:rect.left+(projected.x+1)*rect.width/2,y:rect.top+(1-projected.y)*rect.height/2,z:projected.z};},
     projectGround(point){if(lost||disposed||!viewWidth)return null;const rect=container.getBoundingClientRect();projected.set(point.x,0,point.y/DEPTH).project(camera);return {x:rect.left+(projected.x+1)*rect.width/2,y:rect.top+(1-projected.y)*rect.height/2};},
-    setResidents(people){if(disposed)return;const key=JSON.stringify(people.map(p=>[p.id,p.appearance]));if(key===onlineKey)return;onlineKey=key;for(const rig of online){scene.remove(rig.root);rig.dispose?.();}online=people.map(p=>{const rig=character(p.appearance);scene.add(rig.root);return rig;});},
+    setResidents(people){if(disposed)return;const key=JSON.stringify(people.map(p=>[p.id,p.appearance]));if(key===onlineKey)return;onlineKey=key;
+      const next=new Map();online=people.map(person=>{const id=String(person.id),appearance=JSON.stringify(person.appearance),current=onlineById.get(id);
+        if(current?.appearance===appearance){next.set(id,current);return current.rig;}
+        const rig=resident(person.appearance);scene.add(rig.root);next.set(id,{rig,appearance});return rig;});
+      for(const [id,entry]of onlineById)if(next.get(id)!==entry){scene.remove(entry.rig.root);entry.rig.dispose();}onlineById=next;shadowDirty=true;
+    },
     draw({player,camera:position,width,height,orientation={},angle,phase,time,moving,transport,driving,activity,clock,weather,clubOpen,carColor,carStyle,ownVehicle,parked,trafficPositions,trip,npcPositions=[],onlinePositions=[]}){
-      if(lost||disposed)return;
+      if(lost||disposed||container.isConnected===false||document.hidden)return;
+      const now=performance.now(),cameraChanged=cameraDirty||!previousCamera||previousCamera.x!==position.x||previousCamera.y!==position.y||previousCamera.width!==width||previousCamera.height!==height||previousCamera.yaw!==orientation.yaw||previousCamera.elevation!==orientation.elevation;
+      const dynamic=cameraChanged||moving||transport||activity||environment?.furniturePreview?.()||isClub&&clubOpen||npcPositions.some(p=>p.moving||p.activity)||onlinePositions.some(p=>p.moving)||weather?.condition==='rain';
+      if(!dynamic&&!shadowDirty&&now-lastRender<1000/30-1)return;
+      lastRender=now;
       const rect=container.getBoundingClientRect();
+      if(!rect.width||!rect.height)return;
       if(rect.width!==previousWidth||rect.height!==previousHeight){renderer.setSize(rect.width,rect.height,false);previousWidth=rect.width;previousHeight=rect.height;}
       updateCamera({...position,width,height,...orientation});environment?.updateView?.(orientation);
       sun.position.set(position.x-550,1200,position.y/DEPTH+650);sun.target.position.set(position.x,0,position.y/DEPTH);
       const daylight=clock?.sunlight??1,night=clock?.isNight??false,cloud=weather?.condition==='rain'?.72:weather?.condition==='cloudy'?.84:1;
       // Interiors stay practically lit at night. Lower ambient light gives wood,
       // fabric, wall edges and contact shadows readable depth without more lights.
+      if(daylight!==litDaylight||night!==litNight||cloud!==litCloud||clubOpen!==litClub){
       ambient.intensity=indoors?(isClub&&clubOpen?.52:.82):.60+daylight*.72*cloud;
       ambient.color.set(indoors?'#f6e6ce':night?'#b8c7e7':'#fff1d4');ambient.groundColor.set(indoors?'#6a6256':night?'#3b4d60':'#556553');
       sun.intensity=indoors?(isClub&&clubOpen?.8:2.55):(night?.42:Math.pow(daylight,.5)*2.2)*cloud;
       sun.color.set(indoors?'#ffe7c3':night?'#a6bdea':daylight<.3?'#edbf91':'#fff5e4');rim.intensity=indoors?.68:night?.52:.6;
+      litDaylight=daylight;litNight=night;litCloud=cloud;litClub=clubOpen;
+      }
       rain.visible=!indoors&&weather?.condition==='rain';if(rain.visible){for(let i=0;i<180;i++){const j=i*6,rx=position.x+((i*137.51+time*28)%width)-width/2,rz=position.y/DEPTH+((i*89.23)%(height/DEPTH))-height/DEPTH/2,ry=410-(i*61.5+time*330)%410;rainPositions.set([rx,ry,rz,rx-1.3,ry+16,rz],j);}rainGeometry.attributes.position.needsUpdate=true;}
       own.root.visible=!transport;animate(own,{...player,angle,phase,time,moving,activity,scale:1.6});
       npcPositions.forEach((p,i)=>{const club=isClub;npcs[i].root.visible=!club||clubOpen||i===0;animate(npcs[i],{...p,activity:club&&!clubOpen?null:p.activity,time,scale:1.28});});
@@ -111,7 +134,12 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
       shower.visible=activity?.name==='shower';if(shower.visible){shower.position.copy(own.root.position);shower.children.forEach((drop,i)=>{drop.position.set(Math.sin(i*2.4)*13,165-((i*19+time*98)%151),Math.cos(i*2.4)*15);});}
       container.dataset.activityPose=activity?.name||'';
       environment?.update?.({clock,weather,clubOpen,elapsed:time,player,angle,transport,driving,carColor,carStyle,ownVehicle,parked,trafficPositions,trip});
+      // Static architecture is unchanged between frames. Sample animated
+      // shadows independently of the full-rate camera and character render.
+      renderer.shadowMap.needsUpdate=shadowDirty||now-lastShadow>=(dynamic?(mobile?50:1000/30):150);
+      if(renderer.shadowMap.needsUpdate){lastShadow=now;shadowDirty=false;}
       renderer.render(scene,camera);
+      cameraDirty=false;
       if(frames%6===0){
         container.dataset.renderCalls=String(renderer.info.render.calls);container.dataset.renderTriangles=String(renderer.info.render.triangles);
         const preview=environment?.furniturePreview?.();
@@ -134,13 +162,14 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
         if(model?.visible){bounds.makeEmpty();model.traverse(part=>{if(part.isMesh&&!part.userData.excludeFromBounds){if(!part.geometry.boundingBox)part.geometry.computeBoundingBox();bounds.union(partBounds.copy(part.geometry.boundingBox).applyMatrix4(part.matrixWorld));}});let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;for(const x of [bounds.min.x,bounds.max.x])for(const y of [bounds.min.y,bounds.max.y])for(const z of [bounds.min.z,bounds.max.z]){projected.set(x,y,z).project(camera);const sx=rect.left+(projected.x+1)*rect.width/2,sy=rect.top+(1-projected.y)*rect.height/2;minX=Math.min(minX,sx);minY=Math.min(minY,sy);maxX=Math.max(maxX,sx);maxY=Math.max(maxY,sy);}container.dataset.playerModelBounds=JSON.stringify({x:minX,y:minY,width:maxX-minX,height:maxY-minY});}
       }
     },
-    dispose(){if(disposed)return;disposed=true;renderer.domElement.removeEventListener('webglcontextlost',lose);renderer.domElement.remove();container.removeAttribute('data-character-renderer');container.removeAttribute('data-environment-renderer');environment?.dispose?.();own.dispose?.();for(const rig of [...npcs,...online])rig.dispose?.();const geometrySet=new Set(),materialSet=new Set();scene.traverse(o=>{if(o.geometry)geometrySet.add(o.geometry);if(o.material)for(const m of Array.isArray(o.material)?o.material:[o.material])materialSet.add(m);});geometrySet.forEach(g=>g.dispose());materialSet.forEach(m=>m.dispose());sun.shadow.map?.dispose();renderer.dispose();renderer.forceContextLoss();}
+    dispose(){if(disposed)return;disposed=true;renderer.domElement.removeEventListener('webglcontextlost',lose);renderer.domElement.remove();container.removeAttribute('data-character-renderer');container.removeAttribute('data-environment-renderer');if(environment){scene.remove(environment.group);environment.dispose();}scene.remove(own.root);own.dispose();for(const rig of [...npcs,...online]){scene.remove(rig.root);rig.dispose();}characterSurfaces.dispose();const geometrySet=new Set(),materialSet=new Set();scene.traverse(o=>{if(o.geometry)geometrySet.add(o.geometry);if(o.material)for(const m of Array.isArray(o.material)?o.material:[o.material])materialSet.add(m);});geometrySet.forEach(g=>g.dispose());materialSet.forEach(m=>m.dispose());sun.shadow.map?.dispose();renderer.dispose();renderer.forceContextLoss();}
   };
 }
 
 /** Full-body resident preview using the same proportioned, jointed game model. */
 export function mountAvatarPreview(container,appearance={}){
   if(!container)return Object.assign(()=>{},{update:()=>{}});
+  avatarPreviews.get(container)?.();
   let renderer;
   try{renderer=new THREE.WebGLRenderer({alpha:true,antialias:true,powerPreference:'low-power'});}catch{return Object.assign(()=>{},{update:()=>{}});}
   renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio||1,2));renderer.setClearColor(0,0);
@@ -151,11 +180,13 @@ export function mountAvatarPreview(container,appearance={}){
   scene.add(new THREE.HemisphereLight('#fff0d7','#57655e',2.6));
   const key=new THREE.DirectionalLight('#fff3df',3.3);key.position.set(-80,170,140);scene.add(key);
   const rim=new THREE.DirectionalLight('#d8dfed',1.6);rim.position.set(90,110,-140);scene.add(rim);
-  let rig=character(appearance),raf=0,disposed=false,width=0,height=0;scene.add(rig.root);
-  const draw=t=>{if(disposed)return;raf=requestAnimationFrame(draw);if(document.hidden)return;const rect=container.getBoundingClientRect();if(rect.width!==width||rect.height!==height){width=rect.width;height=rect.height;renderer.setSize(width||220,height||300,false);const aspect=(width||220)/(height||300);camera.left=-61*aspect;camera.right=61*aspect;camera.updateProjectionMatrix();}rig.body.position.y=Math.sin(t*.002)*.35;rig.head.rotation.y=Math.sin(t*.0003)*.06;renderer.render(scene,camera);};
+  let rig=character(appearance),raf=0,disposed=false,width=0,height=0,lastFrame=-Infinity,visible=true;scene.add(rig.root);
+  const observer=globalThis.IntersectionObserver?new IntersectionObserver(entries=>{visible=entries[0]?.isIntersecting!==false;}):null;observer?.observe(container);
+  const draw=t=>{if(disposed)return;raf=requestAnimationFrame(draw);if(document.hidden||!visible||container.isConnected===false||t-lastFrame<1000/30-1)return;const rect=container.getBoundingClientRect();if(!rect.width||!rect.height)return;lastFrame=t;if(rect.width!==width||rect.height!==height){width=rect.width;height=rect.height;renderer.setSize(width,height,false);const aspect=width/height;camera.left=-61*aspect;camera.right=61*aspect;camera.updateProjectionMatrix();}rig.body.position.y=Math.sin(t*.002)*.35;rig.head.rotation.y=Math.sin(t*.0003)*.06;renderer.render(scene,camera);};
   raf=requestAnimationFrame(draw);
   const release=model=>model.dispose?.();
-  const cleanup=()=>{disposed=true;cancelAnimationFrame(raf);release(rig.root);renderer.domElement.remove();renderer.dispose();renderer.forceContextLoss();container.removeAttribute('data-avatar-renderer');};
-  cleanup.update=next=>{scene.remove(rig.root);release(rig.root);rig=character(next);scene.add(rig.root);};
+  const cleanup=()=>{if(disposed)return;disposed=true;observer?.disconnect();cancelAnimationFrame(raf);release(rig.root);renderer.domElement.remove();renderer.dispose();renderer.forceContextLoss();container.removeAttribute('data-avatar-renderer');if(avatarPreviews.get(container)===cleanup)avatarPreviews.delete(container);};
+  cleanup.update=next=>{if(disposed)return;scene.remove(rig.root);release(rig.root);rig=character(next);scene.add(rig.root);lastFrame=-Infinity;};
+  avatarPreviews.set(container,cleanup);
   return cleanup;
 }

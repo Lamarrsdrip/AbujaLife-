@@ -12,17 +12,6 @@ const palette = {
   shoes:{white:'#efece4',black:'#252b2e'}
 };
 const pick = (kind,value,fallback) => palette[kind][value] || fallback;
-function ellipsoid(parent,mat,x,y,z,rx,ry,rz,segments=14) {
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(1,segments,10),mat);
-  mesh.position.set(x,y,z);mesh.scale.set(rx,ry,rz);parent.add(mesh);return mesh;
-}
-function capsule(parent,mat,r,length,x,y,z) {
-  const mesh = new THREE.Mesh(new THREE.CapsuleGeometry(r,Math.max(.01,length-r*2),4,10),mat);
-  mesh.position.set(x,y,z);parent.add(mesh);return mesh;
-}
-function box(parent,mat,x,y,z,w,h,d) {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);mesh.position.set(x,y,z);parent.add(mesh);return mesh;
-}
 function lathe(parent,mat,points,x,y,z) {
   const mesh = new THREE.Mesh(new THREE.LatheGeometry(points.map(([r,h]) => new THREE.Vector2(r,h)),20),mat);
   mesh.position.set(x,y,z);parent.add(mesh);return mesh;
@@ -33,6 +22,20 @@ function strand(parent,mat,points,radius) {
 }
 
 export function createCharacter(appearance={}, {materials}={}) {
+  const primitives=new Map();
+  const geometry=(key,build)=>{if(!primitives.has(key))primitives.set(key,build());return primitives.get(key);};
+  function ellipsoid(parent,mat,x,y,z,rx,ry,rz,segments=14){
+    const mesh=new THREE.Mesh(geometry(`sphere:${segments}`,()=>new THREE.SphereGeometry(1,segments,10)),mat);
+    mesh.position.set(x,y,z);mesh.scale.set(rx,ry,rz);parent.add(mesh);return mesh;
+  }
+  function capsule(parent,mat,r,length,x,y,z){
+    const mesh=new THREE.Mesh(geometry(`capsule:${r}:${length}`,()=>new THREE.CapsuleGeometry(r,Math.max(.01,length-r*2),4,10)),mat);
+    mesh.position.set(x,y,z);parent.add(mesh);return mesh;
+  }
+  function box(parent,mat,x,y,z,w,h,d){
+    const mesh=new THREE.Mesh(geometry(`box:${w}:${h}:${d}`,()=>new THREE.BoxGeometry(w,h,d)),mat);
+    mesh.position.set(x,y,z);parent.add(mesh);return mesh;
+  }
   const surfaces = materials || createWorldMaterialLibrary(THREE,{size:64});
   const ownedMaterials = new Set();
   const material = (color,roughness=.76,metalness=0) => {
@@ -165,7 +168,12 @@ export function createCharacter(appearance={}, {materials}={}) {
   root.traverse(part => {if(part.isMesh){part.castShadow=true;part.receiveShadow=true;}});
   // More detail without a draw call per braid: retain the articulated joints.
   const joints=[];root.traverse(part => {if(part.isGroup)joints.push(part);});
-  for (const joint of joints) batchRigidMeshes(THREE,joint,{disposeSources:true});
+  const sources=new Set();root.traverse(part=>{if(part.geometry)sources.add(part.geometry);});
+  // Repeated eyes, hair contours, hands and shoes reuse source primitives. A
+  // source may still belong to another joint, so release it only after batching.
+  for (const joint of joints) batchRigidMeshes(THREE,joint);
+  const attached=new Set();root.traverse(part=>{if(part.geometry)attached.add(part.geometry);});
+  for(const source of sources)if(!attached.has(source))source.dispose();sources.clear();primitives.clear();
   root.userData = {appearance:{...appearance},proportions:{hipWidth,shoulderWidth,waistWidth},hairstyle};
   let released=false;
   function dispose() {

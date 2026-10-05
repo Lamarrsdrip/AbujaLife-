@@ -354,8 +354,13 @@ export class MongoGameStore {
     return{id,username:identity.username,displayName:identity.displayName,appearance:look,reputation:progress?.reputation||0,online:visible&&this.isOnline(id),district:visible?state?.district||null:null,location:visible?state?.location||null:null};
   }
   async zone(id){const p=typeof id==='string'?await this.collection('player_state').findOne({residentId:id},{projection:{district:1,location:1}}):id;check(p?.location,'Resident location not found',404);const residentId=typeof id==='string'?id:id.id;return p.location.kind==='home'?`home:${residentId}`:p.location.kind==='visit'?`home:${p.location.ownerId}`:p.location.kind==='venue'?`venue:${p.district}:${p.location.venue}`:p.location.kind==='public'?`district:${p.district}`:`transit:${residentId}`;}
-  async bootstrap(id){
-    const profile=await this.profile(id),workSchedule=await this.workSchedule(profile);
+  async bootstrap(id,{startup=false}={}){
+    const profile=await this.profile(id);
+    if(startup){
+      const [workSchedule,activeChallenge]=await Promise.all([this.workSchedule(profile),this.activeChallenge(id)]);
+      return{authenticated:true,startup:true,profile,originMeta:ORIGIN_META,loanMeta:LOAN_META,loans:loanView(profile,this.clock()),workSchedule,properties:this.propertiesFor(profile),activeChallenge,people:[],friends:[],friendRequests:[],conversations:[],notifications:[],invitations:[],nearby:[],events:[],blocked:[],muted:[],transactions:[]};
+    }
+    const workSchedule=await this.workSchedule(profile);
     const socialNames=['people','friends','friendRequests','conversations','notifications','invitations','nearby','events'];
     const [socialResults,moderation,activeChallenge,transactions]=await Promise.all([
       Promise.all(socialNames.map(name=>typeof this[name]==='function'?this[name](id):[])),

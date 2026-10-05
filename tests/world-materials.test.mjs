@@ -75,3 +75,29 @@ test('surface goods use their authoritative elevation and orbit cutaways keep di
   environment.updateView({yaw:Math.PI,elevation:.6});assert.ok(walls[0].scale.y<.4);assert.equal(walls[3].scale.y,1);
   environment.dispose();
 });
+
+test('rotated and cancelled previews release their own merged geometry without releasing live furniture', () => {
+  const environment=buildThreeEnvironment(THREE,{kind:'home',scene:{width:1100,height:900,objects:[
+    {kind:'sofa',itemId:'sofa',x:100,y:200,w:232,h:86,rotation:0}
+  ]}});
+  const [owned]=environment.furnitureObjects();let ownedReleases=0;
+  const ownedGeometry=new Set();owned.traverse(part=>{if(part.geometry)ownedGeometry.add(part.geometry);});
+  for(const geometry of ownedGeometry)geometry.addEventListener('dispose',()=>ownedReleases++);
+  const item={itemId:'sofa',kind:'sofa',x:450,y:500,w:232,h:86,rotation:0};
+  let previewReleases=0;const previewGeometry=new Set();
+  const ghost=environment.setFurniturePreview(item);
+  ghost.traverse(part=>{if(part.geometry&&['Rigid authored pieces','Placement validity'].includes(part.name))previewGeometry.add(part.geometry);});
+  for(const geometry of previewGeometry)geometry.addEventListener('dispose',()=>previewReleases++);
+  environment.setFurniturePreview({...item,w:86,h:232,rotation:90});
+  assert.equal(previewReleases,previewGeometry.size,'rotation releases every old merged buffer and outline');
+  assert.equal(ownedReleases,0,'the original furniture keeps its uploaded geometry');
+  environment.setFurniturePreview(null);environment.dispose();environment.dispose();
+  assert.equal(ownedReleases,ownedGeometry.size,'scene disposal is idempotent and releases its batched buffers exactly once');
+});
+
+test('one-shot catalogue models fully own their materials and geometry and release only once', () => {
+  const model=buildThreeEnvironment(THREE,{modelOnly:{kind:'premium-sofa',width:270,depth:94}});
+  const resources=new Set();model.group.traverse(part=>{if(part.geometry)resources.add(part.geometry);if(part.material)resources.add(part.material);});
+  let released=0;for(const resource of resources)resource.addEventListener('dispose',()=>released++);
+  model.dispose();model.dispose();assert.equal(released,resources.size);
+});

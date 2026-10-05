@@ -17,7 +17,12 @@ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'abujalife-infra-'));
 const project='abujalife-qa-'+crypto.randomBytes(6).toString('hex');
 const releaseId=crypto.randomBytes(6).toString('hex')+'-'+crypto.randomBytes(6).toString('hex');
 const images={mongo:'abujalife-mongo:'+releaseId,ops:'abujalife-ops:'+releaseId,api:'abujalife-api:'+releaseId};
-const environment={...process.env,DOCKER_CONFIG:process.env.DOCKER_CONFIG||path.join(directory,'docker-config'),ABUJALIFE_DEPLOY_ENV_FILE:path.join(directory,'.env'),ABUJALIFE_RELEASE_STATE_DIR:path.join(directory,'releases'),ABUJALIFE_PROJECT_NAME:project,ABUJALIFE_SECRETS_DIR:path.join(directory,'.secrets'),ABUJALIFE_BACKUP_DIR:path.join(directory,'backups'),ABUJALIFE_MONGO_IMAGE:images.mongo,ABUJALIFE_OPS_IMAGE:images.ops,ABUJALIFE_API_IMAGE:images.api,ABUJALIFE_API_LOOPBACK_PORT:'0',ABUJALIFE_OPS_DIAGNOSTICS:'1'};
+// Preserve the host Docker CLI plugin discovery when the caller did not
+// provide an explicit config. Pointing DOCKER_CONFIG at a fresh directory
+// hides Docker Compose on macOS installations where it is installed as a
+// user CLI plugin, making this acceptance test fail before infrastructure is
+// even exercised.
+const environment={...process.env,...(process.env.DOCKER_CONFIG?{DOCKER_CONFIG:process.env.DOCKER_CONFIG}:{}),ABUJALIFE_DEPLOY_ENV_FILE:path.join(directory,'.env'),ABUJALIFE_RELEASE_STATE_DIR:path.join(directory,'releases'),ABUJALIFE_PROJECT_NAME:project,ABUJALIFE_SECRETS_DIR:path.join(directory,'.secrets'),ABUJALIFE_BACKUP_DIR:path.join(directory,'backups'),ABUJALIFE_MONGO_IMAGE:images.mongo,ABUJALIFE_OPS_IMAGE:images.ops,ABUJALIFE_API_IMAGE:images.api,ABUJALIFE_API_LOOPBACK_PORT:'0',ABUJALIFE_OPS_DIAGNOSTICS:'1'};
 const active=new Set();let relay,client,restoreAdmin,composeCreated=false,failed=false;
 async function run(command,arguments_,{capture=false,input,env={}}={}){
   return new Promise((resolve,reject)=>{

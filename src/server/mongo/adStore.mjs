@@ -30,8 +30,40 @@ export const AD_SPACES = ALL_SPACES;
 export function normalizeAdLink(value) {
   let url;
   try { url = new URL(String(value || '').trim()); } catch { throw new GameError('Add a valid website or X link', 400, 'invalid_ad_link'); }
-  fail(url.protocol === 'https:' && !url.username && !url.password && url.href.length <= 500, 'Ads must link to a secure HTTPS website or X page', 400, 'invalid_ad_link');
+  const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  const ipv4 = hostname.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  const privateIpv4 = ipv4 && (() => { const octets = ipv4.slice(1).map(Number); return octets.some(value => value > 255) || octets[0] === 0 || octets[0] === 10 || octets[0] === 127 || (octets[0] === 169 && octets[1] === 254) || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) || (octets[0] === 192 && octets[1] === 168); })();
+  const privateIpv6 = hostname === '::1' || hostname.startsWith('fc') || hostname.startsWith('fd') || hostname.startsWith('fe8') || hostname.startsWith('fe9') || hostname.startsWith('fea') || hostname.startsWith('feb');
+  fail(url.protocol === 'https:' && hostname && !url.username && !url.password && url.href.length <= 500 && hostname !== 'localhost' && !hostname.endsWith('.localhost') && !hostname.endsWith('.local') && !hostname.endsWith('.internal') && !privateIpv4 && !privateIpv6, 'Ads must link to a secure public HTTPS website or X page', 400, 'invalid_ad_link');
   return url.href;
+}
+
+function imageDimensions(mime, body) {
+  if (mime === 'image/png') {
+    fail(body.length >= 24 && body.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) && body.toString('ascii', 12, 16) === 'IHDR', 'Upload a valid PNG image', 400, 'invalid_ad_image');
+    return { width: body.readUInt32BE(16), height: body.readUInt32BE(20) };
+  }
+  if (mime === 'image/jpeg') {
+    fail(body.length >= 4 && body[0] === 0xff && body[1] === 0xd8, 'Upload a valid JPEG image', 400, 'invalid_ad_image');
+    for (let offset = 2; offset + 9 < body.length;) {
+      if (body[offset] !== 0xff) { offset += 1; continue; }
+      const marker = body[offset + 1]; offset += 2;
+      if (marker === 0xd8 || marker === 0xd9 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+      const length = body.readUInt16BE(offset); if (length < 2 || offset + length > body.length) break;
+      if ((marker >= 0xc0 && marker <= 0xc3) || (marker >= 0xc5 && marker <= 0xc7) || (marker >= 0xc9 && marker <= 0xcb) || (marker >= 0xcd && marker <= 0xcf)) return { width: body.readUInt16BE(offset + 5), height: body.readUInt16BE(offset + 3) };
+      offset += length;
+    }
+    throw new GameError('Upload a valid JPEG image', 400, 'invalid_ad_image');
+  }
+  fail(mime === 'image/webp' && body.length >= 30 && body.toString('ascii', 0, 4) === 'RIFF' && body.toString('ascii', 8, 12) === 'WEBP', 'Upload a valid WebP image', 400, 'invalid_ad_image');
+  const chunk = body.toString('ascii', 12, 16);
+  if (chunk === 'VP8X') return { width: 1 + body.readUIntLE(24, 3), height: 1 + body.readUIntLE(27, 3) };
+  if (chunk === 'VP8 ') {
+    const start = body.indexOf(Buffer.from([0x9d, 0x01, 0x2a]), 20); fail(start >= 0 && start + 7 < body.length, 'Upload a valid WebP image', 400, 'invalid_ad_image');
+    return { width: body.readUInt16LE(start + 3) & 0x3fff, height: body.readUInt16LE(start + 5) & 0x3fff };
+  }
+  if (chunk === 'VP8L') { fail(body.length >= 25, 'Upload a valid WebP image', 400, 'invalid_ad_image'); const bits = body.readUInt32LE(21); return { width: 1 + (bits & 0x3fff), height: 1 + ((bits >>> 14) & 0x3fff) }; }
+  throw new GameError('Upload a valid WebP image', 400, 'invalid_ad_image');
 }
 
 export function normalizeAdImage(value) {
@@ -42,6 +74,8 @@ export function normalizeAdImage(value) {
   try { body = Buffer.from(match[2], 'base64'); } catch { body = Buffer.alloc(0); }
   fail(body.length > 0 && body.length <= MAX_CREATIVE_BYTES, 'Upload a smaller image for the in-world advert', 413, 'ad_image_too_large');
   const mime = match[1].toLowerCase() === 'jpeg' ? 'image/jpeg' : `image/${match[1].toLowerCase()}`;
+  const { width, height } = imageDimensions(mime, body);
+  fail(Number.isInteger(width) && Number.isInteger(height) && width > 0 && height > 0 && width <= 4096 && height <= 4096, 'Ad images must be between 1 and 4096 pixels per side', 400, 'invalid_ad_image');
   return { dataUrl: `data:${mime};base64,${body.toString('base64')}`, bytes: body.length, sha256: crypto.createHash('sha256').update(body).digest('hex') };
 }
 
@@ -65,7 +99,7 @@ const schema = (required, properties) => ({ $jsonSchema: { bsonType: 'object', r
 
 export const MONGO_AD_VALIDATORS = Object.freeze({
   ad_orders: schema(['_id','txRef','residentId','operationKey','fingerprint','amount','mode','status','kind','slots','title','link','imageDataUrl','imageHash','encryptedSecret','createdAt'], {
-    txRef:string,residentId:string,operationKey:string,fingerprint:string,amount:whole,mode:{enum:['test','live']},status:{enum:['creating','pending','checkout_failed','active']},kind:{enum:['plot','billboard']},slots:{bsonType:'array',items:string,minItems:1,maxItems:5},title:string,link:string,imageDataUrl:string,imageHash:string,encryptedSecret:string,checkoutUrl:{bsonType:['string','null']},transactionId:string,createdAt:whole,startAt:{anyOf:[whole,{bsonType:'null'}]},endAt:{anyOf:[whole,{bsonType:'null'}]}
+    txRef:string,residentId:string,operationKey:string,fingerprint:string,amount:whole,mode:{enum:['test','live']},status:{enum:['creating','pending','checkout_failed','active']},kind:{enum:['plot','billboard']},slots:{bsonType:'array',items:string,minItems:1,maxItems:5},title:string,link:string,imageDataUrl:string,imageHash:string,encryptedSecret:string,checkoutUrl:{bsonType:['string','null']},transactionId:{bsonType:['string','null']},createdAt:whole,startAt:{anyOf:[whole,{bsonType:'null'}]},endAt:{anyOf:[whole,{bsonType:'null'}]}
   }),
   ad_slots: schema(['_id','kind','txRef','residentId','state','expiresAt'], {kind:{enum:['plot','billboard']},txRef:string,residentId:string,state:{enum:['reserved','active']},expiresAt:{bsonType:'date'}}),
   ad_receipts: schema(['_id','provider','transactionId','txRef','residentId','amount','createdAt'], {provider:{enum:['flutterwave']},transactionId:string,txRef:string,residentId:string,amount:whole,createdAt:whole})

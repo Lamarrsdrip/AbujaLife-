@@ -78,8 +78,8 @@ function scheduleRefresh(delay = 120) {
 function replaceMarketplaceName(root=document){
   if(!root)return;
   const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
-  const nodes=[];let node;while((node=walker.nextNode()))if(node.nodeValue?.includes('Capital Market'))nodes.push(node);
-  for(const text of nodes)text.nodeValue=text.nodeValue.replaceAll('Capital Market','Okrika Marketplace');
+  const nodes=[];let node;while((node=walker.nextNode()))if(node.nodeValue?.includes('Okrika Marketplace'))nodes.push(node);
+  for(const text of nodes)text.nodeValue=text.nodeValue.replaceAll('Okrika Marketplace','Okrika Marketplace');
 }
 
 function readSeed(){try{return JSON.parse(sessionStorage.getItem(seedKey)||'{}')||{};}catch{return{};}}

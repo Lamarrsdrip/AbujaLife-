@@ -63,7 +63,7 @@ export function buildCity({profile={},place={},id='city',venues=[]}={}) {
   {id:'cinema',x:2830,y:600,w:450,h:285,name:'The Screen',tag:'A LITTLE ESCAPE',accent:'#59695e',kind:'cinema',wall:'#d0ccb4'},
   {id:'dealership',x:160,y:1400,w:490,h:242,name:'Abuja Car',tag:'FIND YOUR NEXT DRIVE',accent:'#436b64',wall:'#d9e0cb'},
   {id:'estate-office',x:810,y:1400,w:413,h:306,name:'Abuja Homes',tag:'A PLACE TO CALL YOURS',accent:'#997b55',floors:2,wall:'#e8dcc0'},
-  {id:'furniture-store',x:2210,y:1400,w:440,h:265,name:'Capital Market',tag:'GOOD FINDS · REAL LIFE',accent:'#ab7957',wall:'#e7d4b8'},
+  {id:'furniture-store',x:2210,y:1400,w:440,h:265,name:'Okrika Marketplace',tag:'GOOD FINDS · REAL LIFE',accent:'#ab7957',wall:'#e7d4b8'},
   {id:'grocery',x:2820,y:1400,w:456,h:259,name:'Fresh Market',tag:'YOUR EVERYDAY GOOD THINGS',accent:'#6d8658',wall:'#e1dfbf'},
   {id:'cafe',x:870,y:2150,w:355,h:230,name:'The Corner Café',tag:'COFFEE & SMALL CHOPS',accent:'#a1845f',wall:'#e9d7b4',kind:'restaurant'},
   {id:'salon',x:1335,y:2150,w:360,h:236,name:'Fresh Studio',tag:'A LITTLE MORE YOU',accent:'#856e73',wall:'#ded1c5'},

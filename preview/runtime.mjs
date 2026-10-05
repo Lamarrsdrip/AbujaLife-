@@ -141,7 +141,7 @@ function updateAppearance(profile, incoming) {
     check(typeof incoming[key]==='string'&&(!values||values.includes(incoming[key])),`Choose a supported ${key}`);
     if(key==='top'&&!['forest','ochre'].includes(incoming[key])) {
       const item=catalog.find(item=>item.category==='clothing'&&item.slot==='top'&&item.value===incoming[key]);
-      check(item&&profile.inventory.includes(item.id),'Buy this outfit in Capital Market before wearing it',403,'outfit_not_owned');
+      check(item&&profile.inventory.includes(item.id),'Buy this outfit in Okrika Marketplace before wearing it',403,'outfit_not_owned');
     }
     profile.appearance[key]=incoming[key];
   }
@@ -384,7 +384,7 @@ function action(name,payload={}) {
       const old=Object.keys(next.completedChallenges);if(old.length>200)delete next.completedChallenges[old[0]];break;
     }
     case 'work-shift':throw new PreviewError('Start a shift and complete its work tasks to earn your salary');
-    case 'purchase': {const item=catalog.find(item=>item.id===payload.itemId);check(item,'Choose an item from Capital Market');check(!profile.inventory.includes(item.id),'You already own this item',409);if(item.category==='vehicle'){const color=payload.color??item.defaultColor;check(vehicleColorFor(color)&&item.availableColors.includes(color),'Choose an available car colour');profile.vehicleColors[item.id]=color;}debit(item.price);profile.inventory.push(item.id);extra.item=clone(item);break;}
+    case 'purchase': {const item=catalog.find(item=>item.id===payload.itemId);check(item,'Choose an item from Okrika Marketplace');check(!profile.inventory.includes(item.id),'You already own this item',409);if(item.category==='vehicle'){const color=payload.color??item.defaultColor;check(vehicleColorFor(color)&&item.availableColors.includes(color),'Choose an available car colour');profile.vehicleColors[item.id]=color;}debit(item.price);profile.inventory.push(item.id);extra.item=clone(item);break;}
     case 'paint-vehicle': {const item=catalog.find(item=>item.id===payload.itemId&&item.category==='vehicle');check(item&&profile.inventory.includes(item.id),'You can repaint a car you own',403,'vehicle_not_owned');check(vehicleColorFor(payload.color)&&item.availableColors.includes(payload.color),'Choose an available car colour');profile.vehicleColors[item.id]=payload.color;extra.item=clone(item);break;}
     case 'equip': {const item=catalog.find(item=>item.id===payload.itemId);check(item?.category==='clothing'&&profile.inventory.includes(item.id),'You can wear clothing you own');profile.appearance[item.slot]=item.value;break;}
     case 'move-home': {

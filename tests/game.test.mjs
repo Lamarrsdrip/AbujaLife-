@@ -22,7 +22,7 @@ test('home meal debits the authoritative wallet and raises hunger',async t=>{
 test('client verification and payload amounts cannot mint currency',async t=>{
   const {store,id}=await fixture(t);const before=store.profile(id);
   for(const verified of [false,true])assert.throws(()=>store.action(id,'topup',{amount:5000000,receipt:'forged',verified}),/verified payment provider/);
-  assert.throws(()=>store.action(id,'purchase',{itemId:'not-a-real-item',price:-999999}),/Capital Market/);
+  assert.throws(()=>store.action(id,'purchase',{itemId:'not-a-real-item',price:-999999}),/Okrika Marketplace/);
   const after=store.action(id,'purchase',{itemId:'plant',price:-999999,wallet:999999999}).profile;
   assert.equal(after.wallet,before.wallet-2300);assert.deepEqual(after.inventory,['plant']);
   assert.throws(()=>store.action(id,'purchase',{itemId:'plant'}),/already own/);

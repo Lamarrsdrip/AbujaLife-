@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { AD_PRICING, AD_SPACES, normalizeAdImage, normalizeAdLink } from '../src/server/mongo/adStore.mjs';
+import { AD_PRICING, AD_SPACES, MONGO_AD_VALIDATORS, normalizeAdImage, normalizeAdLink } from '../src/server/mongo/adStore.mjs';
 
 test('AbujaLife real-world ads use fixed Naira pricing without game-wallet semantics', () => {
   assert.deepEqual(AD_PRICING,{currency:'NGN',amount:2000,durationDays:7,plotPackSize:5,billboardCount:1});
@@ -15,6 +15,7 @@ test('ad links are HTTPS and cannot smuggle credentials', () => {
   assert.throws(()=>normalizeAdLink('http://example.com'),{code:'invalid_ad_link'});
   assert.throws(()=>normalizeAdLink('https://user:secret@example.com'),{code:'invalid_ad_link'});
   assert.throws(()=>normalizeAdLink('javascript:alert(1)'),{code:'invalid_ad_link'});
+  for (const link of ['https://localhost/admin','https://127.0.0.1/admin','https://10.0.0.4/admin','https://192.168.1.4/admin','https://[::1]/admin']) assert.throws(()=>normalizeAdLink(link),{code:'invalid_ad_link'});
 });
 
 test('ad images are bounded data images and never arbitrary HTML or remote fetches', () => {
@@ -24,6 +25,14 @@ test('ad images are bounded data images and never arbitrary HTML or remote fetch
   assert.match(normalized.sha256,/^[a-f0-9]{64}$/);
   assert.match(normalized.dataUrl,/^data:image\/png;base64,/);
   assert.throws(()=>normalizeAdImage('https://example.com/not-an-uploaded-creative-image.png'),{code:'invalid_ad_image'});
+  assert.throws(()=>normalizeAdImage('data:image/jpeg;base64,'+Buffer.from('not-a-jpeg').toString('base64')),{code:'invalid_ad_image'});
+  assert.throws(()=>normalizeAdImage('data:image/png;base64,'+Buffer.from('not-a-png').toString('base64')),{code:'invalid_ad_image'});
   const huge=Buffer.alloc(50*1024,1).toString('base64');
   assert.throws(()=>normalizeAdImage(`data:image/png;base64,${huge}`),{code:'ad_image_too_large'});
+});
+
+test('pending ad orders allow null provider fields until server verification', () => {
+  const properties = MONGO_AD_VALIDATORS.ad_orders.$jsonSchema.properties;
+  assert.deepEqual(properties.checkoutUrl.bsonType, ['string','null']);
+  assert.deepEqual(properties.transactionId.bsonType, ['string','null']);
 });

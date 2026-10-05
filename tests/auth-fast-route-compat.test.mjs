@@ -34,6 +34,23 @@ test('explicit core startup and account writes retain authoritative bootstrap an
   assert.deepEqual(calls,['/api/bootstrap/fast','/api/auth/register/fast','/api/auth/login/fast','/api/profile','/api/bootstrap']);
 });
 
+test('authoritative startup owns its transport deadline instead of inheriting the shell abort', async () => {
+  const shell = new AbortController();
+  shell.abort(new DOMException('shell timeout','TimeoutError'));
+  let observed;
+  await withFetch(async (url,init={})=>{
+    observed={url:String(url),signal:init.signal};
+    return new Response(JSON.stringify({authenticated:false,fastBootstrap:true}),{status:200});
+  },async()=>{
+    const {apiFetch}=await freshClient('startup-deadline');
+    const response=await apiFetch('/api/bootstrap?startup=1',{signal:shell.signal});
+    assert.equal(response.status,200);
+  });
+  assert.equal(observed.url,'/api/bootstrap/fast');
+  assert.notEqual(observed.signal,shell.signal);
+  assert.equal(observed.signal.aborted,false);
+});
+
 test('unreachable bootstrap never presents cached authentication or a fake successful response', async () => {
   const original=globalThis.sessionStorage;
   let reads=0,removed=0;
@@ -85,6 +102,22 @@ test('staggered deploy auth guard falls back instead of trapping anonymous users
     assert.deepEqual(await response.json(), { authenticated: false });
   });
   assert.deepEqual(calls, ['/api/bootstrap/fast', '/api/bootstrap']);
+});
+
+test('staggered deploy preserves lightweight startup query when fast route is missing', async () => {
+  const calls=[];
+  await withFetch(async url=>{
+    calls.push(String(url));
+    if(String(url)==='/api/bootstrap/fast')return new Response(JSON.stringify({ok:false,error:'Sign in to your resident account',code:'authentication_required'}),{status:401,headers:{'content-type':'application/json'}});
+    if(String(url)==='/api/bootstrap?startup=1')return new Response(JSON.stringify({authenticated:false,startup:true}),{status:200,headers:{'content-type':'application/json'}});
+    throw new Error(`Unexpected request ${url}`);
+  },async()=>{
+    const {apiFetch}=await freshClient('startup-fallback');
+    const response=await apiFetch('/api/bootstrap?startup=1');
+    assert.equal(response.status,200);
+    assert.equal((await response.json()).startup,true);
+  });
+  assert.deepEqual(calls,['/api/bootstrap/fast','/api/bootstrap?startup=1']);
 });
 
 test('genuine invalid login stays a single 401 and never doubles password work', async () => {

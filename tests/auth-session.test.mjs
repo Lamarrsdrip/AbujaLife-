@@ -10,6 +10,12 @@ test('core refresh keeps loaded social cards while committed wallet and location
  const merged=mergeCoreBootstrap(current,next);
  assert.equal(merged.profile,next.profile);assert.equal(merged.homeVisit,null);assert.equal(merged.conversations,current.conversations);assert.equal(merged.payments,current.payments);
  assert.deepEqual(merged.nearby,[]);
+ assert.equal(merged.startup,undefined,'a previously hydrated account must not fan out another full bootstrap');
+});
+test('failed first hydration keeps startup armed so a later core refresh retries it',()=>{
+ const current={...session,startup:true,conversations:[],nearby:[]};
+ const next={authenticated:true,startup:true,profile:{...session.profile,wallet:99000},conversations:[],nearby:[]};
+ assert.equal(mergeCoreBootstrap(current,next).startup,true);
 });
 test('core refresh never carries private cards between different or expired accounts',()=>{
  const current={...session,conversations:[{id:'private-dm'}]};

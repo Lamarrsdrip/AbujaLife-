@@ -202,15 +202,24 @@ export async function connectMongo(options = {}) {
       await db.collection('schema_versions').deleteOne({ _id: probe }, { session });
     }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' }, readPreference: 'primary', maxCommitTimeMS: 10000 }));
     let closed = false;
+    let healthCache = { at: 0, payload: null };
+    let healthProbe = null;
+    const probeHealth = async () => {
+      try {
+        await db.command({ ping: 1, maxTimeMS: 1500 });
+        healthCache = { at: Date.now(), payload: { ok: true, database: 'connected' } };
+      } catch {
+        healthCache = { at: Date.now(), payload: { ok: false, database: 'disconnected', code: 'database_unavailable' } };
+      }
+    };
     return {
       client, db,
       async health() {
-        if (closed) return { ok: false, code: 'database_closed' };
-        try {
-          await db.command({ ping: 1, maxTimeMS: 3000 });
-          const live = await db.command({ hello: 1, maxTimeMS: 3000 });
-          return { ok: Boolean(live.setName), database: configuration.database, replicaSet: live.setName, schemaVersion: MONGO_SCHEMA_VERSION };
-        } catch { return { ok: false, code: 'database_unavailable' }; }
+        if (closed) return { ok: false, database: 'disconnected', code: 'database_closed' };
+        if (healthCache.payload && Date.now() - healthCache.at < 5000) return healthCache.payload;
+        if (!healthProbe) healthProbe = probeHealth().finally(() => { healthProbe = null; });
+        await Promise.race([healthProbe, new Promise(resolve => setTimeout(resolve, 1200))]);
+        return healthCache.payload || { ok: false, database: 'disconnected', code: 'database_unavailable' };
       },
       async close() { closed = true; await client.close(); }
     };

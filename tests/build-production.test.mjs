@@ -50,7 +50,7 @@ test('Hostinger build contains connected bundles and public assets, and worker b
   try {
     const target = path.join(directory, 'dist');
     const result = await buildProduction({ outputDirectory: target, environment: { MONGODB_URI: 'SECRET_DATABASE_SENTINEL', ADMIN_PASSWORD: 'SECRET_ADMIN_SENTINEL' } });
-    for (const name of ['.htaccess', 'index.html', 'app.js', 'admin.js', 'game-ui-kit.js', 'game-ui-kit.css', 'game-status-hud.css', 'admin/index.html', 'runtime-config.js', 'sw.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-maskable-512.png', 'map.css', 'licenses/three.txt']) assert.ok(result.files.includes(name), name);
+    for (const name of ['.htaccess', 'index.html', 'app.js', 'admin.js', 'game-ui-kit.js', 'ads.js', 'game-ui-kit.css', 'game-status-hud.css', 'ads.css', 'admin/index.html', 'runtime-config.js', 'sw.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-maskable-512.png', 'map.css', 'licenses/three.txt']) assert.ok(result.files.includes(name), name);
     for (const name of result.files) assert.doesNotMatch(name, /(?:^|\/)(?:src|server|preview|node_modules|\.env)(?:\/|$)|\.(?:sqlite|db|map)$/);
     const scripts = (await Promise.all(result.files.filter(name => /\.(?:js|html|webmanifest)$/.test(name)).map(name => fs.readFile(path.join(target, name), 'utf8')))).join('\n');
     assert.equal(/localhost|127\.0\.0\.1|SECRET_DATABASE_SENTINEL|SECRET_ADMIN_SENTINEL|mongodb(?:\+srv)?:\/\/|node:sqlite|abujalife:reset-preview/.test(scripts), false, 'The production build contains a forbidden development, secret, database or preview string.');
@@ -58,7 +58,9 @@ test('Hostinger build contains connected bundles and public assets, and worker b
     assert.ok(index.indexOf('src="/runtime-config.js"') < index.indexOf('src="/app.js"'));
     assert.match(index, /href="\/game-ui-kit\.css"/);
     assert.match(index, /href="\/game-status-hud\.css"/);
+    assert.match(index, /href="\/ads\.css"/);
     assert.match(index, /src="\/game-ui-kit\.js"/);
+    assert.match(index, /src="\/ads\.js"/);
     const runtime = {};
     vm.runInNewContext(await fs.readFile(path.join(target, 'runtime-config.js'), 'utf8'), runtime);
     assert.deepEqual(Object.keys(runtime.ABUJA_PUBLIC_CONFIG).sort(), ['API_PUBLIC_URL', 'PUBLIC_WEB_URL']);
@@ -74,8 +76,10 @@ test('Hostinger build contains connected bundles and public assets, and worker b
     await installed;
     assert.ok(cacheAdds.includes('/app.js'));
     assert.ok(cacheAdds.includes('/game-ui-kit.js'));
+    assert.ok(cacheAdds.includes('/ads.js'));
     assert.ok(cacheAdds.includes('/game-ui-kit.css'));
     assert.ok(cacheAdds.includes('/game-status-hud.css'));
+    assert.ok(cacheAdds.includes('/ads.css'));
     for (const cached of cacheAdds) {
       assert.doesNotMatch(cached, /^\/(?:\.|api\/|admin|runtime-config\.js)/);
       await fs.access(path.join(target, cached));

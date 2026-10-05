@@ -16,8 +16,9 @@ export function apiURL(path) {
   return new URL(path, url.origin).href;
 }
 
-// Keep compatibility routes for earlier clients. New clients explicitly request
-// the authoritative core bootstrap and then load optional services separately.
+// Keep compatibility routes for earlier clients. Core startup requests always
+// use the compact fast bootstrap; optional/full hydration explicitly requests
+// /api/bootstrap without ?startup=1.
 let startupBootstrapPending = true;
 let postProfileBootstrapPending = false;
 const FAST_ROUTE_MISSING = new Set([404,405,501]);
@@ -61,7 +62,7 @@ export function apiFetch(path, options = {}) {
   const signal=options.signal?AbortSignal.any([options.signal,deadline]):deadline;
   const method=String(options.method||'GET').toUpperCase();
   const startupBootstrapQuery=method==='GET'&&path==='/api/bootstrap?startup=1';
-  const bootstrapRequest=method==='GET'&&(path==='/api/bootstrap'||startupBootstrapQuery);
+  const plainBootstrapRequest=method==='GET'&&path==='/api/bootstrap';
   const loginRequest=method==='POST'&&path==='/api/auth/login';
   const registerRequest=method==='POST'&&path==='/api/auth/register';
   const logoutRequest=method==='POST'&&path==='/api/auth/logout';
@@ -69,13 +70,18 @@ export function apiFetch(path, options = {}) {
   const coreWrite=requestsCoreState(options);
   const coreAuth=(loginRequest||registerRequest)&&coreWrite;
   if(coreAuth){startupBootstrapPending=false;postProfileBootstrapPending=false;}
-  const fastBootstrapRequest=bootstrapRequest&&(startupBootstrapPending||postProfileBootstrapPending);
+  // startup=1 is *always* core state. It must never drift back to the heavyweight
+  // social/payment bootstrap after the first request or during periodic refreshes.
+  const fastBootstrapRequest=startupBootstrapQuery||(plainBootstrapRequest&&(startupBootstrapPending||postProfileBootstrapPending));
   // Account writes must return the compact authenticated state. The server's
   // fast routes persist the session first and defer optional social/catalogue
   // joins, so a slow feed can never block login or signup.
   const fastLogin=loginRequest,fastRegister=registerRequest;
   const primaryPath=fastBootstrapRequest?'/api/bootstrap/fast':fastLogin?'/api/auth/login/fast':fastRegister?'/api/auth/register/fast':logoutRequest?'/api/auth/logout/fast':path;
-  const fallbackPath=fastBootstrapRequest?'/api/bootstrap':fastLogin?'/api/auth/login':fastRegister?'/api/auth/register':logoutRequest?'/api/auth/logout':null;
+  // Preserve startup=1 on compatibility fallback. Dropping it silently turned
+  // a compact recovery request into the full city bootstrap on old/staggered API
+  // releases, which is exactly the failure mode that caused mobile aborts.
+  const fallbackPath=fastBootstrapRequest?(startupBootstrapQuery?'/api/bootstrap?startup=1':'/api/bootstrap'):fastLogin?'/api/auth/login':fastRegister?'/api/auth/register':logoutRequest?'/api/auth/logout':null;
   const url=apiURL(primaryPath);
   const init={...options,signal,credentials:'include',cache:'no-store'};
 

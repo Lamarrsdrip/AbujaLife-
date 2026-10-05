@@ -13,6 +13,7 @@ import { installMongoReadOptimizer } from './mongo/readOptimizer.mjs';
 import { createEmailDelivery } from './emailDelivery.mjs';
 import { createProductionServer, productionLog } from './production-http.mjs';
 import { attachFastStartup } from './fastStartup.mjs';
+import { installFastLocationActions } from './fastLocationActions.mjs';
 import { attachXIntegration } from './xIntegration.mjs';
 import { attachJackpotRuntime } from './jackpotRuntime.mjs';
 
@@ -34,6 +35,10 @@ export async function createProductionApplication({env=process.env,clock=Date.no
     const delivery=createEmailDelivery({env,publicWebUrl:config.publicWebUrl,fetchImpl,log});
     const auth=new MongoAuthStore({client:database.client,db:database.db,clock,...delivery});
     const store=new MongoGameStore({client:database.client,db:database.db,clock,originRandomInt,production:true,auth});
+    // Hot navigation such as leaving home must stay independent of the generic
+    // economy transaction. Keep the public action contract and realtime routing,
+    // but specialize the underlying state mutation before stores attach to it.
+    installFastLocationActions(store);
     const social=new MongoSocialStore(store);await social.init({ensureIndexes:false});social.attachToGame();
     const directory=new MongoDirectoryStore(store,social);
     installMongoReadOptimizer({store,social});
@@ -51,7 +56,7 @@ export async function createProductionApplication({env=process.env,clock=Date.no
   }catch(error){await database.close();throw error;}
 }
 export async function startProduction(){
-  let app;try{app=await createProductionApplication();await new Promise((resolve,reject)=>{app.server.once('error',reject);app.server.listen(app.config.port,app.config.host,resolve);});productionLog('startup',{port:app.config.port,storage:'mongodb',database:'abujalife_prod',emailConfigured:app.store.auth.configuration().emailVerificationEnabled,xConfigured:app.x.configured,jackpotConfigured:true,fastStartup:true});}catch(error){productionLog('startup_failure',{code:error.code||'configuration_or_database_error'});if(app)await app.close();process.exitCode=1;return;}
+  let app;try{app=await createProductionApplication();await new Promise((resolve,reject)=>{app.server.once('error',reject);app.server.listen(app.config.port,app.config.host,resolve);});productionLog('startup',{port:app.config.port,storage:'mongodb',database:'abujalife_prod',emailConfigured:app.store.auth.configuration().emailVerificationEnabled,xConfigured:app.x.configured,jackpotConfigured:true,fastStartup:true,fastLocationActions:true});}catch(error){productionLog('startup_failure',{code:error.code||'configuration_or_database_error'});if(app)await app.close();process.exitCode=1;return;}
   let stopping=false;for(const signal of ['SIGTERM','SIGINT'])process.on(signal,async()=>{if(stopping)return;stopping=true;productionLog('shutdown',{signal});const timeout=setTimeout(()=>{productionLog('shutdown_timeout');process.exit(1);},10000);timeout.unref();try{await app.close();clearTimeout(timeout);process.exitCode=0;}catch{productionLog('shutdown_failure');process.exitCode=1;}});
   process.on('uncaughtException',()=>{productionLog('crash',{code:'uncaught_exception'});process.exit(1);});process.on('unhandledRejection',()=>{productionLog('crash',{code:'unhandled_rejection'});process.exit(1);});
 }

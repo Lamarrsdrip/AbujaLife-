@@ -2,6 +2,7 @@ const VISIT_WINDOW_MS = 30 * 60 * 1000;
 const GLOBAL_CACHE_MS = 4000;
 const ZONE_CACHE_MS = 2500;
 const STATS_ID = 'city-traffic';
+const HOT_PLACE_LIMIT = 8;
 
 export function abujaDateKey(timestamp = Date.now()) {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -16,6 +17,12 @@ export function abujaDateKey(timestamp = Date.now()) {
 
 function countFrom(rows) {
   return Number(rows?.[0]?.count || 0);
+}
+
+function parseVenueZone(zone) {
+  const match = /^venue:([^:]+):(.+)$/.exec(String(zone || ''));
+  if (!match) return null;
+  return { district: match[1], venueId: match[2] };
 }
 
 export function createCityStats(store, { globalCacheMs = GLOBAL_CACHE_MS, zoneCacheMs = ZONE_CACHE_MS } = {}) {
@@ -51,7 +58,7 @@ export function createCityStats(store, { globalCacheMs = GLOBAL_CACHE_MS, zoneCa
     const now = store.clock();
     if (globalCache && now - globalCache.at < globalCacheMs) return globalCache.value;
     const day = abujaDateKey(now);
-    const [onlineRows, totalPlayers, traffic] = await Promise.all([
+    const [onlineRows, totalPlayers, traffic, hotZoneRows] = await Promise.all([
       store.collection('presence_sessions').aggregate([
         { $match: { expiresAt: { $gt: new Date(now) } } },
         { $group: { _id: '$residentId' } },
@@ -59,13 +66,25 @@ export function createCityStats(store, { globalCacheMs = GLOBAL_CACHE_MS, zoneCa
       ]).toArray(),
       store.collection('residents').countDocuments({}),
       store.collection('admin_settings').findOne({ _id: STATS_ID }),
+      store.collection('presence_sessions').aggregate([
+        { $match: { zone: /^venue:/, presenceVisible: { $ne: false }, expiresAt: { $gt: new Date(now) } } },
+        { $group: { _id: { zone: '$zone', residentId: '$residentId' } } },
+        { $group: { _id: '$_id.zone', online: { $sum: 1 } } },
+        { $sort: { online: -1, _id: 1 } },
+        { $limit: HOT_PLACE_LIMIT },
+      ]).toArray(),
     ]);
+    const hotPlaces = hotZoneRows.flatMap(row => {
+      const parsed = parseVenueZone(row._id);
+      return parsed ? [{ ...parsed, zone: row._id, online: Number(row.online || 0) }] : [];
+    });
     const value = {
       onlineNow: countFrom(onlineRows),
       totalPlayers: Number(totalPlayers || 0),
       visitsToday: Number(traffic?.visitDays?.[day] || 0),
       visitsAllTime: Number(traffic?.visitsAllTime || 0),
       trackingSince: Number(traffic?.trackingSince || now),
+      hotPlaces,
     };
     globalCache = { at: now, value };
     return value;
@@ -97,4 +116,4 @@ export function createCityStats(store, { globalCacheMs = GLOBAL_CACHE_MS, zoneCa
   return { recordVisit, globalSnapshot, snapshot };
 }
 
-export const CITY_STATS_META = Object.freeze({ visitWindowMs: VISIT_WINDOW_MS });
+export const CITY_STATS_META = Object.freeze({ visitWindowMs: VISIT_WINDOW_MS, hotPlaceLimit: HOT_PLACE_LIMIT });

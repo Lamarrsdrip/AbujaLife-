@@ -12,9 +12,10 @@ test('replica-set backup uses a full oplog dump instead of an invalid scoped dum
   assert.match(backup,/consistent:true/);
 });
 
-test('backup role has only the extra transaction read required for oplog boundaries',()=>{
-  assert.match(bootstrap,/resource:\s*\{db:\s*'config',\s*collection:\s*'transactions'\},\s*actions:\s*\['find'\]/);
-  assert.doesNotMatch(bootstrap,/resource:\s*\{db:\s*'config',\s*collection:\s*''\}/);
+test('backup identity uses MongoDB supported minimal full-instance backup role',()=>{
+  assert.match(bootstrap,/\['abujalife_backup','mongo-backup-password','backup','admin'\]/);
+  assert.doesNotMatch(bootstrap,/createRole'\]: 'abujalife_backup'/);
+  assert.doesNotMatch(bootstrap,/collection:\s*'transactions'/);
 });
 
 test('consistent restore replays the captured oplog without namespace filters',()=>{

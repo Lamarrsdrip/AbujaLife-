@@ -9,6 +9,7 @@ const COOKIE='abujalife_session=';
 const originOf=value=>{try{return new URL(value).origin;}catch{return '';}};
 function tokenFor(req){const bearer=/^Bearer ([A-Za-z0-9_-]{32,160})$/.exec(req.headers.authorization||'');if(bearer)return bearer[1];return(req.headers.cookie||'').split(';').map(v=>v.trim()).find(v=>v.startsWith(COOKIE))?.slice(COOKIE.length)||null;}
 function sessionCookie(token){return `${COOKIE}${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`;}
+function clearSessionCookie(){return `${COOKIE}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;}
 function send(res,status,body,extra={}){if(res.writableEnded)return;res.writeHead(status,{...HEADERS,...extra});res.end(JSON.stringify(body));}
 async function body(req,max=32768){let size=0,parts=[];for await(const part of req){size+=part.length;if(size>max)throw Object.assign(new Error('Request body is too large'),{status:413,code:'body_too_large'});parts.push(part);}try{const value=JSON.parse(Buffer.concat(parts).toString()||'{}');if(!value||typeof value!=='object'||Array.isArray(value))throw new Error();return value;}catch{throw Object.assign(new Error('Send valid JSON'),{status:400,code:'invalid_json'});}}
 const validIp=value=>typeof value==='string'&&/^[\da-fA-F:.]{2,80}$/.test(value);
@@ -40,7 +41,7 @@ export function createFastStartup({store,admin,corsOrigins=[],publicWebUrl,trust
   function requireJson(req){if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))throw Object.assign(new Error('Send JSON for this action'),{status:415,code:'invalid_content_type'});if(req.headers.cookie&&!req.headers.authorization){const origin=req.headers.origin;if(!origin||!allowed.has(origin))throw Object.assign(new Error('This action must originate from AbujaLife'),{status:403,code:'cross_origin'});}}
   async function handle(req,res){
     let pathname='';try{pathname=new URL(req.url,'https://api.abujacity.life').pathname;}catch{return false;}
-    if(!['/api/bootstrap/fast','/api/auth/login/fast','/api/auth/register/fast'].includes(pathname))return false;
+    if(!['/api/bootstrap/fast','/api/auth/login/fast','/api/auth/register/fast','/api/auth/logout/fast'].includes(pathname))return false;
     try{
       if(!cors(req,res))return true;
       if(req.method==='OPTIONS'){res.writeHead(204,{'access-control-allow-origin':req.headers.origin||originOf(publicWebUrl),'access-control-allow-credentials':'true','access-control-allow-methods':'GET, POST, OPTIONS','access-control-allow-headers':'Content-Type, Authorization','access-control-max-age':'600','cache-control':'no-store'});res.end();return true;}
@@ -59,6 +60,10 @@ export function createFastStartup({store,admin,corsOrigins=[],publicWebUrl,trust
         const session=await store.register(await body(req));
         log('signup_fast',{residentId:session.residentId});return send(res,201,await fastState(session.residentId),{'set-cookie':sessionCookie(session.token)}),true;
       }
+      if(pathname==='/api/auth/logout/fast'&&req.method==='POST'){
+        requireJson(req);await body(req);const token=tokenFor(req);if(token)await store.logout(token);
+        log('logout_fast',{});return send(res,200,{ok:true,authenticated:false},{'set-cookie':clearSessionCookie()}),true;
+      }
       send(res,405,{ok:false,error:'Method is not permitted',code:'method_not_allowed'});return true;
     }catch(error){send(res,error.status||500,{ok:false,error:error.message||'Please try again.',code:error.code||'fast_start_failed'});return true;}
   }
@@ -67,6 +72,6 @@ export function createFastStartup({store,admin,corsOrigins=[],publicWebUrl,trust
 
 export function attachFastStartup(server,options={}){
   const runtime=createFastStartup(options),listeners=server.listeners('request');if(!listeners.length)throw new Error('Cannot attach fast startup before the HTTP request handler exists');
-  server.removeAllListeners('request');server.on('request',(req,res)=>{let pathname='';try{pathname=new URL(req.url,'https://api.abujacity.life').pathname;}catch{}if(['/api/bootstrap/fast','/api/auth/login/fast','/api/auth/register/fast'].includes(pathname)){void runtime.handle(req,res);return;}for(const listener of listeners)listener.call(server,req,res);});
+  server.removeAllListeners('request');server.on('request',(req,res)=>{let pathname='';try{pathname=new URL(req.url,'https://api.abujacity.life').pathname;}catch{}if(['/api/bootstrap/fast','/api/auth/login/fast','/api/auth/register/fast','/api/auth/logout/fast'].includes(pathname)){void runtime.handle(req,res);return;}for(const listener of listeners)listener.call(server,req,res);});
   return runtime;
 }

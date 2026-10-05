@@ -57,9 +57,15 @@ async function compatibleFetch(primaryPath, fallbackPath, init) {
 }
 
 export function apiFetch(path, options = {}) {
-  const deadline=AbortSignal.timeout(15000);
-  const signal=options.signal?AbortSignal.any([options.signal,deadline]):deadline;
   const method=String(options.method||'GET').toUpperCase();
+  const coreStartupRequest=method==='GET'&&path==='/api/bootstrap?startup=1';
+  // The app shell used to impose an 8-second bootstrap abort on top of this
+  // transport deadline. A brief Mongo/VPS stall therefore looked like a dead
+  // city even while the server could still complete the authoritative read.
+  // Startup owns one bounded 15-second deadline here; all other calls continue
+  // to honour their caller cancellation as well as the transport deadline.
+  const deadline=AbortSignal.timeout(15000);
+  const signal=options.signal&&!coreStartupRequest?AbortSignal.any([options.signal,deadline]):deadline;
   const bootstrapRequest=method==='GET'&&path==='/api/bootstrap';
   const loginRequest=method==='POST'&&path==='/api/auth/login';
   const registerRequest=method==='POST'&&path==='/api/auth/register';
@@ -67,7 +73,7 @@ export function apiFetch(path, options = {}) {
   const profileWrite=method==='POST'&&path==='/api/profile';
   const coreWrite=requestsCoreState(options);
   const coreAuth=(loginRequest||registerRequest)&&coreWrite;
-  if((method==='GET'&&path==='/api/bootstrap?startup=1')||coreAuth){startupBootstrapPending=false;postProfileBootstrapPending=false;}
+  if(coreStartupRequest||coreAuth){startupBootstrapPending=false;postProfileBootstrapPending=false;}
   const fastBootstrapRequest=bootstrapRequest&&(startupBootstrapPending||postProfileBootstrapPending);
   const fastLogin=loginRequest&&!coreAuth,fastRegister=registerRequest&&!coreAuth;
   const primaryPath=fastBootstrapRequest?'/api/bootstrap/fast':fastLogin?'/api/auth/login/fast':fastRegister?'/api/auth/register/fast':logoutRequest?'/api/auth/logout/fast':path;

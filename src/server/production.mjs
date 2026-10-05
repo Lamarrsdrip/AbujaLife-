@@ -12,6 +12,7 @@ import { MongoAuthStore } from './mongo/authStore.mjs';
 import { MongoRewardStore } from './mongo/rewardStore.mjs';
 import { installMongoReadOptimizer } from './mongo/readOptimizer.mjs';
 import { createProductionServer, productionLog } from './production-http.mjs';
+import { attachClusterRealtime } from './clusterRealtime.mjs';
 import { attachFastStartup } from './fastStartup.mjs';
 import { attachXIntegration } from './xIntegration.mjs';
 import { attachJackpotRuntime } from './jackpotRuntime.mjs';
@@ -49,11 +50,12 @@ export async function createProductionApplication({env=process.env,clock=Date.no
     const payments=new MongoPaymentStore({store,admin,fetchImpl,configKey:config.configKey,publicOrigin:config.publicWebUrl,log});await payments.init({ensureIndexes:false});
     const rewards=new MongoRewardStore({store,admin,publicWebUrl:config.publicWebUrl});
     const ads=new MongoAdStore({store,admin,payments,log});await ads.init({ensureIndexes:false});ads.attach();
-    const server=createProductionServer({...config,store,social,directory,presence,realtime,admin,payments,rewards,ads,database,log});
+    const server=createProductionServer({...config,store,social,directory,presence,admin,payments,rewards,ads,database,log});
+    const clusterRealtime=attachClusterRealtime(server,{store,presence,realtime,admin,corsOrigins:config.corsOrigins,publicWebUrl:config.publicWebUrl,trustProxy:config.trustProxy,log});
     const fastStartup=attachFastStartup(server,{store,admin,corsOrigins:config.corsOrigins,publicWebUrl:config.publicWebUrl,trustProxy:config.trustProxy,log});
     const x=attachXIntegration(server,{store,admin,database,env,publicWebUrl:config.publicWebUrl,apiPublicUrl:config.apiPublicUrl,corsOrigins:config.corsOrigins,fetchImpl});
     const jackpot=await attachJackpotRuntime(server,{store,admin,payments,database,env,publicWebUrl:config.publicWebUrl,apiPublicUrl:config.apiPublicUrl,corsOrigins:config.corsOrigins,log});
-    return{server,store,social,directory,presence,realtime,admin,payments,rewards,ads,fastStartup,x,jackpot,database,config,close:async()=>{server.closeRealtime();jackpot.close();await realtime.close();if(server.listening)await new Promise(resolve=>server.close(resolve));await database.close();}};
+    return{server,store,social,directory,presence,realtime,clusterRealtime,admin,payments,rewards,ads,fastStartup,x,jackpot,database,config,close:async()=>{server.closeRealtime();jackpot.close();await realtime.close();if(server.listening)await new Promise(resolve=>server.close(resolve));await database.close();}};
   }catch(error){if(realtime)await realtime.close().catch(()=>{});await database.close();throw error;}
 }
 export async function startProduction(){

@@ -6,6 +6,19 @@ function change(file, from, to) {
   edits.get(file).push([from, to]);
 }
 
+// The browser preview was still consuming the generated pre-scale catalogue.
+// Bind it to the same authoritative playable catalogue as production so buying,
+// resale and bootstrap-visible prices cannot drift again.
+change('preview/runtime.mjs',
+  "import data from './data.mjs';",
+  "import data from './data.mjs';\nimport { catalog as authoritativeCatalog } from '../src/shared/catalogue.mjs';");
+change('preview/runtime.mjs',
+  "const catalog = publicData.catalog || [];",
+  "const catalog = authoritativeCatalog;");
+change('preview/runtime.mjs',
+  "...clone(publicData), walletMeta:{...clone(WALLET_META),transferEnabled:false,topupMode:'preview',demoTopupEnabled:true},",
+  "...clone(publicData), catalog:clone(catalog), walletMeta:{...clone(WALLET_META),transferEnabled:false,topupMode:'preview',demoTopupEnabled:true},");
+
 // Economy tests: keep authored base metadata intact, but assert the playable
 // catalogue's 10x prices and deliberately fund expensive vehicle coverage.
 change('tests/economy.test.mjs',
@@ -88,6 +101,10 @@ change('tests/phone-inbox.test.mjs',
 change('tests/phone-inbox.test.mjs',
   "assert.equal(f.store.profile(f.b).wallet,101000);",
   "assert.equal(f.store.profile(f.b).wallet,10001000);");
+// There are two independent transfer scenarios with the same old expected value.
+change('tests/phone-inbox.test.mjs',
+  "assert.equal(f.store.profile(f.b).wallet,101000);",
+  "assert.equal(f.store.profile(f.b).wallet,10001000);");
 
 // Browser preview mirrors production origin balances and the same 10x item economy.
 change('tests/preview-v4.test.mjs',
@@ -143,4 +160,4 @@ for (const [file, rules] of edits) {
   }
   fs.writeFileSync(file, source);
 }
-console.log(`Rebased ${replacements} stale economy assertions across ${edits.size} test files.`);
+console.log(`Rebased ${replacements} economy/runtime assumptions across ${edits.size} files.`);

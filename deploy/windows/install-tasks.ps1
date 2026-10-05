@@ -4,7 +4,7 @@ Assert-Administrator
 $Root = Assert-AbujaLifeRoot $Root
 $config = Read-AbujaLifeConfiguration $Root
 $runtime = Join-Path $Root 'shared\runtime'
-foreach ($file in @('runtime.mjs', 'supervisor.mjs', 'backup-run.mjs', 'auto-update.ps1')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination (Join-Path $runtime $file) -Force }
+foreach ($file in @('common.ps1', 'runtime.mjs', 'supervisor.mjs', 'backup-run.mjs', 'auto-update.ps1')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination (Join-Path $runtime $file) -Force }
 $apiPrincipal = New-ScheduledTaskPrincipal -UserId 'S-1-5-19' -LogonType ServiceAccount -RunLevel Limited
 $backupPrincipal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
 $apiSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries

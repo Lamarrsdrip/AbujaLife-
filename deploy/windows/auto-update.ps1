@@ -14,6 +14,7 @@ function Write-State([hashtable]$State) {
 }
 
 try {
+    $sha = $null
     $remote = (& $gitPath ls-remote $repo 'refs/heads/main' 2>$null | Select-Object -First 1)
     if (-not $remote -or $remote -notmatch '^([0-9a-f]{40})\s') { throw 'Unable to resolve the public main branch.' }
     $sha = $Matches[1]

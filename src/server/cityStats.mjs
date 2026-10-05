@@ -84,7 +84,7 @@ export function createCityStats(store, { globalCacheMs = GLOBAL_CACHE_MS, zoneCa
       visitsToday: Number(traffic?.visitDays?.[day] || 0),
       visitsAllTime: Number(traffic?.visitsAllTime || 0),
       trackingSince: Number(traffic?.trackingSince || now),
-      hotPlaces,
+      ...(hotPlaces.length ? { hotPlaces } : {}),
     };
     globalCache = { at: now, value };
     return value;

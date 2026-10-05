@@ -34,6 +34,7 @@ jobs:
           replacements = [
               ("  assert.match(interiors,/club dance floor crowd/);", "  assert.ok((interiors.match(/activity:'dance'/g)||[]).length>=10);"),
               ("  assert.match(world3d,/const clubLights=[]/);", r"  assert.match(world3d,/const clubLights=\[\]/);"),
+              ("  assert.match(world3d,/renderer.toneMappingExposure=partyOn?1.16:1.04/);", "  assert.ok(world3d.includes('renderer.toneMappingExposure=partyOn?1.16:1.04'));"),
           ]
           for old, new in replacements:
               if old not in text:

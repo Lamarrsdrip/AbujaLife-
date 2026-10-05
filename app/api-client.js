@@ -19,7 +19,7 @@ export function apiURL(path) {
 // The first city render only needs resident/world state. During a staggered
 // production deploy the static client can arrive before the API route does, so
 // fast startup MUST gracefully fall back to the established endpoint rather
-// than blocking residents with a 404/405/501 response.
+// than blocking residents on an older API that does not know the fast route.
 let startupBootstrapPending = true;
 const FAST_ROUTE_MISSING = new Set([404,405,501]);
 
@@ -28,9 +28,23 @@ const FAST_ROUTE_MISSING = new Set([404,405,501]);
 // interaction always reaches the server and mutations are never hidden.
 const inFlightGets = new Map();
 
+async function fastRouteUnavailable(response) {
+  if (FAST_ROUTE_MISSING.has(response.status)) return true;
+  if (response.status !== 401) return false;
+  try {
+    const body = await response.clone().json();
+    // Older AbujaLife API builds route unknown /api/* paths through the generic
+    // authentication guard, so a missing fast route appears as this exact 401.
+    // Genuine bad-password 401s use invalid_credentials and must NOT retry.
+    return body?.code === 'authentication_required';
+  } catch {
+    return false;
+  }
+}
+
 async function compatibleFetch(primaryPath, fallbackPath, init) {
   const response = await globalThis.fetch(apiURL(primaryPath), init);
-  if (fallbackPath && FAST_ROUTE_MISSING.has(response.status)) {
+  if (fallbackPath && await fastRouteUnavailable(response)) {
     return globalThis.fetch(apiURL(fallbackPath), init);
   }
   return response;

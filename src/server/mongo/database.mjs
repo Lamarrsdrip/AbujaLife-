@@ -183,7 +183,7 @@ export async function connectMongo(options = {}) {
   if (configuration.production && options.initializeSchema) throw new MongoConfigurationError('Production schema migrations require the separate bootstrap identity');
   const client = new MongoClient(configuration.uri, {
     serverSelectionTimeoutMS: 10000, connectTimeoutMS: 10000, socketTimeoutMS: 15000,
-    maxPoolSize: 30, retryWrites: true, ...(configuration.requireTls ? { tls: true } : {})
+    maxPoolSize: 30, waitQueueTimeoutMS: 5000, retryWrites: true, ...(configuration.requireTls ? { tls: true } : {})
   });
   try {
     await client.connect();
@@ -207,9 +207,11 @@ export async function connectMongo(options = {}) {
       async health() {
         if (closed) return { ok: false, code: 'database_closed' };
         try {
-          await db.command({ ping: 1, maxTimeMS: 3000 });
+          // `hello` is one round trip and tells us whether the replica set can
+          // accept transactional writes. Ping followed by hello doubled probe
+          // latency while a secondary-only set still looked ready.
           const live = await db.command({ hello: 1, maxTimeMS: 3000 });
-          return { ok: Boolean(live.setName), database: configuration.database, replicaSet: live.setName, schemaVersion: MONGO_SCHEMA_VERSION };
+          return { ok: Boolean(live.setName && live.isWritablePrimary), database: configuration.database, replicaSet: live.setName, schemaVersion: MONGO_SCHEMA_VERSION };
         } catch { return { ok: false, code: 'database_unavailable' }; }
       },
       async close() { closed = true; await client.close(); }

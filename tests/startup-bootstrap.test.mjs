@@ -30,7 +30,7 @@ test('Mongo startup bootstrap keeps authoritative playable state without running
 });
 
 async function fixture(t){
-  const calls=[],token='a'.repeat(48),state={tokens:new Map([[token,'resident']]),suspended:false,storageError:false,visitRow:null,guest:false,visitDenied:false,reconcileWait:null,reconcileEntered:null,broadcastWait:null,broadcastEntered:null,actionDone:false};
+  const calls=[],token='a'.repeat(48),state={tokens:new Map([[token,'resident']]),suspended:false,storageError:false,healthError:false,visitRow:null,guest:false,visitDenied:false,reconcileWait:null,reconcileEntered:null,broadcastWait:null,broadcastEntered:null,actionDone:false};
   const store={clock:()=>Date.UTC(2026,9,5,10),publicJobs:()=>({}),
     session:async candidate=>{if(state.storageError)throw new Error('Storage unavailable');return state.tokens.get(candidate)||null;},
     register:async body=>{assert.equal(Object.hasOwn(body,'startup'),false);calls.push(['register',body]);return{token,residentId:'resident'};},
@@ -50,7 +50,7 @@ async function fixture(t){
   };
   const admin={isSuspended:async id=>Boolean(id&&state.suspended),status:async()=>({role:null,permissions:[]}),publicSettings:async()=>({registrationOpen:true})};
   const payments={publicConfig:async()=>{calls.push(['payments']);return{enabled:true};}};
-  const server=createProductionServer({store,social,directory:{},admin,payments,rewards:{},ads:{},database:{health:async()=>true},corsOrigins:['https://game.example'],publicWebUrl:'https://game.example',log:()=>{}});
+  const server=createProductionServer({store,social,directory:{},admin,payments,rewards:{},ads:{},database:{health:async()=>{if(state.healthError)throw new Error('database unavailable');return true;}},corsOrigins:['https://game.example'],publicWebUrl:'https://game.example',log:()=>{}});
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   t.after(async()=>{server.closeRealtime();await new Promise(resolve=>server.close(resolve));});
   const request=async(path,{body,cookie}={})=>{const response=await fetch(`http://127.0.0.1:${server.address().port}${path}`,{method:body?'POST':'GET',headers:{origin:'https://game.example',...(body?{'content-type':'application/json'}:{}),...(cookie?{cookie}: {})},...(body?{body:JSON.stringify(body)}:{})});return{status:response.status,data:await response.json(),cookie:response.headers.get('set-cookie')};};
@@ -92,6 +92,16 @@ test('Startup keeps session expiry, storage failures and suspended login distinc
   const denied=await f.request('/api/auth/login',{body:{username:'resident',password:'password',startup:true}});
   assert.equal(denied.status,403);assert.equal(denied.data.code,'account_suspended');assert.equal(denied.cookie,null);
   assert.equal(f.calls.filter(row=>row[0]==='logout').length,1);
+});
+
+test('Readiness probe reflects Mongo dependency failures without exposing internals',async t=>{
+  const f=await fixture(t);
+  const ready=await f.request('/ready');
+  assert.equal(ready.status,200);assert.equal(ready.data.ok,true);assert.equal(ready.data.storage,'mongodb');
+  f.state.healthError=true;
+  const unavailable=await f.request('/ready');
+  assert.equal(unavailable.status,503);assert.deepEqual(unavailable.data,{ok:false,service:'AbujaLife API',storage:'unavailable'});
+  assert.equal((await f.request('/health')).status,503);
 });
 
 test('Startup guests receive validated owner home data and cannot recover a missing or forbidden visit',async t=>{

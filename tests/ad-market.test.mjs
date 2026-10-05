@@ -23,7 +23,7 @@ test('ad images are bounded data images and never arbitrary HTML or remote fetch
   assert.equal(normalized.bytes>0,true);
   assert.match(normalized.sha256,/^[a-f0-9]{64}$/);
   assert.match(normalized.dataUrl,/^data:image\/png;base64,/);
-  assert.throws(()=>normalizeAdImage('https://example.com/ad.png'),{code:'invalid_ad_image'});
+  assert.throws(()=>normalizeAdImage('https://example.com/not-an-uploaded-creative-image.png'),{code:'invalid_ad_image'});
   const huge=Buffer.alloc(50*1024,1).toString('base64');
   assert.throws(()=>normalizeAdImage(`data:image/png;base64,${huge}`),{code:'ad_image_too_large'});
 });

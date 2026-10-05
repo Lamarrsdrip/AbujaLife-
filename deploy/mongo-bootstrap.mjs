@@ -49,16 +49,10 @@ try {
   }
   const existingRole = await db.command({rolesInfo: 'abujalife_runtime'});
   await db.command({[existingRole.roles.length ? 'updateRole' : 'createRole']: 'abujalife_runtime', privileges, roles: []});
-  const backupPrivileges = [
-    {resource: {db: database, collection: ''}, actions: ['find','listCollections','listIndexes','collStats','dbStats']},
-    {resource: {db: 'local', collection: 'oplog.rs'}, actions: ['find']},
-    // mongodump --oplog checks prepared/in-progress transactions so its
-    // snapshot boundary is safe. Grant only the exact read it requires.
-    {resource: {db: 'config', collection: 'transactions'}, actions: ['find']}
-  ];
-  const existingBackupRole = await admin.command({rolesInfo: 'abujalife_backup'});
-  await admin.command({[existingBackupRole.roles.length ? 'updateRole' : 'createRole']: 'abujalife_backup', privileges: backupPrivileges, roles: []});
-  for (const [user, passwordFile, role, roleDb] of [['abujalife_app','mongo-app-password','abujalife_runtime',database], ['abujalife_backup','mongo-backup-password','abujalife_backup','admin']]) {
+  // Full replica-set mongodump --oplog is an instance-level operation. MongoDB's
+  // built-in backup role is the supported minimal role for it; do not maintain
+  // a fragile hand-written mirror of MongoDB's internal backup privileges.
+  for (const [user, passwordFile, role, roleDb] of [['abujalife_app','mongo-app-password','abujalife_runtime',database], ['abujalife_backup','mongo-backup-password','backup','admin']]) {
     const existing = await db.command({usersInfo: user});
     await db.command({[existing.users.length ? 'updateUser' : 'createUser']: user, pwd: secret(passwordFile), roles: [{role,db:roleDb}]});
   }

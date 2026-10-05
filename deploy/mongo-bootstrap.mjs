@@ -49,9 +49,12 @@ try {
   }
   const existingRole = await db.command({rolesInfo: 'abujalife_runtime'});
   await db.command({[existingRole.roles.length ? 'updateRole' : 'createRole']: 'abujalife_runtime', privileges, roles: []});
+  // The backup account is limited to this dedicated AbujaLife Mongo service.
+  // Full replica-set dumps need database discovery and read access to the
+  // service's internal databases; restore still filters to abujalife_prod.
   const backupPrivileges = [
-    {resource: {db: database, collection: ''}, actions: ['find','listCollections','listIndexes','collStats','dbStats']},
-    {resource: {db: 'local', collection: 'oplog.rs'}, actions: ['find']}
+    {resource: {cluster: true}, actions: ['listDatabases']},
+    {resource: {db: '', collection: ''}, actions: ['find','listCollections','listIndexes','collStats','dbStats']}
   ];
   const existingBackupRole = await admin.command({rolesInfo: 'abujalife_backup'});
   await admin.command({[existingBackupRole.roles.length ? 'updateRole' : 'createRole']: 'abujalife_backup', privileges: backupPrivileges, roles: []});

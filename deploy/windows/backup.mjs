@@ -32,9 +32,12 @@ try {
   const hello = await client.db('admin').command({ hello: 1 });
   if (hello.setName !== config.replicaSet || !hello.isWritablePrimary) throw new Error('Refusing to back up a different MongoDB instance.');
   const raw = path.join(working, 'database.archive.gz');
-  // Replica-set oplog capture keeps the archive point-in-time consistent
-  // without fsync-locking the live database while a dump is compressed.
-  await runTool(path.join(config.mongoToolsDirectory, 'mongodump.exe'), ['--config', toolConfiguration(working, backupUri), '--db', config.database, '--archive=' + raw, '--gzip', '--oplog']);
+  // This is a dedicated AbujaLife MongoDB service, so capture the complete
+  // replica-set archive. `mongodump --oplog` is only valid for a full dump;
+  // restore filters it back to abujalife_prod and never touches Okrika.
+  // Oplog capture keeps the archive point-in-time consistent without taking
+  // a write lock on the live database.
+  await runTool(path.join(config.mongoToolsDirectory, 'mongodump.exe'), ['--config', toolConfiguration(working, backupUri), '--archive=' + raw, '--gzip', '--oplog']);
   await encryptArchive(raw, partial);
   const verifiedRaw = path.join(working, 'authenticated.archive.gz');
   await decryptArchive(partial, verifiedRaw);

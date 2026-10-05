@@ -8,7 +8,8 @@ import { createCityStats } from './cityStats.mjs';
 const HEADERS={'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','referrer-policy':'no-referrer','x-frame-options':'DENY','strict-transport-security':'max-age=31536000','content-security-policy':"default-src 'none'; frame-ancestors 'none'"};
 const COOKIE='abujalife_session=';
 const SPRAY_AMOUNTS=new Set([1000,5000,10000,50000]);
-const FAST_PATHS=new Set(['/api/bootstrap/fast','/api/auth/login/fast','/api/presence/nearby','/api/club/spray']);
+const EMOTES=new Set(['wave','cheer']);
+const FAST_PATHS=new Set(['/api/bootstrap/fast','/api/auth/login/fast','/api/presence/nearby','/api/presence/emote','/api/club/spray']);
 const originOf=value=>{try{return new URL(value).origin;}catch{return '';}};
 function tokenFor(req){const bearer=/^Bearer ([A-Za-z0-9_-]{32,160})$/.exec(req.headers.authorization||'');if(bearer)return bearer[1];return(req.headers.cookie||'').split(';').map(v=>v.trim()).find(v=>v.startsWith(COOKIE))?.slice(COOKIE.length)||null;}
 function sessionCookie(token){return `${COOKIE}${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`;}
@@ -27,6 +28,11 @@ export function createFastStartup({store,admin,corsOrigins=[],publicWebUrl,log=(
   }
   async function requireResident(req){const token=tokenFor(req),id=await store.session(token);if(!id)throw Object.assign(new Error('Sign in to your resident account'),{status:401,code:'authentication_required'});if(await admin.isSuspended(id))throw Object.assign(new Error('This account is suspended'),{status:403,code:'account_suspended'});return{id,token};}
   async function nearby(id){const [people,stats]=await Promise.all([store.presence.nearby(id),cityStats.snapshot(id)]);return{ok:true,nearby:people,stats,serverTime:store.clock()};}
+  async function emote(id,payload){
+    const emote=String(payload?.emote||'');if(!EMOTES.has(emote))throw Object.assign(new Error('Choose a supported reaction'),{status:400,code:'invalid_emote'});
+    const profile=await store.profile(id),event={residentId:id,username:profile.username,displayName:profile.displayName,emote,createdAt:store.clock()};
+    await store.emitZone(id,'player-emote',event);return{ok:true,emote:event};
+  }
   async function spray(id,payload){
     const amount=Number(payload.amount);if(!SPRAY_AMOUNTS.has(amount))throw Object.assign(new Error('Choose a listed spray amount'),{status:400,code:'invalid_amount'});
     const result=await store.economyOperation(id,'club_spray',payload,{amount},async(profile,timestamp)=>{
@@ -60,6 +66,10 @@ export function createFastStartup({store,admin,corsOrigins=[],publicWebUrl,log=(
       }
       const {id}=await requireResident(req);
       if(pathname==='/api/presence/nearby'&&req.method==='GET')return send(res,200,await nearby(id)),true;
+      if(pathname==='/api/presence/emote'&&req.method==='POST'){
+        if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))throw Object.assign(new Error('Send JSON for this action'),{status:415,code:'invalid_content_type'});
+        return send(res,200,await emote(id,await body(req))),true;
+      }
       if(pathname==='/api/club/spray'&&req.method==='POST'){
         if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))throw Object.assign(new Error('Send JSON for this action'),{status:415,code:'invalid_content_type'});
         return send(res,200,await spray(id,await body(req))),true;

@@ -30,9 +30,9 @@ test('Mongo startup bootstrap keeps authoritative playable state without running
 });
 
 async function fixture(t){
-  const calls=[],token='a'.repeat(48),state={suspended:false,storageError:false,visitRow:null,guest:false,visitDenied:false,reconcileWait:null,reconcileEntered:null,broadcastWait:null,broadcastEntered:null,actionDone:false};
+  const calls=[],token='a'.repeat(48),state={tokens:new Map([[token,'resident']]),suspended:false,storageError:false,visitRow:null,guest:false,visitDenied:false,reconcileWait:null,reconcileEntered:null,broadcastWait:null,broadcastEntered:null,actionDone:false};
   const store={clock:()=>Date.UTC(2026,9,5,10),publicJobs:()=>({}),
-    session:async candidate=>{if(state.storageError)throw new Error('Storage unavailable');return candidate===token?'resident':null;},
+    session:async candidate=>{if(state.storageError)throw new Error('Storage unavailable');return state.tokens.get(candidate)||null;},
     register:async body=>{assert.equal(Object.hasOwn(body,'startup'),false);calls.push(['register',body]);return{token,residentId:'resident'};},
     login:async body=>{assert.equal(Object.hasOwn(body,'startup'),false);calls.push(['login',body]);return{token,residentId:'resident'};},
     logout:async()=>{calls.push(['logout']);},
@@ -155,4 +155,21 @@ test('Committed house exit and visit actions return while presence fan-out waits
   }
   const denied=await f.request('/api/home/visits/respond',{cookie,body:{requestId:'another-residents-request',accept:true}});
   assert.equal(denied.status,403);assert.equal(denied.data.code,'visit_unavailable');
+});
+
+test('Verified residents on one network have separate request caps while anonymous and invalid sessions retain the IP cap',async t=>{
+  const f=await fixture(t),secondToken='b'.repeat(48);f.state.tokens.set(secondToken,'second-resident');
+  for(const token of [f.token,secondToken]){
+    for(let i=0;i<360;i++)assert.equal((await f.request('/api/bootstrap?startup=1',{cookie:`abujalife_session=${token}`})).status,200);
+    assert.equal((await f.request('/api/bootstrap?startup=1',{cookie:`abujalife_session=${token}`})).status,429);
+  }
+  for(let i=0;i<360;i++)assert.equal((await f.request('/api/bootstrap?startup=1',i%2?{cookie:'abujalife_session=invalid'}:{})).status,200);
+  assert.equal((await f.request('/api/bootstrap?startup=1')).status,429);
+  assert.equal((await f.request('/api/bootstrap?startup=1',{cookie:'abujalife_session=invalid'})).status,429);
+});
+
+test('Authentication attempts retain their shared-IP abuse limit with verified sessions',async t=>{
+  const f=await fixture(t),secondToken='b'.repeat(48);f.state.tokens.set(secondToken,'second-resident');
+  for(let i=0;i<12;i++)assert.equal((await f.request('/api/auth/login',{cookie:`abujalife_session=${i%2?secondToken:f.token}`,body:{username:'resident',password:'password',startup:true}})).status,200);
+  assert.equal((await f.request('/api/auth/login',{cookie:`abujalife_session=${secondToken}`,body:{username:'resident',password:'password',startup:true}})).status,429);
 });

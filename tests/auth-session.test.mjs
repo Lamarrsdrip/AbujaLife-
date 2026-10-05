@@ -5,10 +5,11 @@ import {authenticateAccount,finishOnboarding,accountErrorMessage,mergeCoreBootst
 const timeout=()=>new DOMException('Fetch is aborted','TimeoutError');
 const session={authenticated:true,profile:{id:'one',username:'ada',onboardingComplete:true,wallet:100000}};
 test('core refresh keeps loaded social cards while committed wallet and location update immediately',()=>{
- const current={...session,conversations:[{id:'dm-one',unread:2}],payments:{enabled:true},homeVisit:{owner:'old'}};
- const next={authenticated:true,startup:true,profile:{...session.profile,wallet:95000,location:{kind:'public'}},conversations:[],payments:null,homeVisit:null};
+ const current={...session,conversations:[{id:'dm-one',unread:2}],nearby:[{id:'private-guest'}],payments:{enabled:true},homeVisit:{owner:'old'}};
+ const next={authenticated:true,startup:true,profile:{...session.profile,wallet:95000,location:{kind:'public'}},nearby:[],conversations:[],payments:null,homeVisit:null};
  const merged=mergeCoreBootstrap(current,next);
  assert.equal(merged.profile,next.profile);assert.equal(merged.homeVisit,null);assert.equal(merged.conversations,current.conversations);assert.equal(merged.payments,current.payments);
+ assert.deepEqual(merged.nearby,[]);
 });
 test('core refresh never carries private cards between different or expired accounts',()=>{
  const current={...session,conversations:[{id:'private-dm'}]};

@@ -4,7 +4,8 @@ const deferredFields=['people','friends','friendRequests','conversations','notif
 export function mergeCoreBootstrap(current,next) {
   if(!next.startup || !current.authenticated || current.profile?.id!==next.profile?.id)return next;
   const merged={...next};
-  for(const key of deferredFields)if(current[key]!==undefined)merged[key]=current[key];
+  const locationKey=p=>[p?.district,p?.location?.kind,p?.location?.venue,p?.location?.ownerId,p?.location?.visitId].join(':');
+  for(const key of deferredFields)if(current[key]!==undefined && (key!=='nearby'||locationKey(current.profile)===locationKey(next.profile)))merged[key]=current[key];
   return merged;
 }
 

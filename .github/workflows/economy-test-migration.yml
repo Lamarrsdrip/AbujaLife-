@@ -20,8 +20,10 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci --ignore-scripts
-      - name: Rebaseline only stale economy assertions and preview parity
-        run: node scripts/rebaseline-economy-tests.mjs
+      - name: Rebaseline stale economy assertions and preview parity
+        run: |
+          node scripts/rebaseline-economy-tests.mjs
+          node scripts/rebaseline-mongo-economy-tests.mjs
       - name: Full application QA
         run: npm run qa
       - name: Windows runtime contract
@@ -33,7 +35,7 @@ jobs:
       - name: Commit verified migration and remove temporary migration machinery
         shell: bash
         run: |
-          git rm .github/workflows/economy-test-migration.yml scripts/rebaseline-economy-tests.mjs
+          git rm .github/workflows/economy-test-migration.yml scripts/rebaseline-economy-tests.mjs scripts/rebaseline-mongo-economy-tests.mjs
           git add tests preview/runtime.mjs
           git config user.name "GhostDev"
           git config user.email "110933245+Lamarrsdrip@users.noreply.github.com"

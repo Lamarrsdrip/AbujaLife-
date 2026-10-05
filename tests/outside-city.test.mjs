@@ -4,13 +4,15 @@ import {ABUJA_ATLAS} from '../src/shared/atlas.mjs';
 import {VENUES,venueAvailable} from '../src/shared/life.mjs';
 import {createOutsideLayout,outsideDestination} from '../app/outside-city.js';
 
-test('Outside includes every authored district and venue once with unique scenery addresses',()=>{
+test('Outside includes every authored district and playable venue once with unique scenery addresses',()=>{
   const layout=createOutsideLayout(ABUJA_ATLAS,VENUES);
-  assert.equal(layout.districts.length,123);assert.equal(layout.venues.length,20);
+  assert.equal(layout.districts.length,123);assert.equal(layout.venues.length,VENUES.length);
+  assert.ok(VENUES.length>=31,'Abuja should have the original places plus the new real-purpose hubs');
   assert.deepEqual(layout.districts.map(d=>d.id),ABUJA_ATLAS.map(d=>d.id));
   assert.deepEqual(layout.venues.map(v=>v.id),VENUES.map(v=>v.id));
-  assert.equal(new Set([...layout.districts,...layout.venues].map(p=>p.key)).size,143);
+  assert.equal(new Set([...layout.districts,...layout.venues].map(p=>p.key)).size,layout.districts.length+layout.venues.length);
   assert.equal(new Set(layout.districts.map(p=>`${p.x},${p.z}`)).size,123);
+  assert.ok(layout.cellWidth>430);assert.ok(layout.cellDepth>365);
   for(const place of [...layout.districts,...layout.venues]){assert.ok(Number.isFinite(place.x)&&Number.isFinite(place.z));assert.ok(Math.abs(place.x)<layout.width/2);assert.ok(Math.abs(place.z)<layout.depth/2);}
 });
 
@@ -22,6 +24,11 @@ test('restricted destinations preserve their authored district associations',()=
   assert.equal(layout.venues.find(v=>v.id==='magic-city').districtId,'garki-ii');
   assert.equal(layout.venues.find(v=>v.id==='jabi-lake').districtId,'jabi');
   assert.equal(layout.venues.find(v=>v.id==='bear-barn').districtId,'jabi');
+  assert.equal(layout.venues.find(v=>v.id==='city-gate-plaza').districtId,'kukwaba');
+  assert.equal(layout.venues.find(v=>v.id==='magicland').districtId,'kukwaba');
+  assert.equal(layout.venues.find(v=>v.id==='farm-city').districtId,'wuse-ii-a07');
+  assert.equal(layout.venues.find(v=>v.id==='transcorp-hilton-hub').districtId,'maitama');
+  assert.equal(layout.venues.find(v=>v.id==='cbn-experience').districtId,'central-area');
 });
 
 test('destination routing validates identity and returns travel intent without changing resident state',()=>{

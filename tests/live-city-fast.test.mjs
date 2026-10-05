@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createFastStartup } from '../src/server/fastStartup.mjs';
@@ -130,4 +131,15 @@ test('player emotes only target a resident who is genuinely nearby',async()=>{
   const denied=await call(runtime,'POST','/api/presence/emote',{emote:'wave',targetResidentId:'resident-missing'});
   assert.equal(denied.res.status,409);
   assert.equal(denied.body.code,'resident_not_nearby');
+});
+
+test('physical resident encounters reuse the existing visit API and presence carries activity state',()=>{
+  const app=fs.readFileSync(new URL('../app/app.js',import.meta.url),'utf8');
+  assert.match(app,/\/api\/home\/visits\/request/);
+  assert.doesNotMatch(app,/\/api\/home-visits\/requests/);
+  assert.match(app,/idempotencyKey:crypto\.randomUUID\(\)/);
+
+  const production=fs.readFileSync(new URL('../src/server/production-http.mjs',import.meta.url),'utf8');
+  assert.match(production,/allowedActivities=new Set\(\['walk','exercise','eat','dance','social','rest','sit','shop','watch','pray','groom','shower'\]\)/);
+  assert.match(production,/\.\.\.\(activity\?\{activity\}:\{\}\)/);
 });

@@ -63,7 +63,7 @@ export async function buildProduction({ environment = process.env, outputDirecto
     }
     const result = await build({
       absWorkingDir: repository,
-      entryPoints: { app: 'app/app.js', admin: 'app/admin.js', 'game-ui-kit': 'app/game-ui-kit.js' },
+      entryPoints: { app: 'app/app.js', admin: 'app/admin.js', 'game-ui-kit': 'app/game-ui-kit.js', ads: 'app/ads.js' },
       outdir: staging,
       bundle: true,
       splitting: true,

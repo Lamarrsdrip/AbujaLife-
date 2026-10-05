@@ -24,7 +24,11 @@ export class MongoPresenceStore {
     const rows=await this.db.collection('presence_sessions').aggregate([{$match:{zone,presenceVisible:true,residentId:{$nin:[id,...blocked]},expiresAt:{$gt:new Date(now)}}},{$group:{_id:'$residentId'}},{$limit:this.maxNearby}]).toArray();
     const ids=rows.map(row=>row._id),views=await Promise.all(ids.map(residentId=>this.social.resident(id,residentId).catch(()=>null)));
     const selfPose=this.poses.get(id)?.zone===zone?this.poses.get(id).pose:null;
-    const people=views.filter(person=>person?.online).map(person=>{const pose=this.poses.get(person.id);return{...person,pose:pose?.zone===zone&&pose.expiresAt>now?pose.pose:null};});
+    // A lease can outlive the player's last state write by up to 45 seconds.
+    // Re-check the authoritative public location before exposing a nearby
+    // resident so leaving a home/visit immediately removes them from the
+    // neighbourhood view instead of leaking a stale presence row.
+    const people=views.filter(person=>person?.online&&person.location?.kind==='public').map(person=>{const pose=this.poses.get(person.id);return{...person,pose:pose?.zone===zone&&pose.expiresAt>now?pose.pose:null};});
     if(selfPose)people.sort((a,b)=>{const ap=a.pose?Math.hypot(a.pose.x-selfPose.x,a.pose.y-selfPose.y):Infinity,bp=b.pose?Math.hypot(b.pose.x-selfPose.x,b.pose.y-selfPose.y):Infinity;return ap-bp;});
     return people;
   }

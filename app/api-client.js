@@ -16,16 +16,25 @@ export function apiURL(path) {
   return new URL(path, url.origin).href;
 }
 
-// The first city render only needs the resident and world state. Heavy social,
-// inbox, history and admin data hydrate immediately after the shell is usable.
-// Keep retrying the lightweight route until one response succeeds so a flaky
-// first request never falls back to the old blocking startup path.
+// The first city render only needs resident/world state. During a staggered
+// production deploy the static client can arrive before the API route does, so
+// fast startup MUST gracefully fall back to the established endpoint rather
+// than blocking residents with a 404/405/501 response.
 let startupBootstrapPending = true;
+const FAST_ROUTE_MISSING = new Set([404,405,501]);
 
 // Realtime events can cause several surfaces to ask for the same fresh state at
 // once. Share only the in-flight GET; never cache a settled response, so a later
 // interaction always reaches the server and mutations are never hidden.
 const inFlightGets = new Map();
+
+async function compatibleFetch(primaryPath, fallbackPath, init) {
+  const response = await globalThis.fetch(apiURL(primaryPath), init);
+  if (fallbackPath && FAST_ROUTE_MISSING.has(response.status)) {
+    return globalThis.fetch(apiURL(fallbackPath), init);
+  }
+  return response;
+}
 
 export function apiFetch(path, options = {}) {
   const deadline=AbortSignal.timeout(15000);
@@ -33,17 +42,18 @@ export function apiFetch(path, options = {}) {
   const method=String(options.method||'GET').toUpperCase();
   const startupRequest=method==='GET'&&path==='/api/bootstrap'&&startupBootstrapPending;
   const loginRequest=method==='POST'&&path==='/api/auth/login';
-  const requestPath=startupRequest?'/api/bootstrap/fast':loginRequest?'/api/auth/login/fast':path;
-  const url=apiURL(requestPath);
+  const primaryPath=startupRequest?'/api/bootstrap/fast':loginRequest?'/api/auth/login/fast':path;
+  const fallbackPath=startupRequest?'/api/bootstrap':loginRequest?'/api/auth/login':null;
+  const url=apiURL(primaryPath);
   const init={...options,signal,credentials:'include',cache:'no-store'};
 
   if(method!=='GET'||options.body!==undefined||options.headers){
-    return globalThis.fetch(url,init);
+    return compatibleFetch(primaryPath,fallbackPath,init);
   }
 
   let pending=inFlightGets.get(url);
   if(!pending){
-    pending=globalThis.fetch(url,init).then(response=>{
+    pending=compatibleFetch(primaryPath,fallbackPath,init).then(response=>{
       if(startupRequest&&response.ok)startupBootstrapPending=false;
       return response;
     }).finally(()=>inFlightGets.delete(url));

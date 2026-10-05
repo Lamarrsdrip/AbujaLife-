@@ -38,6 +38,8 @@ jobs:
 
       - name: Publish the build artifact branch
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           test -f /tmp/abujalife-frontend-artifact/index.html
@@ -52,5 +54,5 @@ jobs:
           git add -A
           git commit -qm "Deploy AbujaLife frontend ${GITHUB_SHA}"
           git branch -M hostinger-production
-          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push --force origin hostinger-production

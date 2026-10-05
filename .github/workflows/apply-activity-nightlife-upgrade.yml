@@ -1,0 +1,54 @@
+name: Apply activity and nightlife upgrade
+
+on:
+  push:
+    branches: [fix/world-stability-and-fast-taps-2026-10-05]
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/world-stability-and-fast-taps-2026-10-05
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Apply gameplay upgrade safely
+        run: node scripts/apply-activity-nightlife-upgrade.mjs
+      - name: Tighten generated nightclub regression
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('tests/activity-nightlife-upgrade.test.mjs')
+          text = path.read_text()
+          old = "  assert.match(interiors,/club dance floor crowd/);"
+          new = "  assert.ok((interiors.match(/activity:'dance'/g)||[]).length>=10);"
+          if old not in text:
+              raise SystemExit('nightclub regression target missing')
+          path.write_text(text.replace(old, new))
+          PY
+      - name: Check generated diff
+        run: git diff --check
+      - name: Run unit and static QA
+        run: npm run qa
+      - name: Build production bundle
+        run: npm run build
+      - name: Commit verified upgrade
+        shell: bash
+        run: |
+          rm -f scripts/apply-activity-nightlife-upgrade.mjs .github/workflows/apply-activity-nightlife-upgrade.yml
+          git config user.name "AbujaLife CI"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "feat: make activities longer and nightlife feel alive [verified]"
+          git push origin HEAD:fix/world-stability-and-fast-taps-2026-10-05

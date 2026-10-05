@@ -58,6 +58,13 @@ async function api(path,options={}) {
 }
 function toast(message){const el=document.querySelector('#toast');el.textContent=message;el.classList.add('visible');clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.classList.remove('visible'),4000);}
 async function refresh({render=true}={}){state=await api('/api/bootstrap');serverClockAt=Number(state.serverTime)||Date.now();serverClockObservedAt=performance.now();if(render)renderMain();else{const balance=root.querySelector('.wallet-button');if(balance){balance.querySelector('strong').textContent=`₦${money(state.profile?.wallet)}`;balance.setAttribute('aria-label',`Naira balance, ₦${money(state.profile?.wallet)}. Open wallet`);}cleanup?.updateResidents?.(list(state.nearby));}phone.render();showWorkReminder();void install.refresh();return state;}
+let nearbyRefreshTimer=null,nearbyRefreshPromise=null;
+function dispatchLivingCity(type,detail={}){window.dispatchEvent(new CustomEvent('abujalife:living-city',{detail:{type,...detail}}));}
+async function refreshNearbyPresence({fallback=true}={}){
+ if(!state.authenticated||document.hidden)return null;if(nearbyRefreshPromise)return nearbyRefreshPromise;
+ nearbyRefreshPromise=(async()=>{try{const result=await api('/api/presence/nearby');state.nearby=result.nearby||[];cleanup?.updateResidents?.(list(state.nearby));dispatchLivingCity('snapshot',{nearby:state.nearby,stats:result.stats,serverTime:result.serverTime});return result;}catch(error){if(fallback&&[404,405,501].includes(error.status)){scheduleRealtimeRefresh();return null;}throw error;}finally{nearbyRefreshPromise=null;}})();return nearbyRefreshPromise;
+}
+function scheduleNearbyPresenceRefresh(delay=80){clearTimeout(nearbyRefreshTimer);nearbyRefreshTimer=setTimeout(()=>void refreshNearbyPresence().catch(()=>{}),delay);}
 const phone=createPhone({root:document.querySelector('#phone-root'),getState:()=>state,api,onUpdate:refresh,onNavigate:navigate,toast});
 const install=createInstallController({shouldShow:()=>!!(state.authenticated&&state.profile?.onboardingComplete)&&!phone.isOpen?.()&&!document.querySelector('#sheet-root .sheet'),localProgress:()=>!!state.preview,onAvailabilityChange:available=>document.querySelectorAll('[data-install-app]').forEach(button=>button.hidden=!available)});
 const furnitureCatalogue=createFurnitureCatalogue({getState:()=>state,mutate:action,onSelect:beginFurniturePlacement,getFurnitureState:()=>cleanup?.getFurnitureState?.(),toast,enhancePreviews:scope=>enhanceProductPreviews(scope,{appearance:state.profile?.appearance}),onUse:itemId=>{
@@ -80,7 +87,7 @@ let lastPublishedPose;
 setInterval(()=>{
  if(!state.authenticated||view!=='world'||document.hidden||document.querySelector('[aria-modal="true"]'))return;
  const motion=cleanup?.getMotionState?.();if(!motion)return;
- const pose={x:motion.x,y:motion.y,angle:motion.angle||0,moving:motion.moving,driving:motion.driving};
+ const pose={x:motion.x,y:motion.y,angle:motion.angle||0,moving:motion.moving,driving:motion.driving,...(motion.activity?{activity:motion.activity}:{})};
  if(lastPublishedPose&&!pose.moving&&pose.moving===lastPublishedPose.moving&&Math.hypot(pose.x-lastPublishedPose.x,pose.y-lastPublishedPose.y)<1)return;
  lastPublishedPose=pose;api('/api/presence',{method:'POST',body:{pose}}).catch(()=>{});
 },1000);
@@ -114,15 +121,27 @@ function scheduleRealtimeRefresh(){
 }
 function connectRealtime(){
  stream?.close();if(!state.authenticated||authRecovery.snapshot().kind&&!['idle','complete'].includes(authRecovery.snapshot().status))return;stream=createApiEventSource('/api/realtime');
- for(const type of ['ready','presence','event','location-chat','typing','message','notification','invitation','profile','receipt','world-pose','social-post','social-like','social-comment','home-visit','home-visit-request','home-visit-ended'])stream.addEventListener(type,event=>{
+ for(const type of ['ready','presence','event','location-chat','typing','message','notification','invitation','profile','receipt','world-pose','player-emote','club-spray','social-post','social-like','social-comment','home-visit','home-visit-request','home-visit-ended'])stream.addEventListener(type,event=>{
   let data;try{data=JSON.parse(event.data);}catch{return;}phone.handleEvent(type,data);
   if(type==='message'&&!data.receipt&&data.senderId!==state.profile?.id&&data.conversationId)api(`/api/conversations/${encodeURIComponent(data.conversationId)}/delivered`,{method:'POST',body:{...(Number.isSafeInteger(data.seq)?{uptoSeq:data.seq}:{}),createdAt:data.createdAt,uptoMessageId:data.id}}).catch(()=>{});
-  if(type==='world-pose'){if(data.residentId!==state.profile?.id)cleanup?.updateResidentPose?.(data);return;}
+  if(type==='world-pose'){if(data.residentId!==state.profile?.id)cleanup?.updateResidentPose?.(data);dispatchLivingCity('world-pose',{data});return;}
+  if(type==='player-emote'||type==='club-spray'){dispatchLivingCity(type,{data});return;}
+  if(type==='presence'){scheduleNearbyPresenceRefresh();return;}
+  if(type==='ready'){scheduleNearbyPresenceRefresh(0);return;}
   if(type==='location-chat'){chatMessages.push(data.message||data);chatMessages=chatMessages.slice(-60);if(chatOpen)renderChat();}
-  if(['presence','event','profile','message','notification','invitation','receipt','home-visit','home-visit-request','home-visit-ended'].includes(type))scheduleRealtimeRefresh();
+  if(['event','profile','message','notification','invitation','receipt','home-visit','home-visit-request','home-visit-ended'].includes(type))scheduleRealtimeRefresh();
  });
  stream.onopen=()=>{document.documentElement.dataset.connection='online';};stream.onerror=()=>{document.documentElement.dataset.connection='reconnecting';};
 }
+addEventListener('abujalife:resident-action',async event=>{
+ const {action:residentAction,residentId}=event.detail||{},resident=list(state.nearby).find(person=>String(person.id)===String(residentId));if(!resident){toast('That resident is no longer nearby.');return;}
+ try{
+  if(residentAction==='profile'){residentSheet(resident);return;}
+  if(residentAction==='message'){const result=await api('/api/conversations',{method:'POST',body:{residentId:resident.id}});phone.open('messages',{conversationId:result.conversation.id});return;}
+  if(residentAction==='friend'){await api('/api/friends/request',{method:'POST',body:{residentId:resident.id}});toast('Friend request sent.');return;}
+  if(residentAction==='visit'){await api('/api/home-visits/requests',{method:'POST',body:{residentId:resident.id}});toast('Visit request sent.');return;}
+ }catch(error){toast(error.message);}
+});
 async function action(name,payload={}){
  if(busy)return;busy=true;const previousLocation=locationKey(state.profile);
  try{
@@ -257,6 +276,7 @@ function openLifeMenu(){
 function bindWorld(){
  const p=state.profile,owner=state.homeVisit?.ownerHome,renderProfile=p.location?.kind==='visit'&&owner?{...p,home:owner.home,inventory:owner.inventory,furnitureLayout:owner.furnitureLayout,storedFurniture:owner.storedFurniture,canDecorate:false}:p;
  cleanup=renderWorld(document.querySelector('#world-scene'),{profile:renderProfile,place:place(p.district),people:list(state.nearby),serverNow:gameNow(),weather:state.weather,venues:list(state.venues),venueActions:list(state.venueActions),catalog:list(state.catalog),onInteract:interact,onResident:residentSheet,onFurnitureSelect:itemId=>furnitureCatalogue.showItem(itemId),onDestination:destination=>destination.home?goHome():goToVenue(destination.venueId),onArrive:tripId=>{if(p.activeTrip&&gameNow()>=Number(p.activeTrip.arrivesAt))return completeTrip(tripId||p.activeTrip.id);}});
+ queueMicrotask(()=>void refreshNearbyPresence().catch(()=>{}));
  root.querySelector('[data-open-local-chat]')?.addEventListener('click',openLocalChat);
  root.querySelector('[data-open-visits]')?.addEventListener('click',()=>lifePanels.openVisits());
  root.querySelector('[data-life-leave]')?.addEventListener('click',()=>homeDoor());

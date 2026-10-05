@@ -30,7 +30,9 @@ export function createFastStartup({store,admin,corsOrigins=[],publicWebUrl,log=(
   async function nearby(id){const [people,stats]=await Promise.all([store.presence.nearby(id),cityStats.snapshot(id)]);return{ok:true,nearby:people,stats,serverTime:store.clock()};}
   async function emote(id,payload){
     const emote=String(payload?.emote||'');if(!EMOTES.has(emote))throw Object.assign(new Error('Choose a supported reaction'),{status:400,code:'invalid_emote'});
-    const profile=await store.profile(id),event={residentId:id,username:profile.username,displayName:profile.displayName,emote,createdAt:store.clock()};
+    const targetResidentId=typeof payload?.targetResidentId==='string'?payload.targetResidentId:null;
+    if(targetResidentId){if(targetResidentId===id)throw Object.assign(new Error('Choose another resident'),{status:400,code:'invalid_target'});const nearby=await store.presence.nearby(id);if(!nearby.some(person=>person.id===targetResidentId))throw Object.assign(new Error('That resident is no longer nearby'),{status:409,code:'resident_not_nearby'});}
+    const profile=await store.profile(id),event={residentId:id,targetResidentId,username:profile.username,displayName:profile.displayName,emote,createdAt:store.clock()};
     await store.emitZone(id,'player-emote',event);return{ok:true,emote:event};
   }
   async function spray(id,payload){

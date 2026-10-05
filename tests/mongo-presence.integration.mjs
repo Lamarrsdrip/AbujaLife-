@@ -78,7 +78,9 @@ test('Real Mongo HTTP peers receive street, venue and consented home poses, incl
   assert.equal(guestMotion.data.zone,`home:${a.id}`);
   await streamB.wait(event=>event.type==='world-pose'&&event.data.residentId===a.id&&event.data.pose.x===550);
   await request('/api/chat/location',a,{text:'Welcome to our shared home scene'});
-  await streamB.wait(event=>event.type==='location-chat'&&event.data.message.text==='Welcome to our shared home scene');
+  const homeChat=await streamB.wait(event=>event.type==='location-chat'&&event.data?.text==='Welcome to our shared home scene');
+  assert.equal(homeChat.data.senderId,a.id);
+  assert.equal(homeChat.data.zone,`home:${a.id}`);
   await request('/api/moderation/block',a,{residentId:b.id,blocked:true});
   assert.equal((await nearby(a)).some(person=>person.id===b.id),false);
   assert.equal((await nearby(b)).some(person=>person.id===a.id),false);

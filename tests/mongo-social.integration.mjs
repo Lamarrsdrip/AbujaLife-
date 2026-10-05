@@ -18,14 +18,18 @@ async function befriend(f,a,b){await f.social.requestFriend(a,b);const request=(
 
 integration('Mongo nearby shares real street, venue and consented home motion without stale-location or private-home leaks',async t=>{
   const f=await fixture(t),[host,guest,stranger]=f.users,district=(await f.game.profile(host)).district;
+  // Other integration workers may have legitimate live residents in this
+  // district. Scope cardinality assertions to this fixture while retaining
+  // the explicit privacy and block checks for every participant.
+  const fixtureNearby=people=>people.filter(person=>f.users.includes(person.id));
   for(const id of f.users)await outside(f,id,district);
   await f.presence.touch(host,{connectionId:'host-stream',pose:{x:300,y:750,angle:0,moving:false}});
   await f.presence.touch(guest,{connectionId:'guest-stream',pose:{x:350,y:750,angle:0,moving:true}});
-  let nearby=await f.presence.nearby(host);
-  assert.deepEqual(nearby.map(p=>p.id),[guest]);assert.equal(nearby[0].pose.x,350);
+  let nearby=await f.presence.nearby(host),fixturePeople=fixtureNearby(nearby);
+  assert.deepEqual(fixturePeople.map(p=>p.id),[guest]);assert.equal(fixturePeople[0].pose.x,350);
   assert.equal(nearby.some(p=>p.id===stranger),false,'Registered residents without live presence must not appear');
   await f.presence.touch(guest,{connectionId:'guest-stream',pose:{x:390,y:750,angle:.5,moving:true}});
-  assert.equal((await f.presence.nearby(host))[0].pose.x,390);
+  assert.equal(fixtureNearby(await f.presence.nearby(host))[0].pose.x,390);
   for(let i=0;i<3;i++){f.advance(20000);await f.presence.touch(host,{connectionId:'host-stream'});await f.presence.touch(guest,{connectionId:'guest-stream'});}
   assert.equal((await f.presence.nearby(host))[0].pose.x,390,'A live stationary connection must renew its existing same-zone pose beyond 45 seconds');
   await outside(f,guest,district==='jabi'?'garki':'jabi');
@@ -38,11 +42,12 @@ integration('Mongo nearby shares real street, venue and consented home motion wi
   await f.presence.touch(host,{connectionId:'host-stream',pose:{x:400,y:800,angle:0}});
   await f.presence.touch(guest,{connectionId:'guest-stream',pose:{x:500,y:800,angle:0,moving:true,activity:'walk'}});
   await f.presence.touch(stranger,{connectionId:'stranger-stream',pose:{x:600,y:800,angle:0,activity:'exercise'}});
-  nearby=await f.presence.nearby(host);
-  assert.deepEqual(nearby.map(p=>p.id),[guest]);assert.equal(nearby[0].location.kind,'venue');
-  assert.equal(nearby[0].pose.x,500);assert.equal(nearby[0].pose.activity,'walk');
+  nearby=await f.presence.nearby(host);fixturePeople=fixtureNearby(nearby);
+  assert.deepEqual(fixturePeople.map(p=>p.id),[guest]);assert.equal(fixturePeople[0].location.kind,'venue');
+  assert.equal(fixturePeople[0].pose.x,500);assert.equal(fixturePeople[0].pose.activity,'walk');
   await f.presence.touch(guest,{connectionId:'guest-stream',pose:{x:560,y:800,angle:1,moving:false,activity:'eat'}});
-  assert.equal((await f.presence.nearby(host))[0].pose.x,560);assert.equal((await f.presence.nearby(host))[0].pose.activity,'eat');
+  fixturePeople=fixtureNearby(await f.presence.nearby(host));
+  assert.equal(fixturePeople[0].pose.x,560);assert.equal(fixturePeople[0].pose.activity,'eat');
   await f.game.action(guest,'exit-venue');
   assert.equal((await f.presence.nearby(host)).some(p=>p.id===guest),false,'A stale lease must not keep a departed venue occupant visible');
   await f.game.action(host,'exit-venue');await f.game.action(host,'enter-home');
@@ -51,9 +56,9 @@ integration('Mongo nearby shares real street, venue and consented home motion wi
   const request=(await f.social.requestVisit(guest,{ownerId:host,idempotencyKey:key()})).request;
   await f.social.answerVisit(host,request.id,true);
   await f.presence.touch(guest,{connectionId:'guest-stream',pose:{x:590,y:740,angle:0,moving:true}});
-  assert.deepEqual((await f.presence.nearby(host)).map(p=>p.id),[guest]);
-  assert.deepEqual((await f.presence.nearby(guest)).map(p=>p.id),[host]);
-  assert.equal((await f.presence.nearby(host))[0].pose.x,590);
+  assert.deepEqual(fixtureNearby(await f.presence.nearby(host)).map(p=>p.id),[guest]);
+  assert.deepEqual(fixtureNearby(await f.presence.nearby(guest)).map(p=>p.id),[host]);
+  assert.equal(fixtureNearby(await f.presence.nearby(host))[0].pose.x,590);
   await f.game.action(stranger,'exit-venue');await f.game.action(stranger,'enter-home');
   await f.presence.touch(stranger,{connectionId:'stranger-stream'});
   assert.equal((await f.presence.nearby(stranger)).length,0,'A separate private home must not expose host or guest');
@@ -73,7 +78,7 @@ integration('Mongo nearby shares real street, venue and consented home motion wi
   assert.equal(await f.presence.poseView(host,guest),null);
   await f.social.moderate(host,'block',guest,false);
   f.advance(45001);
-  assert.equal((await f.presence.nearby(host)).length,0,'Expired presence must never turn offline accounts into residents in the scene');
+  assert.equal(fixtureNearby(await f.presence.nearby(host)).length,0,'Expired presence must never turn offline accounts into residents in the scene');
 });
 
 integration('Mongo conversations persist normalized membership, concurrent sequence, unread and receipt state',async t=>{const f=await fixture(t),[a,b,c]=f.users,{conversation}=await f.social.createConversation(a,{residentId:b});assert.equal((await f.social.createConversation(b,{residentId:a})).conversation.id,conversation.id);await denied(f.social.messages(c,conversation.id),404);await denied(f.social.sendMessage(c,conversation.id,'intrusion'),404);await denied(f.social.readConversation(c,conversation.id),404);const input={text:'Persist across reconnect',idempotencyKey:key()},replies=await Promise.all(Array.from({length:8},()=>f.social.sendMessage(a,conversation.id,input)));assert.equal(new Set(replies.map(r=>r.message.id)).size,1);assert.equal(await f.connection.db.collection('messages').countDocuments({conversationId:conversation.id}),1);assert.equal((await f.social.conversation(b,conversation.id)).unread,1);const social2=new MongoSocialStore(f.game);assert.equal((await social2.conversation(b,conversation.id)).unread,1);await social2.delivered(b,conversation.id);assert.deepEqual((await social2.messageView(await f.connection.db.collection('messages').findOne({conversationId:conversation.id}),a)).deliveredTo,[b]);assert.deepEqual((await social2.messageView(await f.connection.db.collection('messages').findOne({conversationId:conversation.id}),a)).readBy,[]);await social2.readConversation(b,conversation.id);assert.equal((await f.social.conversation(b,conversation.id)).unread,0);assert.deepEqual((await f.social.messageView(await f.connection.db.collection('messages').findOne({conversationId:conversation.id}),a)).readBy,[b]);await assert.rejects(f.social.sendMessage(a,conversation.id,{...input,text:'different'}),e=>e.code==='idempotency_conflict');const sent=await Promise.all(Array.from({length:12},(_,i)=>f.social.sendMessage(a,conversation.id,{text:`Message ${i}`,idempotencyKey:key()})));assert.equal(new Set(sent.map(r=>r.message.seq)).size,12);const page1=await f.directory.messages(b,conversation.id,{limit:5}),page2=await f.directory.messages(b,conversation.id,{limit:5,cursor:page1.nextCursor}),page3=await f.directory.messages(b,conversation.id,{limit:5,cursor:page2.nextCursor});assert.equal(new Set([...page1.messages,...page2.messages,...page3.messages].map(r=>r.id)).size,13);assert.equal(page3.nextCursor,null);assert.ok(page1.messages.every((r,i,arr)=>!i||r.seq>arr[i-1].seq));const originalReceipt=f.social.receipt.bind(f.social);let raced=false;f.social.receipt=async(id,conv,read,seq)=>{if(id===b&&read&&seq!==undefined&&!raced){raced=true;await f.social.sendMessage(a,conv,{text:'Arrived after the page query',idempotencyKey:key()});}return originalReceipt(id,conv,read,seq);};await f.social.messages(b,conversation.id,{limit:5});assert.equal((await f.social.conversation(b,conversation.id)).unread,1);});

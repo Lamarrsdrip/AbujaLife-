@@ -169,14 +169,14 @@ try {
   );
   const existingRole = await db.command({ rolesInfo: 'abujalife_runtime' });
   await db.command({ [existingRole.roles.length ? 'updateRole' : 'createRole']: 'abujalife_runtime', privileges, roles: [] });
-  const backupRole = await admin.command({ rolesInfo: 'abujalife_backup' });
-  // The backup account is limited to this dedicated AbujaLife Mongo service.
-  // Full replica-set dumps need database discovery and read access to the
-  // service's internal databases; restore still filters to abujalife_prod.
-  await admin.command({ [backupRole.roles.length ? 'updateRole' : 'createRole']: 'abujalife_backup', privileges: [{ resource: { cluster: true }, actions: ['listDatabases'] }, { resource: { db: '', collection: '' }, actions: ['find', 'listCollections', 'listIndexes', 'collStats', 'dbStats'] }], roles: [] });
-  for (const [user, password, role, roleDb] of [['abujalife_app', 'mongo-app-password', 'abujalife_runtime', config.database], ['abujalife_backup', 'mongo-backup-password', 'abujalife_backup', 'admin']]) {
+  // Oplog-consistent mongodump reads MongoDB internal namespaces including
+  // config.transactions. Assign the purpose-built built-in backup@admin role
+  // rather than maintaining an incomplete copy of MongoDB's internal backup
+  // privilege contract. The credential remains confined to AbujaLife's
+  // dedicated 127.0.0.1:27017 instance; Okrika uses a separate Mongo service.
+  for (const [user, password, role, roleDb] of [['abujalife_app', 'mongo-app-password', 'abujalife_runtime', config.database], ['abujalife_backup', 'mongo-backup-password', 'backup', 'admin']]) {
     const found = await db.command({ usersInfo: user });
     await db.command({ [found.users.length ? 'updateUser' : 'createUser']: user, pwd: secret(config, password), roles: [{ role, db: roleDb }] });
   }
-  console.log(JSON.stringify({ ok: true, database: config.database, replicaSet: config.replicaSet, collections: MONGO_COLLECTIONS.length, ledger: 'find/insert only', appDDL: false, ownerBootstrap }));
+  console.log(JSON.stringify({ ok: true, database: config.database, replicaSet: config.replicaSet, collections: MONGO_COLLECTIONS.length, ledger: 'find/insert only', appDDL: false, ownerBootstrap, backupRole: 'backup@admin' }));
 } finally { await client.close(); }

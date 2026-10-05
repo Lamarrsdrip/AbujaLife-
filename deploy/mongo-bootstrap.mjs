@@ -51,7 +51,10 @@ try {
   await db.command({[existingRole.roles.length ? 'updateRole' : 'createRole']: 'abujalife_runtime', privileges, roles: []});
   const backupPrivileges = [
     {resource: {db: database, collection: ''}, actions: ['find','listCollections','listIndexes','collStats','dbStats']},
-    {resource: {db: 'local', collection: 'oplog.rs'}, actions: ['find']}
+    {resource: {db: 'local', collection: 'oplog.rs'}, actions: ['find']},
+    // mongodump --oplog checks prepared/in-progress transactions so its
+    // snapshot boundary is safe. Grant only the exact read it requires.
+    {resource: {db: 'config', collection: 'transactions'}, actions: ['find']}
   ];
   const existingBackupRole = await admin.command({rolesInfo: 'abujalife_backup'});
   await admin.command({[existingBackupRole.roles.length ? 'updateRole' : 'createRole']: 'abujalife_backup', privileges: backupPrivileges, roles: []});

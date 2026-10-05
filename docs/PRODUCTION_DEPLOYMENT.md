@@ -69,6 +69,17 @@ Deployment verifies source hashes, installs with `npm ci`, runs `npm run qa` and
 
 GitHub CI runs Linux QA/build/isolated Docker Mongo infrastructure checks and Windows QA/build/PowerShell parsing. The Docker stack remains a tested alternative; it is not the actual Windows VPS runtime.
 
+After CI succeeds on `main`, `.github/workflows/frontend-deploy.yml` builds the
+connected game, adds the release manifest and force-updates the generated
+`hostinger-production` artifact branch. Hostinger's Git auto-deployment watches
+that branch and publishes it to the AbujaLife-specific `public_html`. The VPS
+task `AbujaLife-AutoDeploy` checks the public GitHub check-runs API every five
+minutes, waits for both AbujaLife CI and frontend deployment to be successful,
+then clones that exact `main` revision and invokes the same candidate-based
+`deploy.ps1` promotion. A failed build, check or health test leaves the current
+release running. This is the normal production path; the ZIP commands above
+remain private release/debug tooling and recovery fallback only.
+
 ## Configuration, authentication and data
 
 `shared\windows.json` stores public origins, ports, runtime paths and retention settings. `shared\.secrets` stores private values. The API receives only necessary AbujaLife variables; unrelated Windows machine credentials are excluded. Provider values must never be passed into the frontend build. LocalService can read only the application Mongo password and configuration encryption key, immutable code/configuration, and write its own logs/runtime status. It cannot read the bootstrap or backup credentials.
@@ -87,7 +98,14 @@ Realtime is authenticated **Server-Sent Events**, with REST for client actions, 
 
 Hostinger is authoritative through `horizon.dns-parking.com` and `orbit.dns-parking.com`. Root web A records are managed by Hostinger hosting/CDN; `www` is a CNAME to `abujacity.life`. The API A record is `api → 173.212.249.202`, TTL 300, with no unverified AAAA. Okrika DNS remains unchanged.
 
-Upload/extract `abujacity-production-frontend.zip` into the **abujacity.life-specific `public_html`**, confirmed through hPanel. Preserve the current files before replacing a release. Do not use another website’s root. `.htaccess` sets MIME types, public-only caching, SPA/admin deep-route rewrites, HTTPS/canonical redirects and browser security headers. `/api` on Hostinger returns 404. Runtime config, HTML and service worker are not cached; the worker caches only public static assets.
+Hostinger's Git deployment publishes the generated `hostinger-production`
+branch into the **abujacity.life-specific `public_html`**, confirmed through
+hPanel. Do not point that site at source `main` or another website's root.
+`.htaccess` sets MIME types, public-only caching, SPA/admin deep-route
+rewrites, HTTPS/canonical redirects and browser security headers. `/api` on
+Hostinger returns 404. Runtime config, HTML and service worker are not cached;
+the worker caches only public static assets. Manual archive extraction remains
+an emergency rollback/recovery procedure, not a normal update step.
 
 Hostinger manages frontend TLS/renewal. Caddy obtains and renews the API certificate automatically in its existing SYSTEM certificate store. Its HTTP listener handles ACME and HTTPS redirects; no Node/Mongo port is public. Do not start a second 80/443 proxy. Check TLS without disabling certificate validation.
 

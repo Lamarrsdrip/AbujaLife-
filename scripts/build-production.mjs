@@ -19,6 +19,7 @@ export const productionEntryPoints = Object.freeze({
   'living-city': 'app/living-city.js',
   'game-map': 'app/game-map.js',
   'game-experience': 'app/game-experience.js',
+  'game-realm-2026': 'app/game-realm-2026.js',
 });
 
 export function publicOrigin(value, name) {

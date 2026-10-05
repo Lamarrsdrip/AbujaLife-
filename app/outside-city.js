@@ -52,9 +52,9 @@ export function createOutsideLayout(atlas = [], venues = [], includeLandmarks = 
   const adPlots = Array.from({length:40},(_,index)=>({
     id:`plot-${String(index+1).padStart(2,'0')}`,
     key:`ad:plot-${String(index+1).padStart(2,'0')}`,
-    name:`Ad land ${String.fromCharCode(65+Math.floor(index/8))}${(index%8)+1}`,
+    name:`Business plot ${String(index+1).padStart(2,'0')}`,
     category:'Advertising plot', kind:'ad-plot', adPlotId:`plot-${String(index+1).padStart(2,'0')}`,
-    format:index%9===0?'Mega board':index%4===0?'Digital screen':'Billboard',
+    format:'Flat city plot',
     x:-width/2-150+(index%8)*116, z:-depth/2-145+Math.floor(index/8)*105,
     height:72, destination:{adPlotId:`plot-${String(index+1).padStart(2,'0')}`}, available:true
   }));
@@ -185,19 +185,14 @@ function buildCity(layout) {
       building(px,zone.z+zone.depth*.08,Math.min(120,zone.width*.13),Math.min(88,zone.depth*.23),54+(i%3)*18,'#6c8580',i%3===0?1:0);
     }
   }
-  // A landscaped advertising apron sits beyond the last road, with varied structures
-  // so the open space reads as a destination instead of an unfinished backdrop.
+  // Advertising land stays open and flat. Empty plots are intentionally quiet;
+  // only a live paid campaign receives a raised creative surface.
   const liveAdSpaces=new Map((globalThis.__ABJ_ADS__?.spaces||[]).map(space=>[space.id,space]));
   for (const plot of layout.adPlots || []) {
-    const live=liveAdSpaces.get(plot.adPlotId), occupied=live && live.available===false && live.ad;
-    const premium=plot.format==='Mega board', digital=plot.format==='Digital screen';
-    box(occupied?'#6f8267':premium?'#b8a36f':'#9bb486',plot.x,3,plot.z,102,4,78);
-    box('#d7d6b7',plot.x,5,plot.z-39,108,2,5);
-    box('#d7d6b7',plot.x,5,plot.z+39,108,2,5);
-    for (const side of [-1,1]) box('#698266',plot.x+side*48,13,plot.z,4,20,4);
-    const boardW=premium?82:digital?68:57, boardH=premium?35:digital?27:24;
-    box(occupied?'#31564a':digital?'#263d46':premium?'#394d49':'#506a5c',plot.x,72,plot.z-25,boardW,boardH,4);
-    box('#5b715f',plot.x,39,plot.z-25,4,61,4);
+    const live=liveAdSpaces.get(plot.adPlotId),occupied=live&&live.available===false&&live.ad;
+    box(occupied?'#c9dedd':'#bdd9de',plot.x,2.5,plot.z,102,3,78);
+    box('#edf3ed',plot.x,4.2,plot.z-39,108,1.5,4);box('#edf3ed',plot.x,4.2,plot.z+39,108,1.5,4);
+    if(occupied)box('#f8f6ef',plot.x,5.2,plot.z,90,1.2,66);
   }
   // City landmarks on the promenade: a rocky ridge, stadium and water gardens.
   const edgeZ=layout.depth/2+135;
@@ -274,12 +269,12 @@ export function renderOutside(root,{atlas=[],venues=[],profile={},onSelect=()=>{
   const suppliedTime=Number(serverNow)||Date.parse(serverNow),clockOffset=Number.isFinite(suppliedTime)?suppliedTime-Date.now():0;
   let clockMinute=-1;
   const liveAdSpaces=new Map((globalThis.__ABJ_ADS__?.spaces||[]).map(space=>[space.id,space]));
-  const labels=all.map(place=>{
-    const ad=Boolean(place.adPlotId),zone=Boolean(place.adZoneId);
+  const labels=all.flatMap(place=>{
+    const ad=Boolean(place.adPlotId),zone=Boolean(place.adZoneId),live=ad?liveAdSpaces.get(place.adPlotId):null;if(ad&&!(live?.available===false&&live.ad))return [];
     const button=document.createElement('button');button.type='button';button.className=`outside-roof-label ${ad||zone?'outside-ad-label':place.venueId?'outside-venue-label':'outside-district-label'}`;
-    button.textContent=zone?`▦ ${place.name}`:ad?`▧ ${place.name}`:place.venueId?`${icons[place.id]||'•'} ${place.name}`:place.name;
-    button.setAttribute('aria-label',`${place.name}${place.districtName?`, ${place.districtName}`:''}. View destination`);button.dataset.destinationKey=place.key;labelsRoot.append(button);
-    return {place,button,point:new THREE.Vector3(place.x,place.height+20,place.z)};
+    if(ad&&live.ad?.imageDataUrl){button.classList.add('outside-ad-creative');button.innerHTML=`<img src='${esc(live.ad.imageDataUrl)}' alt='${esc(live.ad.title||'Live advertisement')}'>`;}else button.textContent=zone?`▦ ${place.name}`:place.venueId?`${icons[place.id]||'•'} ${place.name}`:place.name;
+    button.setAttribute('aria-label',ad?`${live?.ad?.title||'Live advertisement'}. View campaign`:`${place.name}${place.districtName?`, ${place.districtName}`:''}. View destination`);button.dataset.destinationKey=place.key;labelsRoot.append(button);
+    return [{place,button,point:new THREE.Vector3(place.x,ad?9:place.height+20,place.z)}];
   });
   const zoom=(factor)=>{target.zoom=clamp(target.zoom*factor,1,maxZoom);};
   const overview=()=>{Object.assign(target,{x:0,z:0,zoom:1,yaw:.39,elevation:.84});selected=null;selection.hidden=true;status.textContent='Whole city overview';};
@@ -363,7 +358,7 @@ export function renderOutside(root,{atlas=[],venues=[],profile={},onSelect=()=>{
     const occupied=[],ordered=[...labels].sort((a,b)=>(b.place===selected?100:0)+(b.place.adPlotId?12:b.place.venueId?10:0)-(a.place===selected?100:0)-(a.place.adPlotId?12:a.place.venueId?10:0));
     for(const label of ordered){
       projected.copy(label.point).project(camera);const x=(projected.x+1)*size.width/2,y=(1-projected.y)*size.height/2;
-      const isSelected=label.place===selected,w=Math.min(label.place.adPlotId?150:260,label.place.name.length*(label.place.adPlotId?6.1:label.place.venueId?7.5:6.2)+29),h=label.place.adPlotId?28:label.place.venueId?44:25;
+      const isSelected=label.place===selected,w=label.place.adPlotId?96:Math.min(260,label.place.name.length*(label.place.venueId?7.5:6.2)+29),h=label.place.adPlotId?66:label.place.venueId?44:25;
       const rect={left:x-w/2,right:x+w/2,top:y-h,bottom:y+3};
       const compact=size.width<700;
       const underHeading=rect.left<(compact?210:340)&&rect.top<133,underTools=rect.right>size.width-(compact?172:290)&&rect.top<(compact?125:80);

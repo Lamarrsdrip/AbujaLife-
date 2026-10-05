@@ -64,3 +64,44 @@ test('genuine invalid login stays a single 401 and never doubles password work',
   });
   assert.deepEqual(calls, ['/api/auth/login/fast']);
 });
+
+test('Start Playing arms a fast bootstrap instead of blocking on the heavyweight city bootstrap', async () => {
+  const calls = [];
+  await withFetch(async (url, init = {}) => {
+    calls.push([String(url), String(init.method || 'GET').toUpperCase()]);
+    if (String(url) === '/api/bootstrap/fast') {
+      return new Response(JSON.stringify({ authenticated: true, fastBootstrap: true, profile: { id: 'resident-1', onboardingComplete: false } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (String(url) === '/api/profile') {
+      return new Response(JSON.stringify({ ok: true, profile: { id: 'resident-1', onboardingComplete: true } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (String(url) === '/api/bootstrap') {
+      throw new Error('heavy bootstrap must not gate Start Playing');
+    }
+    throw new Error(`Unexpected request ${url}`);
+  }, async () => {
+    const { apiFetch } = await freshClient('start-playing');
+    const initial = await apiFetch('/api/bootstrap');
+    assert.equal(initial.status, 200);
+    const profile = await apiFetch('/api/profile', {
+      method: 'POST',
+      body: JSON.stringify({ onboardingComplete: true }),
+      headers: { 'content-type': 'application/json' },
+    });
+    assert.equal(profile.status, 200);
+    const afterProfile = await apiFetch('/api/bootstrap');
+    assert.equal(afterProfile.status, 200);
+    assert.equal((await afterProfile.json()).fastBootstrap, true);
+  });
+  assert.deepEqual(calls, [
+    ['/api/bootstrap/fast', 'GET'],
+    ['/api/profile', 'POST'],
+    ['/api/bootstrap/fast', 'GET'],
+  ]);
+});

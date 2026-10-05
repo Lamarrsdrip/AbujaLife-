@@ -561,17 +561,32 @@ async function openLocalChat(){
 }
 function renderChat(){const el=document.querySelector('#local-messages');if(!el)return;el.innerHTML=chatMessages.map(m=>`<div><strong>${esc(m.sender?.displayName||list(state.people).find(p=>p.id===m.senderId)?.displayName||state.profile.displayName)}</strong><p>${esc(m.text)}</p></div>`).join('')||'<p class="muted">The conversation starts with you.</p>';el.scrollTop=el.scrollHeight;}
 async function boot(){
- root.innerHTML=`<div class="loading-state" role="status" aria-busy="true"><span class="wordmark">${brandMark()}</span><p>Opening your city…</p></div>`;
+ root.innerHTML=`<div class="loading-state" role="status" aria-busy="true"><span class="wordmark">${brandMark()}</span><p id="boot-status">Opening your city…</p></div>`;
  // Optional account features never hold the city behind a second request.
- void api('/api/auth/config',{signal:AbortSignal.timeout(5000)}).then(config=>{authConfig=config;}).catch(()=>{});
+ void api('/api/auth/config',{signal:AbortSignal.timeout(8000)}).then(config=>{authConfig=config;}).catch(()=>{});
+ const bootStatus=text=>{const node=root.querySelector('#boot-status');if(node)node.textContent=text;};
+ const slowNote=setTimeout(()=>bootStatus('Still opening your city…'),4000);
  try{
-  await refresh({render:false,startup:true});
+  let lastError;
+  for(let attempt=0;attempt<3;attempt++){
+   try{await refresh({render:false,startup:true});lastError=null;break;}
+   catch(error){
+    lastError=error;
+    if(error.status===401){clearTimeout(slowNote);expireAccount();return;}
+    const interrupted=error.name==='TimeoutError'||error.name==='AbortError'||error.name==='TypeError';
+    if(!interrupted||attempt===2)break;
+    bootStatus(attempt===0?'The line is busy. Opening your city again…':'Still reaching Abuja…');
+   }
+  }
+  clearTimeout(slowNote);
+  if(lastError)throw lastError;
   renderMain();connectRealtime();hydrateStartup();
   if(authRecovery.snapshot().kind==='verify-email'&&authRecovery.snapshot().status==='pending'){
    try{await authRecovery.verify();authNotice='Your email address is confirmed.';if(state.authenticated)toast(authNotice);renderMain();}catch{}
   }
   if(state.authenticated&&new URLSearchParams(location.search).get('payment')==='return')phone.open('paymentcheckout');
  }catch(error){
+  clearTimeout(slowNote);
   if(error.status===401){expireAccount();return;}
   const slow=error.name==='TimeoutError'||error.name==='AbortError';
   root.innerHTML=`<div class="loading-state"><span class="wordmark">${brandMark()}</span><h1>${slow?'The city is taking too long.':'Let’s try that again.'}</h1><p>${slow?'Your connection timed out. Reconnect to pick up where you left off.':error.status?esc(error.message):'We can’t reach the city right now. Check your connection and try again.'}</p><button class="primary" id="retry-start">Reconnect</button></div>`;

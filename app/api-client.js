@@ -59,12 +59,11 @@ async function compatibleFetch(primaryPath, fallbackPath, init) {
 export function apiFetch(path, options = {}) {
   const method=String(options.method||'GET').toUpperCase();
   const startupBootstrapQuery=method==='GET'&&path==='/api/bootstrap?startup=1';
-  // Startup used to inherit the shell's short AbortSignal, so a brief VPS stall
-  // became “request timeout” before the authoritative response arrived. The
-  // startup request owns one transport deadline and ignores that shell abort.
-  // Other requests still honour caller cancellation, with a ceiling long enough
-  // for the measured API latency (health was 13–17s under load).
-  const deadline=AbortSignal.timeout(20000);
+  // The live client used to abort every /api/bootstrap at 8s. The full startup
+  // route on the API is slower than that (measured ~8.7s), so the city died
+  // on “taking too long” even though the server was about to answer. Fast
+  // startup is the real request. This deadline only covers a slow fallback.
+  const deadline=AbortSignal.timeout(startupBootstrapQuery?35000:20000);
   const signal=options.signal&&!startupBootstrapQuery?AbortSignal.any([options.signal,deadline]):deadline;
   const bootstrapRequest=method==='GET'&&(path==='/api/bootstrap'||startupBootstrapQuery);
   const loginRequest=method==='POST'&&path==='/api/auth/login';

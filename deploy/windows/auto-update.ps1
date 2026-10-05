@@ -34,7 +34,16 @@ try {
     $source = Join-Path $stagingRoot $sha
     & $gitPath clone --depth 1 --branch main $repo $source
     if ($LASTEXITCODE -ne 0) { throw 'The production source clone failed.' }
-    & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $source 'deploy\windows\deploy.ps1') -SourceDirectory $source -Root $Root
+    # The Windows promotion verifies the signed release manifest. Build the
+    # same clean source archive used by the owner Mac before invoking it.
+    $archive = Join-Path $stagingRoot ($sha + '.tar.gz')
+    & $config.nodePath (Join-Path $source 'deploy\package-release.mjs') $archive
+    if ($LASTEXITCODE -ne 0) { throw 'The production release package failed.' }
+    $packaged = Join-Path $stagingRoot ($sha + '-RELEASE')
+    New-Item -ItemType Directory -Path $packaged -Force | Out-Null
+    tar.exe -xf $archive -C $packaged
+    if ($LASTEXITCODE -ne 0) { throw 'The production release archive could not be extracted.' }
+    & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $packaged 'deploy\windows\deploy.ps1') -SourceDirectory $packaged -Root $Root
     if ($LASTEXITCODE -ne 0) { throw "The AbujaLife release promotion failed with exit code $LASTEXITCODE." }
     Write-State @{ status = 'deployed'; revision = $sha; deployedAt = (Get-Date).ToUniversalTime().ToString('o') }
 } catch {

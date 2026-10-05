@@ -49,6 +49,13 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
   const shower=new THREE.Group();const dropMaterial=new THREE.MeshStandardMaterial({color:'#b3e3ea',transparent:true,opacity:.7,roughness:.1,emissive:'#5c9aa7',emissiveIntensity:.2});for(let i=0;i<28;i++)ellipsoid(shower,dropMaterial,0,0,0,.7,2.8,.7,6);scene.add(shower);
   const isClub=venue?.kind==='club'||['club','club-cage','magic-city','bear-barn'].includes(venue?.id);
   const indoors=kind==='home'||kind==='visit'||kind==='venue'&&!['park','jabi-lake'].includes(venue?.id);
+  const clubPalette=venue?.id==='club-cage'?['#42ddff','#8e72ff','#ff4d9d','#78f0b0']:venue?.id==='magic-city'?['#ff63ca','#bd8bff','#ffd36c','#70d8ff']:venue?.id==='bear-barn'?['#ffb35d','#d97683','#82a58f','#f0d28e']:['#ff43ad','#5ce2ff','#b27cff','#ffc95f'];
+  const clubColors=clubPalette.map(value=>new THREE.Color(value));
+  const clubLights=[];
+  if(isClub){
+    const lightCount=mobile?2:4;
+    for(let i=0;i<lightCount;i++){const light=new THREE.PointLight(clubPalette[i%clubPalette.length],0,mobile?430:560,2);light.castShadow=false;scene.add(light);clubLights.push(light);}
+  }
   let previousWidth=0,previousHeight=0,lost=false,disposed=false,frames=0,viewWidth=0,viewHeight=0;
   let qualityStart=performance.now(),qualityFrames=0;
   const bounds=new THREE.Box3(),partBounds=new THREE.Box3(),projected=new THREE.Vector3();
@@ -110,6 +117,18 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
       ambient.color.set(indoors?'#f6e6ce':night?'#b8c7e7':'#fff1d4');ambient.groundColor.set(indoors?'#6a6256':night?'#3b4d60':'#556553');
       sun.intensity=indoors?(isClub&&clubOpen?.8:2.55):(night?.42:Math.pow(daylight,.5)*2.2)*cloud;
       sun.color.set(indoors?'#ffe7c3':night?'#a6bdea':daylight<.3?'#edbf91':'#fff5e4');rim.intensity=indoors?.68:night?.52:.6;
+      if(isClub){
+        const partyOn=Boolean(clubOpen),clubTime=Number(time)||0;
+        renderer.toneMappingExposure=partyOn?1.16:1.04;
+        clubLights.forEach((light,i)=>{
+          light.visible=partyOn;if(!partyOn)return;
+          const phase=(clubTime*.34+i*.83)%clubColors.length,index=Math.floor(phase),mix=phase-index;
+          light.color.copy(clubColors[index]).lerp(clubColors[(index+1)%clubColors.length],mix);
+          light.intensity=(mobile?3.2:4.8)*(0.78+Math.sin(clubTime*3.1+i*1.7)*.22);
+          light.position.set(765+Math.sin(clubTime*.72+i*2.05)*430,205+Math.sin(clubTime*1.45+i)*55,(585+Math.cos(clubTime*.88+i*1.31)*285)/DEPTH);
+        });
+        rim.color.set(partyOn?clubPalette[1]:'#ceddec');
+      }else renderer.toneMappingExposure=1.1;
       rain.visible=!indoors&&weather?.condition==='rain';if(rain.visible){for(let i=0;i<180;i++){const j=i*6,rx=position.x+((i*137.51+time*28)%width)-width/2,rz=position.y/DEPTH+((i*89.23)%(height/DEPTH))-height/DEPTH/2,ry=410-(i*61.5+time*330)%410;rainPositions.set([rx,ry,rz,rx-1.3,ry+16,rz],j);}rainGeometry.attributes.position.needsUpdate=true;}
       own.root.visible=!transport;animate(own,{...player,angle,phase,time,moving,activity,scale:1.6});
       npcPositions.forEach((p,i)=>{const club=isClub;npcs[i].root.visible=!club||clubOpen||i===0;animate(npcs[i],{...p,activity:club&&!clubOpen?null:p.activity,time,scale:1.28});});

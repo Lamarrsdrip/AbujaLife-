@@ -676,21 +676,26 @@ function buildVenue(profile,venue,id) {
     const tokyo=raw.id==='club',cage=raw.id==='club-cage',magic=raw.id==='magic-city',bear=raw.id==='bear-barn';
     const title=bear?'BEAR BARN':magic?'MAGIC CITY':cage?'CAGE':'TOKYO';
     const accent=bear?'#8e795c':magic?'#99758f':cage?'#798c98':'#7d8171';
-    s.art.push(rect(63,145,1404,964,bear?`url(#${id}-darkoak)`:'#637779'));
+    s.art.push(rect(63,145,1404,964,bear?`url(#${id}-darkoak)`:'#26353a'));
+    if(!bear){
+      s.art.push(rect(371,393,696,455,accent,18,'opacity=".3"'),rect(395,417,648,8,'#f7d6ff',4,'opacity=".8"'),rect(395,806,648,8,'#a8ecff',4,'opacity=".8"'));
+      for(let x=419;x<=1019;x+=120)s.art.push(line(x,430,x,790,x%240===179?'#ff8fd1':'#85dfff',3,'opacity=".45"'));
+      for(let y=454;y<=766;y+=78)s.art.push(line(410,y,1028,y,y%156===142?'#ccb0ff':'#ffd58a',3,'opacity=".38"'));
+    }
     wallSign(s,485,110,title,bear?'A GOOD EVENING · GOOD COMPANY':magic?'LIVE PERFORMANCE · LOUNGE':cage?'MUSIC · MOVEMENT':'THE LATE LOUNGE');
     if(bear){
       s.floor(63,145,1404,964,'darkoak');s.object(388,244,684,100,counterArt(684,100,'#8d795d'),{kind:'pub-bar'});
       for(const x of [410,594,778,962])s.object(x,404,64,66,chairArt('#967f61'));
       for(const [x,y] of [[199,648],[674,648],[1120,648]])s.object(x,y,185,139,tableArt(137,106));
       s.object(156,930,290,86,sofaArt(290,86,'#957451'));s.object(1080,930,290,86,sofaArt(290,86,'#8b997c'));
-      s.pedestrians.push({x:741,y:208,toX:741,toY:208,stationary:true,activity:'social'},{x:537,y:722,toX:537,toY:722,stationary:true,activity:'social'},{x:1012,y:862,toX:1012,toY:862,stationary:true,activity:'social'});
+      s.pedestrians.push({x:741,y:208,toX:741,toY:208,stationary:true,activity:'social'},{x:537,y:722,toX:537,toY:722,stationary:true,activity:'social'},{x:1012,y:862,toX:1012,toY:862,stationary:true,activity:'social'},{x:823,y:704,toX:823,toY:704,stationary:true,activity:'social'},{x:1164,y:718,toX:1164,toY:718,stationary:true,activity:'dance'},{x:337,y:830,toX:337,toY:830,stationary:true,activity:'social'});
       anchors.push({x:727,y:879},{x:1158,y:438});
     }else{
       s.rug(371,393,696,455,accent);
       if(magic){
         s.object(428,270,650,268,rect(0,0,650,268,'#81667c',17)+rect(12,-20,626,258,'#b68a9d',15),{kind:'performance-stage'});
         s.object(125,643,213,120,tableArt(165,92));s.object(1162,643,213,120,tableArt(165,92));
-        s.pedestrians.push({x:638,y:401,toX:638,toY:401,stationary:true,activity:'dance',elevation:36},{x:868,y:396,toX:868,toY:396,stationary:true,activity:'dance',elevation:36});
+        s.pedestrians.push({x:575,y:401,toX:575,toY:401,stationary:true,activity:'dance',elevation:36},{x:706,y:392,toX:706,toY:392,stationary:true,activity:'dance',elevation:36},{x:837,y:402,toX:837,toY:402,stationary:true,activity:'dance',elevation:36},{x:959,y:391,toX:959,toY:391,stationary:true,activity:'dance',elevation:36});
       }else{
         s.object(477,221,486,97,counterArt(486,97,tokyo?'#666854':'#4d6064'),{kind:'dj-booth'});
         s.pedestrians.push({x:720,y:220,toX:720,toY:220,stationary:true,activity:'dj'});
@@ -699,7 +704,7 @@ function buildVenue(profile,venue,id) {
       for(const x of [355,1104])s.object(x,199,73,135,rect(0,-82,73,210,'#34444a',6)+ellipse(36,-21,23,23,'#566771')+ellipse(36,68,28,28,'#263c42'),{kind:'speaker'});
       s.object(1110,880,264,88,counterArt(264,88));s.object(122,879,270,83,sofaArt(270,83,tokyo?'#b69a72':'#8d7c90'),{kind:tokyo?'premium-sofa':'sofa'});
       if(tokyo){s.object(107,490,230,83,sofaArt(230,83,'#ab9675'),{kind:'premium-sofa'});s.object(1162,490,230,83,sofaArt(230,83,'#ab9675'),{kind:'premium-sofa'});s.label(133,646,'VIP LOUNGE');}
-      s.pedestrians.push({x:510,y:722,toX:510,toY:722,stationary:true,activity:'dance'},{x:908,y:715,toX:908,toY:715,stationary:true,activity:'dance'},{x:740,y:610,toX:740,toY:610,stationary:true,activity:'dance'});
+      s.pedestrians.push({x:470,y:730,toX:470,toY:730,stationary:true,activity:'dance'},{x:585,y:635,toX:585,toY:635,stationary:true,activity:'dance'},{x:700,y:748,toX:700,toY:748,stationary:true,activity:'dance'},{x:817,y:622,toX:817,toY:622,stationary:true,activity:'dance'},{x:934,y:733,toX:934,toY:733,stationary:true,activity:'dance'},{x:611,y:822,toX:611,toY:822,stationary:true,activity:'social'},{x:883,y:824,toX:883,toY:824,stationary:true,activity:'social'});
       anchors.push({x:738,y:905},{x:1233,y:1018});
     }
   } else if(type==='games-lounge') {

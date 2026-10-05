@@ -51,7 +51,7 @@ try {
   await db.command({[existingRole.roles.length ? 'updateRole' : 'createRole']: 'abujalife_runtime', privileges, roles: []});
   const backupPrivileges = [
     {resource: {db: database, collection: ''}, actions: ['find','listCollections','listIndexes','collStats','dbStats']},
-    {resource: {cluster: true}, actions: ['fsync','unlock']}
+    {resource: {db: 'local', collection: 'oplog.rs'}, actions: ['find']}
   ];
   const existingBackupRole = await admin.command({rolesInfo: 'abujalife_backup'});
   await admin.command({[existingBackupRole.roles.length ? 'updateRole' : 'createRole']: 'abujalife_backup', privileges: backupPrivileges, roles: []});

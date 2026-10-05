@@ -170,7 +170,7 @@ try {
   const existingRole = await db.command({ rolesInfo: 'abujalife_runtime' });
   await db.command({ [existingRole.roles.length ? 'updateRole' : 'createRole']: 'abujalife_runtime', privileges, roles: [] });
   const backupRole = await admin.command({ rolesInfo: 'abujalife_backup' });
-  await admin.command({ [backupRole.roles.length ? 'updateRole' : 'createRole']: 'abujalife_backup', privileges: [{ resource: { db: config.database, collection: '' }, actions: ['find', 'listCollections', 'listIndexes', 'collStats', 'dbStats'] }, { resource: { cluster: true }, actions: ['fsync', 'unlock'] }], roles: [] });
+  await admin.command({ [backupRole.roles.length ? 'updateRole' : 'createRole']: 'abujalife_backup', privileges: [{ resource: { db: config.database, collection: '' }, actions: ['find', 'listCollections', 'listIndexes', 'collStats', 'dbStats'] }, { resource: { db: 'local', collection: 'oplog.rs' }, actions: ['find'] }], roles: [] });
   for (const [user, password, role, roleDb] of [['abujalife_app', 'mongo-app-password', 'abujalife_runtime', config.database], ['abujalife_backup', 'mongo-backup-password', 'abujalife_backup', 'admin']]) {
     const found = await db.command({ usersInfo: user });
     await db.command({ [found.users.length ? 'updateUser' : 'createUser']: user, pwd: secret(config, password), roles: [{ role, db: roleDb }] });

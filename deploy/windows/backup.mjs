@@ -12,7 +12,7 @@ const lockFile = path.join(config.shared, 'mongo-operations.lock');
 const { descriptor: lock, recovered, previous } = acquireLock(lockFile, 'backup');
 const working = temporaryDirectory();
 const stamp = new Date().toISOString().replace(/[:.]/g, '-'), destination = path.join(config.backups, `abujalife-${stamp}.abjl.enc`), partial = destination + '.partial';
-let client, locked = false;
+let client;
 try {
   if (recovered) {
     const recovery = new MongoClient(mongoUri(config, 'abujalife_bootstrap', 'mongo-root-password', 'admin'), { serverSelectionTimeoutMS: 15000 });
@@ -31,11 +31,10 @@ try {
   client = new MongoClient(backupUri, { serverSelectionTimeoutMS: 15000 }); await client.connect();
   const hello = await client.db('admin').command({ hello: 1 });
   if (hello.setName !== config.replicaSet || !hello.isWritablePrimary) throw new Error('Refusing to back up a different MongoDB instance.');
-  // Only the isolated AbujaLife instance is write-locked briefly for consistency.
-  await client.db('admin').command({ fsync: 1, lock: true }); locked = true;
   const raw = path.join(working, 'database.archive.gz');
-  await runTool(path.join(config.mongoToolsDirectory, 'mongodump.exe'), ['--config', toolConfiguration(working, backupUri), '--db', config.database, '--archive=' + raw, '--gzip']);
-  await client.db('admin').command({ fsyncUnlock: 1 }); locked = false;
+  // Replica-set oplog capture keeps the archive point-in-time consistent
+  // without fsync-locking the live database while a dump is compressed.
+  await runTool(path.join(config.mongoToolsDirectory, 'mongodump.exe'), ['--config', toolConfiguration(working, backupUri), '--db', config.database, '--archive=' + raw, '--gzip', '--oplog']);
   await encryptArchive(raw, partial);
   const verifiedRaw = path.join(working, 'authenticated.archive.gz');
   await decryptArchive(partial, verifiedRaw);
@@ -64,10 +63,6 @@ try {
   writeJson(path.join(config.backups, 'latest-backup.json'), receipt);
   console.log(JSON.stringify(receipt));
 } finally {
-  if (locked && client) {
-    try { await client.db('admin').command({ fsyncUnlock: 1 }); }
-    catch { console.error('The isolated AbujaLife database remains write-locked; check fsyncUnlock before resuming gameplay.'); }
-  }
   if (client) await client.close();
   fs.rmSync(partial, { force: true }); fs.rmSync(working, { recursive: true, force: true });
   fs.closeSync(lock); fs.rmSync(lockFile, { force: true });

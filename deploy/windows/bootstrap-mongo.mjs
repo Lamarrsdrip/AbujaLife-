@@ -1,5 +1,6 @@
 import { MongoClient } from 'mongodb';
 import { ensureMongoSchema, MONGO_COLLECTIONS, MONGO_APPEND_ONLY_COLLECTIONS } from '../../src/server/mongo/database.mjs';
+import { ensureMongoAdSchema } from '../../src/server/mongo/adStore.mjs';
 import { configuration, mongoUri, secret } from './runtime.mjs';
 
 const config = configuration();
@@ -38,7 +39,13 @@ try {
   if (hello.setName !== config.replicaSet || !hello.isWritablePrimary) throw new Error('Refusing to alter a different MongoDB instance.');
   const db = client.db(config.database);
   await ensureMongoSchema(db);
+  await ensureMongoAdSchema(db);
   const privileges = MONGO_COLLECTIONS.map(collection => ({ resource: { db: config.database, collection }, actions: MONGO_APPEND_ONLY_COLLECTIONS.includes(collection) ? ['find', 'insert', 'listIndexes'] : collection === 'schema_versions' ? ['find', 'insert', 'remove', 'listIndexes'] : ['find', 'insert', 'update', 'remove', 'listIndexes'] }));
+  privileges.push(
+    { resource: { db: config.database, collection: 'ad_orders' }, actions: ['find', 'insert', 'update', 'remove', 'listIndexes'] },
+    { resource: { db: config.database, collection: 'ad_slots' }, actions: ['find', 'insert', 'update', 'remove', 'listIndexes'] },
+    { resource: { db: config.database, collection: 'ad_receipts' }, actions: ['find', 'insert', 'listIndexes'] },
+  );
   const existingRole = await db.command({ rolesInfo: 'abujalife_runtime' });
   await db.command({ [existingRole.roles.length ? 'updateRole' : 'createRole']: 'abujalife_runtime', privileges, roles: [] });
   const backupRole = await admin.command({ rolesInfo: 'abujalife_backup' });

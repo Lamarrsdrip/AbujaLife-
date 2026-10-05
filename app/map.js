@@ -28,7 +28,7 @@ export function renderMap(container,{atlas=ABUJA_ATLAS,venues=[],profile={},onTr
   if(positions.has(selectedId))center={...positions.get(selectedId).coordinates};
   const root=element('section','abuja-map');root.setAttribute('aria-label','Abuja and FCT map');
   const viewport=element('div','abuja-map-viewport');viewport.tabIndex=0;viewport.setAttribute('role','application');viewport.setAttribute('aria-label','Street map. Drag to pan. Use plus and minus to zoom, or arrow keys to move.');
-  const tileLayer=element('div','abuja-map-tiles'),markerLayer=element('div','abuja-map-markers');
+  const tileLayer=element('div','abuja-map-tiles'),buildingLayer=element('div','abuja-map-buildings'),markerLayer=element('div','abuja-map-markers');
   const controls=element('div','abuja-map-controls');
   const control=(label,text)=>{const b=element('button','abuja-map-control',text);b.type='button';b.setAttribute('aria-label',label);b.title=label;controls.append(b);return b;};
   const zoomIn=control('Zoom in','+'),zoomOut=control('Zoom out','−'),recenter=control('Show my area','⌖');
@@ -37,7 +37,7 @@ export function renderMap(container,{atlas=ABUJA_ATLAS,venues=[],profile={},onTr
   const sourceMessage=element('p','','Loading Abuja streets…'),retry=element('button','abuja-map-retry','Try map again');retry.type='button';retry.hidden=true;sourceState.append(sourceMessage,retry);
   const attribution=element('div','abuja-map-attribution');
   for(const {label,url} of MAP_ATTRIBUTION){const a=element('a','',label);a.href=url;a.target='_blank';a.rel='noopener noreferrer';attribution.append(a,document.createTextNode(' '));}
-  viewport.append(tileLayer,markerLayer,controls,compass,sourceState,attribution);
+  viewport.append(tileLayer,buildingLayer,markerLayer,controls,compass,sourceState,attribution);
   const panel=element('div','abuja-map-panel'),searchBox=element('div','abuja-map-search');
   const input=element('input');input.type='search';input.placeholder='Search Abuja & FCT';input.setAttribute('aria-label','Find a district, town or venue');searchBox.append(input);
   const list=element('div','abuja-map-place-list');list.setAttribute('aria-label','Locations');
@@ -98,6 +98,10 @@ export function renderMap(container,{atlas=ABUJA_ATLAS,venues=[],profile={},onTr
     const seen=new Set();
     for(const p of known){const point=project(p.coordinates,zoom),x=point.x-origin.x+w/2,y=point.y-origin.y+h/2;if(x<0||x>w||y<0||y>h)continue;const key=`${p.coordinates.lat},${p.coordinates.lon}`;if(seen.has(key))continue;seen.add(key);const marker=element('button','abuja-map-marker');marker.type='button';marker.style.transform=`translate(${Math.round(x-7)}px,${Math.round(y-19)}px)`;marker.classList.toggle('is-selected',p.id===selectedId);marker.classList.toggle('is-current',p.id===currentId(profile));marker.setAttribute('aria-label',p.kind==='city-reference'?'Abuja city reference point':p.name);marker.title=p.name;marker.append(element('span','abuja-map-pin'),element('span','abuja-map-marker-label',p.name));marker.addEventListener('click',()=>{const place=atlas.find(a=>a.id===p.id);if(place)selectPlace(place);else{center={...p.coordinates};zoom=12;schedule();}});fragment.append(marker);}
     markerLayer.replaceChildren(fragment);
+    const buildings=document.createDocumentFragment();
+    const buildingPlaces=known.filter(p=>p.id!=='__abuja-city'&&safeCoordinate(p.coordinates));
+    for(const p of buildingPlaces){const point=project(p.coordinates,zoom),x=point.x-origin.x,y=point.y-origin.y;if(x<-90||x>w+90||y<-90||y>h+90)continue;const building=element('button','abuja-map-building');building.type='button';building.style.transform=`translate(${Math.round(x-32)}px,${Math.round(y-55)}px)`;building.classList.toggle('is-selected',p.id===selectedId);building.setAttribute('aria-label',`Open ${p.name}`);building.innerHTML=`<span class="map-building-roof"></span><span class="map-building-body"><i></i><i></i><i></i></span><strong>${p.name}</strong>`;building.addEventListener('click',()=>{const place=atlas.find(a=>a.id===p.id);if(place)selectPlace(place);});buildings.append(building);}
+    buildingLayer.replaceChildren(buildings);
   }
   function render(){
     if(disposed)return;

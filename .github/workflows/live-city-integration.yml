@@ -1,0 +1,44 @@
+name: Finish live city integration
+
+on:
+  push:
+    branches: [integration/live-city-main-2026-10-05]
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    if: ${{ !contains(github.event.head_commit.message, '[integration-patched]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Apply reviewed integration patch
+        run: node scripts/finish-live-city-integration.mjs
+      - name: Syntax and full unit QA
+        run: npm run qa
+      - name: Windows runtime contract
+        run: node --test deploy/windows/runtime.test.mjs
+      - name: Production build
+        run: npm run build
+      - name: Infrastructure acceptance
+        run: npm run qa:infra
+      - name: Commit verified integration patch
+        shell: bash
+        run: |
+          git config user.name "AbujaLife Integration"
+          git config user.email "actions@users.noreply.github.com"
+          git add app src/server tests
+          if git diff --cached --quiet; then
+            echo "No integration changes to commit."
+            exit 0
+          fi
+          git commit -m "feat: finish live multiplayer city [integration-patched]"
+          git push origin HEAD:integration/live-city-main-2026-10-05

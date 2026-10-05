@@ -217,7 +217,10 @@ export class MongoSocialStore {
     if(!conversation)return;
     const blocked=new Set(await this.blockedIds(senderId));
     if(conversation.kind==='community'&&conversation.ownerId)for(const residentId of await this.blockedIds(conversation.ownerId))blocked.add(residentId);
-    const members=await this.collection('members').find({conversationId:row.conversationId,leftAt:null,residentId:{$nin:[senderId,...blocked]}},{projection:{residentId:1}}).toArray();
+    // Include the sender's other sessions in the realtime fanout. The sender
+    // still skips its own durable notification below, but every active client
+    // should receive the canonical message event for instant multi-device UI.
+    const members=await this.collection('members').find({conversationId:row.conversationId,leftAt:null,residentId:{$nin:[...blocked]}},{projection:{residentId:1}}).toArray();
     const memberIds=[...new Set(members.map(member=>member.residentId).filter(residentId=>!blocked.has(residentId)))];
     const event=this.messageEvent(row);
     // Include the sender so other signed-in devices receive the same event;

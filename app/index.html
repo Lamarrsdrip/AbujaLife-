@@ -53,6 +53,7 @@
   <link rel="stylesheet" href="/living-city.css" />
   <link rel="stylesheet" href="/game-map.css" />
   <link rel="stylesheet" href="/game-experience.css" />
+  <link rel="stylesheet" href="/game-realm-2026.css" />
 </head>
 <body>
   <div id="app" class="app-shell"></div>
@@ -60,9 +61,6 @@
   <div id="sheet-root"></div>
   <div id="toast" role="status" aria-live="polite"></div>
   <script>
-    // iOS Safari can strand an async hosted-checkout pre-open on about:blank.
-    // Keep the existing payment API flow, but send that exact pre-open handoff
-    // through the current AbujaLife tab once Flutterwave returns its checkout URL.
     (() => {
       const nativeOpen = window.open.bind(window);
       window.open = (url = '', target = '', features = '') => {
@@ -74,9 +72,7 @@
             close() { closed = true; },
             location: {
               replace(nextUrl) {
-                if (!closed && typeof nextUrl === 'string' && /^https:\/\//i.test(nextUrl)) {
-                  window.location.assign(nextUrl);
-                }
+                if (!closed && typeof nextUrl === 'string' && /^https:\/\//i.test(nextUrl)) window.location.assign(nextUrl);
               }
             }
           };
@@ -94,5 +90,6 @@
   <script type="module" src="/living-city.js"></script>
   <script type="module" src="/game-map.js"></script>
   <script type="module" src="/game-experience.js"></script>
+  <script type="module" src="/game-realm-2026.js"></script>
 </body>
 </html>

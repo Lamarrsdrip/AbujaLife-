@@ -10,9 +10,11 @@ const backupUri=uri('abujalife_backup','mongo-backup-password');let client;
 try{
   client=await connect(backupUri);
   const raw=path.join(directory,'database.archive.gz');
-  // Replica-set oplog capture keeps the archive point-in-time consistent
-  // without fsync-locking the live database while a dump is compressed.
-  await runTool('mongodump',['--config',toolConfiguration(directory,backupUri),'--db',DATABASE,'--archive='+raw,'--gzip','--oplog']);
+  // --oplog is valid only for a full replica-set dump. The dedicated backup
+  // identity intentionally has read access to AbujaLife's database plus the
+  // replica-set oplog, so an unscoped dump remains least-privilege while the
+  // captured oplog makes the encrypted archive point-in-time consistent.
+  await runTool('mongodump',['--config',toolConfiguration(directory,backupUri),'--archive='+raw,'--gzip','--oplog']);
   await encryptArchive(raw,partial);fs.renameSync(partial,destination);
   // Keep the ciphertext private and readable by the owner of the host backup
   // directory, including a non-root CI/operator using a root ops container.

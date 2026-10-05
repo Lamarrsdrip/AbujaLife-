@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { AD_ZONES } from '../src/server/ads.mjs';
+import { AD_ZONES } from '../src/server/mongo/adStore.mjs';
 
 test('Outside Ad World keeps more than one thousand scalable plot positions',()=>{
   const capacity=AD_ZONES.reduce((sum,zone)=>sum+Math.max(1,Math.floor(zone.width/120))*Math.max(1,Math.floor(zone.height/100)),0);

@@ -16,10 +16,28 @@ export function apiURL(path) {
   return new URL(path, url.origin).href;
 }
 
+// Realtime events can cause several surfaces to ask for the same fresh state at
+// once. Share only the in-flight GET; never cache a settled response, so a later
+// interaction always reaches the server and mutations are never hidden.
+const inFlightGets = new Map();
+
 export function apiFetch(path, options = {}) {
   const deadline=AbortSignal.timeout(15000);
   const signal=options.signal?AbortSignal.any([options.signal,deadline]):deadline;
-  return globalThis.fetch(apiURL(path), { ...options, signal, credentials: 'include', cache: 'no-store' });
+  const url=apiURL(path);
+  const method=String(options.method||'GET').toUpperCase();
+  const init={...options,signal,credentials:'include',cache:'no-store'};
+
+  if(method!=='GET'||options.body!==undefined||options.headers){
+    return globalThis.fetch(url,init);
+  }
+
+  let pending=inFlightGets.get(url);
+  if(!pending){
+    pending=globalThis.fetch(url,init).finally(()=>inFlightGets.delete(url));
+    inFlightGets.set(url,pending);
+  }
+  return pending.then(response=>response.clone());
 }
 
 export function createApiEventSource(path, options = {}) {

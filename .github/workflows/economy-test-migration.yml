@@ -20,7 +20,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci --ignore-scripts
-      - name: Rebaseline only stale economy assertions
+      - name: Rebaseline only stale economy assertions and preview parity
         run: node scripts/rebaseline-economy-tests.mjs
       - name: Full application QA
         run: npm run qa
@@ -30,12 +30,12 @@ jobs:
         run: npm run build
       - name: Full Mongo/infrastructure QA
         run: npm run qa:infra
-      - name: Commit verified test migration and remove temporary migration machinery
+      - name: Commit verified migration and remove temporary migration machinery
         shell: bash
         run: |
           git rm .github/workflows/economy-test-migration.yml scripts/rebaseline-economy-tests.mjs
-          git add tests
+          git add tests preview/runtime.mjs
           git config user.name "GhostDev"
           git config user.email "110933245+Lamarrsdrip@users.noreply.github.com"
-          git commit -m "test: align economy coverage with scaled balances and prices"
+          git commit -m "test: align economy coverage and preview with scaled prices"
           git push origin HEAD:integration/signup-economy-main-2026-10-05-v4

@@ -27,7 +27,7 @@ export const TRANSPORT_MODES = [
 export function starterHomeSeed(origin) {
   const nepo = origin?.id === 'nepo';
   return {
-    inventory: nepo ? ['bed', 'sofa', 'dining-table', 'fridge', 'coffee-table', 'wardrobe', 'rug', 'floor-lamp', 'tv'] : [],
+    inventory: nepo ? ['bed', 'sofa', 'dining-table', 'fridge'] : [],
     furnitureLayout: {},
     storedFurniture: [],
     homeStyle: { furnishingPreset: nepo ? 'nepo-furnished' : 'lapo-basic', starterVersion: 1 },
@@ -161,7 +161,7 @@ export const VENUE_ACTIONS = [
   // Purposeful Abuja multiplayer hubs. These actions make each destination more than scenery:
   // residents share the same venue zone, can meet there, and have activities that fit the place.
   { id:'city-gate-meet', venueId:'city-gate-plaza', name:'Meet at the City Gate', cost:0, duration:14, animation:'social', effects:{social:20,fun:8,mood:6} },
-  { id:'city-gate-photo', venueId:'city-gate-plaza', name:'Take a City Gate photo', cost:0, duration:12, animation:'watch', effects:{fun:12,mood:7} },
+  { id:'city-gate-photo', venueId:'city-gate-plaza', name:'Take a City Gate photo', cost:0, duration:14, animation:'watch', effects:{fun:12,mood:7} },
   { id:'aso-view-walk', venueId:'aso-rock-view', name:'Walk the Aso Rock viewpoint', cost:0, duration:18, animation:'walk', effects:{stress:-20,fun:18,energy:-4,mood:8} },
   { id:'aso-view-meet', venueId:'aso-rock-view', name:'Meet friends at the viewpoint', cost:0, duration:16, animation:'social', effects:{social:22,stress:-10,fun:12} },
   { id:'cbn-exhibit', venueId:'cbn-experience', name:'Explore money & economic history', cost:0, duration:17, animation:'watch', effects:{fun:8,mood:5} },

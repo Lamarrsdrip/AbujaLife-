@@ -1,10 +1,12 @@
 // The launcher uses native scrolling, so horizontal swipes never intercept chat.
 export const PHONE_APPS_PER_PAGE = 8;
+export const PHONE_HIDDEN_APPS = new Set(['calls']);
 
 export function phoneAppPages(apps) {
+  const visible = apps.filter(app => !PHONE_HIDDEN_APPS.has(app?.[0]));
   const pages = [];
-  for (let offset = 0; offset < apps.length; offset += PHONE_APPS_PER_PAGE) {
-    pages.push(apps.slice(offset, offset + PHONE_APPS_PER_PAGE));
+  for (let offset = 0; offset < visible.length; offset += PHONE_APPS_PER_PAGE) {
+    pages.push(visible.slice(offset, offset + PHONE_APPS_PER_PAGE));
   }
   return pages.length ? pages : [[]];
 }

@@ -10,11 +10,12 @@ import { MongoAdStore } from './mongo/adStore.mjs';
 import { MongoAuthStore } from './mongo/authStore.mjs';
 import { MongoRewardStore } from './mongo/rewardStore.mjs';
 import { installMongoReadOptimizer } from './mongo/readOptimizer.mjs';
-import { createEmailDelivery } from './emailDelivery.mjs';
 import { createProductionServer, productionLog } from './production-http.mjs';
 import { attachFastStartup } from './fastStartup.mjs';
 import { attachXIntegration } from './xIntegration.mjs';
 import { attachJackpotRuntime } from './jackpotRuntime.mjs';
+import { applyUsernameOnlyAuth } from './authPolicy.mjs';
+import { attachOriginEconomySettings } from './originEconomySettings.mjs';
 
 function publicOrigin(value,name){let url;try{url=new URL(value);}catch{throw new Error(`${name} requires a public HTTPS origin`);}if(url.protocol!=='https:'||url.username||url.password||url.pathname!=='/'||url.search||url.hash||/^(localhost|127\.|0\.|\[?::1\]?$)/i.test(url.hostname))throw new Error(`${name} requires a public HTTPS origin`);return url.origin;}
 export function productionConfig(env=process.env){
@@ -31,27 +32,27 @@ export function productionConfig(env=process.env){
 export async function createProductionApplication({env=process.env,clock=Date.now,originRandomInt,fetchImpl=fetch,log=productionLog,database:providedDatabase}={}){
   const config=productionConfig(env),database=providedDatabase||await connectMongo({uri:config.uri,database:config.database,production:true});
   try{
-    const delivery=createEmailDelivery({env,publicWebUrl:config.publicWebUrl,fetchImpl,log});
-    const auth=new MongoAuthStore({client:database.client,db:database.db,clock,...delivery});
+    const auth=applyUsernameOnlyAuth(new MongoAuthStore({client:database.client,db:database.db,clock}));
     const store=new MongoGameStore({client:database.client,db:database.db,clock,originRandomInt,production:true,auth});
     const social=new MongoSocialStore(store);await social.init({ensureIndexes:false});social.attachToGame();
     const directory=new MongoDirectoryStore(store,social);
     installMongoReadOptimizer({store,social});
     const presence=new MongoPresenceStore(store,social);await presence.init({ensureIndexes:false});
     const admin=new MongoAdminStore({store,bootstrapUsername:config.adminUsername});await admin.init({ensureIndexes:false});
+    await attachOriginEconomySettings({admin,store});
     social.authorizeModeration=id=>admin.requirePermission(id,'moderation');
     const payments=new MongoPaymentStore({store,admin,fetchImpl,configKey:config.configKey,publicOrigin:config.publicWebUrl,log});await payments.init({ensureIndexes:false});
     const rewards=new MongoRewardStore({store,admin,publicWebUrl:config.publicWebUrl});
     const ads=new MongoAdStore({store,admin,payments,log});await ads.init({ensureIndexes:false});ads.attach();
     const server=createProductionServer({...config,store,social,directory,presence,admin,payments,rewards,ads,database,log});
-    const fastStartup=attachFastStartup(server,{store,admin,corsOrigins:config.corsOrigins,publicWebUrl:config.publicWebUrl,log});
+    const fastStartup=attachFastStartup(server,{store,admin,corsOrigins:config.corsOrigins,publicWebUrl:config.publicWebUrl,trustProxy:config.trustProxy,log});
     const x=attachXIntegration(server,{store,admin,database,env,publicWebUrl:config.publicWebUrl,apiPublicUrl:config.apiPublicUrl,corsOrigins:config.corsOrigins,fetchImpl});
     const jackpot=await attachJackpotRuntime(server,{store,admin,payments,database,env,publicWebUrl:config.publicWebUrl,apiPublicUrl:config.apiPublicUrl,corsOrigins:config.corsOrigins,log});
     return{server,store,social,directory,presence,admin,payments,rewards,ads,fastStartup,x,jackpot,database,config,close:async()=>{server.closeRealtime();jackpot.close();if(server.listening)await new Promise(resolve=>server.close(resolve));await database.close();}};
   }catch(error){await database.close();throw error;}
 }
 export async function startProduction(){
-  let app;try{app=await createProductionApplication();await new Promise((resolve,reject)=>{app.server.once('error',reject);app.server.listen(app.config.port,app.config.host,resolve);});productionLog('startup',{port:app.config.port,storage:'mongodb',database:'abujalife_prod',emailConfigured:app.store.auth.configuration().emailVerificationEnabled,xConfigured:app.x.configured,jackpotConfigured:true,fastStartup:true});}catch(error){productionLog('startup_failure',{code:error.code||'configuration_or_database_error'});if(app)await app.close();process.exitCode=1;return;}
+  let app;try{app=await createProductionApplication();await new Promise((resolve,reject)=>{app.server.once('error',reject);app.server.listen(app.config.port,app.config.host,resolve);});productionLog('startup',{port:app.config.port,storage:'mongodb',database:'abujalife_prod',emailConfigured:false,xConfigured:app.x.configured,jackpotConfigured:true,fastStartup:true});}catch(error){productionLog('startup_failure',{code:error.code||'configuration_or_database_error'});if(app)await app.close();process.exitCode=1;return;}
   let stopping=false;for(const signal of ['SIGTERM','SIGINT'])process.on(signal,async()=>{if(stopping)return;stopping=true;productionLog('shutdown',{signal});const timeout=setTimeout(()=>{productionLog('shutdown_timeout');process.exit(1);},10000);timeout.unref();try{await app.close();clearTimeout(timeout);process.exitCode=0;}catch{productionLog('shutdown_failure');process.exitCode=1;}});
   process.on('uncaughtException',()=>{productionLog('crash',{code:'uncaught_exception'});process.exit(1);});process.on('unhandledRejection',()=>{productionLog('crash',{code:'unhandled_rejection'});process.exit(1);});
 }

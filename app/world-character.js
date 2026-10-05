@@ -218,6 +218,10 @@ export function animateCharacter(rig,{x,y,angle=90,moving=false,phase=0,time=0,a
     rig.arms[1].shoulder.rotation.x=-.58-Math.sin(t*3)*.22;rig.arms[1].elbow.rotation.x=-1.4+Math.sin(t*3)*.3;
   }else if(activity.name==='social'){
     rig.arms[1].shoulder.rotation.z=.45+Math.sin(t*3)*.15;rig.arms[1].elbow.rotation.x=-.8;rig.head.rotation.y=Math.sin(t*2)*.12;
+  }else if(activity.name==='sit'||activity.name==='watch'){
+    rig.body.position.y=-12;rig.legs.forEach(l=>{l.upper.rotation.x=-1.05;l.knee.rotation.x=1.16;});rig.head.rotation.y=Math.sin(t*1.4)*.08;
+  }else if(activity.name==='shop'){
+    rig.arms[1].shoulder.rotation.x=-.45+Math.sin(t*2.2)*.12;rig.arms[1].elbow.rotation.x=-.92;rig.head.rotation.y=Math.sin(t*1.7)*.09;
   }else if(activity.name==='sleep'){
     rig.root.rotation.y=0;rig.body.rotation.x=-Math.PI/2;rig.body.position.set(0,42,45);rig.arms.forEach((a,i)=>{a.shoulder.rotation.z=i?.16:-.16;a.elbow.rotation.x=-.4;});
   }else if(activity.name==='shower'){

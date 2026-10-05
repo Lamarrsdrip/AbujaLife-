@@ -42,33 +42,64 @@ export function createOutsideLayout(atlas = [], venues = [], includeLandmarks = 
     if (!district) return [];
     const slot = occupancy.get(district.id) || 0; occupancy.set(district.id,slot + 1);
     return [{...venue, ...(allowedDistricts?{districts:allowedDistricts}:{}), key:`venue:${venue.id}`, venueId:venue.id, districtId:district.id,
-      districtName:district.name, x:district.x - 104 + (slot % 3) * 101, z:district.z - 75 + Math.floor(slot / 3) * 103,
+      districtName:district.name, x:district.x + Math.cos(slot * 1.15) * Math.min(96, 42 + slot * 10), z:district.z + Math.sin(slot * 1.15) * Math.min(78, 36 + slot * 8),
       height:venue.id === 'hotel' ? 150 : venue.id === 'mosque' ? 136 : 86,
       destination:{districtId:district.id,venueId:venue.id}}];
   });
-  // The open apron around the city is purposeful advertising land. These are persistent
-  // plot identities matching the server ad store; campaigns are painted into the plot
-  // at runtime when an approved placement is active.
-  const adPlots = Array.from({length:40},(_,index)=>({
-    id:`plot-${String(index+1).padStart(2,'0')}`,
-    key:`ad:plot-${String(index+1).padStart(2,'0')}`,
-    name:`Business plot ${String(index+1).padStart(2,'0')}`,
-    category:'Advertising plot', kind:'ad-plot', adPlotId:`plot-${String(index+1).padStart(2,'0')}`,
-    format:'Flat city plot',
-    x:-width/2-150+(index%8)*116, z:-depth/2-145+Math.floor(index/8)*105,
-    height:72, destination:{adPlotId:`plot-${String(index+1).padStart(2,'0')}`}, available:true
-  }));
-  // The open perimeter is a commercial world of expandable zones. Only the
-  // first legacy plots are materialised here; the API streams individual
-  // plots for a selected zone, so the scene never renders a million nodes.
-  const adZones=[
-    ['capital-brand-coast','Capital Brand Coast','north'],['business-bay','Business Bay','east'],
-    ['event-strip','Event Strip','south'],['creator-coast','Creator Coast','west'],
-    ['prime-abuja-displays','Prime Abuja Displays','landmark'],['property-district','Property District','south-east'],
-    ['automotive-zone','Automotive Zone','south-west'],['abuja-creator-zone','Abuja Creator Zone','outer']
-  ].map(([id,name,region],index)=>({id,name,region,adZoneId:id,key:`ad-zone:${id}`,category:'Advertising district',kind:'ad-zone',height:64,
-    x:(index%4-1.5)*(width*.34),z:(Math.floor(index/4)-.5)*(depth*.72),width:Math.max(420,width*.26),depth:Math.max(310,depth*.24),destination:{adZoneId:id}}));
-  return {width,depth,columns,rows,districts,venues:destinations,adPlots,adZones};
+  // The open apron around the city is AbujaLife's advertising territory.
+  // Plots sit in the sky-coloured margin, never on top of neighbourhoods, and
+  // use the same plot identities the ad store can sell.
+  const halfW = width / 2, halfD = depth / 2, margin = 980, step = 340;
+  const zoneSpecs = [
+    ['capital-brand-coast','Capital Brand Coast','north'],
+    ['prime-abuja-displays','Prime Abuja Displays','north'],
+    ['business-bay','Business Bay','east'],
+    ['creator-coast','Creator Coast','east'],
+    ['event-strip','Event Strip','south'],
+    ['property-district','Property District','south'],
+    ['automotive-zone','Automotive Zone','west'],
+    ['abuja-creator-zone','Abuja Creator Zone','west']
+  ];
+  const edgeOf = (x, z) => {
+    const nx = Math.abs(x) / (halfW + margin), nz = Math.abs(z) / (halfD + margin);
+    if (z < -halfD && nz >= nx) return 'north';
+    if (z > halfD && nz >= nx) return 'south';
+    return x >= 0 ? 'east' : 'west';
+  };
+  const counters = new Map(zoneSpecs.map(([id]) => [id, 0]));
+  const zonesForEdge = edge => zoneSpecs.filter(([, , region]) => region === edge);
+  const adPlots = [];
+  for (let z = -(halfD + margin); z <= halfD + margin; z += step) {
+    for (let x = -(halfW + margin); x <= halfW + margin; x += step) {
+      if (Math.abs(x) <= halfW + 36 && Math.abs(z) <= halfD + 36) continue;
+      const edge = edgeOf(x, z);
+      const choices = zonesForEdge(edge);
+      const zone = choices[Math.floor((Math.abs(x) + Math.abs(z)) / step) % choices.length];
+      const ordinal = counters.get(zone[0]); counters.set(zone[0], ordinal + 1);
+      const legacy = adPlots.length < 40;
+      const id = legacy ? `plot-${String(adPlots.length + 1).padStart(2, '0')}` : `ad:${zone[0]}:${Math.floor(ordinal / 12)}:${ordinal % 12}`;
+      const letter = String.fromCharCode(65 + (adPlots.length % 26));
+      adPlots.push({
+        id, key: `ad:${id}`, name: legacy ? `Ad Land ${letter}${((adPlots.length % 10) + 1)}` : `${zone[1]} ${letter}${ordinal + 1}`,
+        category: 'Advertising plot', kind: 'ad-plot', adPlotId: id, zoneId: zone[0], format: 'Open-air display',
+        x, z, height: 28, destination: { adPlotId: id, adZoneId: zone[0] }, available: true
+      });
+    }
+  }
+  const adZones = zoneSpecs.map(([id, name, region]) => {
+    const owned = adPlots.filter(plot => plot.zoneId === id);
+    if (!owned.length) return null;
+    const xs = owned.map(plot => plot.x), zs = owned.map(plot => plot.z);
+    const minX = Math.min(...xs), maxX = Math.max(...xs), minZ = Math.min(...zs), maxZ = Math.max(...zs);
+    return { id, name, region, adZoneId: id, key: `ad-zone:${id}`, category: 'Advertising district', kind: 'ad-zone', height: 42,
+      x: (minX + maxX) / 2, z: (minZ + maxZ) / 2, width: Math.max(220, maxX - minX + 140), depth: Math.max(180, maxZ - minZ + 120),
+      destination: { adZoneId: id } };
+  }).filter(Boolean);
+  const bounds = {
+    minX: -(halfW + margin + 40), maxX: halfW + margin + 40,
+    minZ: -(halfD + margin + 40), maxZ: halfD + margin + 40
+  };
+  return {width,depth,columns,rows,districts,venues:destinations,adPlots,adZones,bounds};
 }
 
 /** A view selection requests travel. It cannot edit a resident or create a trip. */
@@ -119,6 +150,9 @@ function buildCity(layout) {
   };
   box('#a5b7a0',0,-23,0,layout.width+460,42,layout.depth+460);
   box('#8fa887',0,-1,0,layout.width+420,4,layout.depth+420);
+  const spanX=(layout.bounds?.maxX??layout.width/2)-(layout.bounds?.minX??-layout.width/2);
+  const spanZ=(layout.bounds?.maxZ??layout.depth/2)-(layout.bounds?.minZ??-layout.depth/2);
+  box('#c7e4e8',0,-8,0,spanX,6,spanZ);
   // Continuous roads connect every neighbourhood, with sidewalks and painted lanes.
   for(let row=0;row<=layout.rows;row++) {
     const z=row*365-layout.depth/2;
@@ -265,16 +299,17 @@ export function renderOutside(root,{atlas=[],venues=[],profile={},onSelect=()=>{
   const pointers=new Map(),size={width:1,height:1},view={
     x:clamp(initialDistrict?.x||0,-layout.width*.3,layout.width*.3),
     z:clamp(initialDistrict?.z||0,-layout.depth*.26,layout.depth*.26),zoom:initialZoom,yaw:.39,elevation:.84},target={...view};
-  const bounds=Math.max(layout.width,layout.depth),maxZoom=9;
+  const maxZoom=9;
   const suppliedTime=Number(serverNow)||Date.parse(serverNow),clockOffset=Number.isFinite(suppliedTime)?suppliedTime-Date.now():0;
   let clockMinute=-1;
   const liveAdSpaces=new Map((globalThis.__ABJ_ADS__?.spaces||[]).map(space=>[space.id,space]));
   const labels=all.flatMap(place=>{
-    const ad=Boolean(place.adPlotId),zone=Boolean(place.adZoneId),live=ad?liveAdSpaces.get(place.adPlotId):null;if(ad&&!(live?.available===false&&live.ad))return [];
-    const button=document.createElement('button');button.type='button';button.className=`outside-roof-label ${ad||zone?'outside-ad-label':place.venueId?'outside-venue-label':'outside-district-label'}`;
-    if(ad&&live.ad?.imageDataUrl){button.classList.add('outside-ad-creative');button.innerHTML=`<img src='${esc(live.ad.imageDataUrl)}' alt='${esc(live.ad.title||'Live advertisement')}'>`;}else button.textContent=zone?`▦ ${place.name}`:place.venueId?`${icons[place.id]||'•'} ${place.name}`:place.name;
-    button.setAttribute('aria-label',ad?`${live?.ad?.title||'Live advertisement'}. View campaign`:`${place.name}${place.districtName?`, ${place.districtName}`:''}. View destination`);button.dataset.destinationKey=place.key;labelsRoot.append(button);
-    return [{place,button,point:new THREE.Vector3(place.x,ad?9:place.height+20,place.z)}];
+    const ad=Boolean(place.adPlotId),zone=Boolean(place.adZoneId),live=ad?liveAdSpaces.get(place.adPlotId):null;
+    const button=document.createElement('button');button.type='button';button.className=`outside-roof-label ${ad||zone?'outside-ad-label':place.venueId?'outside-venue-label':'outside-district-label'}${ad&&live?.available===false?' is-taken':''}`;
+    if(ad&&live?.ad?.imageDataUrl){button.classList.add('outside-ad-creative');button.innerHTML=`<img src='${esc(live.ad.imageDataUrl)}' alt='${esc(live.ad.title||'Live advertisement')}'>`;}
+    else button.textContent=zone?place.name:ad?(live?.available===false?'Taken':place.name):place.venueId?`${icons[place.id]||'•'} ${place.name}`:place.name;
+    button.setAttribute('aria-label',ad?`${live?.ad?.title||place.name}. ${live?.available===false?'Occupied advertising plot':'Available advertising plot'}`:`${place.name}${place.districtName?`, ${place.districtName}`:''}. View destination`);button.dataset.destinationKey=place.key;labelsRoot.append(button);
+    return [{place,button,point:new THREE.Vector3(place.x,ad?12:place.height+20,place.z)}];
   });
   const zoom=(factor)=>{target.zoom=clamp(target.zoom*factor,1,maxZoom);};
   const overview=()=>{Object.assign(target,{x:0,z:0,zoom:1,yaw:.39,elevation:.84});selected=null;selection.hidden=true;status.textContent='Whole city overview';};
@@ -318,14 +353,16 @@ export function renderOutside(root,{atlas=[],venues=[],profile={},onSelect=()=>{
     stage.innerHTML='<p class="outside-unavailable">Your 3D city needs WebGL. Every destination is available in the directory.</p>';
     directoryOpen=true;root.querySelector('[data-outside-action="directory"]').setAttribute('aria-expanded','true');renderDirectory();
   }
+  const bounds=layout.bounds||{minX:-layout.width/2,maxX:layout.width/2,minZ:-layout.depth/2,maxZ:layout.depth/2};
+  const fieldW=bounds.maxX-bounds.minX, fieldD=bounds.maxZ-bounds.minZ;
   const viewport=()=>{
     const aspect=size.width/size.height;
-    const projectedWidth=Math.cos(.39)*(layout.width+420)+Math.sin(.39)*(layout.depth+420);
-    const projectedHeight=Math.sin(.84)*(Math.sin(.39)*(layout.width+420)+Math.cos(.39)*(layout.depth+420))+200;
-    const base=Math.max(projectedWidth*1.12,projectedHeight*aspect*1.12,bounds*.98);
+    const projectedWidth=Math.cos(.39)*(fieldW)+Math.sin(.39)*(fieldD);
+    const projectedHeight=Math.sin(.84)*(Math.sin(.39)*(fieldW)+Math.cos(.39)*(fieldD))+200;
+    const base=Math.max(projectedWidth*1.02,projectedHeight*aspect*1.02,Math.max(fieldW,fieldD)*.92);
     return {width:base/view.zoom,height:base/aspect/view.zoom};
   };
-  const constrain=()=>{target.x=clamp(target.x,-layout.width/2,layout.width/2);target.z=clamp(target.z,-layout.depth/2,layout.depth/2);target.elevation=clamp(target.elevation,.5,1.18);};
+  const constrain=()=>{target.x=clamp(target.x,bounds.minX,bounds.maxX);target.z=clamp(target.z,bounds.minZ,bounds.maxZ);target.elevation=clamp(target.elevation,.5,1.18);};
   const pan=(dx,dy)=>{
     const span=viewport(),sx=-dx*span.width/size.width,sz=-dy*span.height/size.height/Math.sin(view.elevation);
     target.x+=sx*Math.cos(view.yaw)+sz*Math.sin(view.yaw);target.z+=-sx*Math.sin(view.yaw)+sz*Math.cos(view.yaw);constrain();
@@ -355,15 +392,21 @@ export function renderOutside(root,{atlas=[],venues=[],profile={},onSelect=()=>{
   const observer=globalThis.ResizeObserver?new ResizeObserver(resize):null;observer?.observe(stage);listen(globalThis,'resize',resize);resize();
   const projected=new THREE.Vector3();let frameCount=0,lastLabelPose='';
   const drawLabels=()=>{
-    const occupied=[],ordered=[...labels].sort((a,b)=>(b.place===selected?100:0)+(b.place.adPlotId?12:b.place.venueId?10:0)-(a.place===selected?100:0)-(a.place.adPlotId?12:a.place.venueId?10:0));
+    const occupied=[];
+    const rank=label=>label.place===selected?0:!label.place.venueId&&!label.place.adPlotId&&!label.place.adZoneId?1:label.place.adZoneId&&!label.place.adPlotId?2:label.place.venueId?3:4;
+    const ordered=[...labels].sort((a,b)=>rank(a)-rank(b));
+    const zoomNow=view.zoom,showVenues=zoomNow>=2.35,showZones=zoomNow<3.8,showPlots=zoomNow>=3.15,showDistricts=zoomNow<5.2;
     for(const label of ordered){
       projected.copy(label.point).project(camera);const x=(projected.x+1)*size.width/2,y=(1-projected.y)*size.height/2;
-      const isSelected=label.place===selected,w=label.place.adPlotId?96:Math.min(260,label.place.name.length*(label.place.venueId?7.5:6.2)+29),h=label.place.adPlotId?66:label.place.venueId?44:25;
+      const isSelected=label.place===selected,plot=Boolean(label.place.adPlotId),zone=Boolean(label.place.adZoneId)&&!plot,venue=Boolean(label.place.venueId);
+      const w=plot?78:Math.min(220,label.place.name.length*(venue?7.2:6)+24),h=plot?28:venue?40:24;
       const rect={left:x-w/2,right:x+w/2,top:y-h,bottom:y+3};
       const compact=size.width<700;
       const underHeading=rect.left<(compact?210:340)&&rect.top<133,underTools=rect.right>size.width-(compact?172:290)&&rect.top<(compact?125:80);
-      const visible=projected.z>=-1&&projected.z<=1&&x>16&&x<size.width-16&&y>65&&y<size.height-55&&!underHeading&&!underTools&&
-        (isSelected||label.place.venueId||!occupied.some(r=>rect.left<r.right+8&&rect.right>r.left-8&&rect.top<r.bottom+6&&rect.bottom>r.top-6));
+      const onScreen=projected.z>=-1&&projected.z<=1&&x>16&&x<size.width-16&&y>65&&y<size.height-55&&!underHeading&&!underTools;
+      const kindOk=isSelected||(plot&&showPlots)||(zone&&showZones)||(venue&&showVenues)||(!plot&&!zone&&!venue&&showDistricts);
+      const collides=occupied.some(r=>rect.left<r.right+6&&rect.right>r.left-6&&rect.top<r.bottom+4&&rect.bottom>r.top-4);
+      const visible=onScreen&&kindOk&&(isSelected||!collides);
       label.button.hidden=!visible;if(visible){occupied.push(rect);label.button.style.transform=`translate(${x.toFixed(1)}px,${y.toFixed(1)}px) translate(-50%, -100%)`;label.button.classList.toggle('is-selected',isSelected);}
     }
   };

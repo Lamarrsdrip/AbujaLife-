@@ -20,6 +20,10 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci --ignore-scripts
+      - name: Repair temporary patch quoting
+        run: node scripts/fix-live-city-script.mjs
+      - name: Validate integration patch syntax
+        run: node --check scripts/finish-live-city-integration.mjs
       - name: Apply reviewed integration patch
         run: node scripts/finish-live-city-integration.mjs
       - name: Syntax and full unit QA

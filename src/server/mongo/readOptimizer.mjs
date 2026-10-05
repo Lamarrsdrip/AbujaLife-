@@ -6,9 +6,9 @@ const stripAppearance=row=>{if(!row)return null;const {_id,residentId,...appeara
 
 /**
  * Collapse the social graph's N+1 resident lookups into bulk reads and make
- * inbox/bootstrap conversation summaries come from one aggregation instead of
- * rebuilding every conversation independently. The detailed thread endpoint
- * remains authoritative when a conversation is opened.
+ * normal DM/group inbox summaries come from one aggregation instead of
+ * rebuilding every conversation independently. Detailed/community reads keep
+ * the authoritative social-store path.
  */
 export function installMongoReadOptimizer({store,social}) {
   let residentQueue=new Map();
@@ -56,6 +56,7 @@ export function installMongoReadOptimizer({store,social}) {
   // store entry too so presence and HTTP callers get the same batched path.
   store.resident=social.resident.bind(social);
 
+  const exactConversationPage=social.conversationPage.bind(social);
   social.conversationPage=async function conversationPage(id,options={}){
     await this.authenticate(id);
     const {limit,after}=pageOptions(options),blocked=await this.blockedIds(id),blockedWithSelf=[...new Set([...blocked,id])];
@@ -70,12 +71,16 @@ export function installMongoReadOptimizer({store,social}) {
       {$lookup:{from:'messages',let:{cid:'$conversationId',seen:{$max:[{$ifNull:['$readSeq',0]},{$ifNull:['$joinSeq',0]}]}},pipeline:[{$match:{$expr:{$and:[{$eq:['$conversationId','$$cid']},{$gt:['$seq','$$seen']},{$eq:[{$in:['$senderId',blockedWithSelf]},false]}]}}},{$count:'n'}],as:'unreadRows'}}
     ];
     const rows=await this.collection('members').aggregate(pipeline).toArray(),selected=rows.slice(0,limit);
-    const participantIds=[...new Set(selected.flatMap(row=>Array.isArray(row.conv?.participantIds)?row.conv.participantIds:[]).filter(memberId=>validId(memberId)&&!blocked.includes(memberId)))];
+    // Community conversations have independently paged membership and legacy
+    // conversations may predate participantIds. Keep their exact path rather
+    // than trading correctness for speed.
+    if(selected.some(row=>row.conv?.kind==='community'||!Array.isArray(row.conv?.participantIds)))return exactConversationPage(id,options);
+    const participantIds=[...new Set(selected.flatMap(row=>row.conv.participantIds).filter(memberId=>validId(memberId)&&!blocked.includes(memberId)))];
     const participantViews=participantIds.length?await Promise.all(participantIds.map(memberId=>this.resident(id,memberId))):[];
     const participantById=new Map(participantViews.map(view=>[view.id,view]));
     const conversations=selected.map(row=>{
-      const conv=row.conv||{},memberIds=(conv.participantIds||[]).filter(memberId=>!blocked.includes(memberId)),members=memberIds.map(memberId=>participantById.get(memberId)).filter(Boolean),last=row.latest?.[0];
-      return{id:conv.id||row.conversationId,kind:conv.kind||'group',name:conv.kind==='dm'?(members.find(member=>member.id!==id)?.displayName||'Conversation'):(conv.name||'Conversation'),members,memberCount:memberIds.length||members.length,nextMembersCursor:null,unread:Number(row.unreadRows?.[0]?.n||0),lastMessage:last?{...this.messageEvent(last),deliveredTo:[],readBy:[],deliveredCount:0,readCount:0,nextReceiptsCursor:null}:null};
+      const conv=row.conv,memberIds=conv.participantIds.filter(memberId=>!blocked.includes(memberId)),members=memberIds.map(memberId=>participantById.get(memberId)).filter(Boolean),last=row.latest?.[0];
+      return{id:conv.id||row.conversationId,kind:conv.kind||'group',name:conv.kind==='dm'?(members.find(member=>member.id!==id)?.displayName||'Conversation'):(conv.name||'Conversation'),members,memberCount:memberIds.length,nextMembersCursor:null,unread:Number(row.unreadRows?.[0]?.n||0),lastMessage:last?{...this.messageEvent(last),deliveredTo:[],readBy:[],deliveredCount:0,readCount:0,nextReceiptsCursor:null}:null};
     });
     return{ok:true,conversations,nextCursor:rows.length>limit?cursorFor(selected.at(-1),'updatedAt'):null};
   };

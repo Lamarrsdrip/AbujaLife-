@@ -3,7 +3,7 @@
 
 The core browser-smoke suite predates the required Male/Female onboarding choice.
 Keep the full suite intact, but make its automated resident behave like a current
-player by choosing an explicit presentation before continuing.
+player by choosing the real custom radio controls before continuing.
 """
 import asyncio
 import importlib.util
@@ -23,21 +23,22 @@ async def complete_current_resident_wizard(page, display_name, hair):
         if await name_control.count():
             await name_control.fill(display_name)
 
-        presentation = form.locator('[name="presentation"][value="feminine"]:visible')
+        presentation = form.locator('[name="presentation"][value="feminine"]')
         if await presentation.count():
-            await presentation.check()
+            await presentation.check(force=True)
+            assert await presentation.is_checked(), 'Required gender choice did not commit'
 
-        hair_choice = form.locator(f'[name="hair"][value="{hair}"]:visible')
+        hair_choice = form.locator(f'[name="hair"][value="{hair}"]')
         if await hair_choice.count():
-            await hair_choice.check()
+            await hair_choice.check(force=True)
         else:
             hair_control = form.locator('select[name="hair"]:visible')
             if await hair_control.count():
                 await hair_control.select_option(hair)
 
-        goal_control = form.locator('[name="lifeGoal"][value="career"]:visible')
+        goal_control = form.locator('[name="lifeGoal"][value="career"]')
         if await goal_control.count():
-            await goal_control.check()
+            await goal_control.check(force=True)
 
         begin = page.locator('#begin-life:visible')
         if await begin.count():

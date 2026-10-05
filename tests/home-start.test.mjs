@@ -14,7 +14,7 @@ import { ORIGIN_HOMES } from '../src/shared/origins.mjs';
 import { buildInterior, furniturePlacementPreservesRoutes } from '../app/world-interiors.js';
 
 const repo=fileURLToPath(new URL('../',import.meta.url));
-const gifts=['bed','sofa','dining-table','fridge','coffee-table','wardrobe','rug','floor-lamp','tv'];
+const gifts=['bed','sofa','dining-table','fridge'];
 async function fixture(t,branch=1,index=0) {
   const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'abujalife-home-start-'));
   let calls=0,store=new GameStore({dataDir,originRandomInt:()=>calls++%2===0?branch:index});

@@ -11,12 +11,15 @@ try{
   const raw=path.join(directory,'database.archive.gz');
   // Authenticate every byte before mongorestore can modify any data.
   await decryptArchive(source,raw);
-  const restoreUri=uri('abujalife_bootstrap','mongo-root-password','admin');client=await connect(restoreUri);
-  const restoreArguments=['--config',toolConfiguration(directory,restoreUri),'--archive='+raw,'--gzip','--nsInclude='+DATABASE+'.*','--stopOnError'];
-  // --drop alone leaves collections created after the selected snapshot.
-  // Validate the authenticated archive before replacing this exact isolated DB.
+  // `mongodump --oplog` is a full replica-set dump. MongoDB requires a full
+  // restore when replaying that oplog, so do not combine this with nsInclude.
+  // AbujaLife has its own dedicated Mongo instance; restoring the instance
+  // cannot touch Okrika's separate service/port. Stable bootstrap credentials
+  // are included in the same snapshot, so authentication survives the restore.
+  const restoreUri=uri('abujalife_bootstrap','mongo-root-password','admin','');client=await connect(restoreUri);
+  const restoreArguments=['--config',toolConfiguration(directory,restoreUri),'--archive='+raw,'--gzip','--drop','--oplogReplay','--stopOnError'];
+  // Dry-run the exact full/oplog restore contract before replacing anything.
   await runTool('mongorestore',[...restoreArguments,'--dryRun']);
-  await client.db(DATABASE).dropDatabase();
   await runTool('mongorestore',restoreArguments);
-  console.log(JSON.stringify({ok:true,database:DATABASE,restored:source,verifiedEncryption:true}));
+  console.log(JSON.stringify({ok:true,database:DATABASE,restored:source,verifiedEncryption:true,oplogReplayed:true,scope:'dedicated-abujalife-mongo-instance'}));
 }finally{if(client)await client.close();fs.rmSync(directory,{recursive:true,force:true});}

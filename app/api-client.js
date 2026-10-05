@@ -57,8 +57,9 @@ export function apiFetch(path, options = {}) {
   const startupRequest=method==='GET'&&path==='/api/bootstrap'&&startupBootstrapPending;
   const loginRequest=method==='POST'&&path==='/api/auth/login';
   const registerRequest=method==='POST'&&path==='/api/auth/register';
-  const primaryPath=startupRequest?'/api/bootstrap/fast':loginRequest?'/api/auth/login/fast':registerRequest?'/api/auth/register/fast':path;
-  const fallbackPath=startupRequest?'/api/bootstrap':loginRequest?'/api/auth/login':registerRequest?'/api/auth/register':null;
+  const logoutRequest=method==='POST'&&path==='/api/auth/logout';
+  const primaryPath=startupRequest?'/api/bootstrap/fast':loginRequest?'/api/auth/login/fast':registerRequest?'/api/auth/register/fast':logoutRequest?'/api/auth/logout/fast':path;
+  const fallbackPath=startupRequest?'/api/bootstrap':loginRequest?'/api/auth/login':registerRequest?'/api/auth/register':logoutRequest?'/api/auth/logout':null;
   const url=apiURL(primaryPath);
   const init={...options,signal,credentials:'include',cache:'no-store'};
 

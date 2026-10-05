@@ -8,11 +8,12 @@ import {MongoClient} from 'mongodb';
 export const DATABASE='abujalife_prod';
 const MAGIC=Buffer.from('ABJLBN01');
 export function secret(name){return fs.readFileSync(path.join(process.env.ABUJALIFE_SECRETS_DIR||'/run/secrets',name),'utf8').trim();}
-export function uri(user,passwordFile,authSource=DATABASE){
+export function uri(user,passwordFile,authSource=DATABASE,databasePath=DATABASE){
   if(process.env.MONGODB_DATABASE&&process.env.MONGODB_DATABASE!==DATABASE)throw new Error('Operations are restricted to abujalife_prod.');
   const host=process.env.MONGODB_HOST||'mongo:27017';
   if(!/^(mongo|localhost|127\.0\.0\.1):\d+$/.test(host))throw new Error('Operations require the dedicated private Mongo service or a local integration endpoint.');
-  return `mongodb://${user}:${encodeURIComponent(secret(passwordFile))}@${host}/${DATABASE}?authSource=${authSource}&replicaSet=abujalife&directConnection=true`;
+  const selected=databasePath?`/${databasePath}`:'/';
+  return `mongodb://${user}:${encodeURIComponent(secret(passwordFile))}@${host}${selected}?authSource=${authSource}&replicaSet=abujalife&directConnection=true`;
 }
 export async function connect(uriValue){
   const client=new MongoClient(uriValue,{serverSelectionTimeoutMS:15000});await client.connect();

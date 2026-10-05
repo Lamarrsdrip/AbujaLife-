@@ -45,10 +45,18 @@ export class MongoGameStore {
     check(typeof id==='string'&&id.length>0&&id.length<=80,'Choose a valid resident');const opts=session?{session}:{};
     // A driver session cannot run parallel transaction operations.
     const resident=await this.collection('residents').findOne({id},opts);check(resident,'Resident not found',404);
-    const entities={};for(const name of ['appearances','needs','progression','player_state','homes','origins','wallets'])entities[name]=await this.collection(name).findOne({residentId:id},opts);
+    const entities={};const entityNames=['appearances','needs','progression','player_state','homes','origins','wallets'];
+    const entityRows=session?[]:await Promise.all(entityNames.map(name=>this.collection(name).findOne({residentId:id},opts)));
+    if(session)for(const name of entityNames)entities[name]=await this.collection(name).findOne({residentId:id},opts);else for(const [index,name] of entityNames.entries())entities[name]=entityRows[index];
     check(Object.values(entities).every(Boolean),'Resident persistence is incomplete',503,'storage_incomplete');
-    const rows={};for(const name of ['inventory','vehicles','properties'])rows[name]=await this.collection(name).find({residentId:id},opts).toArray();rows.loans=await this.collection('loans').find({residentId:id},opts).sort({borrowedAt:-1,_id:-1}).limit(51).toArray();
-    const rounds=await this.collection('gamble_rounds').find({residentId:id},opts).sort({sequence:-1,createdAt:-1,_id:-1}).limit(20).toArray();
+    const rowNames=['inventory','vehicles','properties','loans','gamble_rounds'];const rowQueries=session?null:[
+      ...rowNames.slice(0,3).map(name=>this.collection(name).find({residentId:id},opts).toArray()),
+      this.collection('loans').find({residentId:id},opts).sort({borrowedAt:-1,_id:-1}).limit(51).toArray(),
+      this.collection('gamble_rounds').find({residentId:id},opts).sort({sequence:-1,createdAt:-1,_id:-1}).limit(20).toArray()
+    ];const rowResults=session?[]:await Promise.all(rowQueries);
+    if(session)for(const name of rowNames.slice(0,3))rowResults.push(await this.collection(name).find({residentId:id},opts).toArray());
+    if(session){rowResults.push(await this.collection('loans').find({residentId:id},opts).sort({borrowedAt:-1,_id:-1}).limit(51).toArray());rowResults.push(await this.collection('gamble_rounds').find({residentId:id},opts).sort({sequence:-1,createdAt:-1,_id:-1}).limit(20).toArray());}
+    const rows={inventory:rowResults[0],vehicles:rowResults[1],properties:rowResults[2],loans:rowResults[3]},rounds=rowResults[4];
     const strip=row=>{const {_id,residentId,sequence,...value}=row;return value;};
     const home=strip(entities.homes),{furnitureLayout={},storedFurniture=[],billsPaidAt,rentPaidAt,...homeFields}=home;
     const p={id,username:resident.username,...pick(resident,residentKeys),createdAt:resident.createdAt,origin:entities.origins.origin,appearance:strip(entities.appearances),...strip(entities.needs),...strip(entities.progression),...strip(entities.player_state),home:homeFields,wallet:entities.wallets.balance,inventory:rows.inventory.map(row=>row.itemId),vehicleColors:Object.fromEntries(rows.vehicles.map(row=>[row.itemId,row.color])),ownedProperties:rows.properties.filter(row=>row.owned).map(row=>row.propertyId),propertyInvestments:Object.fromEntries(rows.properties.filter(row=>row.investment).map(row=>[row.propertyId,row.investment])),loans:rows.loans.sort((a,b)=>b.borrowedAt-a.borrowedAt).map(strip),gambleHistory:rounds.map(strip),lastGambleRound:rounds[0]?strip(rounds[0]):null,workDays:{},furnitureLayout,storedFurniture,billsPaidAt,rentPaidAt};
@@ -345,9 +353,15 @@ export class MongoGameStore {
   }
   async zone(id){const p=typeof id==='string'?await this.collection('player_state').findOne({residentId:id},{projection:{district:1,location:1}}):id;check(p?.location,'Resident location not found',404);const residentId=typeof id==='string'?id:id.id;return p.location.kind==='home'?`home:${residentId}`:p.location.kind==='visit'?`home:${p.location.ownerId}`:p.location.kind==='venue'?`venue:${p.district}:${p.location.venue}`:p.location.kind==='public'?`district:${p.district}`:`transit:${residentId}`;}
   async bootstrap(id){
-    const profile=await this.profile(id),workSchedule=await this.workSchedule(profile),social={};
-    for(const name of ['people','friends','friendRequests','conversations','notifications','invitations','nearby','events'])social[name]=typeof this[name]==='function'?await this[name](id):[];
-    const moderation=await this.collection('moderation').find({owner:id}).toArray();
-    return{authenticated:true,profile,originMeta:ORIGIN_META,loanMeta:LOAN_META,loans:loanView(profile,this.clock()),workSchedule,properties:this.propertiesFor(profile),activeChallenge:await this.activeChallenge(id),...social,blocked:moderation.filter(row=>row.kind==='block').map(row=>row.target),muted:moderation.filter(row=>row.kind==='mute').map(row=>row.target),transactions:await this.transactions(id)};
+    const profile=await this.profile(id),workSchedule=await this.workSchedule(profile);
+    const socialNames=['people','friends','friendRequests','conversations','notifications','invitations','nearby','events'];
+    const [socialResults,moderation,activeChallenge,transactions]=await Promise.all([
+      Promise.all(socialNames.map(name=>typeof this[name]==='function'?this[name](id):[])),
+      this.collection('moderation').find({owner:id}).toArray(),
+      this.activeChallenge(id),
+      this.transactions(id)
+    ]);
+    const social=Object.fromEntries(socialNames.map((name,index)=>[name,socialResults[index]]));
+    return{authenticated:true,profile,originMeta:ORIGIN_META,loanMeta:LOAN_META,loans:loanView(profile,this.clock()),workSchedule,properties:this.propertiesFor(profile),activeChallenge,...social,blocked:moderation.filter(row=>row.kind==='block').map(row=>row.target),muted:moderation.filter(row=>row.kind==='mute').map(row=>row.target),transactions};
   }
 }

@@ -1,10 +1,10 @@
 # AbujaLife production operations
 
-The production domain is **https://abujacity.life**, confirmed in the owner’s Hostinger account. Hostinger serves the static game and `/admin/`. The Windows VPS **173.212.249.202** runs the isolated API and private database. These instructions replace the earlier cloud handoff’s Linux/Docker assumptions. See PRODUCTION_ACCEPTANCE.md for observed live results and outstanding gates.
+The production domain is **https://abujacity.life**. The Windows VPS **173.212.249.202** serves both the static game and API through the existing Caddy instance, with the isolated MongoDB database kept on that VPS. Hostinger currently remains the DNS registrar/provider until the owner completes the nameserver/DNS cutover described below. See PRODUCTION_ACCEPTANCE.md for live evidence and outstanding gates.
 
 ```mermaid
 flowchart TD
-  Web[Hostinger: abujacity.life] --> Proxy[Caddy: HTTPS api.abujacity.life]
+  Web[abujacity.life static release] --> Proxy[Caddy: HTTPS on Windows VPS]
   Mobile[iOS / Android clients] --> Proxy
   Proxy --> API[LocalService Node API: 127.0.0.1:18787]
   API --> Mongo[(Authenticated MongoDB: 127.0.0.1:27017)]
@@ -35,7 +35,7 @@ AbujaLife resources:
 | Backup lock recovery | `AbujaLife-Mongo-LockGuard`, every five minutes |
 | API ports | loopback 18787; loopback candidate 18788 during deployment |
 | Mongo port / database / replica set | loopback 27017 / `abujalife_prod` / `abujalife` |
-| Public AbujaLife surface | VPS 80 redirects to HTTPS 443; existing SSH 22 for administration |
+| Public AbujaLife surface | VPS 80 redirects to HTTPS 443; existing SSH 22 for administration; root web and API route through Caddy |
 | Redis | Not used; authenticated SSE realtime in one API process |
 
 The VPS has other pre-existing management/application services. AbujaLife’s firewall change blocks only its private ports 27017, 18787 and 18788. Do not disable Windows Firewall or modify another project’s access to reduce the apparent port list.
@@ -69,17 +69,18 @@ Deployment verifies source hashes, installs with `npm ci`, runs `npm run qa` and
 
 GitHub CI runs Linux QA/build/isolated Docker Mongo infrastructure checks and Windows QA/build/PowerShell parsing. The Docker stack remains a tested alternative; it is not the actual Windows VPS runtime.
 
-After CI succeeds on `main`, `.github/workflows/frontend-deploy.yml` builds the
-connected game, adds the release manifest and force-updates the generated
-`hostinger-production` artifact branch. Hostinger's Git auto-deployment watches
-that branch and publishes it to the AbujaLife-specific `public_html`. The VPS
-task `AbujaLife-AutoDeploy` checks the public GitHub check-runs API every five
-minutes, waits for both AbujaLife CI and frontend deployment to be successful,
-then requires the `qa`, `windows` and `build-and-publish` check-runs to be
-successful, clones that exact `main` revision and invokes the same candidate-based
-`deploy.ps1` promotion. A failed build, check or health test leaves the current
-release running. This is the normal production path; the ZIP commands above
-remain private release/debug tooling and recovery fallback only.
+After CI succeeds on `main`, the VPS task `AbujaLife-AutoDeploy` checks the
+public GitHub check-runs API every five minutes. It requires successful `qa`,
+`windows` and static `build-and-publish` checks, clones that exact `main`
+revision and invokes the candidate-based `deploy.ps1` promotion. The Windows
+release builds the static site inside the immutable release directory, takes a
+verified database backup, starts and health-checks the API candidate, promotes
+the API, then stages and validates a Caddy configuration that serves that same
+release. Caddy only switches its frontend root after the API is healthy. A
+failed build, check, Caddy validation/reload or health check leaves the prior
+frontend/API release active. GitHub Actions no longer publishes a separate
+Hostinger artifact branch, so the frontend and API advance from the same
+committed `main` revision.
 
 ## Configuration, authentication and data
 
@@ -97,18 +98,33 @@ Realtime is authenticated **Server-Sent Events**, with REST for client actions, 
 
 ## DNS, HTTPS and Hostinger
 
-Hostinger is authoritative through `horizon.dns-parking.com` and `orbit.dns-parking.com`. Root web A records are managed by Hostinger hosting/CDN; `www` is a CNAME to `abujacity.life`. The API A record is `api → 173.212.249.202`, TTL 300, with no unverified AAAA. Okrika DNS remains unchanged.
+Hostinger is currently authoritative through `horizon.dns-parking.com` and `orbit.dns-parking.com`. The API A record is `api → 173.212.249.202`, TTL 300. Before DNS cutover, the root domain still resolves to Hostinger and the configured Caddy frontend is origin-ready but not yet the public web origin. No MongoDB/API ports are exposed for this change; Okrika DNS remains unchanged.
 
-Hostinger's Git deployment publishes the generated `hostinger-production`
-branch into the **abujacity.life-specific `public_html`**, confirmed through
-hPanel. Do not point that site at source `main` or another website's root.
-`.htaccess` sets MIME types, public-only caching, SPA/admin deep-route
-rewrites, HTTPS/canonical redirects and browser security headers. `/api` on
-Hostinger returns 404. Runtime config, HTML and service worker are not cached;
-the worker caches only public static assets. Manual archive extraction remains
-an emergency rollback/recovery procedure, not a normal update step.
+The previous Hostinger `public_html` frontend remains available as a rollback
+origin until DNS cutover and acceptance are complete. Its old generated
+`hostinger-production` publisher has been removed from the normal workflow.
+On the VPS, Caddy serves immutable `dist/` from the active API release, applies
+SPA/admin routing and security headers, leaves HTML/runtime configuration
+uncached, and marks content-hashed `/assets/` files immutable. The service
+worker caches only public static assets, never account or API data.
 
-Hostinger manages frontend TLS/renewal. Caddy obtains and renews the API certificate automatically in its existing SYSTEM certificate store. Its HTTP listener handles ACME and HTTPS redirects; no Node/Mongo port is public. Do not start a second 80/443 proxy. Check TLS without disabling certificate validation.
+The existing Caddy service obtains and renews certificates for both web and API hostnames after DNS reaches the VPS. Its HTTP listener handles ACME and HTTPS redirects; no second proxy or public Node/Mongo port is added. Keep Cloudflare SSL/TLS on **Full (strict)** and leave authenticated/API traffic uncached. Never disable certificate validation.
+
+Cloudflare access was unavailable during the cutover, so nameservers were not
+changed. If Cloudflare is the selected edge, create/import the zone, preserve
+any mail or verification records shown there, then use proxied records:
+
+| Type | Name | Target | Proxy |
+| --- | --- | --- | --- |
+| A | `@` | `173.212.249.202` | Proxied |
+| A | `api` | `173.212.249.202` | Proxied |
+| CNAME | `www` | `abujacity.life` | Proxied |
+| A | `ftp` | `141.136.33.46` | DNS only |
+
+Then change the domain nameservers at Hostinger to the two nameservers Cloudflare
+assigns to the zone. Keep WebSockets enabled and do not cache `/api/*`, auth,
+session, or SSE responses. Cloudflare will proxy to the VPS after DNS
+propagates; Caddy remains the TLS origin. Do not delete unrelated MX/TXT records.
 
 ```bash
 curl --fail https://api.abujacity.life/health

@@ -23,7 +23,7 @@ const images={mongo:'abujalife-mongo:'+releaseId,ops:'abujalife-ops:'+releaseId,
 // user CLI plugin, making this acceptance test fail before infrastructure is
 // even exercised.
 const environment={...process.env,...(process.env.DOCKER_CONFIG?{DOCKER_CONFIG:process.env.DOCKER_CONFIG}:{}),ABUJALIFE_DEPLOY_ENV_FILE:path.join(directory,'.env'),ABUJALIFE_RELEASE_STATE_DIR:path.join(directory,'releases'),ABUJALIFE_PROJECT_NAME:project,ABUJALIFE_SECRETS_DIR:path.join(directory,'.secrets'),ABUJALIFE_BACKUP_DIR:path.join(directory,'backups'),ABUJALIFE_MONGO_IMAGE:images.mongo,ABUJALIFE_OPS_IMAGE:images.ops,ABUJALIFE_API_IMAGE:images.api,ABUJALIFE_API_LOOPBACK_PORT:'0',ABUJALIFE_OPS_DIAGNOSTICS:'1'};
-const active=new Set();let relay,client,restoreAdmin,composeCreated=false,failed=false;
+const active=new Set();let client,restoreAdmin,composeCreated=false,failed=false;
 async function run(command,arguments_,{capture=false,input,env={}}={}){
   return new Promise((resolve,reject)=>{
     const child=spawn(command,arguments_,{cwd:root,env:{...environment,...env},stdio:capture||input!==undefined?['pipe','pipe','pipe']:'inherit'});active.add(child);let out='',error='';
@@ -32,9 +32,8 @@ async function run(command,arguments_,{capture=false,input,env={}}={}){
     child.on('error',reject);child.on('exit',code=>{active.delete(child);code===0?resolve(out):reject(new Error(`${command} failed (${code}). ${capture?error.slice(-1200):''}`));});
   });
 }
-const compose=(arguments_,options)=>run('docker',['compose','--project-name',project,'--env-file',path.join(directory,'.env'),'-f',path.join(root,'deploy/compose.yml'),...arguments_],options);
+const compose=(arguments_,options)=>run('docker',['compose','--project-name',project,'--env-file',path.join(directory,'.env'),'-f',path.join(root,'deploy/compose.yml'),'-f',path.join(root,'deploy/compose.qa.yml'),...arguments_],options);
 async function waitFor(check,label){for(let attempt=0;attempt<120;attempt++){try{if(await check())return;}catch{}await new Promise(resolve=>setTimeout(resolve,500));}throw new Error(label+' did not become ready.');}
-async function address(service){const name=project+'-'+service+'-1';const networks=JSON.parse(await run('docker',['inspect','--format','{{json .NetworkSettings.Networks}}',name],{capture:true}));return Object.values(networks).find(value=>value.IPAddress)?.IPAddress;}
 async function build(arguments_){
   const args=['build','--network','host','--build-arg','HTTPS_PROXY','--build-arg','HTTP_PROXY','--build-arg','NO_PROXY'];
   const proxies=new Set();for(const name of ['HTTPS_PROXY','HTTP_PROXY'])if(process.env[name])proxies.add(new URL(process.env[name]).hostname);
@@ -52,11 +51,11 @@ try{
   composeCreated=true;await compose(['up','-d','--no-build','mongo']);
   await waitFor(async()=>(await run('docker',['inspect','--format','{{.State.Health.Status}}',project+'-mongo-1'],{capture:true})).trim()==='healthy','Authenticated Mongo');
   await compose(['run','--rm','--no-deps','bootstrap']);
-  const mongoAddress=await address('mongo');
-  relay=net.createServer(socket=>{const upstream=net.connect(27017,mongoAddress);socket.on('error',()=>upstream.destroy());upstream.on('error',()=>socket.destroy());socket.on('close',()=>upstream.destroy());upstream.on('close',()=>socket.destroy());socket.pipe(upstream);upstream.pipe(socket);});
-  await new Promise(resolve=>relay.listen(0,'127.0.0.1',resolve));
+  const mongoPorts=JSON.parse(await run('docker',['inspect','--format','{{json .NetworkSettings.Ports}}',project+'-mongo-1'],{capture:true}));
+  const mongoPort=mongoPorts['27017/tcp']?.find(mapping=>mapping.HostIp==='127.0.0.1')?.HostPort;
+  assert.ok(mongoPort,'Disposable Mongo must publish only to a loopback host port: '+JSON.stringify(mongoPorts));
   const password=fs.readFileSync(path.join(directory,'.secrets/mongo-app-password'),'utf8').trim();
-  const uri=`mongodb://abujalife_app:${encodeURIComponent(password)}@127.0.0.1:${relay.address().port}/abujalife_prod?replicaSet=abujalife&authSource=abujalife_prod&directConnection=true`;
+  const uri=`mongodb://abujalife_app:${encodeURIComponent(password)}@127.0.0.1:${mongoPort}/abujalife_prod?replicaSet=abujalife&authSource=abujalife_prod&directConnection=true`;
   const configFile=path.join(directory,'test-mongodb.json');fs.writeFileSync(configFile,JSON.stringify({uri,database:'abujalife_prod'}),{mode:0o600});
   const testEnvironment={TEST_MONGODB_CONFIG:configFile,TEST_MONGODB_URI:'',TEST_MONGODB_DATABASE:'abujalife_prod'};
   const integrationFiles=fs.readdirSync(path.join(root,'tests')).filter(name=>/^mongo-.*\.integration\.mjs$/.test(name)).sort().map(name=>'tests/'+name);
@@ -64,11 +63,12 @@ try{
   const portServer=net.createServer();await new Promise(resolve=>portServer.listen(0,'127.0.0.1',resolve));const httpPort=portServer.address().port;await new Promise(resolve=>portServer.close(resolve));
   await run('npm',['run','qa:production'],{env:{...testEnvironment,ABUJALIFE_QA_HTTP_PORT:String(httpPort)}});
   await compose(['up','-d','--no-build','api']);
-  let base='http://'+await address('api')+':3000';
+  const published=JSON.parse(await run('docker',['inspect','--format','{{json .NetworkSettings.Ports}}',project+'-api-1'],{capture:true}));
+  const recordedPort=published['3000/tcp']?.find(mapping=>mapping.HostIp==='127.0.0.1')?.HostPort;
+  assert.ok(recordedPort,'Disposable API must publish only to a loopback host port: '+JSON.stringify(published));
+  let base='http://127.0.0.1:'+recordedPort;
   await waitFor(async()=>{const response=await fetch(base+'/api/health',{signal:AbortSignal.timeout(1000)});return response.ok&&(await response.json()).storage==='mongodb';},'Actual production API container');
   const uid=await run('docker',['exec',project+'-api-1','node','-e',"const s=require('fs').readFileSync('/proc/1/status','utf8');console.log(/^Uid:\\s+(\\d+)/m.exec(s)[1])"],{capture:true});assert.equal(uid.trim(),'1000');
-  const published=JSON.parse(await run('docker',['inspect','--format','{{json .NetworkSettings.Ports}}',project+'-api-1'],{capture:true}));
-  const recordedPort=published['3000/tcp'][0].HostPort;
   fs.mkdirSync(environment.ABUJALIFE_RELEASE_STATE_DIR,{mode:0o700});
   fs.writeFileSync(path.join(environment.ABUJALIFE_RELEASE_STATE_DIR,'current.json'),JSON.stringify({releaseId,environment:{ABUJALIFE_MONGO_IMAGE:images.mongo,ABUJALIFE_OPS_IMAGE:images.ops,ABUJALIFE_API_IMAGE:images.api,ABUJALIFE_API_LOOPBACK_PORT:recordedPort}}),{mode:0o600});
   const username='infra_'+crypto.randomBytes(5).toString('hex');
@@ -83,7 +83,7 @@ try{
   const change=await fetch(base+'/api/profile',{method:'POST',headers:{origin:'https://abujacity.life',cookie,'content-type':'application/json'},body:JSON.stringify({displayName:'After backup'})});assert.equal(change.status,200);
   await run(process.execPath,['deploy/compose.mjs','stop','api']);
   const rootPassword=fs.readFileSync(path.join(directory,'.secrets/mongo-root-password'),'utf8').trim();
-  restoreAdmin=new MongoClient(`mongodb://abujalife_bootstrap:${encodeURIComponent(rootPassword)}@127.0.0.1:${relay.address().port}/admin?replicaSet=abujalife&authSource=admin&directConnection=true`);
+  restoreAdmin=new MongoClient(`mongodb://abujalife_bootstrap:${encodeURIComponent(rootPassword)}@127.0.0.1:${mongoPort}/admin?replicaSet=abujalife&authSource=admin&directConnection=true`);
   await restoreAdmin.connect();
   await restoreAdmin.db('abujalife_prod').collection('restore_post_snapshot_probe').insertOne({_id:'must-not-survive',createdAfterSnapshot:true});
   const corruptName='tampered.abjl.enc',corrupt=fs.readFileSync(encrypted);corrupt[24]^=1;fs.writeFileSync(path.join(directory,'backups',corruptName),corrupt,{mode:0o600});
@@ -94,13 +94,13 @@ try{
   assert.equal(await restoreAdmin.db('abujalife_prod').collection('restore_post_snapshot_probe').countDocuments(),0);
   assert.equal((await db.collection('residents').findOne({id:registered.profile.id})).displayName,'Before backup');assert.equal(await db.collection('ledger').countDocuments(),ledgerCount);
   await run(process.execPath,['deploy/compose.mjs','up','-d','--no-build','--no-deps','api']);
-  base='http://'+await address('api')+':3000';
+  base='http://127.0.0.1:'+recordedPort;
   await waitFor(async()=>(await fetch(base+'/api/health',{signal:AbortSignal.timeout(1000)})).ok,'Restored API');
   const persisted=await fetch(base+'/api/bootstrap',{headers:{origin:'https://abujacity.life',cookie}});assert.equal(persisted.status,200);const restored=await persisted.json();assert.equal(restored.profile.wallet,registered.profile.wallet);assert.equal(restored.profile.displayName,'Before backup');assert.equal(restored.admin.role,'superadmin');
   console.log('PASS actual API container runs as UID 1000; recorded immutable images selected; consistent encrypted backup; tampering rejects before writes; complete snapshot excludes newer collections; database/session/wallet/admin survive restore and process restart.');
 }catch(error){failed=true;console.error(error.message);}
 finally{
-  if(client)await client.close();if(restoreAdmin)await restoreAdmin.close();if(relay){relay.closeAllConnections?.();relay.close();}
+  if(client)await client.close();if(restoreAdmin)await restoreAdmin.close();
   if(composeCreated){try{await compose(['down','--volumes','--remove-orphans']);}catch{failed=true;}}
   for(const image of Object.values(images)){try{await run('docker',['image','rm',image],{capture:true});}catch{}}
   fs.rmSync(directory,{recursive:true,force:true});

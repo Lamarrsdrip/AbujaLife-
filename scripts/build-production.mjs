@@ -128,7 +128,7 @@ export async function buildProduction({ environment = process.env, outputDirecto
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const result = await buildProduction();
-    console.log(`Built connected Hostinger frontend: ${path.relative(repository, result.directory)} (${result.files.length} public files). API: ${result.configuration.API_PUBLIC_URL}`);
+    console.log(`Built connected production static site: ${path.relative(repository, result.directory)} (${result.files.length} public files). API: ${result.configuration.API_PUBLIC_URL}`);
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;

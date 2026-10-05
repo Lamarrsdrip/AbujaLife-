@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Package the genuine production dist frontend for Hostinger shared hosting."""
+"""Package the genuine production dist frontend for static-release validation."""
 from pathlib import Path
 from datetime import datetime, timezone
 from hashlib import sha256

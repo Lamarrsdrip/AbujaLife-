@@ -17,9 +17,9 @@ replacement = r'''{
   "    const profile=await store.profile(id),event={residentId:id,targetResidentId,username:profile.username,displayName:profile.displayName,emote,createdAt:store.clock()};",
   "    await store.emitZone(id,'player-emote',event);return{ok:true,emote:event};",
   "  }"
- ].join('\\n');
+ ].join('\n');
  s=regexOne(s,emotePattern,emoteReplacement,'server verified emote target');write(path,s);
 }'''
 s = s[:start] + replacement + s[end:]
 path.write_text(s)
-print('Repaired fastStartup integration target.')
+print('Repaired fastStartup integration target and newline emission.')

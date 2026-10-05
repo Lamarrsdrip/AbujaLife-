@@ -13,7 +13,11 @@ const integration=(name,fn)=>test(name,{skip:uri?false:'Requires a real Mongo re
 const key=()=>crypto.randomUUID();
 const denied=(promise,status)=>assert.rejects(promise,e=>e.status===status);
 async function fixture(t){const connection=await connectMongo({uri,database,production:true});let now=Date.parse('2026-10-05T10:00:00Z');const game=new MongoGameStore({...connection,clock:()=>now,originRandomInt:(min,max)=>max===2?1:0});t.after(()=>connection.close());const social=await new MongoSocialStore(game).init({ensureIndexes:false});social.attachToGame();const directory=await new MongoDirectoryStore(game,social).init({ensureIndexes:false}),presence=await new MongoPresenceStore(game,social).init({ensureIndexes:false}),suffix=crypto.randomBytes(6).toString('hex'),users=[];for(const name of ['Ada','Bello','Chika'])users.push((await game.register({username:`${name.toLowerCase()}_${suffix}`,displayName:`${name} ${suffix}`,password:'social-test-password-secure'})).residentId);return{connection,game,social,directory,presence,users,suffix,advance(ms){now+=ms;}};}
-async function outside(f,id,district){await f.game.transaction(async session=>{const p=await f.game.profile(id,{session});p.district=district;p.location={kind:'public',district,venue:'neighbourhood'};p.activeTrip=null;p.activeShift=null;p.drivingVehicle=null;await f.game.save(p,{session});});}
+async function outside(f,id,district){await f.game.transaction(async session=>{const p=await f.game.profile(id,{session});p.district=district;p.location={kind:'public',district,venue:'neighbourhood'};p.activeTrip=null;p.activeShift=null;p.drivingVehicle=null;await f.game.save(p,{session});});
+  // Moving the fixture represents the committed outside/travel transition. End
+  // any old lease and ephemeral pose so a later touch cannot revive a prior zone.
+  await f.presence.disconnect(id);
+}
 async function befriend(f,a,b){await f.social.requestFriend(a,b);const request=(await f.social.friendRequests(b)).find(r=>r.from===a);await f.social.respondFriend(b,request.id,true);}
 
 integration('Mongo nearby shares real street, venue and consented home motion without stale-location or private-home leaks',async t=>{

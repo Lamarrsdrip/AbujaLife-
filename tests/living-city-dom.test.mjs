@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
-const source=readFileSync(new URL('../app/living-city.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'');
+const source=readFileSync(new URL('../app/living-city.js',import.meta.url),'utf8').replace(/^import .*;\r?\n/gm,'');
 function fixture(){
  const observers=[],pending=new Set(),microtasks=[],events=new Map(),stats={writes:0};
  function changed(node){stats.writes++;for(const observer of observers)for(const entry of observer.entries)if(entry.node===node||(entry.options.subtree&&node.parents().includes(entry.node)))pending.add(observer);}

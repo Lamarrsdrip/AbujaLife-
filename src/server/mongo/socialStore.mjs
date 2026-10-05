@@ -3,6 +3,7 @@ import { inflateSync } from 'node:zlib';
 import { GameError } from '../errors.mjs';
 import { catalog } from '../../shared/catalogue.mjs';
 import { ABUJA_ATLAS } from '../../shared/atlas.mjs';
+import { venueAvailable } from '../../shared/life.mjs';
 export const SOCIAL_META = Object.freeze({statusDurationMs:86400000,maxImageBytes:524288,maxTextLength:4000,maxCommentLength:2000,maxPageSize:50,maxGroupMembers:50});
 const uid=()=>crypto.randomUUID();
 export const check=(condition,message,status=400,code='invalid_social_action')=>{if(!condition)throw new GameError(message,status,code);};
@@ -296,10 +297,55 @@ export class MongoSocialStore {
     const district=body.kind==='home'?home.district:textValue(body.district??state.district,80,'District');check(locations.has(district),'Choose a location from the atlas');const row={id:uid(),sender:id,recipient:target,kind:body.kind,district,activity:textValue(body.activity,60,'Activity'),note:textValue(body.note,300,'Invitation note'),status:'pending',createdAt:this.clock()};
     await this.collection('invitations').insertOne(row);const invitation=await this.invitationView(id,row);this.game.emitUser?.(target,'invitation',await this.invitationView(target,row));await this.notify(target,'invitation','You are invited',`${p.displayName} sent you a ${body.kind} invitation.`,'invitations',id);return{ok:true,invitation};
   }
+  async joinInvitation(guestId,row){
+    const guest=await this.profile(guestId);
+    if(guest.activeTrip||guest.activeShift)return null;
+    const sender=await this.profile(row.sender);
+    if(await this.blocked(guestId,row.sender))return null;
+    if(row.kind==='home'){
+      if(!this.ownHome(sender)||!await this.visitPermission(sender,guestId))return null;
+      if(await this.collection('home_visit_sessions').findOne({guestId,endedAt:null}))return null;
+      const now=this.clock(),requestId=uid(),sessionId=uid();
+      await this.transaction(async session=>{
+        const fresh=await this.profile(guestId,session);
+        if(fresh.activeTrip||fresh.activeShift)throw new Error('busy');
+        if(await this.collection('home_visit_sessions').findOne({guestId,endedAt:null},opts(session)))throw new Error('busy');
+        await this.collection('home_visit_requests').insertOne({id:requestId,ownerId:sender.id,guestId,note:String(row.note||'Invitation').slice(0,300),status:'accepted',createdAt:now,answeredAt:now,operationKey:`invite:${row.id}`,fingerprint:fingerprint({invite:row.id})},opts(session));
+        await this.collection('home_visit_sessions').insertOne({id:sessionId,requestId,ownerId:sender.id,guestId,propertyId:sender.home.propertyId,startedAt:now,endedAt:null,endReason:null},opts(session));
+        fresh.district=sender.home.district;fresh.location={kind:'visit',district:sender.home.district,venue:'home',ownerId:sender.id,visitId:sessionId};fresh.drivingVehicle=null;
+        await this.game.save(fresh,opts(session));
+      });
+      const profile=await this.profile(guestId);
+      this.game.emitUser?.(guestId,'profile',{profile});this.game.emitUser?.(sender.id,'home-visit',{visitId:sessionId,guestId});
+      return profile;
+    }
+    const venueId=sender.location?.kind==='venue'?sender.location.venue:null;
+    if((row.kind==='activity'||row.kind==='meetup')&&venueId&&venueAvailable(venueId,sender.district)){
+      await this.transaction(async session=>{
+        const fresh=await this.profile(guestId,session);
+        if(fresh.activeTrip||fresh.activeShift)throw new Error('busy');
+        fresh.district=sender.district;fresh.location={kind:'venue',district:sender.district,venue:venueId};fresh.drivingVehicle=null;
+        await this.game.save(fresh,opts(session));
+      });
+      const profile=await this.profile(guestId);this.game.emitUser?.(guestId,'profile',{profile});return profile;
+    }
+    if(row.kind==='meetup'&&locations.has(row.district)){
+      await this.transaction(async session=>{
+        const fresh=await this.profile(guestId,session);
+        if(fresh.activeTrip||fresh.activeShift)throw new Error('busy');
+        fresh.district=row.district;fresh.location={kind:'public',district:row.district,venue:'neighbourhood'};fresh.drivingVehicle=null;
+        await this.game.save(fresh,opts(session));
+      });
+      const profile=await this.profile(guestId);this.game.emitUser?.(guestId,'profile',{profile});return profile;
+    }
+    return null;
+  }
   async respondInvite(id,inviteId,accept){
     await this.authenticate(id);identifier(inviteId);check(typeof accept==='boolean','Choose a response');let row,replayed=false;const status=accept?'accepted':'declined';
     await this.transaction(async session=>{replayed=false;row=await this.collection('invitations').findOne({id:inviteId,recipient:id},opts(session));check(row,'Invitation not found',404);check(!await this.blocked(id,row.sender,session),'This invitation is unavailable',403);if(row.status!=='pending'){check(row.status===status,'This invitation was already answered differently',409,'invitation_answered');replayed=true;return;}const result=await this.collection('invitations').updateOne({id:inviteId,recipient:id,status:'pending'},{$set:{status}},opts(session));check(result.modifiedCount===1,'This invitation was already answered',409,'invitation_answered');row.status=status;});
-    if(!replayed)await this.notify(row.sender,'invitation-response','Invitation update',`${(await this.displayName(id))} ${accept?'accepted':'declined'} your invitation.`,'invitations',id);return{ok:true,invitations:await this.invitations(id),replayed};
+    if(!replayed)await this.notify(row.sender,'invitation-response','Invitation update',`${(await this.displayName(id))} ${accept?'accepted':'declined'} your invitation.`,'invitations',id);
+    let joined=null;if(accept&&!replayed)joined=await this.joinInvitation(id,row).catch(()=>null);
+    return{ok:true,invitations:await this.invitations(id),replayed,...(joined?{joined:true,profile:joined}:{})};
   }
   async eventView(id,row){const attendees=await this.collection('event_rsvps').find({eventId:row.id,residentId:{$nin:await this.blockedIds(id)}}).limit(100).toArray();return{id:row.id,host:await this.resident(id,row.hostId),title:row.title,district:row.district,startsAt:row.startsAt,description:row.description,attendeeIds:attendees.map(r=>r.residentId)};}
   async events(id){await this.authenticate(id);const rows=await this.collection('events').find({startsAt:{$gt:this.clock()-86400000},hostId:{$nin:await this.blockedIds(id)}}).sort({startsAt:1,id:1}).limit(50).toArray();return Promise.all(rows.map(r=>this.eventView(id,r)));}

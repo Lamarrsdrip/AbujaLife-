@@ -639,7 +639,7 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
         void api('/api/notifications/read',{method:'POST',body:{id}}).then(()=>refreshInBackground()).catch(()=>{});
         break;
       }
-      case 'invite-respond':await mutate('/api/invitations/respond',{id,accept:accept==='true'},accept==='true'?'Invitation accepted. Travel when you’re ready.':'Invitation declined');break;
+      case 'invite-respond':{const result=await mutate('/api/invitations/respond',{id,accept:accept==='true'});if(!result)break;if(accept==='true'&&result.joined){toast?.('You’re in the same place.');close();onNavigate?.('world',{source:'invite'});}else toast?.(accept==='true'?'Invitation accepted. Travel when you’re ready.':'Invitation declined');break;}
       case 'rsvp':await mutate(`/api/events/${encodeURIComponent(id)}/rsvp`,{attending:value==='true'},value==='true'?'Your RSVP is saved':'RSVP cancelled');break;
       case 'purchase':{const item=entries(state().catalog).find(i=>i.id===id),color=draft(`vehicleColor-${id}`,item?.defaultColor);const result=await mutate('/api/action',{action:'purchase',payload:{itemId:id,...(item?.category==='vehicle'?{color,idempotencyKey:vehicleRequestKey('purchase',id,color)}:{})}},'Item added to your inventory');if(result){vehicleRequests.delete(`purchase:${id}:${color}`);if(item?.category==='furniture'){close();onNavigate?.('world',{furnishItemId:id,source:'phone'});}}else await refresh().catch(()=>{});break;}
       case 'sell-item':close();onNavigate?.('world',{sellItemId:id,source:'phone'});break;

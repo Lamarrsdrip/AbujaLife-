@@ -55,11 +55,23 @@ async function api(path,options={}) {
  if(path==='/api/wallet/transfer'&&opts.body&&typeof opts.body==='object'&&!opts.body.idempotencyKey)opts.body.idempotencyKey=crypto.randomUUID();
  if(opts.body!==undefined&&typeof opts.body!=='string')opts.body=JSON.stringify(opts.body);
  if(opts.body!==undefined)opts.headers['content-type']='application/json';
- const response=await apiFetch(path,{...opts,signal:opts.signal||AbortSignal.timeout(path.startsWith('/api/bootstrap')?8000:15000)}),body=await response.json();
+ const response=await apiFetch(path,{...opts,signal:opts.signal||AbortSignal.timeout(20000)}),body=await response.json();
  if(!response.ok||body.ok===false){const error=new Error(body.error||'Please try again.');error.status=response.status;error.code=body.code;throw error;}
  return body;
 }
 function toast(message){const el=document.querySelector('#toast');el.textContent=message;el.classList.add('visible');clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.classList.remove('visible'),4000);}
+function showLiveInvite(invitation){
+ document.querySelector('#live-invite')?.remove();
+ const name=invitation.resident?.displayName||'A resident';
+ const where=invitation.kind==='home'?'their home':invitation.kind==='activity'?'where they are':'the city';
+ const bar=document.createElement('aside');bar.id='live-invite';bar.className='live-invite';bar.setAttribute('role','status');
+ bar.innerHTML=`<strong>${esc(name)} invited you</strong><span>Join them at ${esc(where)}.</span><button type="button" data-join>Join</button><button type="button" data-decline>Decline</button>`;
+ document.body.append(bar);
+ const close=()=>bar.remove();
+ bar.querySelector('[data-decline]').onclick=async()=>{try{await api('/api/invitations/respond',{method:'POST',body:{id:invitation.id,accept:false}});}catch(error){toast(error.message);}close();};
+ bar.querySelector('[data-join]').onclick=async()=>{try{const result=await api('/api/invitations/respond',{method:'POST',body:{id:invitation.id,accept:true}});if(result.profile?.id===state.profile?.id)state.profile=result.profile;if(result.joined){view='world';renderMain();toast('You’re in the same place.');}else toast('Invitation accepted. Travel when you’re ready.');}catch(error){toast(error.message);}close();};
+ setTimeout(()=>{if(bar.isConnected)close();},14000);
+}
 async function refresh({render=true,startup=true}={}){const epoch=++stateRequestEpoch,next=await api(startup?'/api/bootstrap?startup=1':'/api/bootstrap');if(epoch!==stateRequestEpoch)return state;state=mergeCoreBootstrap(state,next);serverClockAt=Number(state.serverTime)||Date.now();serverClockObservedAt=performance.now();if(render)renderMain();else{const balance=root.querySelector('.wallet-button');if(balance){balance.querySelector('strong').textContent=`₦${money(state.profile?.wallet)}`;balance.setAttribute('aria-label',`Naira balance, ₦${money(state.profile?.wallet)}. Open wallet`);}cleanup?.updateResidents?.(list(state.nearby));}phone.render();showWorkReminder();void install.refresh();if(startup&&state.profile?.onboardingComplete)hydrateStartup();return state;}
 function expireAccount(){stream?.close();phone.close();stateRequestEpoch++;state={authenticated:false};authMode='login';authDraft.password='';authNotice='Your session has expired. Sign in to continue with your saved resident.';renderMain();}
 function hydrateStartup(){
@@ -148,6 +160,7 @@ function connectRealtime(){
   if(type==='presence'){scheduleNearbyPresenceRefresh();return;}
   if(type==='ready'){scheduleNearbyPresenceRefresh(0);return;}
   if(type==='location-chat'){chatMessages.push(data.message||data);chatMessages=chatMessages.slice(-60);if(chatOpen)renderChat();}
+  if(type==='invitation'&&data?.to===state.profile?.id&&data.status==='pending')showLiveInvite(data);
   if(['event','profile','message','notification','invitation','receipt','home-visit','home-visit-request','home-visit-ended'].includes(type))scheduleRealtimeRefresh();
  });
  stream.onopen=()=>{document.documentElement.dataset.connection='online';};stream.onerror=()=>{document.documentElement.dataset.connection='reconnecting';};
@@ -159,6 +172,7 @@ addEventListener('abujalife:resident-action',async event=>{
   if(residentAction==='message'){const result=await api('/api/conversations',{method:'POST',body:{residentId:resident.id}});phone.open('messages',{conversationId:result.conversation.id});return;}
   if(residentAction==='friend'){await api('/api/friends/request',{method:'POST',body:{residentId:resident.id}});toast('Friend request sent.');return;}
   if(residentAction==='visit'){await api('/api/home/visits/request',{method:'POST',body:{residentId:resident.id,idempotencyKey:crypto.randomUUID()}});toast('Visit request sent.');return;}
+  if(residentAction==='invite'){const location=state.profile?.location;const kind=location?.kind==='home'?'home':location?.kind==='venue'?'activity':'meetup';await api('/api/invitations',{method:'POST',body:{residentId:resident.id,kind,district:state.profile.district,activity:location?.venue&&location.venue!=='home'&&location.venue!=='neighbourhood'?location.venue:'',note:'Come join me.'}});toast(kind==='home'?'Home invitation sent.':kind==='activity'?'Invitation sent to this place.':'Meetup invitation sent.');return;}
  }catch(error){toast(error.message);}
 });
 async function action(name,payload={}){

@@ -135,7 +135,7 @@ export function createServer(options={}) {
         if(pathname==='/api/moderation/report'&&method==='POST')return json(res,201,store.report(id,body));
         if(pathname==='/api/notifications/read'&&method==='POST')return json(res,200,store.readNotifications(id,body.id));
         if(pathname==='/api/invitations'&&method==='POST')return json(res,201,store.invite(id,body));
-        if(pathname==='/api/invitations/respond'&&method==='POST')return json(res,200,store.respondInvite(id,body.id,body.accept===true));
+        if(pathname==='/api/invitations/respond'&&method==='POST'){const oldZone=store.zone(id);const result=store.respondInvite(id,body.id,body.accept===true);if(result.joined)broadcastPresence(id,oldZone);return json(res,200,result);}
         if(pathname==='/api/events'&&method==='POST')return json(res,201,store.createEvent(id,body));
         const eventRoute=pathname.match(/^\/api\/events\/([^/]+)\/rsvp$/);if(eventRoute&&method==='POST')return json(res,200,store.rsvp(id,eventRoute[1],body.attending!==false));
         return json(res,404,{ok:false,error:'Not found',code:'not_found'});

@@ -30,7 +30,7 @@ export function starterHomeSeed(origin) {
     inventory: nepo ? ['bed', 'sofa', 'dining-table', 'fridge', 'coffee-table', 'wardrobe', 'rug', 'floor-lamp', 'tv'] : [],
     furnitureLayout: {},
     storedFurniture: [],
-    homeStyle: { furnishingPreset: nepo ? 'nepo-furnished' : 'lapo-basic', starterVersion: 2 },
+    homeStyle: { furnishingPreset: nepo ? 'nepo-furnished' : 'lapo-basic', starterVersion: 1 },
   };
 }
 

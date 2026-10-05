@@ -95,7 +95,28 @@ function sceneBase(width,height,id,{floor='oak',name='',accent='#e9e6d7'}={}) {
     plant(x,y,scale=1){this.object(x-20*scale,y-22*scale,40*scale,37*scale,group(20*scale,22*scale,plantArt(scale)));},
     rug(x,y,w,h,color='#b1b59a'){floorAreas.push({x,y,w,h,material:'rug',color});art.push(rect(x,y,w,h,color,7)+rect(x+9,y+9,w-18,h-18,`url(#${id}-rug)`,3)+rect(x+8,y+8,w-16,h-16,'none',3,'stroke="#e4d3ac" stroke-width="3" opacity=".65"'));},
     window(x,w=220,view='garden'){art.push(group(x,84,rect(0,0,w,54,`url(#${id}-glass)`,2)+path(`M3 33Q${w/4} 12 ${w/2} 28Q${w*.8} 9 ${w-3} 29V51H3Z`,view==='lake'?'#699a92':'#7c9d74')+line(w/2,0,w/2,54,'#f1ebd5',5)+rect(-5,-5,w+10,64,'none',1,'stroke="#f3eedb" stroke-width="7"')+rect(-8,54,w+16,8,'#b4bba5')));art.push(path(`M${x} 149H${x+w}L${x+w+170} 470H${x+105}Z`,`url(#${id}-light)`));},
-    door(x=width/2,label='OUTSIDE',action='leave-home'){art.push(rect(x-54,height-109,108,24,'#a69773',3)+rect(x-49,height-106,98,15,'#cab68c',2)+rect(x-47,height-158,94,38,'#c4ae80',4)+line(x-38,height-149,x+38,height-149,'#af946a',2)+line(x-38,height-140,x+38,height-140,'#af946a',2)+text(x,height-89,label,10,'#596650','text-anchor="middle" letter-spacing="2"'));this.spawn={x,y:height-170};this.point('exit',x,height-137,'Head outside',action);},
+    door(x=width/2,label='OUTSIDE',action='leave-home'){
+      // The exit is a real, readable piece of the room rather than a tiny
+      // interaction dot. It stays visible in the wide camera view so new
+      // residents can immediately understand where the street is.
+      const sign=label==='OUTSIDE'?'EXIT · HEAD OUTSIDE':label;
+      art.push(`<g class="world-front-door" data-scene-prop="front-door" role="img" aria-label="${esc(sign)}">`+
+        shadow(x-82,height-126,164,43)+
+        rect(x-78,height-132,156,45,'#315943',8,'stroke="#f2e5bd" stroke-width="4"')+
+        rect(x-60,height-239,120,112,'#315943',8,'stroke="#f6e9c0" stroke-width="6"')+
+        rect(x-48,height-226,96,99,'#8fb39a',5)+
+        rect(x-38,height-214,76,39,'#a9c7aa',3,'opacity=".72"')+
+        line(x,height-226,x,height-127,'#577d67',3)+
+        line(x-48,height-177,x+48,height-177,'#577d67',3)+
+        ellipse(x+28,height-178,6,6,'#e8d09a')+
+        rect(x-104,height-288,208,37,'#f2dfaa',9,'stroke="#315943" stroke-width="4"')+
+        text(x,height-264,sign,12,'#315943','text-anchor="middle" font-weight="800" letter-spacing="1.3"')+
+        path(`M${x-19} ${height-111}L${x} ${height-96}L${x+19} ${height-111}`,'none','stroke="#d8ba72" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"')+
+        text(x,height-82,label,10,'#315943','text-anchor="middle" letter-spacing="2" font-weight="800"')+
+      `</g>`);
+      this.spawn={x,y:height-170};
+      this.point('exit',x,height-137,'Head outside',action);
+    },
     finish(){for(const item of [...objects,...(this.furniturePlacements||[])])if(item.itemId){item.surfaceHeight=furnitureSurface(item.itemId)?.height||0;item.elevation||=0;item.propertyId||=this.homePropertyId;}this.art.push(...this.items.sort((a,b)=>a.y-b.y).map(item=>item.art));this.art.push(rect(48,height-83,width-96,14,'#ece5cb',2));return {width,height,floorMaterial:floor,spawn:this.spawn,objects,walls,floorAreas,pedestrians,art:this.art.join(''),obstacles,interactables,title:this.title,subtitle:this.subtitle,furnishingArea:this.furnishingArea,furniturePlacements:this.furniturePlacements||[],storedFurniture:this.storedFurniture||[],homePropertyId:this.homePropertyId};}
   };
   return s;

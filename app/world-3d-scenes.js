@@ -687,6 +687,11 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
         for(const y of[-12,12])box(fixture,0,y,7,17,2,13,metal,true);
       }
       for(const wall of cutawayWalls)batchRigidMeshes(T,wall,{recursive:true});
+      // Keep the street exit visible in the actual WebGL room as well as the
+      // SVG interaction layer. New players should be able to identify the
+      // front door from the wide camera without hunting for a hotspot.
+      const exitPoint=(layout.interactables||[]).find(point=>['leave-home','leave-visit','exit-venue'].includes(point.action));
+      if(exitPoint)frontDoor(group,exitPoint.x,exitPoint.y,exitPoint.label||'Head outside');
     }
     for(const item of layout.objects||[])placeObject(item);
     // Soft textiles and objects that do not block a route still appear in 3D.
@@ -718,6 +723,21 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     const texture=new T.CanvasTexture(canvas);texture.colorSpace=T.SRGBColorSpace;textures.push(texture);
     const material=new T.MeshStandardMaterial({map:texture,roughness:.9});materials.set(`sign:${name}`,material);
     const plane=mesh(parent,geo(`sign:${width}:${height}`,()=>new T.PlaneGeometry(width,height)),material,x,y,z,false);return plane;
+  }
+  function frontDoor(parent,x,y,label='Head outside') {
+    const door=new T.Group();door.name='Front door exit';door.position.set(x,0,y*ds);parent.add(door);
+    const frame=mat('#315943',.72),panel=mat('#8fb39a',.7),trim=mat('#f2e5bd',.68),handle=mat('#e8d09a',.46,.12);
+    box(door,0,96,0,156,192,18,frame,true);
+    box(door,0,96,-11,120,176,6,trim,true);
+    box(door,0,96,-15,96,154,5,panel,true);
+    box(door,0,143,-19,76,42,3,mat('#a9c7aa',.7),true);
+    box(door,0,96,-19,3,154,3,frame);
+    box(door,0,96,-19,76,3,3,frame);
+    box(door,30,96,-21,9,9,4,handle,true);
+    box(door,0,2,0,182,5,62,trim,true);
+    sign(door,label==='Head outside'?'EXIT · HEAD OUTSIDE':label,230,38,0,226,-17);
+    const arrow=box(door,0,10,-27,7,4,34,handle,true);arrow.rotation.z=Math.PI/4;
+    return door;
   }
   function citySet() {
     const affluent=/maitama|asokoro|guzape|jabi/i.test(profile.district||place?.name||'');

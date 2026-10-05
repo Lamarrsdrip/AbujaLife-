@@ -58,9 +58,13 @@ try {
   verifyRelease(destination);
   previous = fs.existsSync(currentFile) ? JSON.parse(fs.readFileSync(currentFile, 'utf8')) : null;
   if (previous) {
-    // A validated, encrypted rollback snapshot precedes privileged schema changes.
-    const backupScript = path.join(config.releases, previous.releaseId, 'deploy', 'windows', 'backup.mjs');
-    command(config.nodePath, [backupScript], path.dirname(path.dirname(path.dirname(backupScript))), { ...safeEnvironment(), ABUJALIFE_WINDOWS_ROOT: config.root });
+    // A validated, encrypted rollback snapshot precedes privileged schema
+    // changes. Use the candidate's backup implementation so a deployment can
+    // safely migrate the backup contract itself (for example, a full oplog
+    // archive must use an unscoped tools URI). The running release is never
+    // modified until this snapshot succeeds.
+    const backupScript = path.join(destination, 'deploy', 'windows', 'backup.mjs');
+    command(config.nodePath, [backupScript], destination, { ...safeEnvironment(), ABUJALIFE_WINDOWS_ROOT: config.root });
   }
   mongoLock = acquireLock(path.join(config.shared, 'mongo-operations.lock'), 'deploy');
   command(config.nodePath, [path.join(destination, 'deploy', 'windows', 'bootstrap-mongo.mjs')], destination, { ...safeEnvironment(), ABUJALIFE_WINDOWS_ROOT: config.root });

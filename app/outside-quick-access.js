@@ -7,8 +7,55 @@ const QUICK_PLACES = [
   ['Shops', 'market'],
 ];
 
+const safeExternalLink = value => {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' ? url.href : '';
+  } catch {
+    return '';
+  }
+};
+
+const liveAdSpaces = () => new Map((globalThis.__ABJ_ADS__?.spaces || []).map(space => [space.id, space]));
+
+function syncAdTiles(shell) {
+  const spaces = liveAdSpaces();
+  shell?.querySelectorAll('.outside-ad-label').forEach(button => {
+    button.dataset.defaultLabel ||= button.textContent || '';
+    const key = button.dataset.destinationKey || '';
+    const id = key.startsWith('ad:') ? key.slice(3) : '';
+    const space = spaces.get(id);
+    const creative = space?.ad?.imageDataUrl;
+    const validCreative = typeof creative === 'string' && /^data:image\/(?:png|jpeg|webp);base64,/i.test(creative);
+
+    button.classList.toggle('is-live-ad', Boolean(validCreative));
+    button.removeAttribute('data-ad-link');
+    if (!validCreative) {
+      button.replaceChildren(document.createTextNode(button.dataset.defaultLabel));
+      button.setAttribute('aria-hidden', 'true');
+      button.tabIndex = -1;
+      return;
+    }
+
+    const image = document.createElement('img');
+    image.src = creative;
+    image.alt = space.ad?.title ? `${space.ad.title} advertisement` : 'Advertisement';
+    image.decoding = 'async';
+    image.loading = 'eager';
+    button.replaceChildren(image);
+    button.removeAttribute('aria-hidden');
+    button.tabIndex = 0;
+    button.setAttribute('aria-label', image.alt);
+    const link = safeExternalLink(space.ad?.link);
+    if (link) button.dataset.adLink = link;
+  });
+}
+
 function enhanceOutside(shell) {
-  if (!shell || shell.dataset.quickPlaces === 'ready') return;
+  if (!shell || shell.dataset.quickPlaces === 'ready') {
+    syncAdTiles(shell);
+    return;
+  }
   const directory = shell.querySelector('.outside-directory');
   const search = directory?.querySelector('input[type="search"]');
   if (!directory || !search) return;
@@ -37,6 +84,18 @@ function enhanceOutside(shell) {
     sync();
   });
   search.addEventListener('input', sync);
+
+  shell.addEventListener('click', event => {
+    const ad = event.target.closest('.outside-ad-label.is-live-ad');
+    if (!ad) return;
+    const link = safeExternalLink(ad.dataset.adLink);
+    if (!link) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    window.open(link, '_blank', 'noopener,noreferrer');
+  }, true);
+
+  syncAdTiles(shell);
 }
 
 function scan(root = document) {
@@ -53,3 +112,5 @@ new MutationObserver(records => {
     }
   }
 }).observe(document.documentElement, { childList: true, subtree: true });
+
+addEventListener('abj:ads-updated', () => scan());

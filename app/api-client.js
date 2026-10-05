@@ -49,12 +49,34 @@ async function fastRouteUnavailable(response) {
   }
 }
 
-async function compatibleFetch(primaryPath, fallbackPath, init) {
-  const response = await globalThis.fetch(apiURL(primaryPath), init);
-  if (fallbackPath && await fastRouteUnavailable(response)) {
-    return globalThis.fetch(apiURL(fallbackPath), init);
+export async function normalizeAPIResponse(response) {
+  if (response.status === 204) {
+    return new Response(JSON.stringify({ok:true}), {
+      status: 200,
+      headers: {'content-type':'application/json; charset=utf-8'}
+    });
   }
-  return response;
+  const type=(response.headers.get('content-type')||'').toLowerCase();
+  if(type.includes('application/json'))return response;
+  // Caddy/proxy failures can return HTML or an empty body. The game client
+  // expects JSON, so normalize those responses into a stable recoverable error
+  // instead of surfacing a raw JSON parse exception to the player.
+  return new Response(JSON.stringify({
+    ok:false,
+    error:'The city connection was interrupted. Please try again.',
+    code:'invalid_response'
+  }),{
+    status:response.ok?502:response.status,
+    headers:{'content-type':'application/json; charset=utf-8'}
+  });
+}
+
+async function compatibleFetch(primaryPath, fallbackPath, init) {
+  let response = await globalThis.fetch(apiURL(primaryPath), init);
+  if (fallbackPath && await fastRouteUnavailable(response)) {
+    response = await globalThis.fetch(apiURL(fallbackPath), init);
+  }
+  return normalizeAPIResponse(response);
 }
 
 export function apiFetch(path, options = {}) {

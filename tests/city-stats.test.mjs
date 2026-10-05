@@ -47,7 +47,16 @@ test('city stats keep online, current-zone, residents and visits as separate tru
   const traffic={visitsAllTime:1534,visitDays:{'2026-10-05':87},trackingSince:Date.parse('2026-10-01T00:00:00Z')};
   let globalQueries=0,zoneQueries=0;
   const collections={
-    presence_sessions:{aggregate(pipeline){const zone=pipeline[0]?.$match?.zone;if(zone)zoneQueries++;else globalQueries++;return{toArray:async()=>[{count:zone?11:46}]};}},
+    presence_sessions:{aggregate(pipeline){
+      const zone=pipeline[0]?.$match?.zone;
+      if(typeof zone==='string'){
+        zoneQueries++;
+        return{toArray:async()=>[{count:11}]};
+      }
+      if(zone instanceof RegExp)return{toArray:async()=>[]};
+      globalQueries++;
+      return{toArray:async()=>[{count:46}]};
+    }},
     residents:{countDocuments:async()=>798},
     admin_settings:{findOne:async()=>traffic},
   };

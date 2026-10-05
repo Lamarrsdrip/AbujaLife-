@@ -23,18 +23,39 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Apply gameplay upgrade safely
         run: node scripts/apply-activity-nightlife-upgrade.mjs
-      - name: Tighten generated nightclub regression
+      - name: Align gameplay regressions with the new timing contract
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
-          path = Path('tests/activity-nightlife-upgrade.test.mjs')
-          text = path.read_text()
-          old = "  assert.match(interiors,/club dance floor crowd/);"
-          new = "  assert.ok((interiors.match(/activity:'dance'/g)||[]).length>=10);"
+
+          generated = Path('tests/activity-nightlife-upgrade.test.mjs')
+          text = generated.read_text()
+          replacements = {
+              "  assert.match(interiors,/club dance floor crowd/);": "  assert.ok((interiors.match(/activity:'dance'/g)||[]).length>=10);",
+              "  assert.match(world3d,/const clubLights=[]/);": r"  assert.match(world3d,/const clubLights=\[\]/);",
+          }
+          for old, new in replacements.items():
+              if old not in text:
+                  raise SystemExit(f'generated regression target missing: {old}')
+              text = text.replace(old, new)
+          generated.write_text(text)
+
+          preview = Path('tests/preview-v4.test.mjs')
+          text = preview.read_text()
+          old = '''  assert.equal(quote.seconds, 4);
+          for (const [mode, cost] of [["bus", 330], ["bike", 420], ["ride", 1080]]) {
+            assert.deepEqual((await f.request(`/api/travel/quote?district=${district}&mode=${mode}&venueId=restaurant`)).quote,
+              { destination: district, mode, cost, seconds: 4, venueId: "restaurant" });
+          }'''
+          new = '''  assert.equal(quote.seconds, 14);
+          for (const [mode, cost] of [["bus", 330], ["bike", 420], ["ride", 1080]]) {
+            assert.deepEqual((await f.request(`/api/travel/quote?district=${district}&mode=${mode}&venueId=restaurant`)).quote,
+              { destination: district, mode, cost, seconds: 14, venueId: "restaurant" });
+          }'''
           if old not in text:
-              raise SystemExit('nightclub regression target missing')
-          path.write_text(text.replace(old, new))
+              raise SystemExit('preview travel timing regression target missing')
+          preview.write_text(text.replace(old, new))
           PY
       - name: Check generated diff
         run: git diff --check

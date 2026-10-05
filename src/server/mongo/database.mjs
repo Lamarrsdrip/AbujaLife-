@@ -11,7 +11,7 @@ export const MONGO_COLLECTIONS = Object.freeze([
   'social_posts', 'social_likes', 'social_comments', 'home_visit_requests', 'home_visit_sessions', 'follows',
   'community_groups', 'community_members', 'presence_sessions', 'payment_orders', 'payment_config',
   'payment_preferences', 'payment_receipts', 'admin_roles', 'admin_suspensions', 'admin_audit', 'admin_settings',
-  'report_reviews', 'wallet_operations', 'x_connections'
+  'report_reviews', 'wallet_operations', 'x_connections', 'reward_campaigns', 'reward_share_sessions', 'reward_claims', 'reward_activity_definitions', 'reward_activity_sessions', 'reward_activity_claims'
 ]);
 
 const string = { bsonType: 'string', minLength: 1 };
@@ -64,7 +64,13 @@ export const MONGO_VALIDATORS = Object.freeze({
   social_posts: generic({ id: string, authorId: string, operationKey: string, purgeAt: date }, ['id', 'authorId', 'operationKey']),
   social_likes: generic({ postId: string, residentId: string }, ['postId', 'residentId']),
   social_comments: generic({ id: string, postId: string, authorId: string, operationKey: string }, ['id', 'postId', 'authorId', 'operationKey']),
-  presence_sessions: generic({ residentId: string, expiresAt: date }, ['residentId', 'expiresAt'])
+  presence_sessions: generic({ residentId: string, expiresAt: date }, ['residentId', 'expiresAt']),
+  reward_campaigns: generic({ id: string, title: string, description: string, rewardGameNaira: whole, enabled: { bsonType: 'bool' }, startAt: { bsonType: ['int','long','double','null'] }, endAt: { bsonType: ['int','long','double','null'] }, maxClaims: whole, shareText: string, shareUrl: string, createdAt: timestamp, updatedAt: timestamp }, ['_id','id','title','description','rewardGameNaira','enabled','maxClaims','shareText','shareUrl','createdAt','updatedAt']),
+  reward_share_sessions: generic({ id: string, residentId: string, campaignId: string, rewardGameNaira: whole, shareText: string, shareUrl: string, expiresAt: date, status: { enum: ['started','completed'] }, createdAt: timestamp, completedAt: { bsonType: ['int','long','double','null'] } }, ['_id','id','residentId','campaignId','rewardGameNaira','shareText','shareUrl','expiresAt','status','createdAt']),
+  reward_claims: generic({ id: string, residentId: string, campaignId: string, shareSessionId: string, rewardGameNaira: whole, createdAt: timestamp }, ['_id','id','residentId','campaignId','shareSessionId','rewardGameNaira','createdAt'])
+  ,reward_activity_definitions: generic({ id: string, title: string, description: string, venueId: { bsonType: ['string','null'] }, rewardGameNaira: whole, durationMs: whole, cooldownMs: whole, enabled: { bsonType: 'bool' } }, ['_id','id','title','description','rewardGameNaira','durationMs','cooldownMs','enabled'])
+  ,reward_activity_sessions: generic({ id: string, residentId: string, activityId: string, startedAt: timestamp, readyAt: timestamp, expiresAt: date, status: { enum: ['started','completed'] }, completedAt: { bsonType: ['int','long','double','null'] } }, ['_id','id','residentId','activityId','startedAt','readyAt','expiresAt','status'])
+  ,reward_activity_claims: generic({ id: string, residentId: string, activityId: string, sessionId: string, rewardGameNaira: whole, createdAt: timestamp }, ['_id','id','residentId','activityId','sessionId','rewardGameNaira','createdAt'])
 });
 
 export const MONGO_INDEXES = Object.freeze({
@@ -82,7 +88,13 @@ export const MONGO_INDEXES = Object.freeze({
   sessions: [[{ residentId: 1, authEpoch: 1, createdAt: -1 }, {}], [{ expiresAt: 1 }, { expireAfterSeconds: 0 }]],
   password_resets: [[{ residentId: 1 }, {}], [{ expiresAt: 1 }, { expireAfterSeconds: 0 }]],
   email_verifications: [[{ residentId: 1 }, { unique: true }], [{ expiresAt: 1 }, { expireAfterSeconds: 0 }]],
-  presence_sessions: [[{ residentId: 1, expiresAt: 1 }, {}], [{ expiresAt: 1 }, { expireAfterSeconds: 0 }]]
+  presence_sessions: [[{ residentId: 1, expiresAt: 1 }, {}], [{ expiresAt: 1 }, { expireAfterSeconds: 0 }]],
+  reward_campaigns: [[{ id: 1 }, { unique: true }]],
+  reward_share_sessions: [[{ residentId: 1, createdAt: -1 }, {}], [{ residentId: 1, campaignId: 1, status: 1 }, {}], [{ expiresAt: 1 }, { expireAfterSeconds: 0 }]],
+  reward_claims: [[{ campaignId: 1, residentId: 1 }, { unique: true }], [{ campaignId: 1, shareSessionId: 1 }, { unique: true }], [{ residentId: 1, createdAt: -1 }, {}]]
+  ,reward_activity_definitions: [[{ id: 1 }, { unique: true }]],
+  reward_activity_sessions: [[{ residentId: 1, createdAt: -1 }, {}], [{ expiresAt: 1 }, { expireAfterSeconds: 0 }]],
+  reward_activity_claims: [[{ residentId: 1, activityId: 1, createdAt: -1 }, {}], [{ residentId: 1, sessionId: 1 }, { unique: true }]]
 });
 
 export class MongoConfigurationError extends Error {
@@ -135,6 +147,8 @@ export async function ensureMongoSchema(db) {
   await admin.ensureMongoAdminSchema(db);
   const payments = await import('./paymentStore.mjs');
   await payments.ensureMongoPaymentSchema(db);
+  const rewards = await import('./rewardStore.mjs');
+  await rewards.ensureMongoRewardSchema(db);
   await db.collection('schema_versions').updateOne({ _id: 'normalized-v1' }, { $set: { version: MONGO_SCHEMA_VERSION, collections: [...MONGO_COLLECTIONS], updatedAt: new Date() } }, { upsert: true });
   return { version: MONGO_SCHEMA_VERSION, collections: [...MONGO_COLLECTIONS] };
 }
@@ -147,8 +161,9 @@ async function verifySchema(db) {
   const presence = await import('./presenceStore.mjs');
   const admin = await import('./adminStore.mjs');
   const payments = await import('./paymentStore.mjs');
+  const rewards = await import('./rewardStore.mjs');
   const definitions = {};
-  for (const group of [MONGO_INDEXES, social.MONGO_SOCIAL_INDEXES || {}, directory.MONGO_DIRECTORY_INDEXES || {}, presence.MONGO_PRESENCE_INDEXES || {}, admin.MONGO_ADMIN_INDEXES || {}, payments.MONGO_PAYMENT_INDEXES || {}]) {
+  for (const group of [MONGO_INDEXES, social.MONGO_SOCIAL_INDEXES || {}, directory.MONGO_DIRECTORY_INDEXES || {}, presence.MONGO_PRESENCE_INDEXES || {}, admin.MONGO_ADMIN_INDEXES || {}, payments.MONGO_PAYMENT_INDEXES || {}, rewards.MONGO_REWARD_INDEXES || {}]) {
     for (const [name, indexes] of Object.entries(group)) definitions[name] = [...(definitions[name] || []), ...indexes];
   }
   for (const [name, expected] of Object.entries(definitions)) {

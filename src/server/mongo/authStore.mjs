@@ -147,9 +147,11 @@ export class MongoAuthStore {
   async session(token) {
     if (!validToken(token)) return null;
     const stored = await this.db.collection('sessions').findOne({ _id: hashToken(token), expiresAt: { $gt: dateAt(this.clock) } }, { projection: { residentId: 1, authEpoch: 1 } });
-    if (!stored) return null;
-    const resident = await this.db.collection('residents').findOne({ _id: stored.residentId, authEpoch: stored.authEpoch }, { projection: { _id: 1 } });
-    return resident?._id ?? null;
+    // Session revocation and password/reset/logout-all operations remove or
+    // rotate session rows atomically. The session row therefore already is
+    // the authorization check; avoid a second resident read on every API
+    // request and keep the hot path to one indexed Mongo query.
+    return stored?.residentId ?? null;
   }
 
   async logout(token) {

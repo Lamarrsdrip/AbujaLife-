@@ -18,10 +18,16 @@ function setSession(res,token){res.setHeader('set-cookie',`abujalife_session=${t
 export function productionLog(event,fields={}){console.log(JSON.stringify({time:new Date().toISOString(),service:'abujalife-api',event,...fields}));}
 
 /** API-only listener. The static game is independently hosted by Hostinger. */
-export function createProductionServer({store,social,directory,presence,admin,payments,database,corsOrigins,publicWebUrl,trustProxy=false,log=productionLog}){
-  fail(store&&social&&directory&&admin&&payments&&database,'Production stores are required',500);
+export function createProductionServer({store,social,directory,presence,admin,payments,rewards,ads,database,corsOrigins,publicWebUrl,trustProxy=false,log=productionLog}){
+  fail(store&&social&&directory&&admin&&payments&&rewards&&database,'Production stores are required',500);
   const allowedOrigins=new Set(corsOrigins);fail(allowedOrigins.size>0,'Configure permitted web origins',500);
   const clients=new Map(),byUser=new Map(),byZone=new Map(),lastSeen=new Map(),poses=new Map(),limits=new Map();let closed=false;
+  let publicSettingsCache=null,publicSettingsAt=0;
+  async function currentPublicSettings(){
+    const now=Date.now();
+    if(publicSettingsCache && now-publicSettingsAt<1000)return publicSettingsCache;
+    publicSettingsCache=await admin.publicSettings();publicSettingsAt=now;return publicSettingsCache;
+  }
   const safeTask=promise=>Promise.resolve(promise).catch(error=>log('realtime_error',{code:(error instanceof GameError||error instanceof AuthError)?error.code:'internal_error'}));
   const indexAdd=(map,key,res)=>{if(!map.has(key))map.set(key,new Set());map.get(key).add(res);};
   const indexRemove=(map,key,res)=>{const set=map.get(key);set?.delete(res);if(!set?.size)map.delete(key);};
@@ -50,9 +56,12 @@ export function createProductionServer({store,social,directory,presence,admin,pa
       if(id&&await admin.isSuspended(id))throw new GameError('This account is suspended',403,'account_suspended');
       if(pathname==='/api/bootstrap'&&method==='GET')return json(res,200,await bootstrap(id));
       if(pathname==='/api/payments/config'&&method==='GET')return json(res,200,await payments.publicConfig());
+      // Ad World is intentionally discoverable before sign-in; checkout and
+      // ownership still require an authenticated resident below.
+      if(pathname==='/api/ads/world'&&method==='GET')return json(res,200,await ads.world({zoneId:url.searchParams.get('zone'),page:url.searchParams.get('page'),limit:url.searchParams.get('limit'),zoom:url.searchParams.get('zoom')}));
       if(pathname==='/api/auth/config'&&method==='GET')return json(res,200,store.auth.configuration());
       if(pathname==='/payments/return'&&method==='GET'){const query=new URLSearchParams({payment:'return',transaction_id:(url.searchParams.get('transaction_id')||'').slice(0,100),tx_ref:(url.searchParams.get('tx_ref')||'').slice(0,160),status:(url.searchParams.get('status')||'').slice(0,40)});res.writeHead(303,{...SECURITY_HEADERS,location:`${publicWebUrl}/?${query}`});res.end();return;}
-      if(pathname==='/api/auth/register'&&method==='POST'){rateLimit(req,'auth',12);fail((await admin.publicSettings()).registrationOpen,'Registration is temporarily paused',503);const session=await store.register(await readBody(req));setSession(res,session.token);log('signup',{requestId});return json(res,201,await bootstrap(session.residentId));}
+      if(pathname==='/api/auth/register'&&method==='POST'){rateLimit(req,'auth',12);fail((await currentPublicSettings()).registrationOpen,'Registration is temporarily paused',503);const session=await store.register(await readBody(req));setSession(res,session.token);log('signup',{requestId});return json(res,201,await bootstrap(session.residentId));}
       if(pathname==='/api/auth/login'&&method==='POST'){rateLimit(req,'auth',12);const session=await store.login(await readBody(req));if(await admin.isSuspended(session.residentId)){await store.logout(session.token);throw new GameError('This account is suspended',403,'account_suspended');}setSession(res,session.token);log('login',{requestId});return json(res,200,await bootstrap(session.residentId));}
       if(pathname==='/api/auth/logout'&&method==='POST'){await readBody(req);await store.logout(token);setSession(res,'');if(id){for(const[stream,client]of clients)if(client.token===token)stream.end();if(!byUser.has(id))lastSeen.delete(id);await broadcastPresence(id);}return json(res,200,{ok:true,authenticated:false});}
       if(pathname==='/api/auth/refresh'&&method==='POST'){await readBody(req);const session=await store.refreshSession(token);setSession(res,session.token);for(const[stream,client]of clients)if(client.token===token)stream.end();return json(res,200,{ok:true});}
@@ -81,7 +90,7 @@ export function createProductionServer({store,social,directory,presence,admin,pa
         }
         if(method==='POST')rateLimit(req,pathname.includes('messages')||pathname.includes('chat')?'messages':'writes',pathname.includes('typing')||pathname==='/api/presence'?180:90,id);
         const body=method==='POST'?await readBody(req,pathname==='/api/social/posts'?786432:65536):{};
-        if((await admin.publicSettings()).maintenance&&!pathname.startsWith('/api/admin/')&&method==='POST'&&!pathname.startsWith('/api/payments/'))throw new GameError('The game is undergoing maintenance. Your progress is saved.',503,'maintenance');
+        if((await currentPublicSettings()).maintenance&&!pathname.startsWith('/api/admin/')&&method==='POST'&&!pathname.startsWith('/api/payments/'))throw new GameError('The game is undergoing maintenance. Your progress is saved.',503,'maintenance');
         if(pathname==='/api/residents'&&method==='GET')return json(res,200,(await directory.people(id,{q:url.searchParams.get('q')||'',cursor:url.searchParams.get('cursor'),limit:url.searchParams.get('limit')??undefined})));
         if(pathname==='/api/conversations'&&method==='GET')return json(res,200,await social.conversationPage(id,{cursor:url.searchParams.get('cursor'),limit:url.searchParams.get('limit')??undefined}));
         if(pathname==='/api/notifications'&&method==='GET')return json(res,200,await social.notificationPage(id,{cursor:url.searchParams.get('cursor'),limit:url.searchParams.get('limit')??undefined}));
@@ -102,6 +111,13 @@ export function createProductionServer({store,social,directory,presence,admin,pa
         if(pathname==='/api/home/visits/request'&&method==='POST')return json(res,201,(await social.requestVisit(id,body)));
         if(pathname==='/api/home/visits/respond'&&method==='POST'){const result=(await social.answerVisit(id,body.requestId,body.accept===true));for(const residentId of new Set([id,result.visit?.guestId,...(result.visitors||[]).map(v=>v.guestId)].filter(Boolean)))await broadcastPresence(residentId);return json(res,200,result);}
         if(pathname==='/api/home/visits/leave'&&method==='POST'){const oldZone=(await store.zone(id)),result=(await social.leaveVisit(id));await broadcastPresence(id,oldZone);return json(res,200,result);}
+        if(pathname==='/api/rewards/share/start'&&method==='POST')return json(res,200,await rewards.start(id,body));
+        if(pathname==='/api/rewards/share/complete'&&method==='POST')return json(res,200,await rewards.complete(id,body));
+        if(pathname==='/api/rewards/earn'&&method==='GET')return json(res,200,await rewards.earnOverview(id));
+        if(pathname==='/api/rewards/activity/start'&&method==='POST')return json(res,200,await rewards.startActivity(id,body));
+        if(pathname==='/api/rewards/activity/complete'&&method==='POST')return json(res,200,await rewards.completeActivity(id,body));
+        if(pathname==='/api/rewards/campaigns'&&method==='GET')return json(res,200,await rewards.campaigns(id));
+        if(pathname==='/api/ads/mine'&&method==='GET')return json(res,200,await ads.mine(id,{status:url.searchParams.get('status')}));
         if(pathname==='/api/payments/checkout'&&method==='POST')return json(res,200,await (await payments.checkout(id,body)));
         if(pathname==='/api/payments/verify'&&method==='POST')return json(res,200,await (await payments.verify(id,body)));
         if(pathname==='/api/payments/store/verify'&&method==='POST')return json(res,200,await payments.verifyStoreReceipt(id,body));
@@ -118,11 +134,13 @@ export function createProductionServer({store,social,directory,presence,admin,pa
         if(['/api/admin/reports','/api/admin/reports/review'].includes(pathname)&&method==='POST')return json(res,200,(await admin.reviewReport(id,body)));
         if(pathname==='/api/admin/audit'&&method==='GET')return json(res,200,(await admin.audit(id,{cursor:url.searchParams.get('cursor')})));
         if(pathname==='/api/admin/settings'&&method==='GET')return json(res,200,(await admin.settings(id)));
-        if(pathname==='/api/admin/settings'&&method==='POST')return json(res,200,(await admin.saveSettings(id,body)));
+        if(pathname==='/api/admin/settings'&&method==='POST'){const result=await admin.saveSettings(id,body);publicSettingsCache=null;publicSettingsAt=0;return json(res,200,result);}
         if(pathname==='/api/admin/payments/config'&&method==='GET')return json(res,200,(await payments.adminConfig(id)));
         if(pathname==='/api/admin/payments/config'&&method==='POST')return json(res,200,(await payments.configure(id,body)));
         if(pathname==='/api/admin/payments'&&method==='GET')return json(res,200,(await payments.list(id,{cursor:url.searchParams.get('cursor')})));
         if(pathname==='/api/admin/payments/verify'&&method==='POST')return json(res,200,await (await payments.adminVerify(id,body)));
+        if(pathname==='/api/admin/rewards/campaigns'&&method==='GET')return json(res,200,await rewards.adminList(id));
+        if(pathname==='/api/admin/rewards/campaigns'&&method==='POST')return json(res,200,await rewards.adminSave(id,body));
         if(pathname==='/api/admin/social/posts'&&method==='GET')return json(res,200,(await social.moderationPosts(id,{cursor:url.searchParams.get('cursor'),includeDeleted:url.searchParams.get('includeDeleted')==='true',limit:url.searchParams.get('limit')??undefined})));
         if(pathname==='/api/admin/social/delete'&&method==='POST')return json(res,200,(await social.moderateDeletePost(id,body.postId,body)));
         const adminSocialDelete=pathname.match(/^\/api\/admin\/social\/posts\/([^/]+)\/delete$/);if(adminSocialDelete&&method==='POST')return json(res,200,(await social.moderateDeletePost(id,adminSocialDelete[1],body)));

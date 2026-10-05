@@ -124,8 +124,21 @@ function connectRealtime(){
 }
 async function action(name,payload={}){
  if(busy)return;busy=true;
- try{const result=await api('/api/action',{method:'POST',body:{action:name,payload}});if(result.profile)state.profile=result.profile;await refresh();return result;}
+ try{
+  const result=await api('/api/action',{method:'POST',body:{action:name,payload}});
+  // The action response is authoritative. Apply it immediately and let the
+  // wider bootstrap reconcile quietly; rebuilding the whole world here made
+  // every interaction flash and feel network-bound.
+  if(result.profile){state.profile=result.profile;syncProfileChrome();}
+  void refresh({render:false}).catch(()=>{});
+  return result;
+ }
  catch(error){toast(error.message);return null;}finally{busy=false;}
+}
+function syncProfileChrome(){
+ const p=state.profile;if(!p)return;
+ const wallet=root.querySelector('.wallet-button strong');if(wallet)wallet.textContent=`₦${money(p.wallet)}`;
+ root.querySelectorAll('.play-needs span').forEach(node=>{const label=node.querySelector('small')?.textContent?.toLowerCase();const key=label==='food'?'hunger':label==='toilet'?'bladder':label;const meter=node.querySelector('.need-track b');if(!meter||!key)return;meter.style.width=`${Math.max(0,Math.min(100,Number(p[key]??0)))}%`;});
 }
 function currentVenue(){return list(state.venues).find(v=>v.id===(state.profile?.location?.venueId||state.profile?.location?.venue));}
 function venueActions(venue){const all=list(state.venueActions);return all.filter(a=>a.venueId===venue?.id||(venue?.activities||venue?.actions||[]).includes(a.id));}
@@ -198,7 +211,7 @@ function renderOnboarding(){
  form.querySelector('[data-onboarding-back]')?.addEventListener('click',()=>{onboardingStep--;renderMain();});
  form.onsubmit=async e=>{e.preventDefault();const values=Object.fromEntries(new FormData(form));if(values.displayName)onboardingDraft.displayName=values.displayName.trim();if(values.lifeGoal)onboardingDraft.lifeGoal=values.lifeGoal;if(onboardingStep<4){onboardingStep++;renderMain();window.scrollTo(0,0);return;}const submit=form.querySelector('[type=submit]');submit.disabled=true;try{await api('/api/profile',{method:'POST',body:{...onboardingDraft,onboardingComplete:true}});onboardingDraft=undefined;onboardingStep=0;view='world';await refresh();toast('How far? Welcome to your Abuja life. Walk to your front door to explore.');}catch(error){root.querySelector('#onboarding-error').textContent=error.message;submit.disabled=false;}};
 }
-function header(){const p=state.profile;const needs=[['Energy','energy','⚡'],['Food','hunger','⌁'],['Fun','fun','◌'],['Toilet','bladder','◒'],['Clean','hygiene','✦'],['Social','social','♧']];return `<header class="game-header"><a href="#world" class="wordmark" data-view="world" aria-label="AbujaLife home">${brandMark({compact:true})}</a><span class="header-edition">YOUR CITY. YOUR STORY.</span><button class="needs-header" data-open-needs aria-label="Open your life needs">${needs.map(([label,key,icon])=>`<span class="needs-header-item"><i aria-hidden="true">${icon}</i><b>${label}</b><em style="--need:${Math.max(0,Math.min(100,Number(p[key]??(key==='bladder'?86:0))))}%"></em></span>`).join('')}</button><button class="wallet-button" data-phone="wallet" aria-label="Naira balance, ₦${money(p.wallet)}. Open wallet"><span>Naira balance</span><strong>₦${money(p.wallet)}</strong></button><button class="resident-button" data-view="profile" aria-label="Your resident profile">${avatarSVG(p.appearance,{size:40})}</button></header>`;}
+function header(){const p=state.profile;const needs=[['Energy','energy','⚡'],['Food','hunger','⌁'],['Fun','fun','◌'],['Toilet','bladder','◒'],['Clean','hygiene','✦'],['Social','social','♧']];return `<header class="game-header"><a href="#world" class="wordmark" data-view="world" aria-label="AbujaLife home">${brandMark({compact:true})}</a><span class="header-edition">YOUR CITY. YOUR STORY.</span><button class="needs-header" data-open-needs aria-label="Open your life needs">${needs.map(([label,key,icon])=>`<span class="needs-header-item"><i aria-hidden="true">${icon}</i><b>${label}</b><em style="--need:${Math.max(0,Math.min(100,Number(p[key]??(key==='bladder'?86:0))))}%"></em></span>`).join('')}</button><button class="wallet-button" data-phone="wallet" aria-label="Naira balance, ₦${money(p.wallet)}. Open wallet"><span>Naira balance</span><strong>₦${money(p.wallet)}</strong></button><button class="earn-header" data-phone="earn" aria-label="Open Earn Game Naira">+ Earn</button><button class="resident-button" data-view="profile" aria-label="Your resident profile">${avatarSVG(p.appearance,{size:40})}</button></header>`;}
 function nav(){const unread=list(state.conversations).reduce((n,c)=>n+Number(c.unread||0),0)+list(state.notifications).filter(n=>!n.readAt&&!n.read).length;return `<nav class="game-nav" aria-label="Game navigation"><button data-view="world" class="${view==='world'?'active':''}" ${view==='world'?'aria-current="page"':''}>${icon('world')}<span>Play</span></button><button data-nav-outside class="${view==='outside'?'active':''}">${icon('map')}<span>Map</span></button><button data-nav-life class="${['work','market','property','profile'].includes(view)?'active':''}">${icon('sun')}<span>My life</span></button><button data-phone="home" class="phone-launch">${icon('phone')}<span>Phone</span>${unread?`<i class="nav-badge">${unread}</i>`:''}</button></nav>`;}
 function renderMain(){
  cleanup?.();cleanup=undefined;const recovery=authRecovery.snapshot();if(recovery.kind&&!['complete','idle'].includes(recovery.status)){renderAuthRecovery();return;}if(!state.authenticated){renderAuth();return;}

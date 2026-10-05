@@ -20,6 +20,7 @@ const paths = {
   ride:'<path d="m4 11 2-6h12l2 6v8H4ZM4 11h16M7 15h2M15 15h2M7 19v2M17 19v2"/>',
   jobs:'<rect x="3" y="7" width="18" height="14" rx="3"/><path d="M8 7V3h8v4M3 13h18M10 12v3h4v-3"/>',
   wallet:'<path d="M20 7H5a2 2 0 0 1 0-4h13v4M4 7v14h17V7"/><path d="M21 12h-7v5h7M17 14.5h.1"/>',
+  earn:'<path d="M12 2v20M17 5.5C15.9 4.6 14.2 4 12 4c-3.3 0-5.5 1.5-5.5 3.7 0 5.6 11 2.1 11 7.8 0 2.4-2.3 4.5-5.8 4.5-2.2 0-4-.7-5.2-1.8"/>',
   property:'<path d="M2 11 12 3l10 8M5 9v12h14V9M9 21v-8h6v8"/>',
   market:'<path d="M4 8h16l1 14H3ZM8 8V5a4 4 0 0 1 8 0v3"/>',
   events:'<rect x="3" y="5" width="18" height="17" rx="3"/><path d="M7 2v6M17 2v6M3 11h18M7 15h2M13 15h2M7 19h2"/>',
@@ -36,7 +37,7 @@ paths.x='<path d="m4 3 16 18M20 3 4 21M3 3h5l13 18h-5Z"/>';
 paths.tiktok='<path d="M14 3v13a4 4 0 1 1-4-4M14 3c1 4 3 5 7 5"/>';
 const apps = [
   ['messages','Messages','green'],['contacts','Contacts','sand'],['calls','Calls','green'],['map','Outside','blue'],
-  ['ride','Ride','ink'],['jobs','Jobs','blue'],['wallet','Wallet','ink'],['property','Property','amber'],
+  ['ride','Ride','ink'],['jobs','Jobs','blue'],['wallet','Wallet','ink'],['earn','Earn','green'],['property','Property','amber'],
   ['market','Marketplace','orange'],['events','Events','cream'],['profile','Camera','ink'],['friends','Friends','coral'],
   ['groups','Groups','violet'],['social','City Circle','orange'],['browser','Browser','blue'],['x','X','ink'],
   ['tiktok','TikTok','ink'],['xshare','Xshare','coral'],['notifications','Activity','coral'],['settings','Settings','silver']
@@ -83,6 +84,7 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
   let accountId=null;
   let homePage=0,homePaging=null;
   let walletData=null, walletLoading=false, walletError='', walletSequence=0, pendingWallet=null, walletReceipt=null;
+  let earnData=null, earnBusy=false, earnMessage='', earnActivity=null, earnTimer=null;
   let paymentConfig=null, paymentLoading=false, paymentError='', checkout=null;
   let residentResults=null, residentCursor=null, residentLoading=false, residentSequence=0, residentSearchTimer, messageCursor=null, olderLoading=false;
   const isBrowserPreview=()=>state().preview?.mode==='browser' || document.documentElement.dataset.preview==='browser';
@@ -96,7 +98,7 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
   const transferRecipient=id=>eligibleRecipients().find(r=>r.id===id) || (chatTransfer?.ownerId===profile().id && chatTransfer.peer.id===id && !(state().blocked || []).includes(id)?chatTransfer.peer:null);
   const vehicleRequestKey=(action,itemId,color)=>{const key=`${action}:${itemId}:${color}`;if(!vehicleRequests.has(key))vehicleRequests.set(key,makeRequestKey());return vehicleRequests.get(key);};
   let travelQuote=null, quoteLoading=false, quoteError='', quoteSequence=0;
-  let clockTimer, typingTimer, bannerTimer, typingSentAt=0;
+  let clockTimer, typingTimer, bannerTimer, typingSentAt=0, backgroundRefreshPromise=null;
   const state=()=>getState() || {};
   const profile=()=>state().profile || {};
   const people=()=>entries(state().people);
@@ -110,7 +112,7 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
   const pendingInvites=()=>entries(state().invitations).filter(i=>(i.to===profile().id || i.toId===profile().id) && i.status==='pending');
   const requests=()=>entries(state().friendRequests).filter(r=>(r.to===profile().id || r.toId===profile().id) && r.status==='pending');
   const noticeCount=()=>entries(state().notifications).filter(n=>!n.read && !n.readAt).length + pendingInvites().length;
-  const appTitle=()=>({home:'',thread:conversationName(thread),person:resident(selected)?.displayName || 'Resident',compose:'New message',newgroup:'New group',invite:'Invite a resident',report:'Report',event:'Event',newevent:'Create event',item:'Okrika Marketplace',homeproperty:'Property',blocked:'Blocked residents',muted:'Muted residents',profile:'Camera & profile',notifications:'Activity',ride:'Ride & transport',market:'Okrika Marketplace',wallet:'Naira wallet',topup:'Add Naira',transfer:'Send Naira',transferform:'Send Naira',walletreview:'Review',walletreceipt:'Receipt',paymentcheckout:'Hosted checkout',socialcompose:'Share a moment',socialpost:'City Circle conversation',socialstatuses:'24-hour statuses',socialstatus:'Status'}[screen] || apps.find(a=>a[0]===screen)?.[1] || 'Phone');
+  const appTitle=()=>({home:'',thread:conversationName(thread),person:resident(selected)?.displayName || 'Resident',compose:'New message',newgroup:'New group',invite:'Invite a resident',report:'Report',event:'Event',newevent:'Create event',item:'Okrika Marketplace',homeproperty:'Property',blocked:'Blocked residents',muted:'Muted residents',profile:'Camera & profile',notifications:'Activity',ride:'Ride & transport',market:'Okrika Marketplace',wallet:'Naira wallet',earn:'Earn Game Naira',topup:'Add Naira',transfer:'Send Naira',transferform:'Send Naira',walletreview:'Review',walletreceipt:'Receipt',paymentcheckout:'Hosted checkout',socialcompose:'Share a moment',socialpost:'City Circle conversation',socialstatuses:'24-hour statuses',socialstatus:'Status'}[screen] || apps.find(a=>a[0]===screen)?.[1] || 'Phone');
   const conversationName=c=>c?.kind && c.kind!=='dm'?c.name || 'Group':c?.members?.filter(m=>(m.id || m.residentId)!==profile().id).map(m=>m.displayName || resident(m.id || m.residentId)?.displayName || 'Resident').join(', ') || c?.name || 'Conversation';
   const badge=id=>id==='messages'?unread():id==='notifications'?noticeCount():id==='friends'?requests().length:0;
   const nameById=id=>resident(id)?.displayName || 'Resident';
@@ -131,7 +133,7 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
   }
   function syncAccount() {
     if((profile().id || null)!==accountId){homePaging?.destroy();homePaging=null;homePage=0;}
-    const next=profile().id || null;if(next===accountId)return;accountId=next;locked=true;screen='home';history=[];selected=null;thread=null;messages=[];typing=null;incoming=null;drafts.clear();threadDrafts.clear();messageOutbox.clear();threadScrolls.clear();cachedConversations.clear();inboxCursor=null;inboxLoading=false;inboxSequence++;inboxError='';threadLoading=false;threadError='';unreadAnchor=null;newMessageCount=0;chatTransfer=null;inboxFilter='all';readPending=false;busy=false;clearTimeout(typingTimer);clearTimeout(bannerTimer);knownResidents.clear();vehicleRequests.clear();groupMembers.clear();travelQuote=null;quoteError='';quoteLoading=false;requestSequence++;quoteSequence++;walletSequence++;walletData=null;walletLoading=false;walletError='';pendingWallet=null;walletReceipt=null;paymentConfig=null;paymentLoading=false;paymentError='';checkout=null;residentResults=null;residentCursor=null;residentSequence++;messageCursor=null;browser.reset();social.reset();root.innerHTML='';
+    const next=profile().id || null;if(next===accountId)return;accountId=next;locked=true;screen='home';history=[];selected=null;thread=null;messages=[];typing=null;incoming=null;drafts.clear();threadDrafts.clear();messageOutbox.clear();threadScrolls.clear();cachedConversations.clear();inboxCursor=null;inboxLoading=false;inboxSequence++;inboxError='';threadLoading=false;threadError='';unreadAnchor=null;newMessageCount=0;chatTransfer=null;inboxFilter='all';readPending=false;busy=false;earnData=null;earnBusy=false;earnMessage='';earnActivity=null;clearTimeout(earnTimer);clearTimeout(typingTimer);clearTimeout(bannerTimer);knownResidents.clear();vehicleRequests.clear();groupMembers.clear();travelQuote=null;quoteError='';quoteLoading=false;requestSequence++;quoteSequence++;walletSequence++;walletData=null;walletLoading=false;walletError='';pendingWallet=null;walletReceipt=null;paymentConfig=null;paymentLoading=false;paymentError='';checkout=null;residentResults=null;residentCursor=null;residentSequence++;messageCursor=null;browser.reset();social.reset();root.innerHTML='';
   }
   function render({browserRefresh=false}={}) {
     syncAccount();
@@ -149,7 +151,7 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
     const scroll=root.querySelector('.ph-scroll'), scrollTop=scroll?.scrollTop || 0, atBottom=scroll && scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight<64;
     const anchor=screen==='thread' && scroll?[...root.querySelectorAll('[data-message-id]')].find(el=>el.offsetTop+el.offsetHeight>scrollTop):null,anchorOffset=anchor?anchor.offsetTop-scrollTop:null;
     root.hidden=false;
-    root.innerHTML=`<div class="ph-backdrop" data-ph-action="dismiss"><section class="ph-device" role="dialog" aria-modal="true" aria-labelledby="ph-device-name"><span class="ph-hardware ph-action-button" aria-hidden="true"></span><button class="ph-hardware ph-volume" data-ph-action="sound" aria-label="${profile().settings?.soundEnabled===false?'Enable':'Mute'} phone sounds"></button><button class="ph-hardware ph-power" data-ph-action="lock" aria-label="Lock phone"></button><div class="ph-screen ${locked?'ph-locked':screen==='home'?'ph-home':'ph-app'}"><div class="ph-wallpaper"><i></i><i></i><i></i><i></i><i></i><span></span></div><div class="ph-statusbar"><span class="ph-clock">${timeOnly(new Date())}</span><span class="ph-status-icons">${icon('signal')}${icon('wifi')}<span class="ph-battery" aria-label="Virtual phone"></span></span></div><button class="ph-island ${incoming?'ph-island-active':''}" data-ph-action="${incoming?'incoming':'home'}" aria-label="${incoming?'Open incoming activity':'Go to phone home'}">${incoming?`${icon('messages')}<span>${esc(incoming.name || 'New activity')}</span>`:'<i></i>'}</button>${locked?lockScreen():screen==='home'?homeScreen():appScreen()}<button class="ph-home-indicator" data-ph-action="${locked?'unlock':'home'}" aria-label="${locked?'Unlock phone':'Go to phone home'}"></button></div><div class="ph-device-caption"><span id="ph-device-name">iPhone 18 Pro Max</span><button data-ph-action="close" aria-label="Put your phone away">Put away ${icon('close')}</button></div>${busy?'<div class="ph-working" role="status">Working…</div>':''}</section></div>`;
+    root.innerHTML=`<div class="ph-backdrop" data-ph-action="dismiss"><section class="ph-device" role="dialog" aria-modal="true" aria-labelledby="ph-device-name"><span class="ph-hardware ph-action-button" aria-hidden="true"></span><button class="ph-hardware ph-volume" data-ph-action="sound" aria-label="${profile().settings?.soundEnabled===false?'Enable':'Mute'} phone sounds"></button><button class="ph-hardware ph-power" data-ph-action="lock" aria-label="Lock phone"></button><div class="ph-screen ${locked?'ph-locked':screen==='home'?'ph-home':'ph-app'}"><div class="ph-wallpaper"><i></i><i></i><i></i><i></i><i></i><span></span></div><div class="ph-statusbar"><span class="ph-clock">${timeOnly(new Date())}</span><span class="ph-status-icons">${icon('signal')}${icon('wifi')}<span class="ph-battery" aria-label="Virtual phone"></span></span></div><button class="ph-island ${incoming?'ph-island-active':''}" data-ph-action="${incoming?'incoming':'home'}" aria-label="${incoming?'Open incoming activity':'Go to phone home'}">${incoming?`${icon('messages')}<span>${esc(incoming.name || 'New activity')}</span>`:'<i></i>'}</button>${locked?lockScreen():screen==='home'?homeScreen():appScreen()}<button class="ph-home-indicator" data-ph-action="${locked?'unlock':'home'}" aria-label="${locked?'Unlock phone':'Go to phone home'}"></button></div><div class="ph-device-caption"><span id="ph-device-name">iPhone 18 Pro Max</span><button data-ph-action="close" aria-label="Put your phone away">Put away ${icon('close')}</button></div></section></div>`;
     enhanceProductPreviews(root);
     if(!locked && screen==='home')homePaging=bindPhoneHome(root,{page:homePage,onPageChange:page=>{homePage=page;}});
     if(!locked && screen==='browser')browser.afterRender(root);
@@ -166,7 +168,7 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
   }
   function appIcon(id,label,color) { const b=badge(id);return `<button class="ph-launcher" data-ph-action="app" data-app="${id}"><span class="ph-app-icon ${color}">${icon(id)}${b?`<i class="ph-badge">${b>99?'99+':b}</i>`:''}</span><span class="ph-app-label">${esc(label)}</span></button>`; }
   function homeScreen() {
-    return renderPhoneHome({apps,renderApp:appIcon,page:homePage,widgets:`<div class="ph-widget-row"><button class="ph-widget ph-place-widget" data-ph-action="app" data-app="map"><small>${icon('map')} NOW IN</small><strong>${esc(place(profile().district)?.name || 'Abuja')}</strong><span>${esc(locationLabel())}</span></button><button class="ph-widget ph-wallet-widget" data-ph-action="app" data-app="wallet"><small>NAIRA BALANCE</small><strong>${currency(profile().wallet)}</strong><span>Naira (NGN) ${icon('arrow')}</span></button></div>`,dock:`${appIcon('calls','Calls','green')}${appIcon('messages','Messages','green')}${appIcon('map','Map','blue')}${appIcon('profile','Camera','ink')}`});
+    return renderPhoneHome({apps,renderApp:appIcon,page:homePage,widgets:`<div class="ph-widget-row"><button class="ph-widget ph-place-widget" data-ph-action="app" data-app="map"><small>${icon('map')} NOW IN</small><strong>${esc(place(profile().district)?.name || 'Abuja')}</strong><span>${esc(locationLabel())}</span></button><button class="ph-widget ph-wallet-widget" data-ph-action="app" data-app="wallet"><small>NAIRA BALANCE</small><strong>${currency(profile().wallet)}</strong><span>Naira (NGN) ${icon('arrow')}</span></button></div><button class="ph-earn-compact" data-ph-action="app" data-app="earn"><span>${icon('earn')}<strong>Earn Game Naira</strong></span><small>Share AbujaLife · +₦100K ${icon('arrow')}</small></button>`,dock:`${appIcon('calls','Calls','green')}${appIcon('messages','Messages','green')}${appIcon('map','Map','blue')}${appIcon('profile','Camera','ink')}`});
   }
   function appScreen() {
     return `<div class="ph-app-content ${['messages','compose','thread'].includes(screen)?'ph-chat-app':''} ${screen==='thread'?'ph-chat-thread':''}"><header class="ph-app-header"><button data-ph-action="back" class="ph-back" aria-label="Back">${icon('back')}<span>${history.length?'Back':'Home'}</span></button><strong>${esc(appTitle())}</strong><button class="ph-header-close" data-ph-action="close" aria-label="Put phone away">${icon('close')}</button></header><div class="ph-scroll ${screen==='thread'?'ph-thread-scroll':screen==='browser'?'ph-browser-scroll':''}">${content()}</div>${screen==='thread'?`${newMessageCount?`<button class="ph-new-messages" data-ph-action="messages-latest">${newMessageCount} new message${newMessageCount===1?'':'s'} ↓</button>`:''}${chatComposer()}`:''}</div>`;
@@ -176,7 +178,7 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
     if(screen==='browser')return browser.markup();
     if(screen==='paymentcheckout')return paymentCheckoutScreen();
     if(screen==='x' || screen==='tiktok')return officialSiteScreen(screen);
-    const views={messages:messagesScreen,thread:threadScreen,compose:composeScreen,contacts:contactsScreen,person:personScreen,friends:friendsScreen,groups:groupsScreen,newgroup:newGroupScreen,notifications:notificationsScreen,wallet:walletScreen,topup:topupScreen,transfer:transferScreen,transferform:transferFormScreen,walletreview:walletReviewScreen,walletreceipt:walletReceiptScreen,jobs:jobsScreen,map:mapScreen,ride:rideScreen,property:propertyScreen,homeproperty:propertyDetail,market:marketScreen,item:itemScreen,events:eventsScreen,event:eventScreen,newevent:newEventScreen,profile:profileScreen,settings:settingsScreen,blocked:moderationList,muted:moderationList,invite:inviteScreen,report:reportScreen,calls:callsScreen};
+    const views={messages:messagesScreen,thread:threadScreen,compose:composeScreen,contacts:contactsScreen,person:personScreen,friends:friendsScreen,groups:groupsScreen,newgroup:newGroupScreen,notifications:notificationsScreen,wallet:walletScreen,earn:earnScreen,topup:topupScreen,transfer:transferScreen,transferform:transferFormScreen,walletreview:walletReviewScreen,walletreceipt:walletReceiptScreen,jobs:jobsScreen,map:mapScreen,ride:rideScreen,property:propertyScreen,homeproperty:propertyDetail,market:marketScreen,item:itemScreen,events:eventsScreen,event:eventScreen,newevent:newEventScreen,profile:profileScreen,settings:settingsScreen,blocked:moderationList,muted:moderationList,invite:inviteScreen,report:reportScreen,calls:callsScreen};
     return (views[screen] || (()=>empty('globe','Choose an app')))();
   }
   function officialSiteScreen(app) {
@@ -230,6 +232,11 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
     const rows=entries(walletData?.transactions || state().transactions).slice(0,30), balance=walletProfile().wallet;
     const transferUnavailable=isBrowserPreview() || walletMeta().transferEnabled===false;
     return `${headline('YOUR MONEY','Naira wallet')}<div class="ph-bank-card"><div><span>NAIRA</span><small>NGN · GAME MONEY</small></div><small>Naira balance</small><strong>${currency(balance)}</strong><footer><span>${esc(profile().displayName)}</span><span>Everyday account</span></footer></div><div class="ph-wallet-actions">${button(`${icon('plus')} Top up`,'wallet-topup','', 'wallet-primary')}${button(`${icon('send')} Send`,'wallet-send',transferUnavailable?'disabled':'','secondary')}</div><p class="ph-quiet-note">${transferUnavailable?'Chat and transfers connect registered residents in the full game. This preview saves your game money on this device.':'Send Naira to real residents. Your purchases, earnings and transfers appear below.'}</p>${walletError?`<div class="ph-wallet-error" role="alert">${esc(walletError)}${button('Refresh','wallet-refresh','','subtle')}</div>`:''}<div class="ph-ledger-heading"><h3 class="ph-section-label">Recent activity</h3>${walletLoading?'<span class="ph-loading-note" role="status">Updating…</span>':button('Refresh','wallet-refresh','','subtle')}</div><div class="ph-list">${rows.map(t=>{const amount=Number(t.amount || t.delta || 0), credit=amount>0;return `<div class="ph-list-row"><span class="ph-transaction-icon ${credit?'credit':''}">${icon(credit?'plus':'wallet')}</span><span class="ph-row-copy"><strong>${esc(t.reason || t.description || t.label || t.kind || t.type || 'Transaction')}</strong><small>${dateTime(t.createdAt)}</small></span><strong class="ph-amount ${credit?'credit':''}">${credit?'+':''}${currency(amount)}</strong></div>`;}).join('') || empty('wallet','Your saved transactions appear here')}</div>`;
+  }
+  function earnCampaign() { return earnData?.campaigns?.find(c => c.id === 'share-abuja-life') || earnData?.campaigns?.[0] || null; }
+  function earnScreen() {
+    const campaign = earnCampaign(), reward = campaign?.rewardGameNaira || 100000, claimed = Boolean(campaign?.claimed), activities=earnData?.activities || [], active=earnActivity, ready=active && Date.now()>=Number(active.readyAt);
+    return `${headline('LIVE YOUR ABUJA STORY','Earn Game Naira','Meaningful city life unlocks more of AbujaLife. Jobs, exploration and social moments build your balance.')}<section class="ph-earn-hero"><div><small>SHARE & EARN</small><strong>${claimed ? 'Reward collected ✓' : `+${currency(reward)}`}</strong><p>${esc(campaign?.description || 'Share AbujaLife with your people through your phone’s native share sheet.')}</p></div>${claimed ? '<span class="ph-earn-check">✓</span>' : button(earnBusy ? 'Opening share…' : 'Share & earn', 'earn-share', earnBusy ? 'disabled' : '', 'ph-earn-primary')}</section>${earnMessage ? `<p class="ph-success" role="status">${esc(earnMessage)}</p>` : ''}<h3 class="ph-section-label">Today</h3><div class="ph-earn-list"><button class="ph-list-row" data-ph-action="app" data-app="jobs"><span class="ph-mini-app blue">${icon('jobs')}</span><span class="ph-row-copy"><strong>Available jobs</strong><small>Complete a shift and get paid from the server.</small></span>${icon('arrow')}</button>${activities.map(activity=>active?.activityId===activity.id?`<div class="ph-list-row ph-earn-activity-active"><span class="ph-mini-app green">${icon('earn')}</span><span class="ph-row-copy"><strong>${esc(activity.title)}</strong><small>${ready?'Your session is complete. Settle it now.':`In progress · ready at ${timeOnly(active.readyAt)}`}</small></span>${button(ready?'Collect reward':'In progress','earn-activity-complete',ready?'': 'disabled','subtle')}</div>`:`<button class="ph-list-row" data-ph-action="earn-activity" data-id="${esc(activity.id)}"><span class="ph-mini-app green">${icon('earn')}</span><span class="ph-row-copy"><strong>${esc(activity.title)}</strong><small>${esc(activity.description)} · +${currency(activity.rewardGameNaira)}</small></span>${icon('arrow')}</button>`).join('')}<button class="ph-list-row" data-ph-action="app" data-app="map"><span class="ph-mini-app green">${icon('map')}</span><span class="ph-row-copy"><strong>Explore & earn</strong><small>Discover neighbourhoods, venues and city opportunities.</small></span>${icon('arrow')}</button><button class="ph-list-row" data-ph-action="app" data-app="events"><span class="ph-mini-app amber">${icon('events')}</span><span class="ph-row-copy"><strong>City activities</strong><small>Join events and meaningful social activities.</small></span>${icon('arrow')}</button></div><p class="ph-quiet-note">Game Naira is virtual and stays separate from Jackpot and real money. Rewards are settled once in the server ledger.</p>`;
   }
   function topupScreen() {
     if(!isBrowserPreview()) {
@@ -334,10 +341,23 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
   function reportScreen() {return `${headline('KEEP THE CITY RESPECTFUL','Report resident')}<form class="ph-form" data-ph-form="report"><p class="ph-detail-text">Your report about ${esc(resident(selected)?.displayName || 'this resident')} will be saved for moderation review.</p><label class="ph-field"><span>What happened?</span><textarea id="ph-reportReason" name="reportReason" rows="5" maxlength="1000" required placeholder="Describe the behaviour you’re reporting…">${esc(draft('reportReason'))}</textarea></label><button class="ph-button wide" type="submit">Send report</button></form>`;}
   function callsScreen() {return `${headline('A VOICE IN YOUR CITY','Calls')}<div class="ph-call-unavailable">${icon('calls')}<strong>Voice calls aren’t available yet</strong><p>Stay connected with real messages and invitations. Calls will appear here when voice service is ready.</p></div>${button('Open Messages','app','data-app="messages"','wide')}`;}
   async function refresh(options) {await onUpdate?.(options);render();}
+  // Action responses are authoritative. Refresh the wider account state in
+  // the background and coalesce bursts so the phone never waits on bootstrap.
+  function refreshInBackground(options={render:false}) {
+    if(backgroundRefreshPromise)return backgroundRefreshPromise;
+    backgroundRefreshPromise=Promise.resolve().then(()=>onUpdate?.(options)).catch(()=>{}).finally(()=>{backgroundRefreshPromise=null;});
+    return backgroundRefreshPromise;
+  }
   async function mutate(path,body,success) {
     if(busy)return;
     busy=true;render();
-    try { const result=await api(path,{method:'POST',body}); await refresh(); if(success)toast?.(success);return result; }
+    try {
+      const result=await api(path,{method:'POST',body});
+      if(result?.profile && result.profile.id===profile().id)Object.assign(profile(),result.profile);
+      refreshInBackground();
+      if(success)toast?.(success);
+      return result;
+    }
     catch(error) {toast?.(error.message || 'Please try again.');return null;}
     finally {busy=false;render();}
   }
@@ -348,6 +368,7 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
     root.querySelector('.ph-scroll')?.scrollTo(0,0);
     if(next==='ride')void loadTravelQuote();
     if(next==='wallet')void loadWallet();
+    if(next==='earn')void loadEarn();
     if(next==='messages')void loadConversations();
     if(next==='topup' && !isBrowserPreview())void loadPayments();
     if(['contacts','compose','transfer'].includes(next)){residentResults=null;residentCursor=null;void loadResidents();}
@@ -366,6 +387,41 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
     try {const result=await api('/api/wallet');if(sequence!==walletSequence || profile().id!==owner)return;walletData={...result,sourceWallet:profile().wallet};}
     catch(error){if(sequence===walletSequence && !quiet)walletError=error.message || 'Your balance could not refresh. Please try again.';}
     finally{if(sequence===walletSequence){walletLoading=false;if(opened)render();}}
+  }
+  async function loadEarn() {
+    if (isBrowserPreview()) { earnData={campaigns:[{id:'share-abuja-life',title:'Share AbujaLife',description:'Open AbujaLife on your phone to share and earn Game Naira.',rewardGameNaira:100000,claimed:false}],activities:[]}; render(); return; }
+    const owner=profile().id;
+    try { earnData=await api('/api/rewards/earn'); if(profile().id===owner && opened && screen==='earn')render(); }
+    catch(error){ if(profile().id===owner){ earnMessage=error.message || 'Earning opportunities could not load.'; render(); } }
+  }
+  async function startEarnShare() {
+    if(earnBusy || earnCampaign()?.claimed)return;
+    if(isBrowserPreview()){ earnMessage='Connect to AbujaLife to share and earn Game Naira.'; render(); return; }
+    if(typeof navigator.share!=='function'){ earnMessage='Open AbujaLife on your phone to claim this sharing reward.'; render(); return; }
+    earnBusy=true;earnMessage='';render();
+    try {
+      const started=await api('/api/rewards/share/start',{method:'POST',body:{campaignId:earnCampaign()?.id || 'share-abuja-life'}});
+      if(started.claimed){earnMessage='Reward collected ✓';earnData={campaigns:(earnData?.campaigns||[]).map(c=>c.id===started.campaign.id?{...c,claimed:true}:c)};return;}
+      try { await navigator.share({title:started.share?.title || 'AbujaLife',text:started.share?.text || 'Join me in AbujaLife.',url:started.share?.url || location.origin}); }
+      catch(error){ if(error?.name==='AbortError')return; throw error; }
+      const settled=await api('/api/rewards/share/complete',{method:'POST',body:{shareSessionId:started.shareSessionId}});
+      earnMessage=`SHARED ✓ +${currency(settled.rewardGameNaira || started.campaign.rewardGameNaira)} Game Naira added.`;
+      earnData={campaigns:(earnData?.campaigns||[]).map(c=>c.id===started.campaign.id?{...c,claimed:true}:c)};
+      refreshInBackground();
+    } catch(error) { earnMessage=error.message || 'The share did not complete. No reward was added.'; }
+    finally { earnBusy=false;render(); }
+  }
+  async function startEarnActivity(activityId) {
+    if(earnBusy || earnActivity)return; earnBusy=true;earnMessage='';render();
+    try { const result=await api('/api/rewards/activity/start',{method:'POST',body:{activityId}}); earnActivity={...result.activity,activityId,activitySessionId:result.activitySessionId}; earnMessage=`${result.activity.title} started. Stay with it until ${timeOnly(result.activity.readyAt)}.`; clearTimeout(earnTimer); earnTimer=setTimeout(()=>{if(opened&&screen==='earn')render();},Math.max(0,Number(result.activity.readyAt)-Date.now())); }
+    catch(error){earnMessage=error.message || 'This activity could not start.';}
+    finally{earnBusy=false;render();}
+  }
+  async function completeEarnActivity() {
+    if(!earnActivity || earnBusy)return; earnBusy=true;render();
+    try { const result=await api('/api/rewards/activity/complete',{method:'POST',body:{activitySessionId:earnActivity.activitySessionId}}); earnMessage=`+${currency(result.rewardGameNaira)} Game Naira earned.`;earnActivity=null;refreshInBackground(); }
+    catch(error){earnMessage=error.message || 'Keep going until the activity is complete.';}
+    finally{earnBusy=false;render();}
   }
   async function loadResidents({more=false}={}) {
     if(isBrowserPreview())return;
@@ -407,13 +463,13 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
     if(busy || !checkout?.txRef)return;
     const id=String(transactionId || '').trim(),owner=profile().id;if(!/^\d{1,24}$/.test(id)){toast?.('Enter the provider’s numeric transaction ID.');return;}
     busy=true;walletError='';checkout.transactionId=id;saveCheckout();render();
-    try{const result=await api('/api/payments/verify',{method:'POST',body:{transactionId:id,txRef:checkout.txRef}});if(profile().id!==owner)return;if(result.payment?.status!=='credited'){walletError=`Payment status: ${result.payment?.status || 'pending'}. Your balance has not been credited yet.`;return;}walletReceipt={kind:'payment',...result.payment,createdAt:result.payment.creditedAt || Date.now()};checkout=null;pendingWallet=null;saveCheckout();try{await onUpdate?.();}catch{}await loadWallet({quiet:true});navigate('walletreceipt',null,false);}
+    try{const result=await api('/api/payments/verify',{method:'POST',body:{transactionId:id,txRef:checkout.txRef}});if(profile().id!==owner)return;if(result.payment?.status!=='credited'){walletError=`Payment status: ${result.payment?.status || 'pending'}. Your balance has not been credited yet.`;return;}walletReceipt={kind:'payment',...result.payment,createdAt:result.payment.creditedAt || Date.now()};checkout=null;pendingWallet=null;saveCheckout();refreshInBackground();void loadWallet({quiet:true});navigate('walletreceipt',null,false);}
     catch(error){if(profile().id===owner)walletError=error.message || 'Payment could not be verified yet. You can retry safely.';}
     finally{if(profile().id===owner){busy=false;render();}}
   }
   async function checkPaymentStatus() {
     if(busy || !checkout?.txRef)return;const owner=profile().id;busy=true;walletError='';render();
-    try{const result=await api(`/api/payments/status?txRef=${encodeURIComponent(checkout.txRef)}`);if(profile().id!==owner)return;if(result.payment?.status==='credited'){walletReceipt={kind:'payment',...result.payment,createdAt:result.payment.creditedAt || Date.now()};checkout=null;pendingWallet=null;saveCheckout();try{await onUpdate?.();}catch{}await loadWallet({quiet:true});navigate('walletreceipt',null,false);}else walletError=`Payment is ${result.payment?.status || 'pending'}. Complete checkout, then enter the transaction ID to verify.`;}
+    try{const result=await api(`/api/payments/status?txRef=${encodeURIComponent(checkout.txRef)}`);if(profile().id!==owner)return;if(result.payment?.status==='credited'){walletReceipt={kind:'payment',...result.payment,createdAt:result.payment.creditedAt || Date.now()};checkout=null;pendingWallet=null;saveCheckout();refreshInBackground();void loadWallet({quiet:true});navigate('walletreceipt',null,false);}else walletError=`Payment is ${result.payment?.status || 'pending'}. Complete checkout, then enter the transaction ID to verify.`;}
     catch(error){if(profile().id===owner)walletError=error.message;}
     finally{if(profile().id===owner){busy=false;render();}}
   }
@@ -433,8 +489,8 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
     walletReceipt={...request,...saved.transfer,createdAt:saved.transfer?.createdAt || saved.transaction?.createdAt || saved.transaction?.at || Date.now()};if(saved.message?.id && saved.message.conversationId===thread?.id)messages=mergePhoneMessages(messages,[saved.message]);pendingWallet=null;screen='walletreceipt';selected=null;history=[{screen:'wallet',selected:null,search:'',thread:null}];
     if(saved.profile)walletData={...walletData,profile:saved.profile,sourceWallet:profile().wallet};
     // The server already confirmed the operation. Refresh failures must not turn a saved transfer into a retry.
-    try {await onUpdate?.();}catch{}
-    await loadWallet({quiet:true});
+    refreshInBackground();
+    void loadWallet({quiet:true});
     for(const name of ['topupAmount','transferAmount','transferNote']){const input=root.querySelector(`[name="${name}"]`);if(input)input.value='';drafts.delete(name);}
     if(request.conversationId){chatTransfer=null;history=[];await openThread(request.conversationId,false);toast?.(`${currency(saved.transfer?.amount ?? request.amount)} sent`);}else navigate('walletreceipt',null,false);
   }
@@ -460,7 +516,7 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
   async function markThreadRead() {
     if(readPending || !opened || screen!=='thread' || !thread?.id || document.hidden)return;
     const owner=profile().id,id=thread.id;readPending=true;
-    try{await api(`/api/conversations/${encodeURIComponent(id)}/read`,{method:'POST',body:{}});if(profile().id===owner){const c=cachedConversations.get(id);if(c)cachedConversations.set(id,{...c,unread:0});try{await onUpdate?.({render:false});}catch{}}}
+    try{await api(`/api/conversations/${encodeURIComponent(id)}/read`,{method:'POST',body:{}});if(profile().id===owner){const c=cachedConversations.get(id);if(c)cachedConversations.set(id,{...c,unread:0});refreshInBackground();}}
     catch{}finally{if(profile().id===owner)readPending=false;}
   }
   async function openThread(id,push=true) {
@@ -477,7 +533,7 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
       messages=mergePhoneMessages(messages,result.messages || []);messageCursor=result.nextCursor || null;unreadAnchor=phoneUnreadAnchor(messages,unreadCount,owner);threadLoading=false;render();
       const scroll=root.querySelector('.ph-thread-scroll'),anchor=root.querySelector('#ph-unread-anchor');
       if(scroll)scroll.scrollTop=anchor?Math.max(0,anchor.offsetTop-70):saved && !saved.bottom?saved.top:scroll.scrollHeight;
-      try{await onUpdate?.({render:false});}catch{}
+      refreshInBackground();
     } catch(error){if(sequence===requestSequence && profile().id===owner){threadLoading=false;threadError=error.message || 'This conversation could not open.';render();}}
   }
   async function sendChatMessage(request) {
@@ -491,12 +547,15 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
       if(thread?.id===request.conversationId)messages=mergePhoneMessages(messages,[result.message]);
       const key=threadKey(request.conversationId),current=threadDrafts.get(key);
       if(current===request.draftText){threadDrafts.delete(key);if(thread?.id===request.conversationId){drafts.delete('message');const input=root.querySelector('#ph-message');if(input)input.value='';}}
-      try{await onUpdate?.({render:false});}catch{}
+      // The message response is authoritative for this thread. Refresh the
+      // wider bootstrap state in the background so a slow dashboard request
+      // never holds the sent bubble or keyboard hostage.
+      refreshInBackground();
       if(profile().id!==request.ownerId)return;
       render();if(opened && screen==='thread' && thread?.id===request.conversationId)scrollLatest({focus:true,markRead:false});
     }catch(error){if(profile().id===request.ownerId){request.status='failed';request.error=error.message || 'Connection interrupted. Retry when you’re ready.';render();}}
   }
-  async function startDM(id) { const result=await mutate('/api/conversations',{residentId:id});if(result?.conversation)await openThread(result.conversation.id); }
+  async function startDM(id) { const result=await mutate('/api/conversations',{residentId:id});if(result?.conversation?.id)void openThread(result.conversation.id); }
   async function handleAction(el) {
     const {phAction:action,id,app,view,value,accept,tenure,key,venueId}=el.dataset;
     if(browser.handleAction(el))return;
@@ -512,9 +571,12 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
       case 'app':if(screen==='walletreceipt' && app==='wallet'){history=[];navigate(app,null,false);}else navigate(app);break;
       case 'property-investments':close();onNavigate?.('property',{tab:'investments',source:'phone'});break;
       case 'wallet-topup':walletError='';navigate('topup');break;
-      case 'wallet-send':chatTransfer=null;walletError='';busy=true;render();try{await refresh({render:false});navigate('transfer');}catch(error){walletError=error.message;toast?.(error.message);}finally{busy=false;render();}break;
+      case 'wallet-send':chatTransfer=null;walletError='';refreshInBackground();navigate('transfer');break;
       case 'wallet-home':navigate('wallet');break;
       case 'wallet-refresh':await loadWallet();break;
+      case 'earn-share':await startEarnShare();break;
+      case 'earn-activity':await startEarnActivity(id);break;
+      case 'earn-activity-complete':await completeEarnActivity();break;
       case 'residents-more':await loadResidents({more:true});break;
       case 'messages-older':await loadOlderMessages();break;
       case 'messages-latest':scrollLatest();break;
@@ -573,7 +635,7 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
     if(el.name && el.type!=='checkbox')drafts.set(el.name,el.value);
     if(el.name==='transferAmount')updateMoneyAmount();
     if(el.name==='search'){search=el.value;render();if(['contacts','compose','transfer'].includes(screen)){residentSequence++;residentResults=null;residentCursor=null;clearTimeout(residentSearchTimer);residentSearchTimer=setTimeout(()=>void loadResidents(),250);}}
-    if(el.name==='message' && thread && screen==='thread'){threadDrafts.set(threadKey(thread.id),el.value);resizeComposer();const send=root.querySelector('.ph-send');if(send)send.disabled=!el.value.trim() || pendingMessages(thread.id).some(p=>p.status==='sending');if(el.value.trim() && Date.now()-typingSentAt>1800){typingSentAt=Date.now();api('/api/typing',{method:'POST',body:{conversationId:thread.id}}).catch(()=>{});}}
+    if(el.name==='message' && thread && screen==='thread'){threadDrafts.set(threadKey(thread.id),el.value);resizeComposer();const send=root.querySelector('.ph-send');if(send)send.disabled=!el.value.trim();if(el.value.trim() && Date.now()-typingSentAt>1800){typingSentAt=Date.now();api('/api/typing',{method:'POST',body:{conversationId:thread.id}}).catch(()=>{});}}
   };
   const onChange=e=>{if(e.target.name==='socialPhoto'){void social.change(e.target);return;}if(e.target.name==='groupMember'){e.target.checked?groupMembers.add(e.target.value):groupMembers.delete(e.target.value);}else if(e.target.name)drafts.set(e.target.name,e.target.value);if(screen==='ride' && ['destination','mode'].includes(e.target.name))void loadTravelQuote();};
   const onSubmit=async e=>{
@@ -600,10 +662,10 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
       walletError='';if(transfer && chatTransfer?.conversationId===thread?.id && screen==='thread'){chatTransfer.stage='review';render();root.querySelector('.ph-scroll')?.scrollTo(0,0);}else navigate('walletreview');return;
     }
     if(form.dataset.phForm==='message') {
-      const submitted=String(values.message || ''),text=submitted.trim();if(!text || !thread || threadLoading || threadError || pendingMessages(thread.id).some(p=>p.status==='sending'))return;
+      const submitted=String(values.message || ''),text=submitted.trim();if(!text || !thread || threadLoading || threadError)return;
       const existing=pendingMessages(thread.id).find(p=>p.text===text && p.status==='failed');
       const request=existing || {ownerId:profile().id,conversationId:thread.id,text,draftText:submitted,idempotencyKey:makeRequestKey(),status:'queued',error:''};
-      messageOutbox.set(request.idempotencyKey,request);await sendChatMessage(request);return;
+      messageOutbox.set(request.idempotencyKey,request);void sendChatMessage(request);return;
     }
     if(form.dataset.phForm==='group') {if(!groupMembers.size){toast?.('Choose at least one friend.');return;}const r=await mutate('/api/conversations',{kind:'group',name:values.groupName.trim(),memberIds:[...groupMembers]},'Group created');if(r?.conversation)await openThread(r.conversation.id);}
     if(form.dataset.phForm==='travel') {if(!travelQuote || quoteLoading || travelQuote.destination!==values.destination || travelQuote.mode!==(values.mode || 'bus')){await loadTravelQuote();return;}const r=await mutate('/api/action',{action:'travel',payload:{district:values.destination,mode:values.mode || 'bus'}},'Your journey has started');if(r){close();onNavigate?.('world',{source:'phone'});}}

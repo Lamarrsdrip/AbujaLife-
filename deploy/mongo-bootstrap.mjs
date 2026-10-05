@@ -49,12 +49,13 @@ try {
   }
   const existingRole = await db.command({rolesInfo: 'abujalife_runtime'});
   await db.command({[existingRole.roles.length ? 'updateRole' : 'createRole']: 'abujalife_runtime', privileges, roles: []});
-  // Full replica-set mongodump --oplog is an instance-level operation. The
-  // built-in backup role is the supported least-privilege role for it; the
-  // restore command filters the archive back to abujalife_prod.
-  for (const [user, passwordFile, role, roleDb] of [['abujalife_app','mongo-app-password','abujalife_runtime',database], ['abujalife_backup','mongo-backup-password','backup','admin']]) {
+  // Full replica-set mongodump --oplog is an instance-level operation. On
+  // MongoDB 8 it also reads config.transactions while opening the oplog
+  // window, so the dedicated backup principal receives read-only access to
+  // that internal metadata database and no application/Okrika writes.
+  for (const [user, passwordFile, roles] of [['abujalife_app','mongo-app-password',[{role:'abujalife_runtime',db:database}]], ['abujalife_backup','mongo-backup-password',[{role:'backup',db:'admin'},{role:'read',db:'config'}]]]) {
     const existing = await db.command({usersInfo: user});
-    await db.command({[existing.users.length ? 'updateUser' : 'createUser']: user, pwd: secret(passwordFile), roles: [{role,db:roleDb}]});
+    await db.command({[existing.users.length ? 'updateUser' : 'createUser']: user, pwd: secret(passwordFile), roles});
   }
   console.log(JSON.stringify({ok:true,database,replicaSet,collections:MONGO_COLLECTIONS.length+3+JACKPOT_COLLECTIONS.length,ledger:'find/insert only',adReceipts:'find/insert only',jackpotLedger:'find/insert only',appDDL:false}));
 } finally { await client.close(); }

@@ -169,11 +169,14 @@ try {
   );
   const existingRole = await db.command({ rolesInfo: 'abujalife_runtime' });
   await db.command({ [existingRole.roles.length ? 'updateRole' : 'createRole']: 'abujalife_runtime', privileges, roles: [] });
-  // MongoDB's built-in backup role supports full replica-set oplog dumps
-  // without maintaining a fragile mirror of internal transaction privileges.
-  for (const [user, password, role, roleDb] of [['abujalife_app', 'mongo-app-password', 'abujalife_runtime', config.database], ['abujalife_backup', 'mongo-backup-password', 'backup', 'admin']]) {
+  // MongoDB's built-in backup role supports full replica-set oplog dumps. On
+  // MongoDB 8, mongodump also inspects config.transactions while opening the
+  // oplog window, so grant the backup principal read-only access to that
+  // internal metadata database. It never grants application writes or access
+  // to Okrika's database.
+  for (const [user, password, roles] of [['abujalife_app', 'mongo-app-password', [{ role: 'abujalife_runtime', db: config.database }]], ['abujalife_backup', 'mongo-backup-password', [{ role: 'backup', db: 'admin' }, { role: 'read', db: 'config' }]]]) {
     const found = await db.command({ usersInfo: user });
-    await db.command({ [found.users.length ? 'updateUser' : 'createUser']: user, pwd: secret(config, password), roles: [{ role, db: roleDb }] });
+    await db.command({ [found.users.length ? 'updateUser' : 'createUser']: user, pwd: secret(config, password), roles });
   }
   console.log(JSON.stringify({ ok: true, database: config.database, replicaSet: config.replicaSet, collections: MONGO_COLLECTIONS.length, ledger: 'find/insert only', appDDL: false, ownerBootstrap }));
 } finally { await client.close(); }

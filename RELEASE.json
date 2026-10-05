@@ -1,0 +1,311 @@
+{
+  "application": "AbujaLife",
+  "mode": "production-api-frontend",
+  "publicOrigin": "https://abujacity.life",
+  "apiPublicOrigin": "https://api.abujacity.life",
+  "revision": "f8e701553f971cd34cac1ab01ff07043d871f7fc",
+  "workingTreeChanged": false,
+  "createdAt": "2026-10-05T22:33:26.249434+00:00",
+  "files": [
+    {
+      "path": ".htaccess",
+      "bytes": 2068,
+      "sha256": "124743e6402b726ed62aa5f4563eef2d4e0b9f2ce60873e66ec5788f9e77ec41"
+    },
+    {
+      "path": "admin.css",
+      "bytes": 8434,
+      "sha256": "c0b35c5ee6377e341ddcefaa5b8f2f9d212b2d1fcc95594ba29b90f499cac078"
+    },
+    {
+      "path": "admin.html",
+      "bytes": 734,
+      "sha256": "ce51c5dc4c6a5dd1e2d4f523ac1b9446bbe714dcee9cb30d61c081705bc27f1f"
+    },
+    {
+      "path": "admin.js",
+      "bytes": 24169,
+      "sha256": "f60313a1e11eb5775b4edc956d05f5b9ff2e8fe00ef0d88cd7436f224f08349d"
+    },
+    {
+      "path": "admin/index.html",
+      "bytes": 734,
+      "sha256": "ce51c5dc4c6a5dd1e2d4f523ac1b9446bbe714dcee9cb30d61c081705bc27f1f"
+    },
+    {
+      "path": "ads.css",
+      "bytes": 5576,
+      "sha256": "be35fdbb39ffceeaa6687fa431e6fc802d7df7362a7e2283ca16394d1214ebf4"
+    },
+    {
+      "path": "ads.js",
+      "bytes": 12793,
+      "sha256": "7213dbd4929349128d792b3b2cbc673fc28ef3bc732c7ec704ed60467bb344e9"
+    },
+    {
+      "path": "app.js",
+      "bytes": 262222,
+      "sha256": "5c14ba457fec7f65c9e7747219d13e3d51c2794f26621b4c271b0661fe8c70a9"
+    },
+    {
+      "path": "assets/chunk-46QLWU46.js",
+      "bytes": 60147,
+      "sha256": "6d6e06ccaa9755b738d3ce94b83a8755d1cf2a5d2df24c88e17ddc447fb7bd4e"
+    },
+    {
+      "path": "assets/chunk-7H257IZD.js",
+      "bytes": 2342,
+      "sha256": "761654bbe47f58afc7f67b11c38638e451e4b0bad9525c2bc7674d6b46beef93"
+    },
+    {
+      "path": "assets/chunk-AAZABAPM.js",
+      "bytes": 106,
+      "sha256": "ff9e0dca4365b7b1581e7275f3c6dbcf1474ffb874d81a3375ecf7a835dbaa6f"
+    },
+    {
+      "path": "assets/chunk-EPNA5IRH.js",
+      "bytes": 4287,
+      "sha256": "f0e6f3f26e56c65b1ef85d9e5c35fa6a0ec7e13f195cddb771d402e562d2fe98"
+    },
+    {
+      "path": "assets/chunk-MMGTUHLK.js",
+      "bytes": 150459,
+      "sha256": "3adb9d58928ad8ff7cc6d587e9e7b79a0bbac3d6d87552cee6d3d8ea349483ba"
+    },
+    {
+      "path": "assets/chunk-PDEHE7BK.js",
+      "bytes": 3591,
+      "sha256": "559b40ae3da344f9103055ddf7b698a710a7929066a133d8f03ef3772339942a"
+    },
+    {
+      "path": "assets/chunk-Y2ZV3BMG.js",
+      "bytes": 787211,
+      "sha256": "e4a054ffbf03e714af9e9840f9b43230b710316b21e15bda350de4e6daf5809e"
+    },
+    {
+      "path": "assets/home-share-N7PD5HY2.js",
+      "bytes": 204,
+      "sha256": "614e71ee7bd6c541adf4fef48af83cb603a6a46d6977bbf1a9f295bec797d396"
+    },
+    {
+      "path": "brand.css",
+      "bytes": 3825,
+      "sha256": "05d565270053b4a166159f9c8420bdcdaa844780f94156eac2d292c60f0da303"
+    },
+    {
+      "path": "furniture-catalogue.css",
+      "bytes": 6635,
+      "sha256": "a524de0a001a1c35fa0f825e15b94c38709271529657c2a77d365cd2d59e2ebd"
+    },
+    {
+      "path": "game-experience.css",
+      "bytes": 14757,
+      "sha256": "7420a49ce9ac7c7e9f686d065e1f80d05aa4a7fc9f567362404888ad810f4b20"
+    },
+    {
+      "path": "game-experience.js",
+      "bytes": 16819,
+      "sha256": "48d1598d587a7423d9ff1a19b2d8154aef2594cc0ea4366cc77663183d4f969e"
+    },
+    {
+      "path": "game-kit.css",
+      "bytes": 17610,
+      "sha256": "92d0642281f92db5af2b38ef28d7f41b14417965019e91a080200cd338221500"
+    },
+    {
+      "path": "game-map.css",
+      "bytes": 2669,
+      "sha256": "7371a719f456f65e0e0b1172924ea51fe87d2df6c20f77b58a474334e2e4eb36"
+    },
+    {
+      "path": "game-map.js",
+      "bytes": 34257,
+      "sha256": "b64d6bed2f1f4a4c85f0c10c98d8b5b5ff94f4d81d8c9f6745e9d6f18cd60918"
+    },
+    {
+      "path": "game-status-hud.css",
+      "bytes": 2918,
+      "sha256": "122cd307a5e40c007cde06829663b62ed33350e2b8d9d5c6030c1316b0f0901d"
+    },
+    {
+      "path": "game-ui-kit.css",
+      "bytes": 26853,
+      "sha256": "8f1c94941051350a08391e62153c75a5129d134afd8d47f82818147d8bc0dcaf"
+    },
+    {
+      "path": "game-ui-kit.js",
+      "bytes": 2689,
+      "sha256": "1e2ca6bf6732aaa22e5439cdb530330291cbbae230b9b7eabe8308729bbe38db"
+    },
+    {
+      "path": "game.css",
+      "bytes": 53773,
+      "sha256": "5055004f5792d0c8eaf076e5c390e61e3d9d7c8d59ea3768bd783f0613647c65"
+    },
+    {
+      "path": "home-editor.css",
+      "bytes": 7518,
+      "sha256": "02f18fc93846f70fcd2787f78774c91899530b9ded60b474889777859763bc40"
+    },
+    {
+      "path": "icon.svg",
+      "bytes": 1234,
+      "sha256": "732db4c28913b547bb25191e07ba03f313ca0ab352cb9cc557cd019a3aaef02b"
+    },
+    {
+      "path": "icons/apple-touch-icon.png",
+      "bytes": 1062,
+      "sha256": "6736b1c2830c136167183f726fad7ff0cb208dd3999e29a0b0181b34fde187d9"
+    },
+    {
+      "path": "icons/icon-192.png",
+      "bytes": 1124,
+      "sha256": "df64e7b162d3e020d740b748fa092730759e62693ac225c0b1abe97d4140ad26"
+    },
+    {
+      "path": "icons/icon-512.png",
+      "bytes": 4361,
+      "sha256": "03135da9656034273fb9f7381fee06f47ef718960a941d5f2004b80857b44caf"
+    },
+    {
+      "path": "icons/icon-maskable-512.png",
+      "bytes": 4367,
+      "sha256": "0a39b62bd58285efea95088f7e0dc4ac69f02f00301f4d43e31b1aa2c3c32d16"
+    },
+    {
+      "path": "index.html",
+      "bytes": 5255,
+      "sha256": "a85579fd955b0d8e91406f6aa7ef8e7295558e99195809b38f9f6bafbe0bf871"
+    },
+    {
+      "path": "install.css",
+      "bytes": 2783,
+      "sha256": "a0f35de6bb0bc1915ac00d5f8fe284efe8a066e145e74d71e72997e302715a69"
+    },
+    {
+      "path": "integrations.css",
+      "bytes": 7944,
+      "sha256": "694b974941402547ad1525bdea25064ac0cbd22b28692c67f1161cab3fd28d23"
+    },
+    {
+      "path": "integrations.js",
+      "bytes": 13202,
+      "sha256": "e7fdbd8847300d9f3d34e4b8cfebab22dc0aad7bef931bd517376b419c6e6b40"
+    },
+    {
+      "path": "jackpot-admin.css",
+      "bytes": 3081,
+      "sha256": "57f2235aeddb0db1d9f35be909d520c9c3a683f407e25a3916639fd14978f082"
+    },
+    {
+      "path": "jackpot-admin.js",
+      "bytes": 5169,
+      "sha256": "3bb919959fb0229947a031b953b4f949ac353b1e3cf69cc0e833be6fa218794d"
+    },
+    {
+      "path": "jackpot.css",
+      "bytes": 6737,
+      "sha256": "51080749e576957240857be544dab2a65b6e7256089955f7be6d74b16a2b7bcf"
+    },
+    {
+      "path": "jackpot.js",
+      "bytes": 14686,
+      "sha256": "fdd9802aff4e05a2b92f89314e879d916e44d9a7443dfdf7e10fe7645d209122"
+    },
+    {
+      "path": "licenses/three.txt",
+      "bytes": 1081,
+      "sha256": "bfe119ea4fd413f5f7ca3fcd63adb0c4a073ed39daa2fe7d3e6b769e21272601"
+    },
+    {
+      "path": "life-v4.css",
+      "bytes": 2415,
+      "sha256": "ef58ff818e2f99730927fd77b84f6d519a834ddc28c77eed4d6a872bb272f5f9"
+    },
+    {
+      "path": "living-city.css",
+      "bytes": 7431,
+      "sha256": "32bd2c1135ccf912ed5d9b2b60439ea13cec0d698c18c9498a0e09cf072da090"
+    },
+    {
+      "path": "living-city.js",
+      "bytes": 7125,
+      "sha256": "82e27bad2327d54e0c39c5f1b890d4702e62792ae2e50d7cc62be5d09e5df816"
+    },
+    {
+      "path": "manifest.webmanifest",
+      "bytes": 977,
+      "sha256": "5f0c5d7cef98cd347440f303acfd74ec5ad72cf5b927e3fa419218b3267e954c"
+    },
+    {
+      "path": "map.css",
+      "bytes": 7024,
+      "sha256": "2fb31348b266946796b59858094bd905d72caead6e1dd769c3b6c2d82c752988"
+    },
+    {
+      "path": "outside-city.css",
+      "bytes": 7990,
+      "sha256": "b70584be19498bd46bf336f6b2460ffcda4d50fb25705a9da29c6b726446c121"
+    },
+    {
+      "path": "outside-quick-access.css",
+      "bytes": 2318,
+      "sha256": "e6182d80903e91047f49322f2df6d1be77d438c76c1eceda13ee4c7af6c33a5a"
+    },
+    {
+      "path": "outside-quick-access.js",
+      "bytes": 2415,
+      "sha256": "f4c9a0e276762b8d753e24d692e3226c2396497c3313d3d9c3f9193f97afb064"
+    },
+    {
+      "path": "phone-home.css",
+      "bytes": 6578,
+      "sha256": "399b07cb8f7746aedaa4016d55ed5816357505a6bc50ef551b8154d0af39bfb5"
+    },
+    {
+      "path": "phone-inbox.css",
+      "bytes": 20185,
+      "sha256": "ff80ce22a5301ee6cbe2a25b5b615c7baf6d886f1018f86252c79f078cf10c86"
+    },
+    {
+      "path": "phone.css",
+      "bytes": 57247,
+      "sha256": "3c1ec251d62c143a7e8cb7175a15d7c94f31d65e146bfc936ac0db3340b10f59"
+    },
+    {
+      "path": "premium-pages.css",
+      "bytes": 15430,
+      "sha256": "8a0e38bb1052223175dfc79c51d4761beac87af3be124a5faae7279e789695b7"
+    },
+    {
+      "path": "runtime-config.js",
+      "bytes": 194,
+      "sha256": "b6a92666f88e1bb9f25be2afb7704250114ff5234faa0a7fd46e5070f1b45e2f"
+    },
+    {
+      "path": "social/abujalife-share-v2.png",
+      "bytes": 12937,
+      "sha256": "9d3f09a99aa46b266e6f894958b6b367bebbffc0bce70a545fe3a0b566332dec"
+    },
+    {
+      "path": "styles.css",
+      "bytes": 16614,
+      "sha256": "ac407f8e637eb5cc21fe0225112136ea562274f67467843effdcf5701e6c7e74"
+    },
+    {
+      "path": "sw.js",
+      "bytes": 2173,
+      "sha256": "d4cceb1594755e43bdfafd194f0a096af4a9ada5955800a0ed649ce7189087e5"
+    },
+    {
+      "path": "travel.css",
+      "bytes": 3107,
+      "sha256": "87f6088c0b90e4f8e838923b60496eb0e2e3d9f3a499af7e2a96de8cb19ae4c0"
+    },
+    {
+      "path": "world.css",
+      "bytes": 24407,
+      "sha256": "b5f4f5a560f15f9839a07a287b7953823c7befde9ade28d0f7d7a33a12c2b1c8"
+    }
+  ]
+}

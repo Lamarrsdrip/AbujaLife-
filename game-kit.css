@@ -1,0 +1,203 @@
+/* AbujaLife game chrome: warm stone, forest and a restrained brass accent.
+   Scoped to app/sheet surfaces. Phone, camera and world controls own their UI. */
+#app,#sheet-root{
+  --kit-forest:#204b3c;
+  --kit-forest-light:#32634e;
+  --kit-ink:#24483a;
+  --kit-muted:#748174;
+  --kit-paper:#f7f5ee;
+  --kit-surface:#fffdf7;
+  --kit-stone:#edece3;
+  --kit-line:#e0e4d8;
+  --kit-brass:#b58b4a;
+  --kit-radius:18px;
+}
+
+/* One viewport, one game surface. Chrome has its own space, so city controls
+   and roof names stay tappable below the header and above the native dock. */
+#app .game-shell.is-playing{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:calc(64px + env(safe-area-inset-top)) minmax(0,1fr) calc(76px + env(safe-area-inset-bottom));height:100dvh;min-height:0;min-width:0;width:100%;max-width:none;padding:0;overflow:hidden;background:#f7f5ee}
+#app .is-playing .game-header{position:relative;inset:auto;height:100%;padding:env(safe-area-inset-top) 16px 0;z-index:20;pointer-events:auto;background:#f7f5ee;color:#24483a}
+#app .is-playing .game-header .wordmark{filter:none}
+#app .is-playing .game-header .wallet-button{background:#e7eee2;border:1px solid #dce5d7;box-shadow:inset 0 1px #fff8;color:#24483a}
+#app .is-playing .game-header .wallet-button>span{color:#72806c}
+#app .is-playing .game-header .wallet-button strong{color:#24483a}
+#app .is-playing .game-header,#app .is-playing .game-content,#app .is-playing .game-nav{min-width:0;box-sizing:border-box}
+#app .is-playing .game-content{height:100%;min-height:0;width:100%;max-width:none;padding:0;overflow:hidden}
+#app .is-playing :is(.world-stage,#world-scene.world-playable){height:100%;min-height:0;width:100%;border:0;border-radius:0;box-shadow:none}
+#app .is-playing .game-nav{position:relative;inset:auto;transform:none;align-self:stretch;width:100%;max-width:none;margin:0;border:0;border-top:1px solid #dce4d6;border-radius:0;padding:8px 12px calc(8px + env(safe-area-inset-bottom));gap:5px;backdrop-filter:none;background:#f7f5ee;box-shadow:none}
+#app .is-playing .game-nav button{flex:1;min-width:0;min-height:44px;max-height:56px;color:#738173}
+#app .is-playing .game-nav button.active{background:#204b3c;color:#fffdf2;box-shadow:inset 0 1px #ffffff16}
+#app .is-playing .world-hud{top:14px;left:14px;right:14px}
+#app .is-playing .world-motion-status{top:64px;left:16px}
+#app .is-playing .world-minimap{top:70px;right:14px}
+#app .is-playing .world-game-controls{left:16px;right:16px;bottom:18px}
+#app .is-playing .world-furniture-toolbar{bottom:18px}
+#app .is-playing .game-status-rail{display:none}
+#app .is-playing .world-camera-button{width:44px;height:44px;min-height:44px}
+#app .is-playing .world-time-chip{top:63px}
+#app .is-playing .world-catalogue-button{top:106px}
+#app .is-playing .header-needs-button{min-height:44px;min-width:44px;color:#537344;background:#e7eee2;border:1px solid #dce5d7;border-radius:12px}
+#sheet-root .sheet-backdrop{background:#102a224d;backdrop-filter:blur(6px);overscroll-behavior:contain}
+#sheet-root .sheet{overscroll-behavior:contain;-webkit-overflow-scrolling:touch;animation:kit-sheet-enter .22s cubic-bezier(.2,.8,.2,1)}
+@keyframes kit-sheet-enter{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:650px){#sheet-root .sheet{border-radius:24px 24px 0 0;padding-bottom:max(24px,env(safe-area-inset-bottom))}#app .is-playing .game-header{gap:6px}#app .is-playing .world-minimap{width:72px}#app .is-playing .header-needs-button{display:none}}
+@media(prefers-reduced-motion:reduce){#sheet-root .sheet{animation:none}}
+@media(max-width:650px){#app .is-playing .needs-header{flex:none;width:44px;min-width:44px;min-height:44px;padding:0;display:grid;place-items:center;border-radius:12px;background:#e7eee2;color:#537344}#app .is-playing .needs-header-item{display:none}#app .is-playing .needs-header::before{content:'✦';font-size:19px}#app .is-playing .wallet-button{min-width:0;max-width:110px;flex:1}#app .is-playing .game-header .wordmark{margin-right:auto}}
+@media(max-width:360px){#app .is-playing .needs-header{display:none}#app .is-playing .game-header .brand-name{font-size:20px}}
+
+/* Clear hierarchy without increasing the chrome around the playable view. */
+#app .game-header{
+  background:var(--kit-paper);
+  border-bottom-color:#e0e4d7;
+  gap:12px;
+}
+#app .game-header .wordmark{text-decoration:none;flex:none;min-height:44px}
+#app .game-header .brand-lockup--compact{gap:8px}
+#app .game-header .brand-emblem{width:29px;height:29px}
+#app .game-header .brand-name{font-size:23px;font-weight:850;letter-spacing:-1px}
+#app .game-header .wallet-button{
+  min-height:44px;
+  min-width:0;
+  max-width:min(36vw,180px);
+  padding:5px 7px;
+  color:var(--kit-ink);
+  border-radius:12px;
+}
+#app .game-header .wallet-button>span{font-size:9px;letter-spacing:.025em;margin-bottom:4px;color:var(--kit-muted)}
+#app .game-header .wallet-button>strong{display:block;font-size:15px;line-height:1.2;font-weight:700;font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;letter-spacing:-.025em}
+#app .game-header .earn-header{min-height:44px;padding:0 11px;border:1px solid #d7e4cf;border-radius:12px;background:#e7f0df;color:#356246;font-size:10px;font-weight:750;white-space:nowrap}
+#app .game-header .resident-button{width:44px;height:44px;flex:none;padding:2px;border-color:#d0dcc8;background:#e4ebda;box-shadow:inset 0 1px #fff}
+#app .game-nav{background:#fbfaf4;border-color:var(--kit-line)}
+#app .game-nav button{color:#738173;min-height:48px;font-weight:550}
+#app .game-nav button.active,#app .game-nav button[aria-current=page]{background:var(--kit-forest);color:#fffdf2;box-shadow:inset 0 1px #ffffff16}
+#app .game-nav .nav-badge{background:#b67c48;color:#fffaf0;border:2px solid #fbfaf4}
+#app .game-shell:not(.is-playing) .game-nav{box-shadow:0 8px 26px #203c2b14}
+#app .is-playing .game-nav{box-shadow:none;border-top-color:var(--kit-line)}
+
+/* Pages and menus share one typography and spacing rhythm. */
+#app .game-content:not(.view-world) .page-heading h1{color:var(--kit-ink);font-weight:700;letter-spacing:-.04em}
+#app .game-content:not(.view-world) .page-heading p{color:#728071;line-height:1.7}
+#app .game-content:not(.view-world) .eyebrow,#sheet-root .sheet>.eyebrow{color:#9c8151;font-weight:650;letter-spacing:.12em}
+#app .game-content:not(.view-world) :is(.job-row,.market-row,.home-listing,#profile-form){border-color:var(--kit-line);background:var(--kit-surface);border-radius:var(--kit-radius)}
+#app .game-content:not(.view-world) :is(.job-row,.home-listing){box-shadow:0 4px 16px #203d2910}
+#app .game-content:not(.view-world) :is(.job-row.chosen,.job-row[aria-pressed=true]){background:#ecf2e5;border-color:#b3c7a7}
+#app .game-content:not(.view-world) :is(.filter-row,.property-tabs) button{min-height:44px;border-radius:12px}
+#app .game-content:not(.view-world) .filter-row button.active{background:var(--kit-forest);color:#fffdf3}
+#app .game-content:not(.view-world) .property-tabs button.active{background:var(--kit-surface);color:var(--kit-forest)}
+#app .game-content:not(.view-world) .profile-actions{border-color:var(--kit-line)}
+#app .game-content:not(.view-world) .detail-line{border-color:var(--kit-line)}
+
+/* Quiet surface hierarchy lets the actual choices do the talking. */
+#sheet-root .sheet{background:var(--kit-paper);border:1px solid #ffffffb8;border-radius:24px;box-shadow:0 22px 70px #17372829}
+#sheet-root #sheet-title{font-size:29px;line-height:1.17;font-weight:700;letter-spacing:-.04em;color:var(--kit-ink);margin:10px 0 14px;padding-right:24px}
+#sheet-root .sheet>.muted{color:#748171;font-size:13px;line-height:1.7}
+#sheet-root .sheet .economy-note{color:#87907c;font-size:11px;line-height:1.7}
+#sheet-root .sheet-close{width:44px;height:44px;min-width:44px;min-height:44px;top:8px;right:8px;border-radius:50%;color:#738271;background:#ebece3}
+#sheet-root .life-menu-grid{gap:12px;margin-top:22px}
+#sheet-root .life-menu-grid button{border-color:var(--kit-line);background:var(--kit-surface);border-radius:var(--kit-radius);padding:17px;min-height:110px;color:var(--kit-ink)}
+#sheet-root .life-menu-grid button>span{color:#7c8d6c;margin-bottom:12px}
+#sheet-root .life-menu-grid button>strong{font-size:13px;font-weight:650;line-height:1.35;letter-spacing:-.01em}
+#sheet-root .life-menu-grid button>small{font-size:11px;line-height:1.55;margin-top:6px;color:#839077}
+#sheet-root .life-feature{background:#e9efe0;border-color:#cfdcc1;border-radius:var(--kit-radius);padding:17px}
+#sheet-root .life-feature strong{font-size:14px;color:var(--kit-ink)}
+#sheet-root .city-place{background:var(--kit-surface);border-color:var(--kit-line);border-radius:var(--kit-radius);padding:16px;color:var(--kit-ink)}
+#sheet-root .city-place.current{background:#eaf0e1;border-color:#b6cba7}
+#sheet-root .city-place strong{font-size:14px;line-height:1.3;letter-spacing:-.01em}
+#sheet-root .city-place small{font-size:9px;color:#849173;letter-spacing:.035em}
+#sheet-root .city-place p{font-size:11px;line-height:1.6;color:#829076}
+#sheet-root :is(.venue-menu,.venue-menu-item,.detail-line){border-color:var(--kit-line)}
+#sheet-root .venue-menu-item strong{font-size:14px;color:var(--kit-ink)}
+#sheet-root .venue-menu-item small{font-size:11px;color:#7b8973;line-height:1.6}
+#sheet-root .garage-card{border-color:var(--kit-line);background:var(--kit-surface);border-radius:var(--kit-radius)}
+#sheet-root .garage-card.owned{border-color:#c8d7ba;background:#edf3e5}
+#sheet-root .garage-card p{color:#819075;line-height:1.65}
+#sheet-root .vehicle-colors label{width:44px;height:44px}
+#sheet-root .furniture-card{background:var(--kit-surface);border-color:var(--kit-line);border-radius:var(--kit-radius)}
+#sheet-root .furniture-card-selected{background:#eef3e6;border-color:#9fb78b;box-shadow:inset 3px 0 #5d8050}
+#sheet-root .furniture-card :is(h3,strong){color:var(--kit-ink)}
+#sheet-root .furniture-card p{font-size:11px;line-height:1.6;color:#819075}
+#sheet-root .travel-mode-option{border-radius:14px;background:var(--kit-surface);border-color:var(--kit-line)}
+#sheet-root .travel-mode-option:has(input:checked){background:#edf3e6;border-color:#a4bf91}
+#sheet-root :is(.loan-card,.visit-current,.visit-request,.work-calendar){background:#eeefe5;border-color:var(--kit-line);border-radius:var(--kit-radius)}
+
+/* Simple account creation, with the form grouped into one calm card. */
+#app .welcome-form{background:var(--kit-paper)}
+#app .welcome-form h2{color:var(--kit-ink);font-weight:700;letter-spacing:-.04em}
+#app .welcome-form .auth-intro{color:#78846f;font-size:13px;line-height:1.7}
+#app .welcome-form .auth-switch{background:#e8ecdf;border:1px solid #dfe5d5;border-radius:14px;padding:4px;gap:4px}
+#app .auth-switch button{min-height:44px;font-size:12px;border-radius:10px;color:#7b8970}
+#app .auth-switch button.active{background:var(--kit-surface);color:var(--kit-forest);box-shadow:0 2px 8px #233d2610;font-weight:650}
+#app #auth-form{padding:8px 22px 19px;border:1px solid var(--kit-line);border-radius:22px;background:var(--kit-surface);margin-top:11px;box-shadow:0 6px 24px #243e2607}
+#app #auth-form>label{font-size:12px;color:#617b53;font-weight:600;margin-top:17px}
+#app #auth-form input{min-height:50px;border-radius:12px;border-color:#d8e0ce;background:#fffef9;font-size:16px;padding:13px;color:var(--kit-ink)}
+#app #auth-form .password-input input{padding-right:67px}
+#app #auth-form .password-input button{top:3px;right:6px;min-width:48px;min-height:44px;font-size:11px;color:#69805a;border-radius:10px}
+#app .auth-field-hint{font-size:11px;line-height:1.55;color:#829175}
+#app .auth-note{font-size:11px;line-height:1.65;color:#879278}
+#app .form-error:not(:empty){font-size:12px;line-height:1.55;overflow-wrap:anywhere}
+#app .onboarding-details{background:var(--kit-paper)}
+#app .onboarding-details h1{color:var(--kit-ink);font-weight:700;letter-spacing:-.04em}
+#app .onboarding-details .muted{font-size:13px;line-height:1.7;color:#7c8872}
+#app .onboarding-details .life-goal{background:var(--kit-surface);border-color:var(--kit-line);border-radius:16px;padding:16px}
+#app .onboarding-details .life-goal:has(input:checked){background:#edf3e5;border-color:#a9bd96}
+#app .onboarding-details .life-goal strong{font-size:13px;color:var(--kit-ink)}
+#app .onboarding-details .life-goal small{font-size:11px;line-height:1.55;color:#859273}
+#app .onboarding-details .choice-chip{min-height:44px;border-radius:12px;font-size:12px;border-color:#dce3d2;background:var(--kit-surface);color:#6d8161}
+#app .onboarding-details .choice-chip:has(input:checked){background:#e9f1de;border-color:#9cb783;color:#3e6234}
+#app .onboarding-details :is(input:not([type=radio]):not([type=checkbox]),select){min-height:48px;font-size:16px;border-radius:12px;border-color:#d9e2cf;background:#fffdf7}
+
+/* Actions stay tactile without changing layout, camera gestures or hit boxes. */
+#app .game-content:not(.view-world) :is(.primary,.secondary),#app .welcome-form :is(.primary,.secondary),#app .onboarding-details :is(.primary,.secondary),#sheet-root .sheet :is(.primary,.secondary){min-height:44px;border-radius:12px;gap:10px;font-size:12px;font-weight:600;transition:background-color .16s ease,border-color .16s ease,box-shadow .16s ease}
+#app .game-content:not(.view-world) .primary,#app .welcome-form .primary,#app .onboarding-details .primary,#sheet-root .sheet .primary{background:var(--kit-forest);color:#fffdf2;box-shadow:inset 0 1px #ffffff14}
+#app .game-content:not(.view-world) .secondary,#app .welcome-form .secondary,#app .onboarding-details .secondary,#sheet-root .sheet .secondary{background:#e9eee1;color:#45673a}
+#app .game-content:not(.view-world) .text-button,#sheet-root .sheet .text-button{min-height:44px;display:inline-flex;align-items:center}
+#app .game-header :is(button,a),#app .game-nav button,#sheet-root :is(.sheet-close,.life-menu-grid button,.city-place){transition:background-color .16s ease,border-color .16s ease,box-shadow .16s ease}
+#app .game-header :is(button,a):focus-visible,#app .game-nav button:focus-visible,#app .welcome-form :is(button,input):focus-visible,#app .onboarding-details :is(button,input,select):focus-visible,#sheet-root :is(button,input,select,textarea):focus-visible{outline:3px solid var(--kit-brass);outline-offset:3px}
+#app .game-content:not(.view-world) :is(button,a,input,select):focus-visible{outline-color:var(--kit-brass)}
+#sheet-root .sheet button:disabled,#app .welcome-form button:disabled{cursor:default}
+#app .game-content:not(.view-world) .primary:not(:disabled):active,#app .welcome-form .primary:not(:disabled):active,#app .onboarding-details .primary:not(:disabled):active,#sheet-root .sheet .primary:not(:disabled):active{background:#193e30;box-shadow:inset 0 2px 3px #081b191c}
+#app .game-content:not(.view-world) .secondary:not(:disabled):active,#app .welcome-form .secondary:not(:disabled):active,#app .onboarding-details .secondary:not(:disabled):active,#sheet-root .sheet .secondary:not(:disabled):active{background:#dee8d2}
+#app .game-nav button:not(.active):active{background:#e4ecd9;color:var(--kit-ink)}
+
+@media(hover:hover){
+  #app .game-header .wallet-button:hover{background:#edf0e4}
+  #app .game-nav button:not(.active):hover{background:#e9eee0;color:var(--kit-ink)}
+  #app .game-nav button.active:hover{background:var(--kit-forest-light)}
+  #app .game-content:not(.view-world) .primary:not(:disabled):hover,#app .welcome-form .primary:not(:disabled):hover,#app .onboarding-details .primary:not(:disabled):hover,#sheet-root .sheet .primary:not(:disabled):hover{background:var(--kit-forest-light);box-shadow:0 3px 10px #1e432c18}
+  #sheet-root .life-menu-grid button:hover,#sheet-root .city-place:hover{background:#edf2e5;border-color:#bccdae}
+}
+@media(max-width:650px){
+  #app .game-header{gap:8px}
+  #app .game-header .brand-lockup--compact{gap:7px}
+  #app .game-header .brand-emblem{width:28px;height:28px}
+  #app .game-header .brand-name{font-size:22px}
+  #app .game-header .wallet-button{padding-inline:4px}
+  #app .game-header .wallet-button>strong{font-size:14px}
+  #app .game-header .wallet-button>span{font-size:8px}
+  #app .game-nav button{font-size:10px;line-height:1.2;gap:5px}
+  #sheet-root .sheet{border-radius:24px}
+  #sheet-root #sheet-title{font-size:26px;max-width:100%}
+  #sheet-root .sheet>.muted{font-size:12px}
+  #sheet-root .life-menu-grid{gap:10px}
+  #sheet-root .life-menu-grid button{padding:15px;min-height:108px}
+  #sheet-root .city-place{padding:14px}
+  #sheet-root .city-place strong{font-size:13px}
+  #app #auth-form{padding:5px 18px 17px;border-radius:20px}
+  #app .welcome-form .auth-intro{font-size:12px}
+  #app .onboarding-details .choice-chip{font-size:11px}
+  #sheet-root .sheet :is(.primary,.secondary){min-height:44px}
+}
+@media(max-width:360px){
+  #app .game-header .brand-lockup--compact{gap:5px}
+  #app .game-header .brand-emblem{width:24px;height:24px}
+  #app .game-header .brand-name{font-size:19px;letter-spacing:-.85px}
+  #app .game-header .resident-button{width:44px;height:44px}
+  #app .game-header .wallet-button>strong{font-size:13px}
+  #sheet-root .life-menu-grid button{padding:13px}
+  #sheet-root .life-menu-grid button>small{font-size:10px}
+}
+@media(prefers-reduced-motion:reduce){
+  #app .game-header :is(button,a),#app .game-nav button,#app .welcome-form :is(button,input),#app .onboarding-details :is(button,input,select),#app .game-content:not(.view-world) :is(button,input,select),#sheet-root :is(button,input,select,textarea){transition:none}
+}
+
+#app .world-roof-name:not(:disabled):active{transform:translate(-50%,-100%) scale(.98)}

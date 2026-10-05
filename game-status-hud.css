@@ -1,0 +1,116 @@
+.game-status-rail{
+  position:absolute;
+  z-index:4;
+  top:calc(148px + env(safe-area-inset-top));
+  left:max(18px,calc((100vw - 1440px)/2 + 28px));
+  display:grid;
+  grid-template-columns:repeat(3,minmax(74px,88px));
+  gap:7px;
+  pointer-events:none;
+}
+.game-status-chip{
+  min-width:0;
+  height:45px;
+  display:grid;
+  grid-template-columns:19px 1fr;
+  grid-template-rows:1fr 5px;
+  gap:2px 7px;
+  align-items:center;
+  padding:7px 9px 6px;
+  border:1px solid rgba(255,255,255,.48);
+  border-radius:14px;
+  background:rgba(255,250,240,.78);
+  color:#214b3b;
+  box-shadow:0 7px 18px rgba(17,42,34,.11),inset 0 1px 0 rgba(255,255,255,.7);
+  backdrop-filter:blur(14px);
+  -webkit-backdrop-filter:blur(14px);
+}
+.game-status-glyph{
+  grid-row:1;
+  display:grid;
+  place-items:center;
+  width:19px;height:19px;
+  font-size:11px;
+  font-weight:900;
+  color:#3e775d;
+}
+.game-status-copy{
+  grid-row:1;
+  min-width:0;
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:5px;
+}
+.game-status-copy small{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-size:7px;
+  line-height:1;
+  font-weight:800;
+  letter-spacing:.25px;
+  color:#6f7d75;
+}
+.game-status-copy strong{
+  flex:none;
+  font-size:10px;
+  line-height:1;
+  font-weight:850;
+  letter-spacing:-.2px;
+  color:#214b3b;
+}
+.game-status-meter{
+  grid-column:1/-1;
+  grid-row:2;
+  position:relative;
+  height:4px;
+  overflow:hidden;
+  border-radius:999px;
+  background:rgba(33,75,59,.1);
+}
+.game-status-meter b{
+  position:absolute;
+  inset:0 auto 0 0;
+  width:var(--status-value);
+  border-radius:inherit;
+  background:#5f9276;
+}
+.game-status-chip.is-watch .game-status-meter b{background:#c99a56;}
+.game-status-chip.is-watch .game-status-glyph{color:#a9793e;}
+.game-status-chip.is-critical .game-status-meter b{background:#bf6f4b;}
+.game-status-chip.is-critical .game-status-glyph,.game-status-chip.is-critical .game-status-copy strong{color:#9d5148;}
+
+@media(max-width:700px){
+  .game-status-rail{
+    top:calc(153px + env(safe-area-inset-top));
+    left:13px;
+    right:108px;
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:5px;
+  }
+  .game-status-chip{
+    height:40px;
+    grid-template-columns:14px 1fr;
+    padding:6px 7px 5px;
+    border-radius:12px;
+    gap:2px 5px;
+  }
+  .game-status-glyph{width:14px;height:14px;font-size:9px;}
+  .game-status-copy small{font-size:6px;}
+  .game-status-copy strong{font-size:9px;}
+  .game-status-meter{height:3px;}
+}
+
+@media(max-width:380px){
+  .game-status-rail{right:100px;gap:4px;}
+  .game-status-chip{grid-template-columns:12px 1fr;padding-left:6px;padding-right:6px;}
+  .game-status-glyph{width:12px;font-size:8px;}
+  .game-status-copy small{display:none;}
+  .game-status-copy{justify-content:flex-end;}
+}
+
+@media(prefers-reduced-transparency:reduce){
+  .game-status-chip{background:#fffaf0;backdrop-filter:none;-webkit-backdrop-filter:none;}
+}

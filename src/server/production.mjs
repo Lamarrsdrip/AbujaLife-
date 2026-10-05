@@ -6,6 +6,7 @@ import { MongoDirectoryStore } from './mongo/directoryStore.mjs';
 import { MongoPresenceStore } from './mongo/presenceStore.mjs';
 import { MongoAdminStore } from './mongo/adminStore.mjs';
 import { MongoPaymentStore } from './mongo/paymentStore.mjs';
+import { MongoAdStore } from './mongo/adStore.mjs';
 import { MongoAuthStore } from './mongo/authStore.mjs';
 import { createEmailDelivery } from './emailDelivery.mjs';
 import { createProductionServer, productionLog } from './production-http.mjs';
@@ -34,8 +35,9 @@ export async function createProductionApplication({env=process.env,clock=Date.no
     const admin=new MongoAdminStore({store,bootstrapUsername:config.adminUsername});await admin.init({ensureIndexes:false});
     social.authorizeModeration=id=>admin.requirePermission(id,'moderation');
     const payments=new MongoPaymentStore({store,admin,fetchImpl,configKey:config.configKey,publicOrigin:config.publicWebUrl,log});await payments.init({ensureIndexes:false});
+    const ads=new MongoAdStore({store,admin,payments,log});await ads.init({ensureIndexes:true});ads.attach();
     const server=createProductionServer({...config,store,social,directory,presence,admin,payments,database,log});
-    return{server,store,social,directory,presence,admin,payments,database,config,close:async()=>{server.closeRealtime();if(server.listening)await new Promise(resolve=>server.close(resolve));await database.close();}};
+    return{server,store,social,directory,presence,admin,payments,ads,database,config,close:async()=>{server.closeRealtime();if(server.listening)await new Promise(resolve=>server.close(resolve));await database.close();}};
   }catch(error){await database.close();throw error;}
 }
 export async function startProduction(){

@@ -1,0 +1,44 @@
+name: Finalize economy and share preview
+
+on:
+  push:
+    branches: [integration/signup-economy-share-preview-2026-10-05]
+
+permissions:
+  contents: write
+
+jobs:
+  finalize-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/signup-economy-share-preview-2026-10-05
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install image generator
+        run: python3 -m pip install --quiet pillow
+      - name: Generate branded assets and reconcile overlapping files
+        run: python3 scripts/finalize-economy-share-preview.py
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+      - name: Full application QA
+        run: npm run qa
+      - name: Windows runtime contract
+        run: node --test deploy/windows/runtime.test.mjs
+      - name: Production build
+        run: npm run build
+      - name: Full Mongo and production infrastructure QA
+        run: npm run qa:infra
+      - name: Commit verified final integration and remove temporary machinery
+        shell: bash
+        run: |
+          git rm .github/workflows/finalize-economy-share-preview.yml scripts/finalize-economy-share-preview.py
+          git add app tests preview src
+          git config user.name "GhostDev"
+          git config user.email "110933245+Lamarrsdrip@users.noreply.github.com"
+          git commit -m "fix: finish username economy and branded link previews"
+          git push origin HEAD:integration/signup-economy-share-preview-2026-10-05

@@ -19,7 +19,8 @@ export function apiURL(path) {
 // The first city render only needs resident/world state. During a staggered
 // production deploy the static client can arrive before the API route does, so
 // fast startup MUST gracefully fall back to the established endpoint rather
-// than blocking residents with a 404/405/501 response.
+// than blocking residents with a 404/405/501 response. This compatibility path
+// is intentionally kept during backend rollouts and restarts.
 let startupBootstrapPending = true;
 const FAST_ROUTE_MISSING = new Set([404,405,501]);
 

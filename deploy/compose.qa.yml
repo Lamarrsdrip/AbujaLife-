@@ -1,0 +1,10 @@
+services:
+  mongo:
+    # The host-side disposable integration runner can reach Mongo on macOS
+    # Docker Desktop and Linux without exposing it beyond the local machine.
+    ports:
+      - target: 27017
+        published: "0"
+        host_ip: 127.0.0.1
+        protocol: tcp
+    networks: [database, web]

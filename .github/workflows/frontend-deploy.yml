@@ -1,18 +1,19 @@
-name: AbujaLife frontend deploy
+name: AbujaLife frontend release validation
 
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
     concurrency:
-      group: abujalife-frontend-production
+      group: abujalife-frontend-${{ github.ref }}
       cancel-in-progress: true
     steps:
       - name: Check out the production source
@@ -36,23 +37,9 @@ jobs:
           mkdir -p /tmp/abujalife-frontend-artifact
           unzip -q /tmp/abujacity-production-frontend.zip -d /tmp/abujalife-frontend-artifact
 
-      - name: Publish the build artifact branch
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Verify the static site ships in the VPS release
         run: |
-          set -euo pipefail
           test -f /tmp/abujalife-frontend-artifact/index.html
           test -f /tmp/abujalife-frontend-artifact/RELEASE.json
           test -f /tmp/abujalife-frontend-artifact/runtime-config.js
-          tmp_dir="$(mktemp -d)"
-          cp -R /tmp/abujalife-frontend-artifact/. "$tmp_dir/"
-          cd "$tmp_dir"
-          git init -q
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -qm "Deploy AbujaLife frontend ${GITHUB_SHA}"
-          git branch -M hostinger-production
-          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git push --force origin hostinger-production
+          python3 -c "import json; p='/tmp/abujalife-frontend-artifact/RELEASE.json'; d=json.load(open(p)); assert d['revision']=='${GITHUB_SHA}'; print('Verified frontend release:', d['revision'])"

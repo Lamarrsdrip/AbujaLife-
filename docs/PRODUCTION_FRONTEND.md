@@ -1,22 +1,20 @@
 # Connected static frontend
 
 The public frontend is a static build of the full AbujaLife game. The source of
-truth remains `main`; the static output is published automatically by GitHub
-Actions to the generated `hostinger-production` artifact branch. Hostinger's
-Git auto-deployment watches that branch and replaces the domain's `public_html`
-after every successful build. No local ZIP upload is part of the normal release
-workflow.
+truth remains `main`; the Windows VPS release task builds it into the same
+immutable release as the API and Caddy serves that release from the existing
+VPS. GitHub Actions validates the static artifact but no longer publishes a
+separate `hostinger-production` branch.
 
-The first Hostinger connection is configured for repository
-`Lamarrsdrip/AbujaLife-`, branch `hostinger-production`, install path
-`public_html`, with auto-deployment enabled. Do not point Hostinger at `main`:
-that branch contains source files and is not a static document root.
+The old Hostinger document root is retained until public DNS cutover is
+complete. It is a rollback copy only; do not point it at `main`, which contains
+source files and is not a static document root.
 
 Run `npm ci` with Node 24 or newer, then `npm run build`. The build writes the
-connected game to `dist/`. GitHub Actions performs this build and publishes the
-contents to `hostinger-production`; the published directory needs no Node
-process or database. It bundles the game, administrator client, shared game
-rules and the pinned Three.js renderer.
+connected game to `dist/`. The Windows deploy builds this directory inside the
+immutable API release, then atomically updates the Caddy frontend root only
+after the new API candidate is healthy. It bundles the game, administrator
+client, shared game rules and pinned Three.js renderer.
 
 The build reads only two public variables:
 
@@ -35,4 +33,4 @@ Source development keeps `/api` on its own origin. `npm run preview:build` remai
 
 Run `node --test tests/build-production.test.mjs` to verify origin validation, credentialed requests, complete static assets, secret exclusion and service-worker privacy rules. Production functional acceptance additionally requires the real MongoDB API and browser requests between the two HTTPS origins.
 
-For reproducible local acceptance, start the real production API against a disposable MongoDB replica set, run `npm run build`, then `ABUJALIFE_QA_API_PORT=8995 python tests/production-browser-smoke.py` with the fixture's API port. The script serves the actual build through a local TLS proxy and maps both public hostnames in Chromium. It exercises two registered accounts, explicit Female/Male signup choices, cookie persistence, realtime events, a real phone transfer, idempotent replay, messages, posts and worker cache privacy. It accepts only its generated local test certificate; this check does not verify public DNS, public CA certificates or a completed Hostinger upload. Reports and screenshots are saved outside the repository. The API fixture owner must drop the disposable database afterward.
+For reproducible local acceptance, start the real production API against a disposable MongoDB replica set, run `npm run build`, then `ABUJALIFE_QA_API_PORT=8995 python tests/production-browser-smoke.py` with the fixture's API port. The script serves the actual build through a local TLS proxy and maps both public hostnames in Chromium. It exercises two registered accounts, explicit Female/Male signup choices, cookie persistence, realtime events, a real phone transfer, idempotent replay, messages, posts and worker cache privacy. It accepts only its generated local test certificate; this check does not verify public DNS or public CA certificates. Reports and screenshots are saved outside the repository. The API fixture owner must drop the disposable database afterward.

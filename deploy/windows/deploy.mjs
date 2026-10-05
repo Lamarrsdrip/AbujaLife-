@@ -86,6 +86,10 @@ try {
   requestReload();
   ps("$ErrorActionPreference='Stop'; $task=Get-ScheduledTask -TaskName 'AbujaLife-API'; if($task.State -ne 'Running'){Start-ScheduledTask -TaskName 'AbujaLife-API'}");
   await waitRelease(next.releaseId);
+  // The same immutable release contains the production static build. Switch
+  // Caddy only after the candidate API is healthy; the PowerShell helper
+  // validates a staged Caddyfile and restores the previous file on failure.
+  command('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(destination, 'deploy', 'windows', 'configure-frontend.ps1'), '-ReleaseDirectory', destination, '-Root', config.root], config.root);
   console.log(JSON.stringify({ ok: true, ...next, port: config.apiPort, binding: '127.0.0.1', task: config.apiTask }));
 } catch (error) {
   await closeCandidate();

@@ -4,7 +4,7 @@ The deployment takeover completed from the owner’s Mac against the real VPS an
 
 | Check | Observed result |
 | --- | --- |
-| GitHub baseline | `main` 5f37d16; dedicated infrastructure branch f7874ba, eight commits ahead, zero behind |
+| GitHub baseline | Final `main` is `0179eee`; dedicated infrastructure work was promoted after live acceptance |
 | Concurrent source update | b867f44 adds 3D depth, compact phone and authoritative exterior transitions; merged without overwriting either session |
 | Mac SSH | Authorized existing Ed25519 key connects to Administrator@173.212.249.202 |
 | VPS | Windows Server 2022, native Node 24.21.0/MongoDB 8.0/Caddy 2.11.4; no Docker runtime in use |
@@ -18,7 +18,7 @@ The deployment takeover completed from the owner’s Mac against the real VPS an
 | Native live deployment | **Passed**; revision `48b0aef16564-c095b77cb7da` is healthy on `AbujaLife-API` with Node 24, loopback 18787, supervised LocalService startup/reload |
 | Hostinger game upload/browser QA | **Passed**; `https://abujacity.life` serves the 48b0aef production build, HTTPS redirects/deep routes/security headers work, browser loads the playable Garki scene and calls only HTTPS API origins |
 | Off-server backups | **Passed**; encrypted AES-GCM archive copied and authenticated at `~/AbujaLife-backups`, LaunchAgent `life.abujacity.backup-pull` active every six hours, backup/config keys mode 0600 |
-| Main/CI promotion | Branch CI passed for `48b0aef` (run `37241624964`); final documentation commit and main promotion are the remaining repository steps |
+| Main/CI promotion | **Passed**; `main` is `0179eee` and CI run `37245593120` passed on Ubuntu and Windows |
 
 Live acceptance completed. The private audit confirms `abujalife_prod`, authentication, loopback Mongo 27017, 51 collections, 170 indexes, append-only ledger protections and application DDL denial. Public HTTPS acceptance passed 9 checks before and 7 checks after a graceful AbujaLife-only restart using three independent accounts: sessions, wallets, ledger, inventory, homes, vehicles, jobs, locations, conversations, SSE reconnect, idempotency, cross-account denial and bilateral block enforcement. The backup task produced an AES-256-GCM archive with authenticated `mongorestore --dryRun` validation; the Mac pull verified checksum and GCM authentication without plaintext output. Okrika API and White Studio remained healthy. No local fixture result substitutes for these public checks.
 

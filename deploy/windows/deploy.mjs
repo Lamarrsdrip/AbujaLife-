@@ -63,6 +63,7 @@ try {
     // safely migrate the backup contract itself (for example, a full oplog
     // archive must use an unscoped tools URI). The running release is never
     // modified until this snapshot succeeds.
+    command(config.nodePath, [path.join(destination, 'deploy', 'windows', 'prepare-backup.mjs')], destination, { ...safeEnvironment(), ABUJALIFE_WINDOWS_ROOT: config.root });
     const backupScript = path.join(destination, 'deploy', 'windows', 'backup.mjs');
     command(config.nodePath, [backupScript], destination, { ...safeEnvironment(), ABUJALIFE_WINDOWS_ROOT: config.root });
   }

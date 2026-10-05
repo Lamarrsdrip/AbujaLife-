@@ -41,6 +41,8 @@ test('Windows production deploy provisions Jackpot schema before candidate start
   assert.match(bootstrap, /updateRole:\s*'abujalife_runtime'/);
   const baseBootstrap = deploy.indexOf("bootstrap-mongo.mjs");
   const jackpotBootstrap = deploy.indexOf("bootstrap-jackpot.mjs");
+  const prepareBackup = deploy.indexOf("prepare-backup.mjs");
+  const snapshot = deploy.indexOf("backup.mjs");
   const candidateStart = deploy.indexOf("ABUJALIFE_CANDIDATE_PORT");
-  assert.ok(baseBootstrap >= 0 && jackpotBootstrap > baseBootstrap && candidateStart > jackpotBootstrap);
+  assert.ok(prepareBackup >= 0 && snapshot > prepareBackup && baseBootstrap > snapshot && jackpotBootstrap > baseBootstrap && candidateStart > jackpotBootstrap);
 });

@@ -16,8 +16,8 @@ replacement = r''' const labelsPattern=/  const labels=all\.map\(place=>\{.*?\n 
   "    button.setAttribute('aria-label',ad?`${live?.ad?.title||'Live advertisement'}. View campaign`:`${place.name}${place.districtName?`, ${place.districtName}`:''}. View destination`);button.dataset.destinationKey=place.key;labelsRoot.append(button);",
   "    return [{place,button,point:new THREE.Vector3(place.x,ad?9:place.height+20,place.z)}];",
   "  });"
- ].join('\\n');
+ ].join('\n');
  s=regexOne(s,labelsPattern,labelsNew,'only live ad creative labels');'''
 s = s[:start] + replacement + s[end + len(end_marker):]
 path.write_text(s)
-print('Repaired temporary integration patch quoting.')
+print('Repaired temporary integration patch quoting and newline emission.')

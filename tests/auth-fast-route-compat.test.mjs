@@ -31,7 +31,7 @@ test('explicit core startup and account writes retain authoritative bootstrap an
     }
     await apiFetch('/api/bootstrap');
   });
-  assert.deepEqual(calls,['/api/bootstrap?startup=1','/api/auth/register','/api/auth/login','/api/profile','/api/bootstrap']);
+  assert.deepEqual(calls,['/api/bootstrap/fast','/api/auth/register/fast','/api/auth/login/fast','/api/profile','/api/bootstrap']);
 });
 
 test('unreachable bootstrap never presents cached authentication or a fake successful response', async () => {

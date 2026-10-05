@@ -17,6 +17,10 @@ export const EXTRA_HOME_ITEMS = Object.freeze([
   {id:'large-rug',name:'Large sage rug',price:7800,modelKind:'rug',width:286,depth:184,solid:false,color:'#8a9b83',description:'A larger soft rug to define your living area.'},
   {id:'tall-plant',name:'Tall indoor palm',price:6800,modelKind:'plant',width:63,depth:57,upright:true,description:'Bring a little green into a spacious room.'},
   {id:'storage-drawers',name:'Chest of drawers',price:18500,modelKind:'storage-drawers',width:134,depth:57,description:'A tidy home starts with storage of your own.'},
-  {id:'library-shelf',name:'Wide library shelf',price:21000,modelKind:'bookshelf',width:183,depth:58,description:'Build a reading corner with a generous timber shelf.'}
+  {id:'library-shelf',name:'Wide library shelf',price:21000,modelKind:'bookshelf',width:183,depth:58,description:'Build a reading corner with a generous timber shelf.'},
+  {id:'table-lamp',name:'Warm bedside lamp',price:4500,modelKind:'table-lamp',width:40,depth:32,placement:'surface',description:'Place a warm reading light on a table or counter.'},
+  {id:'ceramic-vase',name:'Hand-finished ceramic vase',price:2800,modelKind:'vase',width:28,depth:28,placement:'surface',description:'A sculpted vase for your sideboard or coffee table.'},
+  {id:'succulent',name:'Potted succulent',price:3600,modelKind:'succulent',width:30,depth:30,placement:'surface',description:'A little green for a bedside table or kitchen counter.'},
+  {id:'book-stack',name:'Coffee-table books',price:2400,modelKind:'book-stack',width:44,depth:32,placement:'surface',description:'A thoughtful finishing touch for your table or sideboard.'}
 ].map(item=>Object.freeze({...item,category:'furniture'})));
 export const HOME_ITEM_MODELS=Object.freeze(Object.fromEntries(EXTRA_HOME_ITEMS.map(item=>[item.id,item])));

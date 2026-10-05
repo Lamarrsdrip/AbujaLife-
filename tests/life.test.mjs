@@ -76,7 +76,7 @@ test('furniture must be owned, placed at home and remain inside the floor plan a
     assert.throws(() => f.store.action(f.id, 'place-furniture', { itemId: 'dining-table', ...payload }), /valid furniture rotation/);
   }
   const placed = f.store.action(f.id, 'place-furniture', { itemId: 'dining-table', x: .375, y: .625, rotation: 90 }).profile;
-  assert.deepEqual(placed.furnitureLayout['dining-table'], { x: .375, y: .625, rotation: 90 });
+  assert.deepEqual(placed.furnitureLayout['dining-table'], { x: .375, y: .625, rotation: 90, propertyId:placed.home.propertyId });
   f.store.action(f.id, 'leave-home');
   assert.throws(() => f.store.action(f.id, 'place-furniture', { itemId: 'dining-table', x: .5, y: .5 }), /Go home/);
   f.reopen();

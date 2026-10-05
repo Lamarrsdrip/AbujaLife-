@@ -169,7 +169,7 @@ export const VENUES = [
   venue('park', 'Neighbourhood Garden', 'Outdoors', 'A pocket of green for walking, picnics and downtime.'),
   venue('dealership', 'Abuja Car', 'Cars', 'Compare virtual vehicles, buy your own car and take the wheel.'),
   venue('estate-office', 'Abuja Home Finder', 'Homes', 'Compare neighbourhoods, view homes and choose rent or ownership.'),
-  venue('furniture-store', 'Capital Market', 'Shopping', 'Browse furniture, clothes and home essentials, then arrange your purchases at home.'),
+  venue('furniture-store', 'Okrika Marketplace', 'Shopping', 'Browse furniture, clothes and home essentials, then arrange your purchases at home.'),
   { ...venue('banex', 'Banex Tech Market', 'Tech & shopping', 'Computers, gadgets, repair counters and busy aisles in an original game interpretation of Banex.'), type: 'tech-market', districts: ['wuse-ii-a08'], settingSource: 'authored-game-scenery', nameSource: 'player-provided', pricesVerified: false },
   venue('cafe', 'The Corner Café', 'Food & dining', 'A coffee stop with small chops and a place to unwind.'),
   venue('salon', 'Fresh Studio', 'Personal care', 'Take a little time for grooming and your next look.'),

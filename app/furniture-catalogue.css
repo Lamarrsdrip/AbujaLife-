@@ -1,0 +1,54 @@
+.furnish-catalogue-root{position:fixed;inset:auto 0 max(72px,calc(65px + env(safe-area-inset-bottom))) 0;z-index:45;display:flex;justify-content:center;padding:0 12px;pointer-events:none;color:#253e33;font-family:inherit}
+.furnish-catalogue-root[hidden]{display:none}
+.furnish-catalogue-panel,.furnish-item-panel{width:min(940px,100%);box-sizing:border-box;pointer-events:auto;border:1px solid #e1e6da;background:#fafbf5f5;border-radius:23px;box-shadow:0 14px 40px #102a2633;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);padding:12px 12px 8px}
+.furnish-catalogue-panel{max-height:38dvh;display:flex;flex-direction:column;overflow:hidden}
+.furnish-catalogue-root button{font-family:inherit;cursor:pointer;touch-action:manipulation}
+.furnish-catalogue-root button:disabled{cursor:default;opacity:.5}
+.furnish-catalogue-root button:focus-visible{outline:2px solid #537a5a;outline-offset:3px}
+.furnish-catalogue-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 8px;padding:0 2px}
+.furnish-catalogue-heading>div>span,.furnish-item-heading>div>span{font-size:9px;line-height:1.3;color:#7b8776;font-weight:650;letter-spacing:.04em}
+.furnish-catalogue-heading h2,.furnish-item-heading h2{font-size:20px;line-height:1.15;font-weight:750;letter-spacing:-.65px;margin:2px 0 0}
+.furnish-catalogue-heading-actions{display:flex;align-items:center;gap:9px}
+.furnish-catalogue-heading-actions small{font-size:9px;line-height:1.4;color:#7b8776;text-align:right}
+.furnish-catalogue-heading-actions strong{display:block;font-size:13px;color:#294a3a;letter-spacing:-.25px}
+.furnish-catalogue-root .furnish-close{display:grid;place-items:center;flex:none;width:40px;height:40px;min-height:40px;padding:9px;border:1px solid #e0e4d8;background:#f1f4eb;border-radius:50%;color:#49624d}
+.furnish-close svg{width:18px;height:18px}
+.furnish-departments{display:flex;flex:none;gap:5px;overflow-x:auto;overscroll-behavior-x:contain;touch-action:pan-x;padding:0 2px 7px;scrollbar-width:none}
+.furnish-departments::-webkit-scrollbar{display:none}
+.furnish-catalogue-root .furnish-departments button{flex:none;white-space:nowrap;min-height:31px;padding:6px 11px;border-radius:99px;border:1px solid #dee4d7;background:#fffef9;color:#64745f;font-size:11px;font-weight:600}
+.furnish-catalogue-root .furnish-departments button[aria-pressed=true]{background:#224b3b;border-color:#224b3b;color:#f8faf0}
+.furnish-filter-row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex:none;padding:0 2px 7px}
+.furnish-filter-row>div{display:flex;gap:3px}
+.furnish-catalogue-root .furnish-filter-row button{min-height:27px;padding:4px 9px;border:0;border-radius:7px;background:transparent;color:#7a8975;font-size:10px;font-weight:600}
+.furnish-catalogue-root .furnish-filter-row button[aria-pressed=true]{color:#284c37;background:#e9efe2}
+.furnish-filter-row>span{font-size:9px;color:#89927f}
+.furnish-catalogue-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(106px,1fr));gap:7px;overflow-y:auto;overscroll-behavior-y:contain;touch-action:pan-y;min-height:0;padding:1px 2px 3px;scrollbar-width:thin;scrollbar-color:#ced7c7 transparent}
+.furnish-catalogue-root .furnish-piece{min-height:126px;min-width:0;display:flex;flex-direction:column;align-items:stretch;text-align:left;gap:3px;padding:6px 9px 7px;border:1px solid #e2e6dc;border-radius:14px;background:#fffef9;color:#2c4939;transition:border-color .16s ease,background .16s ease,transform .16s ease}
+.furnish-catalogue-root .furnish-piece:not(:disabled):hover{border-color:#b5c9ac;background:#f7faf0}
+.furnish-catalogue-root .furnish-piece:not(:disabled):active{transform:scale(.98)}
+.furnish-piece.is-owned{border-color:#d4dfc9;background:#f7faef}
+.furnish-model{position:relative;display:block;isolation:isolate;height:57px;min-height:57px;overflow:hidden;color:#a7b49c}
+.furnish-model-placeholder{height:51px;width:100%;opacity:.6;transform:translateY(-1px)}
+.furnish-model img{object-fit:contain}
+.furnish-piece-title{font-size:11px;font-weight:700;line-height:1.2;letter-spacing:-.2px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:25px}
+.furnish-piece-price{font-size:10px;font-weight:650;line-height:1.2;color:#75816d}
+.furnish-piece-cta{display:flex;justify-content:space-between;align-items:center;font-size:10px;font-weight:700;line-height:1.2;margin-top:auto;color:#3d6550}
+.furnish-piece-cta b{font-size:13px;font-weight:500}
+.furnish-empty{grid-column:1/-1;font-size:12px;line-height:1.6;text-align:center;max-width:360px;margin:14px auto;padding:8px;color:#778471}
+.furnish-catalogue-root .furnish-error{flex:none;color:#965c42;font-size:10px;line-height:1.4;margin:0;padding:0 2px}
+.furnish-error:empty{display:none}
+.furnish-error:not(:empty){padding-top:5px}
+.furnish-item-panel{width:min(470px,100%);padding:11px}
+.furnish-item-heading{display:flex;align-items:center;gap:10px;margin:0 0 10px}
+.furnish-item-heading>.furnish-model{width:67px;height:55px;min-height:55px;flex:none;border-radius:12px;background:#eff3e7}
+.furnish-item-heading>div{flex:1;min-width:0}
+.furnish-item-heading h2{font-size:17px;letter-spacing:-.4px}
+.furnish-catalogue-root .furnish-use{min-height:40px;min-width:43px;padding:7px 9px;flex:none;border:1px solid #d5dfcc;border-radius:11px;background:#e8efdf;color:#365b41;font-size:11px;font-weight:650}
+.furnish-item-actions{display:flex;gap:6px}
+.furnish-catalogue-root .furnish-item-actions button{flex:1;min-height:42px;padding:8px 9px;border:1px solid #dce3d3;border-radius:11px;background:#f3f6ed;color:#52654a;font-size:11px;font-weight:650;white-space:nowrap}
+.furnish-catalogue-root .furnish-item-actions .furnish-primary{background:#244e3c;color:#fffdf1;border-color:#244e3c}
+.furnish-sale-note{font-size:12px;line-height:1.5;color:#7b8470;margin:0 4px 12px}
+.furnish-sale-note strong{color:#344e38}
+@media(min-width:900px){.furnish-catalogue-root{padding:0 24px}.furnish-catalogue-grid{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}.furnish-catalogue-panel{max-height:38dvh}.furnish-model{height:66px;min-height:66px}.furnish-catalogue-root .furnish-piece{min-height:138px}}
+@media(max-height:590px){.furnish-catalogue-panel{max-height:45dvh}.furnish-catalogue-heading>div>span{display:none}.furnish-catalogue-heading h2{font-size:16px}.furnish-catalogue-heading{margin-bottom:5px}.furnish-filter-row{padding-bottom:4px}.furnish-catalogue-root .furnish-piece{min-height:116px}.furnish-model{height:47px;min-height:47px}}
+@media(prefers-reduced-motion:reduce){.furnish-catalogue-root .furnish-piece{transition:none}}

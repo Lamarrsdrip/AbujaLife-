@@ -105,6 +105,20 @@ function preview(storage=new Map()){
   return{storage,async request(route,body,status=200){const response=await context.fetch('https://preview.test'+route,body===undefined?{}:{method:'POST',body:JSON.stringify(body)});const result=await response.json();assert.equal(response.status,status,JSON.stringify(result));return result;},action(action,payload={},status=200){return this.request('/api/action',{action,payload},status);}};
 }
 
+test('the actual browser adapter keeps keyed purchases stored and restores exact property and support references',async()=>{
+  const f=preview(),before=(await f.request('/api/bootstrap')).profile.wallet;
+  const purchase={itemId:'coffee-table',idempotencyKey:'preview_furniture_purchase'};
+  const bought=await f.action('purchase',purchase);assert.equal(bought.profile.wallet,before-8000);assert.deepEqual(bought.profile.storedFurniture,['coffee-table']);
+  const retry=await f.action('purchase',purchase);assert.equal(retry.replayed,true);assert.equal(retry.profile.wallet,bought.profile.wallet);
+  await f.action('place-furniture',{itemId:'coffee-table',x:.4,y:.5,rotation:90});await f.action('purchase',{itemId:'plant',idempotencyKey:'preview_surface_plant'});
+  // A small plant can sit on a real table, and supplied client elevation is ignored.
+  const arranged=await f.action('place-furniture',{itemId:'plant',x:.4,y:.5,rotation:0,supportId:'coffee-table',elevation:99999});
+  assert.equal(arranged.profile.furnitureLayout.plant.supportId,'coffee-table');assert.equal(arranged.profile.furnitureLayout.plant.propertyId,arranged.profile.home.propertyId);assert.equal(arranged.profile.furnitureLayout.plant.elevation,undefined);
+  const again=preview(f.storage),restored=(await again.request('/api/bootstrap')).profile;assert.deepEqual(restored.furnitureLayout,arranged.profile.furnitureLayout);assert.equal(restored.wallet,arranged.profile.wallet);
+  const blocked=await again.action('place-furniture',{itemId:'plant',x:.4,y:.5,propertyId:'another-home'},400);assert.equal(blocked.code,'furniture_wrong_home');
+  const after=(await again.request('/api/bootstrap')).profile;assert.deepEqual(after.furnitureLayout,restored.furnitureLayout);
+});
+
 test('the actual preview resale clears placed and stored pieces and remains idempotent after reload',async()=>{
   const f=preview();await f.action('purchase',{itemId:'plant'});await f.action('place-furniture',{itemId:'plant',x:.4,y:.5});
   const before=(await f.request('/api/bootstrap')).profile.wallet;

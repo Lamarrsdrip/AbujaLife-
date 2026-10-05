@@ -3,6 +3,7 @@ import { buildThreeEnvironment } from './world-3d-scenes.js';
 import { VEHICLE_COLORS, vehicleFor } from '../src/shared/vehicles.mjs';
 import { buildInterior } from './world-interiors.js';
 import { createCharacterModel } from './world-3d.js';
+import { HOME_ITEM_MODELS } from '../src/shared/home-items.mjs';
 
 // One reusable offscreen renderer makes actual model thumbnails. Shop cards use
 // images, so browsing a catalogue does not hold eight live WebGL contexts open.
@@ -17,12 +18,14 @@ const furniture={
   'premium-sofa':['premium-sofa',270,94],'king-bed':['king-bed',200,228],
   'pool-table':['pool-table',240,145],'gaming-console':['gaming-console',90,45],
   'bar-cart':['bar-cart',96,60],'art-piece':['art-piece',30,22],
+  ...Object.fromEntries(Object.entries(HOME_ITEM_MODELS).map(([id,item])=>[id,[item.modelKind,item.width,item.depth,item]])),
 };
-function thumbnail(itemId,colorId) {
+function thumbnail(itemId,colorId,appearance={}) {
   if(failed)return null;
-  const key=`${itemId}:${colorId||''}`;
+  const wear=itemId.startsWith('wear:')?itemId.slice(5):null;
+  const key=`${itemId}:${colorId||''}:${wear?JSON.stringify(appearance):''}`;
   if(thumbnails.has(key))return thumbnails.get(key);
-  const car=vehicleFor(itemId),dimensions=furniture[itemId],house=itemId.startsWith('home:')?itemId.slice(5):null,wear=itemId.startsWith('wear:')?itemId.slice(5):null;
+  const car=vehicleFor(itemId),dimensions=furniture[itemId],house=itemId.startsWith('home:')?itemId.slice(5):null;
   if(!car&&!dimensions&&!house&&!wear)return null;
   try {
     renderer||=new THREE.WebGLRenderer({alpha:true,antialias:true,preserveDrawingBuffer:true,powerPreference:'low-power'});
@@ -33,7 +36,7 @@ function thumbnail(itemId,colorId) {
     const scene=new THREE.Scene();
     const color=VEHICLE_COLORS.find(c=>c.id===(colorId||car?.defaultColor))?.hex||car?.colour;
     const resident=house?{home:{propertyId:house},location:{kind:'home'},inventory:[]}:null;
-    const model=wear?{group:createCharacterModel({skinTone:'brown',hair:'crop',top:({'linen-shirt':'cream','office-shirt':'navy','traditional-set':'agbada'})[wear]||'forest',bottom:'charcoal',shoes:'white'})}:house?buildThreeEnvironment(THREE,{scene:buildInterior({profile:resident}),profile:resident,kind:'home'}):buildThreeEnvironment(THREE,{modelOnly:car?{...car,color}:{kind:dimensions[0],width:dimensions[1],depth:dimensions[2]}});
+    const model=wear?{group:createCharacterModel({skinTone:'brown',hair:wear==='linen-shirt'?'braids':'crop',presentation:wear==='linen-shirt'?'feminine':'masculine',...appearance,top:({'linen-shirt':'cream','office-shirt':'navy','traditional-set':'agbada'})[wear]||'forest',bottom:appearance.bottom||'charcoal',shoes:wear==='white-trainers'?'white':appearance.shoes||'white'})}:house?buildThreeEnvironment(THREE,{scene:buildInterior({profile:resident}),profile:resident,kind:'home'}):buildThreeEnvironment(THREE,{modelOnly:car?{...car,color}:{...dimensions[3],kind:dimensions[0],width:dimensions[1],depth:dimensions[2]}});
     scene.add(model.group);
     const bounds=new THREE.Box3().setFromObject(model.group),center=bounds.getCenter(new THREE.Vector3()),size=bounds.getSize(new THREE.Vector3());
     const footwear=wear==='white-trainers';if(footwear)center.set(0,8,4);
@@ -47,12 +50,12 @@ function thumbnail(itemId,colorId) {
     const floor=new THREE.Mesh(new THREE.PlaneGeometry(span*2.6,span*2.6),new THREE.ShadowMaterial({opacity:.16}));floor.rotation.x=-Math.PI/2;floor.position.y=-1;floor.receiveShadow=true;scene.add(floor);
     renderer.render(scene,camera);
     const url=renderer.domElement.toDataURL('image/png');
-    model.dispose?.();scene.traverse(o=>{o.geometry?.dispose();if(o.material)for(const m of Array.isArray(o.material)?o.material:[o.material])m.dispose();});sun.shadow.map?.dispose();
+    model.group?.dispose?.();model.dispose?.();scene.traverse(o=>{o.geometry?.dispose();if(o.material)for(const m of Array.isArray(o.material)?o.material:[o.material])m.dispose();});sun.shadow.map?.dispose();
     thumbnails.set(key,url);while(thumbnails.size>80)thumbnails.delete(thumbnails.keys().next().value);
     return url;
   } catch {failed=true;renderer?.dispose();renderer=undefined;return null;}
 }
-export function enhanceProductPreviews(container) {
+export function enhanceProductPreviews(container,{appearance={}}={}) {
   if(!container)return;
   const nodes=[...container.querySelectorAll('[data-product-model]')];
   let i=0;
@@ -61,7 +64,7 @@ export function enhanceProductPreviews(container) {
     const node=nodes[i++];
     if(node.isConnected) {
       const itemId=node.dataset.productModel,color=node.dataset.productColor;
-      const url=thumbnail(itemId,color);
+      const url=thumbnail(itemId,color,appearance);
       if(url&&node.isConnected&&node.dataset.productColor===color) {
         let img=node.querySelector('img[data-product-3d]');
         if(!img){img=document.createElement('img');img.dataset.product3d='true';img.alt=node.dataset.productName||vehicleFor(itemId)?.name||itemId.replaceAll('-',' ');img.style.cssText='display:block;position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:2';node.style.position='relative';node.append(img);}

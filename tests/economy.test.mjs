@@ -159,7 +159,7 @@ test('new life destinations enforce Jabi Lake geography and furniture storage re
   f.store.action(f.ada,'purchase',{itemId:'plant'});f.store.action(f.ada,'place-furniture',{itemId:'plant',x:.4,y:.5});
   const stored=f.store.action(f.ada,'store-furniture',{itemId:'plant'}).profile;assert.ok(stored.inventory.includes('plant'));assert.equal(stored.furnitureLayout.plant,undefined);
   assert.deepEqual(stored.storedFurniture,['plant']);f.reopen();assert.deepEqual(f.store.profile(f.ada).storedFurniture,['plant']);
-  const placed=f.store.action(f.ada,'place-furniture',{itemId:'plant',x:.4,y:.5}).profile;assert.deepEqual(placed.storedFurniture,[]);assert.deepEqual(placed.furnitureLayout.plant,{x:.4,y:.5,rotation:0});
+  const placed=f.store.action(f.ada,'place-furniture',{itemId:'plant',x:.4,y:.5}).profile;assert.deepEqual(placed.storedFurniture,[]);assert.deepEqual(placed.furnitureLayout.plant,{x:.4,y:.5,rotation:0,propertyId:placed.home.propertyId});
   f.store.action(f.ada,'leave-home');assert.throws(()=>f.store.action(f.ada,'enter-venue',{venueId:'jabi-lake'}),/Choose a place/);
   for(const [venueId,activityId] of [['mosque','mosque-prayer'],['church','church-reflect'],['club','club-dance']]){
     if(venueId==='club'){f.store.action(f.ada,'enter-venue',{venueId});rejection(()=>f.store.action(f.ada,'venue-action',{activityId}),'venue_closed');f.store.action(f.ada,'exit-venue');const opening=clubSchedule(f.now).nextAvailableAt;f.advance(opening-f.now);}
@@ -192,7 +192,7 @@ test('purchased home upgrades improve real rest and relaxation, lower bills and 
   const relaxed=f.store.action(f.ada,'relax').profile;
   assert.equal(relaxed.fun,Math.min(100,slept.fun+22+12+6));assert.ok(relaxed.fun>slept.fun+22);
   assert.equal(relaxed.stress,Math.max(0,slept.stress-14-6));assert.equal(relaxed.stress,slept.stress-20);
-  assert.deepEqual(relaxed.furnitureLayout['king-bed'],{x:.4,y:.6,rotation:90});
+  assert.deepEqual(relaxed.furnitureLayout['king-bed'],{x:.4,y:.6,rotation:90,propertyId:relaxed.home.propertyId});
   assert.equal(homeBenefits(relaxed,properties[0]).billDiscountPercent,15);
   f.advance(GAME_BILL_PERIOD_MS);const wallet=f.store.profile(f.ada).wallet,paid=f.store.action(f.ada,'pay-bills');
   assert.deepEqual(paid.bill,{amount:383,baseAmount:450,discountPercent:15});assert.equal(paid.profile.wallet,wallet-383);

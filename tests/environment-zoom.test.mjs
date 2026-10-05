@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from '../app/vendor/three.module.js';
-import { WORLD_ZOOM, clampWorldZoom, worldViewport, constrainWorldCamera, applyWorldCamera, screenToWorld, worldToScreen, worldGroundMatrix, worldFloorTransform, screenVectorToWorld } from '../app/world-camera.js';
+import { WORLD_CAMERA, WORLD_ZOOM, clampWorldZoom, worldViewport, constrainWorldCamera, applyWorldCamera, screenToWorld, worldToScreen, worldGroundMatrix, worldFloorTransform, screenVectorToWorld, normalizeWorldOrientation, worldCameraEnvelope } from '../app/world-camera.js';
 
 test('mobile neighbourhood framing exposes several streets without depending on device pixel ratio', () => {
   const view = worldViewport({pixelWidth: 358, pixelHeight: 540, sceneWidth: 3540, sceneHeight: 4190});
@@ -124,4 +124,40 @@ test('oblique city follow keeps dealership exits and edge residents inside the r
     assert.ok(Math.hypot(picked.x-player.x,picked.y-player.y)<1e-8,'edge following preserves precise floor picks');
     assert.ok(rendered.x>20&&rendered.x<bounds.width-20&&rendered.y>20&&rendered.y<bounds.height-20);
   }
+});
+
+test('full orbit angles preserve floor rays, movement directions and complete default room framing',()=>{
+  const camera=new THREE.OrthographicCamera(-500,500,325,-325,1,12000),ray=new THREE.Raycaster(),ground=new THREE.Plane(new THREE.Vector3(0,1,0),0);
+  const scene={width:1760,height:1280},bounds={left:11,top:94,width:390,height:730};
+  for(let turn=0;turn<12;turn++)for(const elevation of [WORLD_CAMERA.minElevation,WORLD_CAMERA.elevation,WORLD_CAMERA.maxElevation]){
+    const view=worldViewport({pixelWidth:bounds.width,pixelHeight:bounds.height,sceneWidth:scene.width,sceneHeight:scene.height,interior:true,oblique:true,yaw:turn*Math.PI/6,elevation});
+    const center=constrainWorldCamera({x:200,y:1180},view,scene);assert.deepEqual(center,{x:880,y:640});applyWorldCamera(camera,{...center,...view});
+    for(const point of [{x:0,y:0},{x:scene.width,y:0},{x:0,y:scene.height},{x:scene.width,y:scene.height},{x:795,y:847}]){
+      const projected=new THREE.Vector3(point.x,0,point.y*Math.SQRT2).project(camera),screen=worldToScreen(point,bounds,center,view);
+      assert.ok(Math.abs(projected.x)<1&&Math.abs(projected.y)<1,'all room corners fit after orbit');
+      assert.ok(Math.hypot(screen.x-(bounds.left+(projected.x+1)*bounds.width/2),screen.y-(bounds.top+(1-projected.y)*bounds.height/2))<1e-7,'current orbit is shared by meshes and controls');
+      ray.setFromCamera(new THREE.Vector2(projected.x,projected.y),camera);const hit=ray.ray.intersectPlane(ground,new THREE.Vector3());
+      assert.ok(Math.hypot(hit.x-point.x,hit.z/Math.SQRT2-point.y)<1e-7,'camera picking does not drift while orbiting');
+      const picked=screenToWorld(screen,bounds,center,view);assert.ok(Math.hypot(picked.x-point.x,picked.y-point.y)<1e-7);
+    }
+    const matrix=worldGroundMatrix(true,view),right=screenVectorToWorld({x:1,y:0},true,view);
+    assert.ok(Math.abs(matrix.a*right.x+matrix.c*right.y-1)<1e-8&&Math.abs(matrix.b*right.x+matrix.d*right.y)<1e-8,'rightward input still moves right on the screen');
+    for(const x of [50,scene.width-50]){
+      const wall=new THREE.Vector3(x,176,134*Math.SQRT2).project(camera);assert.ok(Math.abs(wall.x)<1&&Math.abs(wall.y)<1&&Math.abs(wall.z)<1,'full-height rear walls are visible and not near/far clipped');
+    }
+  }
+});
+
+test('orbit camera envelope contains visible elevated meshes even for a tall low-angle mobile frustum',()=>{
+  const camera=new THREE.OrthographicCamera(-500,500,325,-325,1,12000),center={x:405,y:1458};
+  for(const height of [730,3800,6200])for(const elevation of [WORLD_CAMERA.minElevation,WORLD_CAMERA.elevation,WORLD_CAMERA.maxElevation])for(const yaw of [0,Math.PI/2,Math.PI,-Math.PI/2]){
+    const view={width:height*390/730,height,oblique:true,yaw,elevation},envelope=worldCameraEnvelope(view);applyWorldCamera(camera,{...center,...view});
+    assert.ok(camera.position.y>600,'the camera remains above the geometry allowance');assert.equal(camera.near,envelope.near);assert.equal(camera.far,envelope.far);
+    for(const modelHeight of [0,176,600])for(const side of [-1,1]){
+      const floor=screenVectorToWorld({x:side*view.width*.49,y:side*view.height*.49+modelHeight*Math.cos(elevation)},true,view);
+      const mesh=new THREE.Vector3(center.x+floor.x,modelHeight,(center.y+floor.y)*Math.SQRT2).project(camera);
+      assert.ok(Math.abs(mesh.x)<1&&Math.abs(mesh.y)<1&&Math.abs(mesh.z)<1,JSON.stringify({height,elevation,yaw,modelHeight,side,mesh,envelope}));
+    }
+  }
+  const repaired=normalizeWorldOrientation({yaw:NaN,elevation:Infinity});assert.deepEqual(repaired,{yaw:WORLD_CAMERA.yaw,elevation:WORLD_CAMERA.elevation});
 });

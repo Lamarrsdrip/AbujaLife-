@@ -4,6 +4,8 @@ import { LIFE_GOALS, GAME_YEAR_MS, GAME_BILL_PERIOD_MS, WALLET_META, INVESTMENT_
 import { vehicleColorFor } from '../src/shared/vehicles.mjs';
 import { ORIGIN_META, createOrigin, originHome } from '../src/shared/origins.mjs';
 import { abujaTime, jobSchedule, clubSchedule, seasonalWeather, JOB_SCHEDULES } from '../src/shared/simulation.mjs';
+import { variedAppearance } from '../src/shared/avatars.mjs';
+import { validateFurniturePlacement, applyFurniturePlacement, storeSupportedFurniture, readFurniturePlacement } from '../src/shared/furniture-placement.mjs';
 import { validateHomeDesign } from '../src/shared/home-design.mjs';
 import { homeDesignPreservesRoutes } from '../app/world-interiors.js';
 
@@ -47,7 +49,7 @@ function initialState({assignOrigin=true}={}) {
     origin,
     profile: {
       id: PLAYER_ID, username: 'preview_resident', displayName: 'Preview resident',
-      appearance: { skinTone:'brown', face:'oval', body:'regular', hair:'crop', facialHair:'none', presentation:'neutral', top:'forest', bottom:'charcoal', shoes:'white', accessory:'none' },
+      appearance: assignOrigin?variedAppearance({presentation:'neutral',randomInt:max=>randomInt(0,max)}):{skinTone:'brown',face:'oval',body:'regular',hair:'crop',facialHair:'none',presentation:'neutral',top:'forest',bottom:'charcoal',shoes:'white',accessory:'none'},
       origin,wallet, energy:82, hunger:72, hygiene:88, social:58, fun:64, stress:12, mood:76, reputation:0,
       district:home.district, location:{kind:'home',district:home.district,venue:'home'},home,
       job:null, careerLevel:1, skills:{}, inventory:seed.inventory, ownedProperties:origin?.giftedHome?[home.propertyId]:[],
@@ -93,7 +95,7 @@ function restore() {
     restored.profile.furnitureLayout={};
     for(const [itemId,placement] of Object.entries(saved.profile.furnitureLayout||{})) {
       if(!catalog.some(item=>item.id===itemId&&item.category==='furniture'&&restored.profile.inventory.includes(itemId)))continue;
-      try {restored.profile.furnitureLayout[itemId]=furniturePlacement(placement);}catch {/* Discard only the invalid placement. */}
+      try {restored.profile.furnitureLayout[itemId]=readFurniturePlacement(placement);}catch {/* Discard only the invalid placement. */}
     }
     if(restored.profile.location?.kind==='venue'&&!venueFor(restored.profile.location.venue))restored.profile.location={kind:'public',district:restored.profile.district,venue:'neighbourhood'};
     if(restored.profile.location?.kind==='visit')restored.profile.location={kind:'public',district:restored.profile.district,venue:'neighbourhood'};
@@ -141,7 +143,7 @@ function updateAppearance(profile, incoming) {
     check(typeof incoming[key]==='string'&&(!values||values.includes(incoming[key])),`Choose a supported ${key}`);
     if(key==='top'&&!['forest','ochre'].includes(incoming[key])) {
       const item=catalog.find(item=>item.category==='clothing'&&item.slot==='top'&&item.value===incoming[key]);
-      check(item&&profile.inventory.includes(item.id),'Buy this outfit in Capital Market before wearing it',403,'outfit_not_owned');
+      check(item&&profile.inventory.includes(item.id),'Buy this outfit in Okrika Marketplace before wearing it',403,'outfit_not_owned');
     }
     profile.appearance[key]=incoming[key];
   }
@@ -268,7 +270,7 @@ function sellItem(payload={}) {
     check(profile.inventory.includes(itemId),'You can only sell an item you own',403,'item_not_owned');
     check(profile.drivingVehicle!==itemId,'Park your car before selling it',409,'vehicle_driving');
     const amount=systemResaleValue(item);profile.wallet+=amount;
-    profile.inventory=profile.inventory.filter(id=>id!==itemId);delete profile.furnitureLayout[itemId];profile.storedFurniture=profile.storedFurniture.filter(id=>id!==itemId);delete profile.vehicleColors[itemId];
+    profile.inventory=profile.inventory.filter(id=>id!==itemId);storeSupportedFurniture(profile,itemId);delete profile.furnitureLayout[itemId];profile.storedFurniture=profile.storedFurniture.filter(id=>id!==itemId);delete profile.vehicleColors[itemId];
     if(item.category==='clothing'&&item.slot&&profile.appearance[item.slot]===item.value&&!catalog.some(other=>other.id!==itemId&&profile.inventory.includes(other.id)&&other.category==='clothing'&&other.slot===item.slot&&other.value===item.value)){
       const defaults={top:'forest',bottom:'charcoal',shoes:'white'};profile.appearance[item.slot]=defaults[item.slot]??profile.appearance[item.slot];
     }
@@ -276,6 +278,16 @@ function sellItem(payload={}) {
   });
 }
 function action(name,payload={}) {
+  if(name==='purchase'&&payload.idempotencyKey&&catalog.some(item=>item.id===payload.itemId&&item.category==='furniture')){
+    const item=catalog.find(item=>item.id===payload.itemId);
+    return economyOperation('purchase',payload,{itemId:item.id},profile=>{
+      check(!profile.activeTrip,'Your journey is still in progress');
+      check(!profile.inventory.includes(item.id),'You already own this item',409,'item_owned');
+      check(profile.wallet>=item.price,'You need more Naira for this',409,'insufficient_balance');
+      profile.wallet-=item.price;profile.inventory.push(item.id);profile.storedFurniture.push(item.id);
+      return{item:clone(item),ledgerReason:`Furniture purchase · ${item.name}`};
+    });
+  }
   if(name==='sell-item')return sellItem(payload);
   if(name==='topup'||name==='demo-topup')return topup(payload);
   if(name==='transfer-naira')throw new PreviewError('Naira transfers connect registered residents in the full game. This browser preview has no shared wallet or other residents.',503,'browser_preview_only');
@@ -333,10 +345,9 @@ function action(name,payload={}) {
     case 'place-furniture': {
       home();const item=catalog.find(item=>item.id===payload.itemId);
       check(item?.category==='furniture'&&profile.inventory.includes(item.id),'Buy this furniture before placing it');
-      let placement;try{placement=furniturePlacement(payload);}catch(error){throw new PreviewError(error.message);}
-      profile.furnitureLayout||={};profile.furnitureLayout[item.id]=placement;profile.storedFurniture=profile.storedFurniture.filter(id=>id!==item.id);extra.placement={itemId:item.id,...clone(placement)};break;
+      let placement;try{placement=validateFurniturePlacement(profile,item.id,payload);profile.furnitureLayout||={};applyFurniturePlacement(profile,item.id,placement);}catch(error){throw new PreviewError(error.message,400,error.code);}extra.placement={itemId:item.id,...clone(placement)};break;
     }
-    case 'store-furniture': {home();const item=catalog.find(item=>item.id===payload.itemId);check(item?.category==='furniture'&&profile.inventory.includes(item.id),'You can store furniture you own');delete profile.furnitureLayout[item.id];if(!profile.storedFurniture.includes(item.id))profile.storedFurniture.push(item.id);extra.storedItemId=item.id;break;}
+    case 'store-furniture': {home();const item=catalog.find(item=>item.id===payload.itemId);check(item?.category==='furniture'&&profile.inventory.includes(item.id),'You can store furniture you own');storeSupportedFurniture(profile,item.id);delete profile.furnitureLayout[item.id];if(!profile.storedFurniture.includes(item.id))profile.storedFurniture.push(item.id);extra.storedItemId=item.id;break;}
     case 'design-home':{
       home();let roomStyle;try{roomStyle=validateHomeDesign(payload.roomStyle);}catch(error){throw new PreviewError(error.message);}
       check(homeDesignPreservesRoutes(profile,roomStyle),'Keep the entrance, furnishings and activity routes clear',400,'home_route_blocked');profile.home.roomStyle=roomStyle;extra.roomStyle=clone(roomStyle);break;
@@ -384,7 +395,7 @@ function action(name,payload={}) {
       const old=Object.keys(next.completedChallenges);if(old.length>200)delete next.completedChallenges[old[0]];break;
     }
     case 'work-shift':throw new PreviewError('Start a shift and complete its work tasks to earn your salary');
-    case 'purchase': {const item=catalog.find(item=>item.id===payload.itemId);check(item,'Choose an item from Capital Market');check(!profile.inventory.includes(item.id),'You already own this item',409);if(item.category==='vehicle'){const color=payload.color??item.defaultColor;check(vehicleColorFor(color)&&item.availableColors.includes(color),'Choose an available car colour');profile.vehicleColors[item.id]=color;}debit(item.price);profile.inventory.push(item.id);extra.item=clone(item);break;}
+    case 'purchase': {const item=catalog.find(item=>item.id===payload.itemId);check(item,'Choose an item from Okrika Marketplace');check(!profile.inventory.includes(item.id),'You already own this item',409);if(item.category==='vehicle'){const color=payload.color??item.defaultColor;check(vehicleColorFor(color)&&item.availableColors.includes(color),'Choose an available car colour');profile.vehicleColors[item.id]=color;}debit(item.price);profile.inventory.push(item.id);if(item.category==='furniture'&&!profile.storedFurniture.includes(item.id))profile.storedFurniture.push(item.id);extra.item=clone(item);break;}
     case 'paint-vehicle': {const item=catalog.find(item=>item.id===payload.itemId&&item.category==='vehicle');check(item&&profile.inventory.includes(item.id),'You can repaint a car you own',403,'vehicle_not_owned');check(vehicleColorFor(payload.color)&&item.availableColors.includes(payload.color),'Choose an available car colour');profile.vehicleColors[item.id]=payload.color;extra.item=clone(item);break;}
     case 'equip': {const item=catalog.find(item=>item.id===payload.itemId);check(item?.category==='clothing'&&profile.inventory.includes(item.id),'You can wear clothing you own');profile.appearance[item.slot]=item.value;break;}
     case 'move-home': {

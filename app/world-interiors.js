@@ -1,6 +1,7 @@
 // AbujaLife's authored, walkable cutaway interiors. Coordinates describe the floor,
 // including furniture footprints; raised furniture is drawn above those footprints.
 import { EXTRA_HOME_ITEMS } from '../src/shared/home-items.mjs';
+import { furnitureSurface, SURFACE_ONLY_FURNITURE } from '../src/shared/furniture-metadata.mjs';
 import { VENUE_ACTIONS, VENUES } from '../src/shared/life.mjs';
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const rect = (x,y,w,h,fill,rx=0,extra='') => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" fill="${fill}" ${extra}/>`;
@@ -95,7 +96,7 @@ function sceneBase(width,height,id,{floor='oak',name='',accent='#e9e6d7'}={}) {
     rug(x,y,w,h,color='#b1b59a'){floorAreas.push({x,y,w,h,material:'rug',color});art.push(rect(x,y,w,h,color,7)+rect(x+9,y+9,w-18,h-18,`url(#${id}-rug)`,3)+rect(x+8,y+8,w-16,h-16,'none',3,'stroke="#e4d3ac" stroke-width="3" opacity=".65"'));},
     window(x,w=220,view='garden'){art.push(group(x,84,rect(0,0,w,54,`url(#${id}-glass)`,2)+path(`M3 33Q${w/4} 12 ${w/2} 28Q${w*.8} 9 ${w-3} 29V51H3Z`,view==='lake'?'#699a92':'#7c9d74')+line(w/2,0,w/2,54,'#f1ebd5',5)+rect(-5,-5,w+10,64,'none',1,'stroke="#f3eedb" stroke-width="7"')+rect(-8,54,w+16,8,'#b4bba5')));art.push(path(`M${x} 149H${x+w}L${x+w+170} 470H${x+105}Z`,`url(#${id}-light)`));},
     door(x=width/2,label='OUTSIDE',action='leave-home'){art.push(rect(x-54,height-109,108,24,'#a69773',3)+rect(x-49,height-106,98,15,'#cab68c',2)+rect(x-47,height-158,94,38,'#c4ae80',4)+line(x-38,height-149,x+38,height-149,'#af946a',2)+line(x-38,height-140,x+38,height-140,'#af946a',2)+text(x,height-89,label,10,'#596650','text-anchor="middle" letter-spacing="2"'));this.spawn={x,y:height-170};this.point('exit',x,height-137,'Head outside',action);},
-    finish(){this.art.push(...this.items.sort((a,b)=>a.y-b.y).map(item=>item.art));this.art.push(rect(48,height-83,width-96,14,'#ece5cb',2));return {width,height,floorMaterial:floor,spawn:this.spawn,objects,walls,floorAreas,pedestrians,art:this.art.join(''),obstacles,interactables,title:this.title,subtitle:this.subtitle,furnishingArea:this.furnishingArea,furniturePlacements:this.furniturePlacements||[],storedFurniture:this.storedFurniture||[]};}
+    finish(){for(const item of [...objects,...(this.furniturePlacements||[])])if(item.itemId){item.surfaceHeight=furnitureSurface(item.itemId)?.height||0;item.elevation||=0;item.propertyId||=this.homePropertyId;}this.art.push(...this.items.sort((a,b)=>a.y-b.y).map(item=>item.art));this.art.push(rect(48,height-83,width-96,14,'#ece5cb',2));return {width,height,floorMaterial:floor,spawn:this.spawn,objects,walls,floorAreas,pedestrians,art:this.art.join(''),obstacles,interactables,title:this.title,subtitle:this.subtitle,furnishingArea:this.furnishingArea,furniturePlacements:this.furniturePlacements||[],storedFurniture:this.storedFurniture||[],homePropertyId:this.homePropertyId};}
   };
   return s;
 }
@@ -169,7 +170,7 @@ function buildStarterHome(profile,id,key,dimensions,owned) {
   s.door(s.width/2);
   s.furnishingArea={x:62,y:160,w:s.width-124,h:s.height-280};
   // Free fixtures are plumbing and the basic sleeping mat, never catalog gifts.
-  const needsMat=bare&&!['bed','king-bed'].some(itemId=>owned.has(itemId)&&!profile.storedFurniture?.includes(itemId));
+  const needsMat=bare&&!['bed','king-bed'].some(itemId=>owned.has(itemId)&&!profile.storedFurniture?.includes(itemId)&&(!profile.furnitureLayout?.[itemId]?.propertyId||profile.furnitureLayout[itemId].propertyId===profile.home.propertyId));
   if(needsMat) {
     const mat=shadow(0,0,125,190)+rect(0,0,125,190,'#928c72',4)+rect(5,5,115,180,'#bdb69a',4)+rect(14,13,97,32,'#d8d1b9',6);
     const position=({'garki-studio':{x:115,y:235},'lugbe-flat':{x:148,y:220},'gwarinpa-apartment':{x:142,y:233},'jabi-apartment':{x:1070,y:715},'guzape-terrace':{x:151,y:241},'maitama-villa':{x:133,y:239}})[key];
@@ -186,6 +187,7 @@ function buildStarterHome(profile,id,key,dimensions,owned) {
     'guzape-terrace':[{x:151,y:241},{x:166,y:697},{x:783,y:780},{x:705,y:718}],
     'maitama-villa':[{x:133,y:239},{x:175,y:714},{x:968,y:950},{x:873,y:710}],
   })[key]||[{x:115,y:235},{x:150,y:s.height-430},{x:s.width*.45,y:s.height-425},{x:s.width*.55,y:210}];
+  s.homePropertyId=profile.home?.propertyId;
   addOwnedFurniture(s,profile,owned);
   const pointByFurniture=(placement,action,label)=>{
     const candidates=[{x:placement.x+placement.w/2,y:placement.y+placement.h+46},{x:placement.x+placement.w+46,y:placement.y+placement.h/2},{x:placement.x-46,y:placement.y+placement.h/2},{x:placement.x+placement.w/2,y:placement.y-46}];
@@ -268,6 +270,7 @@ function buildHome(profile,id) {
     s.furnitureAnchors=[{x:79,y:1079},{x:548,y:971},{x:1172,y:848},{x:751,y:734}];
   }
   s.furnishingArea={x:62,y:160,w:s.width-124,h:s.height-280};
+  s.homePropertyId=profile.home?.propertyId;
   addOwnedFurniture(s,profile,owned);
   const furnishPoint=[{x:s.spawn.x+114,y:s.spawn.y-2},{x:s.spawn.x-114,y:s.spawn.y-2},{x:s.spawn.x,y:s.spawn.y-74}].find(p=>!s.obstacles.some(b=>p.x>b.x-32&&p.x<b.x+b.w+32&&p.y>b.y-32&&p.y<b.y+b.h+32))||{x:s.spawn.x,y:s.spawn.y};
   s.point('furnish',furnishPoint.x,furnishPoint.y,'Arrange your home','furnish');
@@ -317,6 +320,10 @@ function extraFurnitureArt(item){
     case 'washing-machine':return rect(0,-58,w,h+58,'#d6dbd5',6)+rect(7,-48,w-14,17,'#6c7a74',2)+ellipse(w/2,18,w*.32,w*.32,'#788d8d')+ellipse(w/2,18,w*.24,w*.24,'#bacac9');
     case 'standing-fan':return ellipse(w/2,h*.8,w*.46,8,'#7d8b80')+line(w/2,h*.8,w/2,-42,'#657971',6)+ellipse(w/2,-55,28,28,'#b7c9bf')+ellipse(w/2,-55,23,23,'none','stroke="#658176" stroke-width="3"')+line(w/2-20,-55,w/2+20,-55,'#668776',4)+line(w/2,-75,w/2,-35,'#668776',4);
     case 'full-length-mirror':return rect(-5,-120,w+10,134,'#92795d',4)+rect(1,-113,w-2,119,'#b4d0ce',2)+path(`M4-104L${w-8}-48V-83L4-111Z`,'#dbe8e1');
+    case 'table-lamp':return ellipse(w/2,h/2,w*.3,h*.24,'#9a886b')+line(w/2,h/2,w/2,-30,'#997f58',4)+path(`M${w*.08}-30L${w*.22}-56H${w*.78}L${w*.92}-30Z`,'#eadbc1');
+    case 'vase':return ellipse(w/2,h/2,w*.38,h*.3,'#657f7c')+ellipse(w/2,-14,w*.24,5,'#a5beb3')+path(`M${w*.26}-14Q${w*.1} 10 ${w*.13} ${h/2}H${w*.87}Q${w*.9} 10 ${w*.74}-14Z`,'#91aaa0');
+    case 'succulent':return ellipse(w/2,h/2,w*.43,7,'#ad8763')+path(`M${w*.15} 0H${w*.85}L${w*.75} ${h/2}H${w*.25}Z`,'#c5a27b')+ellipse(w/2,-4,w*.35,9,'#74966f')+ellipse(w/2,-10,w*.18,10,'#8fa97d');
+    case 'book-stack':return rect(0,-4,w,h,'#657b77',2)+rect(3,-9,w-4,h-2,'#d5c9ae',2)+rect(0,-14,w-1,h-4,'#ad8567',2);
     case 'music-speaker':return rect(0,-80,w,h+80,'#394744',5)+ellipse(w/2,-48,w*.3,w*.3,'#152320')+ellipse(w/2,-8,w*.32,w*.32,'#677d72');
     case 'microwave':return coffeeArt(w,h)+rect(4,-48,w-8,45,'#c7ceca',4)+rect(10,-41,w*.63,28,'#354b44',2)+ellipse(w-13,-24,4,4,'#708f7d');
     case 'shoe-rack':return rect(0,-36,w,65,'#9c8361',3)+line(6,-14,w-6,-14,'#d4c3a2',4)+line(6,14,w-6,14,'#d4c3a2',4);
@@ -326,7 +333,11 @@ function extraFurnitureArt(item){
 for(const item of EXTRA_HOME_ITEMS)FURNITURE[item.id]={w:item.width,h:item.depth,upright:!!item.upright,solid:item.solid,art:()=>extraFurnitureArt(item)};
 export function furnitureGhost(itemId) {
   const def=FURNITURE[itemId]||FURNITURE.plant;
-  return {art:def.art(),width:def.w,height:def.h,upright:!!def.upright};
+  return {art:def.art(),...furnitureDimensions(itemId)};
+}
+export function furnitureDimensions(itemId) {
+  const def=FURNITURE[itemId]||FURNITURE.plant;
+  return {width:def.w,height:def.h,upright:!!def.upright,solid:def.solid!==false,surfaceHeight:furnitureSurface(itemId)?.height||0,requiresSurface:SURFACE_ONLY_FURNITURE.includes(itemId)};
 }
 
 function partitionRect(scene,partition){
@@ -403,10 +414,12 @@ function addOwnedFurniture(s,profile,owned) {
     s.furniturePlacements.push({itemId,x:base.x,y:base.footY,w:base.w,h:base.h,rotation:0});return true;
   };
   let next=0;
-  for(const itemId of owned) {
+  for(const itemId of [...owned].sort((a,b)=>Number(Boolean(entries.find(v=>(v.itemId||v.id)===a)?.supportId))-Number(Boolean(entries.find(v=>(v.itemId||v.id)===b)?.supportId)))) {
     const def=FURNITURE[itemId];if(!def)continue;
     if(profile.storedFurniture?.includes(itemId)){s.storedFurniture.push(itemId);continue;}
     const stored=entries.find(v=>(v.itemId||v.id)===itemId);
+    if(stored?.propertyId&&stored.propertyId!==profile.home?.propertyId){s.storedFurniture.push(itemId);continue;}
+    if(SURFACE_ONLY_FURNITURE.includes(itemId)&&!stored?.supportId){s.storedFurniture.push(itemId);continue;}
     if(!stored&&['bed','dining-table'].includes(itemId)&&adoptBase(itemId))continue;
     if(itemId==='sofa') {
       const base=s.items.find(v=>v.art.includes('#d9b984')&&v.art.includes('#e4dfc5'));
@@ -429,13 +442,19 @@ function addOwnedFurniture(s,profile,owned) {
     const overlaps=(a,b,pad=16)=>a.x<b.x+b.w+pad&&a.x+a.w>b.x-pad&&a.y<b.y+b.h+pad&&a.y+a.h>b.y-pad;
     let candidates=[anchor,...s.furnitureAnchors];
     const clear=a=>(def.solid===false||!s.obstacles.some(b=>overlaps({...a,w,h},b)))&&!s.interactables.some(p=>p.x>a.x-45&&p.x<a.x+w+45&&p.y>a.y-45&&p.y<a.y+h+45)&&Math.hypot(a.x+w/2-s.spawn.x,a.y+h/2-s.spawn.y)>110&&(def.solid===false||furniturePlacementPreservesRoutes(s,{...a,w,h}));
-    let placement=candidates.find(clear);
-    if(!placement)for(let y=s.height-135-h;y>174&&!placement;y-=58)for(let x=85;x<s.width-85-w&&!placement;x+=58){const candidate={x,y};if(clear(candidate))placement=candidate;}
+    const authoritative=stored?.propertyId===profile.home?.propertyId;
+    let placement=authoritative&&Number.isFinite(x)&&Number.isFinite(y)?{x,y}:candidates.find(clear);
+    if(!placement&&!authoritative)for(let y=s.height-135-h;y>174&&!placement;y-=58)for(let x=85;x<s.width-85-w&&!placement;x+=58){const candidate={x,y};if(clear(candidate))placement=candidate;}
     if(!placement){if(!adoptBase(itemId))s.storedFurniture.push(itemId);continue;}
+    const support=stored?.supportId?s.furniturePlacements.find(placed=>placed.itemId===stored.supportId):null;
+    if(stored?.supportId&&(!support||!furnitureSurface(support.itemId))){s.storedFurniture.push(itemId);continue;}
+    const elevation=support?furnitureSurface(support.itemId).height:0;
     const normalizedX=(placement.x+w/2-area.x)/area.w,normalizedY=(placement.y+h/2-area.y)/area.h;
     const art=`<g data-home-item="${esc(itemId)}" data-furniture-item="${esc(itemId)}" data-placement-x="${normalizedX.toFixed(3)}" data-placement-y="${normalizedY.toFixed(3)}" data-placement-rotation="${rotation}" transform="translate(${w/2} ${h/2}) rotate(${artRotation}) translate(${-def.w/2} ${-def.h/2})">${def.art()}</g>`;
-    if(def.solid===false){s.art.push(group(placement.x,placement.y,art));s.objects.push({x:placement.x,y:placement.y,w,h,kind:itemId,itemId,rotation,solid:false});}else s.object(placement.x,placement.y,w,h,art,{kind:itemId});
-    s.furniturePlacements.push({itemId,x:placement.x,y:placement.y,w,h,rotation});
+    if(def.solid===false||support){s.art.push(group(placement.x,placement.y,art));s.objects.push({x:placement.x,y:placement.y,w,h,kind:itemId,itemId,rotation,solid:false});}else s.object(placement.x,placement.y,w,h,art,{kind:itemId});
+    const metadata={propertyId:stored?.propertyId||profile.home?.propertyId,supportId:stored?.supportId||null,elevation,surfaceHeight:furnitureSurface(itemId)?.height||0};
+    Object.assign(s.objects.at(-1),metadata);
+    s.furniturePlacements.push({itemId,x:placement.x,y:placement.y,w,h,rotation,...metadata});
     if(itemId==='sofa') {
       const old=s.interactables.find(p=>p.action==='relax');
       const candidates=[{x:placement.x+w/2,y:placement.y+h+38},{x:placement.x+w+38,y:placement.y+h/2},{x:placement.x-38,y:placement.y+h/2},{x:placement.x+w/2,y:placement.y-38}];

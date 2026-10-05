@@ -61,6 +61,6 @@ export const properties = [
 });
 export const activities = {eat:{cost:1200,location:'home'},sleep:{cost:0,location:'home'},shower:{cost:0,location:'home'},relax:{cost:0,location:'home'},hangout:{cost:2400,location:'public'},exercise:{cost:800,location:'public'},cinema:{cost:3800,location:'public'}};
 export const transportModes = TRANSPORT_MODES;
-export const appearanceOptions = {skinTone:['deep','brown','warm','light'],hair:['crop','locs','afro','braids','bald'],top:['ochre','forest','cream','navy','agbada'],body:['regular','slim','broad'],face:['oval','round','angular'],presentation:['neutral','feminine','masculine'],facialHair:['none','beard'],bottom:['charcoal','denim','cream'],shoes:['white','black'],accessory:['none','glasses']};
+export const appearanceOptions = {skinTone:['deep','brown','warm','light'],hair:['crop','locs','afro','braids','bun','long','twists','bald'],top:['ochre','forest','cream','navy','agbada'],body:['regular','slim','broad'],face:['oval','round','angular'],presentation:['neutral','feminine','masculine'],facialHair:['none','beard'],bottom:['charcoal','denim','cream'],shoes:['white','black'],accessory:['none','glasses']};
 
 export function resalePrice(itemOrId){const item=typeof itemOrId==='string'?catalog.find(value=>value.id===itemOrId):itemOrId;return systemResaleValue(item);}

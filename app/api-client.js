@@ -16,11 +16,11 @@ export function apiURL(path) {
   return new URL(path, url.origin).href;
 }
 
-// The first city render only needs resident/world state. During a staggered
-// production deploy the static client can arrive before the API route does, so
-// fast startup MUST gracefully fall back to the established endpoint rather
-// than blocking residents on an older API that does not know the fast route.
+// City entry must never be held behind the heavyweight social/bootstrap read.
+// The first bootstrap is fast, and completing onboarding arms one more fast
+// bootstrap so "Start playing" enters the world from resident/world state only.
 let startupBootstrapPending = true;
+let postProfileBootstrapPending = false;
 const FAST_ROUTE_MISSING = new Set([404,405,501]);
 
 // Realtime events can cause several surfaces to ask for the same fresh state at
@@ -54,21 +54,29 @@ export function apiFetch(path, options = {}) {
   const deadline=AbortSignal.timeout(15000);
   const signal=options.signal?AbortSignal.any([options.signal,deadline]):deadline;
   const method=String(options.method||'GET').toUpperCase();
-  const startupRequest=method==='GET'&&path==='/api/bootstrap'&&startupBootstrapPending;
+  const bootstrapRequest=method==='GET'&&path==='/api/bootstrap';
+  const fastBootstrapRequest=bootstrapRequest&&(startupBootstrapPending||postProfileBootstrapPending);
   const loginRequest=method==='POST'&&path==='/api/auth/login';
-  const primaryPath=startupRequest?'/api/bootstrap/fast':loginRequest?'/api/auth/login/fast':path;
-  const fallbackPath=startupRequest?'/api/bootstrap':loginRequest?'/api/auth/login':null;
+  const profileWrite=method==='POST'&&path==='/api/profile';
+  const primaryPath=fastBootstrapRequest?'/api/bootstrap/fast':loginRequest?'/api/auth/login/fast':path;
+  const fallbackPath=fastBootstrapRequest?'/api/bootstrap':loginRequest?'/api/auth/login':null;
   const url=apiURL(primaryPath);
   const init={...options,signal,credentials:'include',cache:'no-store'};
 
   if(method!=='GET'||options.body!==undefined||options.headers){
-    return compatibleFetch(primaryPath,fallbackPath,init);
+    return compatibleFetch(primaryPath,fallbackPath,init).then(response=>{
+      if(profileWrite&&response.ok)postProfileBootstrapPending=true;
+      return response;
+    });
   }
 
   let pending=inFlightGets.get(url);
   if(!pending){
     pending=compatibleFetch(primaryPath,fallbackPath,init).then(response=>{
-      if(startupRequest&&response.ok)startupBootstrapPending=false;
+      if(fastBootstrapRequest&&response.ok){
+        startupBootstrapPending=false;
+        postProfileBootstrapPending=false;
+      }
       return response;
     }).finally(()=>inFlightGets.delete(url));
     inFlightGets.set(url,pending);

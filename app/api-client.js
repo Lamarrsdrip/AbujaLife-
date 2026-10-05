@@ -16,6 +16,12 @@ export function apiURL(path) {
   return new URL(path, url.origin).href;
 }
 
+// The first city render only needs the resident and world state. Heavy social,
+// inbox, history and admin data hydrate immediately after the shell is usable.
+// Keep retrying the lightweight route until one response succeeds so a flaky
+// first request never falls back to the old blocking startup path.
+let startupBootstrapPending = true;
+
 // Realtime events can cause several surfaces to ask for the same fresh state at
 // once. Share only the in-flight GET; never cache a settled response, so a later
 // interaction always reaches the server and mutations are never hidden.
@@ -24,8 +30,11 @@ const inFlightGets = new Map();
 export function apiFetch(path, options = {}) {
   const deadline=AbortSignal.timeout(15000);
   const signal=options.signal?AbortSignal.any([options.signal,deadline]):deadline;
-  const url=apiURL(path);
   const method=String(options.method||'GET').toUpperCase();
+  const startupRequest=method==='GET'&&path==='/api/bootstrap'&&startupBootstrapPending;
+  const loginRequest=method==='POST'&&path==='/api/auth/login';
+  const requestPath=startupRequest?'/api/bootstrap/fast':loginRequest?'/api/auth/login/fast':path;
+  const url=apiURL(requestPath);
   const init={...options,signal,credentials:'include',cache:'no-store'};
 
   if(method!=='GET'||options.body!==undefined||options.headers){
@@ -34,7 +43,10 @@ export function apiFetch(path, options = {}) {
 
   let pending=inFlightGets.get(url);
   if(!pending){
-    pending=globalThis.fetch(url,init).finally(()=>inFlightGets.delete(url));
+    pending=globalThis.fetch(url,init).then(response=>{
+      if(startupRequest&&response.ok)startupBootstrapPending=false;
+      return response;
+    }).finally(()=>inFlightGets.delete(url));
     inFlightGets.set(url,pending);
   }
   return pending.then(response=>response.clone());

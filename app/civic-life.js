@@ -1,10 +1,11 @@
 import { apiFetch } from './api-client.js';
 
-const sheetRoot=document.querySelector('#sheet-root');
+const phoneRoot=document.querySelector('#phone-root');
 const toastRoot=document.querySelector('#toast');
-const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
 const money=v=>`₦${new Intl.NumberFormat('en-NG',{maximumFractionDigits:0}).format(Number(v||0))}`;
 const ago=value=>{const ms=Date.now()-Number(value||0),m=Math.max(0,Math.floor(ms/60000));return m<1?'now':m<60?`${m}m ago`:m<1440?`${Math.floor(m/60)}h ago`:`${Math.floor(m/1440)}d ago`;};
+const ballotIcon='<svg class="ph-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v5H6zM4 8h16v13H4z"/><path d="m9 5 2 2 4-4M8 13h8M8 17h5"/></svg>';
 let overlay=null,state=null,busy=false;
 
 function toast(message){if(!toastRoot)return;toastRoot.textContent=message;toastRoot.classList.add('visible');clearTimeout(toast.timer);toast.timer=setTimeout(()=>toastRoot.classList.remove('visible'),3600);}
@@ -13,7 +14,7 @@ const party=id=>state?.parties?.find(p=>p.id===id);
 const actionReason=action=>action.phase&&action.phase!==state?.cycle?.phase?.id?`Available during ${action.phase}`:action.venueId&&!atVenue(action.venueId)?'Travel there first':action.requiresPublic&&state?.resident?.location?.kind!=='public'?'Head outside first':action.requiresCase&&state?.candidate?.enforcement==='none'?'No active case':null;
 const atVenue=id=>state?.resident?.location?.kind==='venue'&&(state.resident.location.venue===id||state.resident.location.venueId===id);
 
-function close(){overlay?.remove();overlay=null;state=null;busy=false;}
+function close(){overlay?.remove();overlay=null;state=null;busy=false;phoneRoot?.querySelector('[data-civic-launcher]')?.focus({preventScroll:true});}
 function openTravel(venueId){close();window.dispatchEvent(new CustomEvent('abj:open-map-venue',{detail:{venueId}}));}
 function statusText(candidate){if(!candidate)return'';return candidate.status==='detained'?'Detained · hearing required':candidate.status==='disqualified'?'Removed from ballot':candidate.enforcement==='efcc-raid'?'EFCC storyline raid active':candidate.enforcement==='efcc-review'?'Integrity review active':'Active candidate';}
 
@@ -38,9 +39,19 @@ async function refresh(){if(!overlay)return;try{state=await api('/api/civic/stat
 async function mutate(path,body){if(busy)return;busy=true;try{const result=await api(path,{method:'POST',body:{...body,idempotencyKey:body.idempotencyKey||crypto.randomUUID()}});state=result.civic||await api('/api/civic/state');render();toast('City story updated.');}catch(error){toast(error.message);}finally{busy=false;}}
 function bind(){if(!overlay)return;overlay.querySelectorAll('[data-civic-travel]').forEach(b=>b.onclick=()=>openTravel(b.dataset.civicTravel));overlay.querySelectorAll('[data-civic-action]').forEach(b=>b.onclick=()=>mutate('/api/civic/campaign',{actionId:b.dataset.civicAction}));overlay.querySelectorAll('[data-gov-action]').forEach(b=>b.onclick=()=>mutate('/api/civic/government/action',{actionId:b.dataset.govAction}));overlay.querySelectorAll('[data-civic-vote]').forEach(b=>b.onclick=()=>mutate('/api/civic/vote',{candidateId:b.dataset.civicVote}));overlay.querySelectorAll('[data-civic-close]').forEach(b=>b.onclick=close);const form=overlay.querySelector('[data-civic-nominate]');if(form)form.onsubmit=e=>{e.preventDefault();const data=Object.fromEntries(new FormData(form));void mutate('/api/civic/nominate',{partyId:data.partyId,manifesto:data.manifesto});};}
 
-export function openCivicLife(){if(overlay)return;overlay=document.createElement('div');overlay.className='civic-overlay';overlay.innerHTML=`<section class="civic-shell" role="dialog" aria-modal="true" aria-labelledby="civic-title"><header class="civic-head"><span class="eyebrow">ABUJA LIFE · CIVIC LIFE</span><h2 id="civic-title">The city has a story.</h2><p>Run. Campaign. Vote. Govern. Face the consequences of your choices.</p><button class="civic-close" type="button" aria-label="Close">×</button></header><div class="civic-scroll"><div class="civic-loading">Opening Abuja civic life…</div></div></section>`;document.body.append(overlay);overlay.querySelector('.civic-close').onclick=close;overlay.addEventListener('click',e=>{if(e.target===overlay)close();});void refresh();}
+export function openCivicLife(){if(overlay)return;overlay=document.createElement('div');overlay.className='civic-overlay';overlay.innerHTML=`<section class="civic-shell" role="dialog" aria-modal="true" aria-labelledby="civic-title"><header class="civic-head"><span class="eyebrow">ABUJA LIFE · CITY STORY</span><h2 id="civic-title">Power, people & the city.</h2><p>Run. Campaign. Vote. Govern. Face the consequences of your choices.</p><button class="civic-close" type="button" aria-label="Close">×</button></header><div class="civic-scroll"><div class="civic-loading">Opening Abuja civic life…</div></div></section>`;document.body.append(overlay);overlay.querySelector('.civic-close').onclick=close;overlay.addEventListener('click',e=>{if(e.target===overlay)close();});void refresh();}
 
-function ensureEntry(scope=document){const grid=scope.querySelector?.('.life-menu-grid');if(!grid||grid.querySelector('[data-open-civic-life]'))return;const button=document.createElement('button');button.type='button';button.className='civic-life-entry';button.dataset.openCivicLife='';button.innerHTML='<span aria-hidden="true">◆</span><strong>City & Election</strong><small>Campaigns · voting · city stories</small>';button.onclick=openCivicLife;grid.append(button);}
-function scan(scope=document){ensureEntry(scope);scope.querySelectorAll?.('.life-menu-grid').forEach(grid=>ensureEntry(grid.parentElement||document));}
-scan();const observer=new MutationObserver(records=>{for(const record of records)for(const node of record.addedNodes)if(node instanceof Element){scan(node);scan(document);}});observer.observe(document.documentElement,{childList:true,subtree:true});
+function ensurePhoneEntry(){
+  if(!phoneRoot||phoneRoot.querySelector('[data-civic-launcher]'))return;
+  const grids=phoneRoot.querySelectorAll('.ph-app-grid'),grid=grids[grids.length-1];
+  if(!grid)return;
+  const button=document.createElement('button');
+  button.type='button';button.className='ph-launcher civic-phone-launcher';button.dataset.civicLauncher='';button.setAttribute('aria-label','Open AbujaLife City Story');
+  button.innerHTML=`<span class="ph-app-icon civic-phone-icon">${ballotIcon}</span><span class="ph-app-label">City Story</span>`;
+  button.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();openCivicLife();});
+  grid.append(button);
+}
+ensurePhoneEntry();
+const phoneObserver=new MutationObserver(()=>ensurePhoneEntry());
+if(phoneRoot)phoneObserver.observe(phoneRoot,{childList:true,subtree:true});
 window.addEventListener('abj:open-civic-life',openCivicLife);

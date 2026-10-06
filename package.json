@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --watch scripts/dev.mjs",
+    "dev": "node scripts/vendor-three.mjs && node --watch scripts/dev.mjs",
     "start": "node src/server/production.mjs",
     "qa": "node scripts/qa.mjs && node --test tests/*.test.mjs",
     "qa:browser": "python tests/browser-smoke.py",

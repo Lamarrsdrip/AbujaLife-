@@ -1,5 +1,5 @@
 import { apiFetch } from './api-client.js';
-import { renderOutside } from './outside-city-v2.js';
+import { renderOutside } from './outside-city-v3.js';
 import { TRANSPORT_MODES } from '../src/shared/life.mjs';
 
 const appRoot=document.querySelector('#app');

@@ -11,3 +11,18 @@
 .abj-map-bottom-nav{position:fixed;left:50%;bottom:max(14px,env(safe-area-inset-bottom));z-index:1000003;transform:translateX(-50%);display:grid;grid-template-columns:repeat(4,1fr);gap:6px;width:min(94vw,560px);padding:7px;border:1px solid #ffffffb5;border-radius:25px;background:#0d372ddf;box-shadow:0 20px 55px #071d1738;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}.abj-map-bottom-nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:57px;border:0;border-radius:18px;background:transparent;color:#d7e4dc;font:700 10px/1.1 system-ui,-apple-system,sans-serif}.abj-map-bottom-nav button.active{background:#f3f1e8;color:#174b3a;box-shadow:0 8px 18px #071d161f}.abj-map-bottom-nav .abj-nav-icon{font-size:21px;line-height:1}.abj-map-bottom-nav button:active{transform:scale(.965)}
 
 @media(max-width:700px){.game-header .wordmark{width:52px;height:52px;border-radius:16px!important}.abj-header-app-icon{width:41px;height:41px;border-radius:13px}.abj-whole-city-button{top:106px;right:14px;min-height:42px;padding:0 12px}.outside-city-v2 .outside-heading{top:25px!important;left:24px!important;max-width:62vw}.outside-city-v2 .outside-heading h2{font-size:32px!important}.outside-city-v2 .outside-heading p{font-size:11px!important}.outside-city-v2 .outside-tools{top:24px!important;right:16px!important;max-width:168px;grid-template-columns:repeat(2,1fr)}.outside-city-v2 .outside-tools button{min-height:47px!important;border-radius:14px!important}.outside-city-v2 .outside-selection{left:15px!important;right:15px!important;bottom:174px!important;width:auto!important}.outside-city-v2 .outside-directory{left:20px!important;right:20px!important;bottom:103px!important;width:auto!important}.outside-city-v2 .outside-hint{display:none!important}.outside-city-v2 .outside-quick{overflow-x:auto;scrollbar-width:none}.outside-city-v2 .outside-quick::-webkit-scrollbar{display:none}.abj-map-bottom-nav{width:calc(100vw - 30px)}}
+
+/* City Story belongs in the in-game Phone, never as another My Life dashboard card. */
+.civic-life-entry{display:none!important}.civic-phone-icon{background:linear-gradient(145deg,#d8bb6f,#76562a)!important;color:#fff9df!important}.civic-phone-icon .ph-icon{width:29px;height:29px}.civic-phone-launcher{min-width:0}
+
+/* A software keyboard already shrinks the visual viewport. Do not shrink the mock phone a second time. */
+@media(max-width:700px){
+  .phone-root:has(input:focus,textarea:focus,select:focus) .ph-backdrop{padding:0!important;place-items:stretch!important;background:#101a16!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+  .phone-root:has(input:focus,textarea:focus,select:focus) .ph-device{width:100%!important;max-width:none!important;height:100dvh!important;max-height:none!important;padding:0!important;border:0!important;border-radius:0!important;background:#101a16!important;box-shadow:none!important}
+  .phone-root:has(input:focus,textarea:focus,select:focus) .ph-screen{border:0!important;border-radius:0!important;min-height:0!important}
+  .phone-root:has(input:focus,textarea:focus,select:focus) :is(.ph-hardware,.ph-device-caption){display:none!important}
+  .phone-root:has(input:focus,textarea:focus,select:focus) .ph-statusbar{flex-basis:42px!important;padding-inline:max(16px,env(safe-area-inset-left))!important}
+  .phone-root:has(input:focus,textarea:focus,select:focus) .ph-app-content{padding-bottom:max(4px,env(safe-area-inset-bottom))!important}
+  .phone-root:has(input:focus,textarea:focus,select:focus) .ph-composer{padding-bottom:max(6px,env(safe-area-inset-bottom))!important}
+  .phone-root:has(input:focus,textarea:focus,select:focus) .ph-scroll{scroll-padding-bottom:90px}
+}

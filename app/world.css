@@ -111,3 +111,12 @@
 @keyframes abuja-airport-ground-move{0%{transform:translateX(0)}50%{transform:translateX(155px)}100%{transform:translateX(0)}}
 .world-scene .airport-plane-a{transform-box:fill-box;transform-origin:center;animation:abuja-airport-ground-move 9s linear infinite}
 @media (prefers-reduced-motion:reduce){.world-scene .airport-plane-a{animation:none}}
+
+
+/* Route guidance stays legible at road scale and while driving. */
+.world-route-line{stroke:#fff0b8;stroke-width:5;stroke-dasharray:12 9;opacity:.9;filter:drop-shadow(0 1px 2px #17392f) drop-shadow(0 0 4px #17392f66)}
+.world-canvas[data-driving="true"] .world-route-line{stroke:#ffd46f;stroke-width:6;stroke-dasharray:18 10;opacity:1;animation:abjRouteDrive .85s linear infinite}
+@keyframes abjRouteDrive{to{stroke-dashoffset:-28}}
+.world-go-out-shortcut{background:linear-gradient(145deg,#f5c75f,#e2a93d)!important;color:#213d31!important;box-shadow:0 14px 32px #7a5a1738!important;min-width:126px!important;font-weight:850!important}
+.world-go-out-shortcut svg{width:20px;height:20px}
+.world-go-out-shortcut span{font-size:15px;letter-spacing:-.02em}

@@ -420,11 +420,26 @@ export function furniturePlacementPreservesRoutes(scene,footprint,previousPlacem
 
 function addOwnedFurniture(s,profile,owned) {
   const configured=profile.furnitureLayout||profile.home?.furnitureLayout||profile.home?.furniture||{};
-  const entries=Array.isArray(configured)?configured:Object.entries(configured).map(([itemId,value])=>({itemId,...(typeof value==='object'?value:{slot:value})}));
+  const rawEntries=Array.isArray(configured)?configured:Object.entries(configured).map(([itemId,value])=>({itemId,...(typeof value==='object'?value:{slot:value})}));
+  const currentProperty=profile.home?.propertyId,entryByItem=new Map();
+  for(const entry of rawEntries){
+    const itemId=entry?.itemId||entry?.id;if(!itemId)continue;
+    const previous=entryByItem.get(itemId),isCurrent=!entry.propertyId||entry.propertyId===currentProperty,previousCurrent=previous&&(!previous.propertyId||previous.propertyId===currentProperty);
+    if(!previous||isCurrent&&!previousCurrent)entryByItem.set(itemId,{...entry,itemId});
+  }
+  const entries=[...entryByItem.values()];
   s.furniturePlacements=[];
   s.storedFurniture=[];
+  const baseFor=itemId=>s.items.find(v=>itemId==='bed'?v.art.includes('#faf2df'):itemId==='dining-table'?v.art.includes('#6b8653')&&v.art.includes('#efe6cd'):itemId==='sofa'?v.art.includes('#d9b984')&&v.art.includes('#e4dfc5'):false);
+  const removeBase=itemId=>{
+    const base=baseFor(itemId);if(!base)return false;
+    s.items.splice(s.items.indexOf(base),1);
+    const objectIndex=s.objects.findIndex(o=>o.x===base.x&&o.y===base.footY&&o.w===base.w&&o.h===base.h);if(objectIndex>=0)s.objects.splice(objectIndex,1);
+    const obstacleIndex=s.obstacles.findIndex(b=>b.x===base.x&&b.y===base.footY&&b.w===base.w&&b.h===base.h);if(obstacleIndex>=0)s.obstacles.splice(obstacleIndex,1);
+    return true;
+  };
   const adoptBase=itemId=>{
-    const base=s.items.find(v=>itemId==='bed'?v.art.includes('#faf2df'):itemId==='dining-table'?v.art.includes('#6b8653')&&v.art.includes('#efe6cd'):false);
+    const base=baseFor(itemId);
     if(!base)return false;
     const area=s.furnishingArea,px=(base.x+base.w/2-area.x)/area.w,py=(base.footY+base.h/2-area.y)/area.h;
     let art=base.art;
@@ -442,15 +457,16 @@ function addOwnedFurniture(s,profile,owned) {
     if(stored?.propertyId&&stored.propertyId!==profile.home?.propertyId){s.storedFurniture.push(itemId);continue;}
     if(SURFACE_ONLY_FURNITURE.includes(itemId)&&!stored?.supportId){s.storedFurniture.push(itemId);continue;}
     if(!stored&&['bed','dining-table'].includes(itemId)&&adoptBase(itemId))continue;
+    if(stored&&['bed','dining-table'].includes(itemId))removeBase(itemId);
     if(itemId==='sofa') {
-      const base=s.items.find(v=>v.art.includes('#d9b984')&&v.art.includes('#e4dfc5'));
+      const base=baseFor('sofa');
       if(base&&!stored){
         const area=s.furnishingArea,px=(base.x+base.w/2-area.x)/area.w,py=(base.footY+base.h/2-area.y)/area.h;
         base.art=`<g data-home-item="sofa" data-furniture-item="sofa" data-placement-x="${px.toFixed(3)}" data-placement-y="${py.toFixed(3)}" data-placement-rotation="0">${base.art}</g>`;
         const object=s.objects.find(o=>o.x===base.x&&o.y===base.footY&&o.w===base.w&&o.h===base.h);if(object)Object.assign(object,{itemId:'sofa',kind:'sofa',rotation:0});
         s.furniturePlacements.push({itemId:'sofa',x:base.x,y:base.footY,w:base.w,h:base.h,rotation:0});continue;
       }
-      if(base&&stored){s.items.splice(s.items.indexOf(base),1);const objectIndex=s.objects.findIndex(o=>o.x===base.x&&o.y===base.footY&&o.w===base.w&&o.h===base.h);if(objectIndex>=0)s.objects.splice(objectIndex,1);const index=s.obstacles.findIndex(b=>b.x===base.x&&b.y===base.footY&&b.w===base.w&&b.h===base.h);if(index>=0)s.obstacles.splice(index,1);}
+      if(base&&stored)removeBase('sofa');
     }
     let anchor=s.furnitureAnchors[(Number(stored?.slot)||next)%s.furnitureAnchors.length];next++;
     const rotation=[0,90,180,270].includes(stored?.rotation)?stored.rotation:0;

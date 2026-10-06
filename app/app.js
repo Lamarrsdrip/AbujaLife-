@@ -104,6 +104,7 @@ const posePublisher=createWorldPresencePublisher({read:()=>{
  return{key:`${state.profile.id}:${locationKey()}`,pose:{x:motion.x,y:motion.y,angle:motion.angle||0,moving:motion.moving&&!document.querySelector('[aria-modal="true"]'),driving:motion.driving,...(motion.activity?{activity:motion.activity}:{})}};
 },send:pose=>api('/api/presence',{method:'POST',body:{pose}})});
 setInterval(()=>void posePublisher.publish(),500);
+setInterval(()=>{if(state.authenticated&&!document.hidden)void api('/api/presence',{method:'POST',body:{heartbeat:true}}).catch(()=>{});},20000);
 setInterval(()=>{if(state.authenticated&&!document.hidden&&!document.querySelector('[aria-modal="true"]'))refresh({render:false}).catch(()=>{});},60000);
 let tripArrivalTimer=0,tripArrivalInFlight=false,nextArriveAttempt=0;
 function armTripArrival(retry=false){
@@ -355,9 +356,9 @@ function bindWorld(){
  const sprint=root.querySelector('.world-sprint-button');
  if(sprint){
   const atHome=p.location?.kind==='home',row=document.createElement('div'),home=document.createElement('button');
-  row.className='world-action-row';home.type='button';home.className='world-home-shortcut';home.dataset.quickHome='';
-  home.setAttribute('aria-label',atHome?'You are at your own home':'Go to your own home');home.title=atHome?'Your own home':'Head home';
-  home.disabled=atHome||!!p.activeTrip||quickHomeNavigating;home.innerHTML=`${icon('world')}<span>Home</span>`;home.onclick=goHome;
+  row.className='world-action-row';home.type='button';home.className=atHome?'world-home-shortcut world-go-out-shortcut':'world-home-shortcut';home.dataset.quickHome='';
+  home.setAttribute('aria-label',atHome?'Go outside your home':'Go to your own home');home.title=atHome?'Go outside':'Head home';
+  home.disabled=!!p.activeTrip||quickHomeNavigating;home.innerHTML=atHome?`${icon('arrow')}<span>Go Out</span>`:`${icon('world')}<span>Home</span>`;home.onclick=atHome?()=>navigate('outside'):goHome;
   sprint.before(row);row.append(home,sprint);
  }
  if(p.activeTrip)bindTrip(p.activeTrip);

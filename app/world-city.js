@@ -107,12 +107,26 @@ export function buildCity({profile={},place={},id='city',venues=[]}={}) {
   {id:'bear-barn',x:2840,y:3970,w:440,h:284,name:'Bear Barn',tag:'YOUR PEOPLE · YOUR EVENING',accent:'#99784e',wall:'#d1bf9f',kind:'restaurant'}
  ];
  for(const spec of specs) {
-  if(spec.id!=='home'&&!venues.some(venue=>venue.id===spec.id))continue;
-  spec.name=venues.find(v=>v.id===spec.id)?.name||spec.name;
+  const localVenue=venues.find(venue=>venue.id===spec.id);
+  spec.name=localVenue?.name||spec.name;
   art+=building(spec);
   obstacles.push({x:spec.x-4,y:spec.y-spec.h-8,w:spec.w+31,h:spec.h+18});
   const isHome=spec.id==='home',canHome=profile.home?.district===profile.district||!profile.district;
-  interactables.push({id:spec.id,x:spec.x+spec.w/2,y:spec.y+58,label:isHome?(canHome?'Your front door':'View homes'):(venues.find(v=>v.id===spec.id)?.name||spec.name),action:isHome?(canHome?'enter-home':'estate-office'):'enter-venue',payload:isHome?{}:{venueId:spec.id},radius:78,icon:isHome?'⌂':({restaurant:'♨',gym:'↗',hotel:'✦',cinema:'▷',dealership:'↔','estate-office':'⌂','furniture-store':'▱',grocery:'✿'}[spec.id])});
+  // Abuja should still look like a city when a venue belongs to another district.
+  // Only the authoritative local venue (or the resident's own home) is directly enterable.
+  if(isHome||localVenue)interactables.push({id:spec.id,x:spec.x+spec.w/2,y:spec.y+58,label:isHome?(canHome?'Your front door':'View homes'):(localVenue?.name||spec.name),action:isHome?(canHome?'enter-home':'estate-office'):'enter-venue',payload:isHome?{}:{venueId:spec.id},radius:78,icon:isHome?'⌂':({restaurant:'♨',gym:'↗',hotel:'✦',cinema:'▷',dealership:'↔','estate-office':'⌂','furniture-store':'▱',grocery:'✿'}[spec.id])});
+ }
+ const neighbourhoodFabric=[
+  {x:40,y:1188,w:330,h:145,c:'#d9d1be'},{x:430,y:1200,w:285,h:132,c:'#c9cfbf'},{x:820,y:1192,w:310,h:150,c:'#e0d7c2'},
+  {x:2140,y:1200,w:320,h:145,c:'#d2c9b6'},{x:2570,y:1200,w:300,h:138,c:'#c8d0c0'},{x:2960,y:1200,w:315,h:150,c:'#ddd4be'},
+  {x:820,y:2840,w:325,h:154,c:'#d4cbb8'},{x:1370,y:2840,w:315,h:146,c:'#cad1c1'},{x:2160,y:2840,w:330,h:150,c:'#e0d6c0'},
+  {x:2700,y:2840,w:310,h:142,c:'#cdd0bd'},{x:3050,y:3650,w:300,h:148,c:'#d9ceb9'},{x:1710,y:3650,w:330,h:150,c:'#c9d0bf'}
+ ];
+ for(const [i,b] of neighbourhoodFabric.entries()){
+  const top=b.y-b.h,windows=Array.from({length:4},(_,k)=>rect(b.x+28+k*(b.w-62)/4,top+38,34,42,'#76918b',3)+rect(b.x+28+k*(b.w-62)/4,top+91,34,28,'#829a91',3)).join('');
+  art+=`<g class="city-neighbourhood-fabric" aria-hidden="true">${rect(b.x,top,b.w,b.h,b.c,7)}${rect(b.x-7,top,b.w+14,10,'#eee7d4',4)}${windows}${rect(b.x+b.w*.44,b.y-58,b.w*.14,58,'#617a70',3)}</g>`;
+  obstacles.push({x:b.x-5,y:top-6,w:b.w+20,h:b.h+14});
+  if(i%2===0)art+=cityTree(b.x-24,b.y-8,.58,i%4===0);
  }
  art+=garden(1340,1102,362,352,true)+garden(155,1850,640,280)+garden(2250,1860,1030,280,true);
  obstacles.push({x:1440,y:1216,w:164,h:115});
@@ -163,7 +177,15 @@ export function buildCity({profile={},place={},id='city',venues=[]}={}) {
   art+=exterior.art;obstacles.push(exterior.obstacle);interactables.push({id:landmark.id,x:exterior.entrance.x,y:exterior.entrance.y,label:venue.name||landmark.name,action:local?'enter-venue':'travel-venue',payload:local?{venueId:landmark.id}:{destinationVenueId:landmark.id,districtId:landmark.districtId},radius:92,icon:'◎'});
  }
 
- return {width,height,art,obstacles,interactables,buildings:specs.filter(spec=>spec.id==='home'||venues.some(venue=>venue.id===spec.id)),spawn:{x:445,y:679},title:place.name||'Abuja',subtitle:'Neighbourhood · free roam',traffic:[{axis:'x',lane:798,speed:115,color:'#d5b88c',type:'taxi',offset:190},{axis:'x',lane:902,speed:-96,color:'#e6dfc9',offset:2350},{axis:'x',lane:1601,speed:106,color:'#8baba2',offset:1200},{axis:'x',lane:1705,speed:-85,color:'#d3cdb0',type:'bus',offset:2780},{axis:'y',lane:1890,speed:94,color:'#b98761',offset:260},{axis:'y',lane:2011,speed:-112,color:'#dfe2d0',offset:1700},{axis:'x',lane:902,speed:78,color:'#f1f3e9',type:'suv',offset:3200,role:'FCT Patrol'}],pedestrians:[{x:640,y:681,toX:1190,toY:681},{x:2140,y:677,toX:2760,toY:677},{x:1320,y:1490,toX:1700,toY:1490},{x:2230,y:1490,toX:2800,toY:1490},{x:790,y:1040,toX:1720,toY:1040},{x:2960,y:1040,toX:3310,toY:1040},{x:1030,y:1040,toX:1180,toY:1040,role:'FCT Patrol'},{x:2470,y:1490,toX:2590,toY:1490,role:'City Security'}]};
+ const landmarkSizes={airport:[520,220],cityGate:[260,170],stadium:[360,250],magicland:[330,240],wtc:[300,300],cbn:[250,285],assembly:[360,220],eagle:[300,165],mosque:[300,250],church:[270,230],transcorp:[340,240],millennium:[360,250],aso:[320,220],farmCity:[300,205],jabiLake:[430,250],mall:[330,220],conference:[320,225],banex:[320,210],inec:[290,220],efcc:[310,230],court:[310,225]};
+ const legacyIds=new Set(specs.map(b=>b.id));
+ const contextBuildings=neighbourhoodFabric.map((b,i)=>({id:`context-${i}`,x:b.x,y:b.y,w:b.w,h:b.h,name:'',wall:b.c,floors:2,context:true}));
+ const landmarkBuildings=CITY_LANDMARKS.filter(landmark=>!legacyIds.has(landmark.id)).map(landmark=>{const point=landmarkWorldPoint(landmark),size=landmarkSizes[landmark.builder]||[290,210];return{id:landmark.id,x:point.x-size[0]/2,y:point.y+size[1]/2,w:size[0],h:size[1],name:landmark.short||landmark.name,wall:'#d8d3c4',floors:landmark.builder==='wtc'?7:landmark.builder==='cbn'?6:landmark.builder==='transcorp'?4:landmark.builder==='inec'||landmark.builder==='efcc'||landmark.builder==='court'?3:2,landmarkBuilder:landmark.builder,frontY:true};});
+ const visibleLegacyBuildings=specs.map(spec=>spec.id==='home'||localVenueIds.has(spec.id)?spec:{...spec,id:`context-spec-${spec.id}`,name:'',context:true});
+ const safeLandmarkBuildings=landmarkBuildings.map(b=>localVenueIds.has(b.id)?b:{...b,id:`context-landmark-${b.id}`,name:'',context:true});
+ const visibleBuildings=[...visibleLegacyBuildings,...contextBuildings,...safeLandmarkBuildings];
+
+ return {width,height,art,obstacles,interactables,buildings:visibleBuildings,spawn:{x:445,y:679},title:place.name||'Abuja',subtitle:'Neighbourhood · free roam',traffic:[{axis:'x',lane:798,speed:115,color:'#d5b88c',type:'taxi',offset:190},{axis:'x',lane:902,speed:-96,color:'#e6dfc9',offset:2350},{axis:'x',lane:1601,speed:106,color:'#8baba2',offset:1200},{axis:'x',lane:1705,speed:-85,color:'#d3cdb0',type:'bus',offset:2780},{axis:'y',lane:1890,speed:94,color:'#b98761',offset:260},{axis:'y',lane:2011,speed:-112,color:'#dfe2d0',offset:1700},{axis:'x',lane:902,speed:78,color:'#f1f3e9',type:'suv',offset:3200,role:'FCT Patrol'}],pedestrians:[{x:640,y:681,toX:1190,toY:681},{x:2140,y:677,toX:2760,toY:677},{x:1320,y:1490,toX:1700,toY:1490},{x:2230,y:1490,toX:2800,toY:1490},{x:790,y:1040,toX:1720,toY:1040},{x:2960,y:1040,toX:3310,toY:1040},{x:1030,y:1040,toX:1180,toY:1040,role:'FCT Patrol'},{x:2470,y:1490,toX:2590,toY:1490,role:'City Security'}]};
 }
 export function buildJourney({profile={},place={},id='journey'}={}) {
  const width=14000,height=1450;

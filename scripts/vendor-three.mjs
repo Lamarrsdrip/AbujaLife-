@@ -1,8 +1,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 
-const root=path.resolve(new URL('..',import.meta.url).pathname);
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const output=path.join(root,'app/vendor');
 await fs.mkdir(output,{recursive:true});
 

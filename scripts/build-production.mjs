@@ -20,6 +20,7 @@ export const productionEntryPoints = Object.freeze({
   'game-map': 'app/game-map.js',
   'game-experience': 'app/game-experience.js',
   'game-realm-2026': 'app/game-realm-2026.js',
+  'abuja-game-polish-2026': 'app/abuja-game-polish-2026.js',
 });
 
 export function publicOrigin(value, name) {
@@ -119,7 +120,8 @@ export async function buildProduction({ environment = process.env, outputDirecto
     await fs.writeFile(path.join(staging, 'sw.js'), serviceWorker(shell, fingerprint.digest('hex').slice(0, 16)));
     await fs.rm(target, { recursive: true, force: true });
     await fs.rename(staging, target);
-    return { directory: target, configuration, files: (await filesBelow(target)).map(filename => filename.split(path.sep).join('/')) };
+    const files = (await filesBelow(target)).map(filename => filename.split(path.sep).join('/'));
+    return { directory: target, outputDirectory: target, configuration, files, shell };
   } catch (error) {
     await fs.rm(staging, { recursive: true, force: true });
     throw error;
@@ -127,11 +129,5 @@ export async function buildProduction({ environment = process.env, outputDirecto
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  try {
-    const result = await buildProduction();
-    console.log(`Built connected production static site: ${path.relative(repository, result.directory)} (${result.files.length} public files). API: ${result.configuration.API_PUBLIC_URL}`);
-  } catch (error) {
-    console.error(error.message);
-    process.exitCode = 1;
-  }
+  buildProduction().then(({ directory, files, configuration }) => console.log(`Built connected production static site: ${path.relative(repository, directory)} (${files.length} public files). API: ${configuration.API_PUBLIC_URL}`)).catch(error => { console.error(error.message); process.exitCode = 1; });
 }

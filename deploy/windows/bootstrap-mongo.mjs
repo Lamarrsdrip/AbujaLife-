@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { MongoClient } from 'mongodb';
 import { ensureMongoSchema, MONGO_COLLECTIONS, MONGO_APPEND_ONLY_COLLECTIONS } from '../../src/server/mongo/database.mjs';
 import { ensureMongoAdSchema } from '../../src/server/mongo/adStore.mjs';
+import { mongoCivicRuntimePrivileges, MONGO_CIVIC_COLLECTIONS } from '../../src/server/mongo/civicSchema.mjs';
 import { configuration, mongoUri, secret } from './runtime.mjs';
 
 const config = configuration();
@@ -167,6 +168,7 @@ try {
     { resource: { db: config.database, collection: 'ad_slots' }, actions: ['find', 'insert', 'update', 'remove', 'listIndexes'] },
     { resource: { db: config.database, collection: 'ad_receipts' }, actions: ['find', 'insert', 'listIndexes'] },
   );
+  privileges.push(...mongoCivicRuntimePrivileges(config.database));
   const existingRole = await db.command({ rolesInfo: 'abujalife_runtime' });
   await db.command({ [existingRole.roles.length ? 'updateRole' : 'createRole']: 'abujalife_runtime', privileges, roles: [] });
   // MongoDB's built-in backup role supports full replica-set oplog dumps. On
@@ -178,5 +180,5 @@ try {
     const found = await db.command({ usersInfo: user });
     await db.command({ [found.users.length ? 'updateUser' : 'createUser']: user, pwd: secret(config, password), roles });
   }
-  console.log(JSON.stringify({ ok: true, database: config.database, replicaSet: config.replicaSet, collections: MONGO_COLLECTIONS.length, ledger: 'find/insert only', appDDL: false, ownerBootstrap }));
+  console.log(JSON.stringify({ ok: true, database: config.database, replicaSet: config.replicaSet, collections: MONGO_COLLECTIONS.length, civicCollections: MONGO_CIVIC_COLLECTIONS.length, ledger: 'find/insert only', civic: 'find/insert/update/remove/listIndexes', appDDL: false, ownerBootstrap }));
 } finally { await client.close(); }

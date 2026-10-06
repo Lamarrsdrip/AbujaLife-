@@ -9,9 +9,10 @@ import { venueFor, venueAvailable, venuesForDistrict } from '../src/shared/life.
 import { buildCity } from '../app/world-city.js';
 import { buildInterior } from '../app/world-interiors.js';
 
-// Run the actual walking navigation without constructing a DOM or WebGL renderer.
-// The in-memory export leaves the production module and its public API untouched.
-const worldURL = new URL('../app/world.js', import.meta.url);
+// Run the actual free-roam walking navigation without constructing a DOM or WebGL renderer.
+// Active trip dispatch now belongs to world.js, so the navigation implementation itself
+// lives in the canonical long-lived simulator.
+const worldURL = new URL('../app/world-simulator.js', import.meta.url);
 const navigationSource = fs.readFileSync(worldURL, 'utf8').replace(
   /from (['"])(\.{1,2}\/[^'"]+)\1/g,
   (_, quote, specifier) => `from ${JSON.stringify(new URL(specifier, worldURL).href)}`,

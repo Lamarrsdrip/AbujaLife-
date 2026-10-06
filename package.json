@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --watch scripts/dev.mjs",
+    "dev": "node scripts/vendor-three.mjs && node --watch scripts/dev.mjs",
     "start": "node src/server/production.mjs",
     "qa": "node scripts/qa.mjs && node --test tests/*.test.mjs",
     "qa:browser": "python tests/browser-smoke.py",
@@ -12,7 +12,7 @@
     "preview:build": "node scripts/vendor-three.mjs && node preview/build.mjs",
     "qa:gameplay": "python tests/gameplay-smoke.py",
     "qa:premium": "python tests/premium-smoke.py",
-    "build": "node scripts/build-production.mjs",
+    "build": "node scripts/vendor-three.mjs && node scripts/build-production.mjs && node scripts/finalize-world-assets.mjs",
     "qa:production": "node tests/production-integration.mjs",
     "qa:mongo": "node --test tests/mongo-*.integration.mjs",
     "qa:infra": "node deploy/test-production.mjs"

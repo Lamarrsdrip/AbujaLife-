@@ -1,10 +1,18 @@
+import crypto from 'node:crypto';
 import { GameError } from './errors.mjs';
+import { routeForJourney } from '../shared/abuja-navigation.mjs';
 
 const clamp = value => Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
 
 function fail(condition, message, status = 400, code = 'invalid_action') {
   if (!condition) throw new GameError(message, status, code);
 }
+
+const ownedVehicle=(profile,vehicleId)=>Boolean(vehicleId&&profile?.inventory?.includes(vehicleId)&&Object.hasOwn(profile?.vehicleColors||{},vehicleId));
+const locationVenue=profile=>profile?.location?.kind==='home'?'home':profile?.location?.venue||'neighbourhood';
+const vehicleIsWithResident=(profile,presence=profile?.vehiclePresence)=>Boolean(presence?.state==='parked'&&ownedVehicle(profile,presence.vehicleId)&&presence.district===profile?.district&&presence.venue===locationVenue(profile));
+const cleanPresence=(profile,presence=profile?.vehiclePresence)=>ownedVehicle(profile,presence?.vehicleId)?presence:null;
+const secondsForLocalRoute=(profile,mode)=>{const route=routeForJourney({fromDistrict:profile.district,fromVenue:profile.location?.kind==='venue'?profile.location.venue:null,toDistrict:profile.home?.district||profile.district,returningHome:true,homeDistrict:profile.home?.district||profile.district});const speed=mode==='car'?175:70;return Math.max(mode==='car'?6:9,Math.min(24,Math.round(Math.max(1,route?.distance||1)/speed)));};
 
 // Old AbujaLife interiors predate resident-owned furniture. Those rooms drew several
 // removable pieces directly into the scene, so a resident could see a sofa or bed but
@@ -19,6 +27,18 @@ const LEGACY_HOME_FURNITURE = Object.freeze({
   'jabi-apartment': Object.freeze(['bed','wardrobe','lounge-chair','sofa','kitchen-unit','fridge','dining-table','plant']),
   'guzape-terrace': Object.freeze(['bed','wardrobe','work-desk','office-chair','sofa','kitchen-unit','fridge','coffee-table','plant']),
   'maitama-villa': Object.freeze(['bed','wardrobe','work-desk','accent-chair','library-shelf','sofa','kitchen-unit','fridge','dining-table','plant']),
+});
+
+// A successful home purchase now delivers a real owned furniture package. These are
+// catalogue items, not renderer-only props, so residents can move/store/sell them with
+// the existing authoritative furniture system. Higher tiers receive visibly richer
+// combinations while LAPO starter homes remain sparse until a paid home is acquired.
+const PURCHASED_HOME_FURNITURE = Object.freeze({
+  1:Object.freeze(['bed','sofa','dining-table','fridge','floor-lamp','plant']),
+  2:Object.freeze(['bed','sofa','dining-table','fridge','floor-lamp','plant','wardrobe','kitchen-unit','work-desk','office-chair','rug']),
+  3:Object.freeze(['bed','sofa','dining-table','fridge','floor-lamp','plant','wardrobe','kitchen-unit','work-desk','office-chair','rug','lounge-chair','coffee-table','tv','tall-plant','bedside-table']),
+  4:Object.freeze(['king-bed','premium-sofa','dining-table','fridge','floor-lamp','tall-plant','wardrobe','kitchen-island','work-desk','office-chair','large-rug','coffee-table','tv','music-speaker','storage-drawers','full-length-mirror','accent-chair']),
+  5:Object.freeze(['king-bed','premium-sofa','dining-table','fridge','floor-lamp','indoor-ficus','wardrobe','kitchen-island','work-desk','office-chair','large-rug','coffee-table','tv','floor-speaker','media-sideboard','full-length-mirror','accent-chair','library-shelf','balcony-bench','gaming-console','art-piece','table-lamp']),
 });
 
 async function migrateLegacyHomeFurniture(store, residentId, profile, options = {}) {
@@ -64,18 +84,77 @@ async function migrateLegacyHomeFurniture(store, residentId, profile, options = 
   return profile;
 }
 
+async function furnishPurchasedHome(store,residentId,profile,options={}){
+  if(!profile?.home||profile.home.tenure!=='own')return profile;
+  const property=store.propertyFor?.(profile,profile.home.propertyId);
+  if(!property||!Number.isInteger(property.tier)||property.tier<1)return profile;
+  if(profile.home.purchaseFurnishedPropertyId===property.id&&Number(profile.home.purchaseFurnishingTier||0)>=property.tier)return profile;
+
+  const session=options?.session||null,dbOptions=session?{session}:{};
+  // A browser cannot trigger this from a claimed property id. The persistent
+  // ownership row must already exist, so payment/ownership commits first.
+  const ownership=await store.collection('properties').findOne({residentId,propertyId:property.id,owned:true},dbOptions);
+  if(!ownership)return profile;
+
+  const packageItems=PURCHASED_HOME_FURNITURE[property.tier]||PURCHASED_HOME_FURNITURE[5];
+  const inventory=store.collection('inventory'),acquiredAt=store.clock();
+  const existing=await inventory.find({residentId,itemId:{$in:packageItems}},dbOptions).project({itemId:1}).toArray();
+  const existingIds=new Set(existing.map(row=>row.itemId)),granted=[];
+  for(const itemId of packageItems){
+    if(existingIds.has(itemId))continue;
+    await inventory.updateOne({residentId,itemId},{$setOnInsert:{_id:`${residentId}:${itemId}`,residentId,itemId,category:'furniture',acquiredAt,source:`purchased-home-tier-${property.tier}`,propertyId:property.id}},{...dbOptions,upsert:true});
+    granted.push(itemId);
+  }
+
+  const update={$set:{starterVersion:1,furnishingPreset:'nepo-furnished',purchaseFurnishedPropertyId:property.id,purchaseFurnishingTier:property.tier,purchaseFurnishedAt:acquiredAt}};
+  // Freshly delivered items have no previous home to preserve. Clearing only their
+  // saved coordinates lets the existing route-safe interior arranger place them.
+  if(granted.length){update.$pull={storedFurniture:{$in:granted}};update.$unset=Object.fromEntries(granted.map(itemId=>[`furnitureLayout.${itemId}`,'']));}
+  await store.collection('homes').updateOne({residentId,propertyId:property.id},update,dbOptions);
+
+  profile.inventory=[...new Set([...(profile.inventory||[]),...granted])];
+  profile.storedFurniture=(profile.storedFurniture||[]).filter(itemId=>!granted.includes(itemId));
+  profile.furnitureLayout={...(profile.furnitureLayout||{})};for(const itemId of granted)delete profile.furnitureLayout[itemId];
+  profile.home={...profile.home,starterVersion:1,furnishingPreset:'nepo-furnished',purchaseFurnishedPropertyId:property.id,purchaseFurnishingTier:property.tier,purchaseFurnishedAt:acquiredAt};
+  profile.purchasedHomeFurnished={propertyId:property.id,tier:property.tier,granted:[...granted]};
+  return profile;
+}
+
+async function writeVehiclePresence(store,residentId,presence,{emit=true}={}){
+  await store.collection('player_state').updateOne({residentId},presence?{$set:{vehiclePresence:presence}}:{$unset:{vehiclePresence:''}});
+  const profile=await store.profile(residentId);
+  if(emit)await store.emitUser(residentId,'profile',{profile});
+  return profile;
+}
+
+async function beginSameDistrictHomeTrip(store,residentId,profile,payload={}){
+  const timestamp=store.clock(),presence=cleanPresence(profile),keepCar=vehicleIsWithResident(profile,presence)&&payload.leaveVehicle!==true;
+  const requested=payload.mode||'walk',mode=keepCar&&(requested==='walk'||requested==='car')?'car':requested==='car'&&!keepCar?'walk':requested;
+  fail(mode==='walk'||mode==='car','Choose walking or your nearby car for this short trip');
+  const seconds=secondsForLocalRoute(profile,mode),vehicleId=mode==='car'?presence.vehicleId:null;
+  let trip,replayed=false;
+  await store.transaction(async session=>{
+    const state=await store.collection('player_state').findOne({residentId},{session,projection:{district:1,location:1,activeTrip:1,vehiclePresence:1}});
+    fail(state,'Resident persistence is incomplete',503,'storage_incomplete');
+    if(state.activeTrip?.returningHome&&state.activeTrip.destination===profile.home.district){trip=state.activeTrip;replayed=true;return;}
+    fail(!state.activeTrip,'Your journey is still in progress',409,'trip_in_progress');
+    fail(state.location?.kind!=='home','You are already home',409,'already_home');
+    trip={id:crypto.randomUUID(),destination:profile.home.district,mode,cost:0,seconds,vehicleId,arrivesAt:timestamp+seconds*1000,returningHome:true};
+    const nextPresence=vehicleId?{vehicleId,state:'transit',district:profile.district,venue:locationVenue(profile),destinationDistrict:profile.home.district,destinationVenue:'home',updatedAt:timestamp}:state.vehiclePresence;
+    const update={$set:{activeTrip:trip,drivingVehicle:null,location:{kind:'transit',district:profile.district,venue:'journey'},...(nextPresence?{vehiclePresence:nextPresence}:{})}};
+    const changed=await store.collection('player_state').updateOne({_id:state._id,residentId,activeTrip:state.activeTrip??null},update,{session});
+    fail(changed.modifiedCount===1,'Your location changed; try again',409,'location_changed');
+  });
+  const next=await store.profile(residentId);if(!replayed)await store.emitUser(residentId,'profile',{profile:next});
+  return {ok:true,profile:next,trip,replayed,fastLocation:true};
+}
+
 /**
  * Installs bounded, hot-path location transitions on an existing MongoGameStore.
  *
- * `leave-home` used to flow through the generic economy/action transaction. That
- * path reconstructs the complete resident, writes several unrelated normalized
- * documents and records an economy operation even though leaving a house changes
- * only player_state (plus the normal needs clock). Under load this made a simple
- * navigation tap compete with wallet, inventory, loan and social reads.
- *
- * Keep the public store.action contract so production-http retains its existing
- * authorization, social reconciliation, old/new-zone detection and realtime
- * presence broadcast. Only the internal mutation is specialized.
+ * Besides the optimized leave-home mutation, this layer owns the durable transition
+ * between resident location and personal-vehicle presence. High-frequency car motion
+ * remains visual/realtime state; only driving/transit/parked transitions are stored.
  */
 export function installFastLocationActions(store) {
   fail(store && typeof store.action === 'function' && typeof store.transaction === 'function' && typeof store.collection === 'function' && typeof store.profile === 'function', 'Fast location actions require the Mongo game store', 500, 'storage_unavailable');
@@ -83,13 +162,45 @@ export function installFastLocationActions(store) {
 
   const originalProfile = store.profile.bind(store);
   store.profile = async (residentId, options = {}) => {
-    const profile = await originalProfile(residentId, options);
-    return migrateLegacyHomeFurniture(store, residentId, profile, options);
+    let profile = await originalProfile(residentId, options);
+    profile=await migrateLegacyHomeFurniture(store,residentId,profile,options);
+    profile=await furnishPurchasedHome(store,residentId,profile,options);
+    if(profile.vehiclePresence&&!cleanPresence(profile))profile.vehiclePresence=null;
+    return profile;
   };
 
   const originalAction = store.action.bind(store);
 
   store.action = async (residentId, action, payload = {}) => {
+    if(action==='move-home'){
+      const result=await originalAction(residentId,action,payload);
+      const profile=await store.profile(residentId);
+      return result&&typeof result==='object'?{...result,profile,purchasedHomeFurnished:profile.purchasedHomeFurnished||null}:result;
+    }
+    if(action==='travel'||action==='return-home'||action==='arrive'||action==='toggle-driving'){
+      const before=await store.profile(residentId),presence=cleanPresence(before);
+      if(action==='return-home'&&before.location?.kind!=='home'&&before.home?.district===before.district){
+        return beginSameDistrictHomeTrip(store,residentId,before,payload);
+      }
+      let adjusted=payload;
+      if((action==='travel'||action==='return-home')&&vehicleIsWithResident(before,presence)&&payload.leaveVehicle!==true&&(payload.mode==null||payload.mode==='walk'))adjusted={...payload,mode:'car'};
+      const previousTrip=before.activeTrip;
+      const result=await originalAction(residentId,action,adjusted);
+      let after=result?.profile||await store.profile(residentId),nextPresence=null,shouldWrite=false;
+      if((action==='travel'||action==='return-home')&&after.activeTrip?.mode==='car'&&ownedVehicle(before,after.activeTrip.vehicleId)){
+        nextPresence={vehicleId:after.activeTrip.vehicleId,state:'transit',district:before.district,venue:locationVenue(before),destinationDistrict:after.activeTrip.destination,destinationVenue:after.activeTrip.returningHome?'home':after.activeTrip.venueId||'neighbourhood',updatedAt:store.clock()};shouldWrite=true;
+      }else if(action==='arrive'&&previousTrip?.mode==='car'&&ownedVehicle(after,previousTrip.vehicleId)){
+        nextPresence={vehicleId:previousTrip.vehicleId,state:'parked',district:after.district,venue:locationVenue(after),updatedAt:store.clock()};shouldWrite=true;
+      }else if(action==='toggle-driving'){
+        const vehicleId=after.drivingVehicle||before.drivingVehicle||presence?.vehicleId;
+        if(ownedVehicle(after,vehicleId)){
+          nextPresence={vehicleId,state:after.drivingVehicle?'driving':'parked',district:after.district,venue:locationVenue(after),updatedAt:store.clock()};shouldWrite=true;
+        }
+      }
+      if(shouldWrite){after=await writeVehiclePresence(store,residentId,nextPresence);return {...result,profile:after,vehiclePresence:nextPresence};}
+      return result;
+    }
+
     if (action !== 'leave-home') return originalAction(residentId, action, payload);
 
     const timestamp = store.clock();
@@ -98,7 +209,7 @@ export function installFastLocationActions(store) {
     await store.transaction(async session => {
       const playerState = await store.collection('player_state').findOne(
         { residentId },
-        { session, projection: { district: 1, location: 1, activeTrip: 1, drivingVehicle: 1 } },
+        { session, projection: { district: 1, location: 1, activeTrip: 1, drivingVehicle: 1, vehiclePresence: 1 } },
       );
       fail(playerState, 'Resident persistence is incomplete', 503, 'storage_incomplete');
       fail(!playerState.activeTrip, 'Your journey is still in progress', 409, 'trip_in_progress');
@@ -129,6 +240,9 @@ export function installFastLocationActions(store) {
         needsUpdate.social = clamp(Number(needs.social || 0) - minutes * 0.05);
       }
 
+      const presence=playerState.vehiclePresence?.state==='parked'&&playerState.vehiclePresence.district===playerState.district&&playerState.vehiclePresence.venue==='home'
+        ?{...playerState.vehiclePresence,venue:'neighbourhood',updatedAt:timestamp}
+        :playerState.vehiclePresence;
       const changed = await store.collection('player_state').updateOne(
         {
           _id: playerState._id,
@@ -140,6 +254,7 @@ export function installFastLocationActions(store) {
           $set: {
             drivingVehicle: null,
             location: { kind: 'public', district: playerState.district, venue: 'neighbourhood' },
+            ...(presence?{vehiclePresence:presence}:{}),
           },
         },
         { session },

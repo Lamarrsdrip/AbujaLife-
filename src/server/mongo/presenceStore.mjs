@@ -3,6 +3,12 @@ import { check, identifier } from './socialStore.mjs';
 export const MONGO_PRESENCE_INDEXES={presence_sessions:[[{residentId:1,connectionId:1},{unique:true}],[{residentId:1,expiresAt:1},{}],[{zone:1,expiresAt:1,residentId:1},{}],[{expiresAt:1},{expireAfterSeconds:0}]]};
 export async function ensureMongoPresenceSchema(db){for(const [name,indexes]of Object.entries(MONGO_PRESENCE_INDEXES))for(const [keys,options]of indexes)await db.collection(name).createIndex(keys,options);}
 const PRESENCE_ACTIVITIES=new Set(['walk','exercise','eat','dance','social','rest','sit','shop','watch','pray','groom','shower']);
+const hashResident=value=>{let hash=2166136261;for(const char of String(value||'')){hash^=char.charCodeAt(0);hash=Math.imul(hash,16777619);}return hash>>>0;};
+function provisionalPose(anchor,residentId,index=0){
+  if(!anchor)return null;
+  const hash=hashResident(residentId),angle=((hash%360)+index*47)%360,radius=44+(hash%5)*14,indexAngle=angle*Math.PI/180;
+  return{x:Math.max(0,Math.min(20000,anchor.x+Math.cos(indexAngle)*radius)),y:Math.max(0,Math.min(20000,anchor.y+Math.sin(indexAngle)*radius)),angle:(angle+180)%360,moving:false,driving:false,provisional:true};
+}
 /** Presence is a TTL lease; poses remain ephemeral and only publish to authorized peers. */
 export class MongoPresenceStore {
   constructor(game,social=game.social,{leaseMs=45000,maxNearby=50}={}){this.game=game;this.social=social;this.db=game.db;this.leaseMs=leaseMs;this.maxNearby=maxNearby;this.poses=new Map();this.local=new Map();this.lastPersisted=new Map();this.profiles=new Map();this.connections=new Map();game.presence=this;game.isOnline=this.isOnline.bind(this);game.onlineInZone=this.onlineInZone.bind(this);game.nearby=this.nearby.bind(this);}
@@ -30,15 +36,21 @@ export class MongoPresenceStore {
     const now=this.clock(),zone=await this.zone(id),blocked=await this.social.blockedIds(id);
     const rows=await this.db.collection('presence_sessions').aggregate([{$match:{zone,presenceVisible:true,residentId:{$nin:[id,...blocked]},expiresAt:{$gt:new Date(now)}}},{$group:{_id:'$residentId'}},{$limit:this.maxNearby}]).toArray();
     const ids=rows.map(row=>row._id),views=await Promise.all(ids.map(residentId=>this.social.resident(id,residentId).catch(error=>{if([401,403,404].includes(error.status))return null;throw error;})));
-    const selfPose=this.poses.get(id)?.zone===zone?this.poses.get(id).pose:null;
+    const selfPose=this.poses.get(id)?.zone===zone&&this.poses.get(id)?.expiresAt>now?this.poses.get(id).pose:null;
     // A lease can outlive the player's last state write by up to 45 seconds.
     // Re-check both authoritative zones and visibility. The same rule supports
     // streets, venue interiors and consented home visits without leaking a
     // stale lease after travel, departure, blocking or a privacy change.
-    const people=(await Promise.all(views.map(async person=>{
+    const people=(await Promise.all(views.map(async(person,index)=>{
       if(!person?.online||!person.location||!await this.canShare(person.id,id,zone))return null;
-      const pose=this.poses.get(person.id);
-      return{...person,pose:pose?.zone===zone&&pose.expiresAt>now?pose.pose:null};
+      const live=this.poses.get(person.id),livePose=live?.zone===zone&&live.expiresAt>now?live.pose:null;
+      // Presence and 3D rendering must not disagree. When a same-zone lease is
+      // valid but the short-lived movement pose is temporarily unavailable
+      // (fresh join, reconnect, process handoff), give the authorised peer a
+      // deterministic nearby provisional spawn. The first real pose atomically
+      // replaces it; nothing is persisted and no private location is invented.
+      const pose=livePose||provisionalPose(selfPose,person.id,index);
+      return{...person,pose,...(!livePose&&pose?{poseProvisional:true}:{})};
     }))).filter(Boolean);
     if(selfPose)people.sort((a,b)=>{const ap=a.pose?Math.hypot(a.pose.x-selfPose.x,a.pose.y-selfPose.y):Infinity,bp=b.pose?Math.hypot(b.pose.x-selfPose.x,b.pose.y-selfPose.y):Infinity;return ap-bp;});
     return people;

@@ -1,56 +1,81 @@
-# Outside and native game release
+# AbujaLife World Visual Release
 
-This release combines the changes from `origin/main` at `35a5cae` with the saved
-camera, furniture and character work. It preserves the existing production
-deployment and provider configuration.
+## Release direction
 
-## Product changes
+AbujaLife's production visual target is a premium stylized isometric 3D life-simulator: polished mid-poly silhouettes, restrained physically based materials, warm Abuja daylight, strong contact grounding, tasteful saturated colour, soft shadows and a miniature/diorama composition.
 
-- Outside replaces the main Places/map navigation with a live, original 3D city.
-  Every one of the 123 atlas entries and 20 venues is discoverable. Bold roof
-  labels and search select real district/venue identities; transport uses the
-  existing server quote, debit, journey and arrival flows.
-- A readable initial neighbourhood view can pan, orbit and pinch. Whole city
-  fits the complete catalogue. The arrangement is stylized game scenery, not
-  a claim about exact geographic building positions.
-- Homes, all building facades, roads, trees and furniture use richer shared
-  materials, architectural trim, contact shadows and refined original models.
-  The sparse Lapo starter remains intentionally sparse.
-- Female/Male choices, durable varied appearances and distinct hair models are
-  preserved. Okrika Marketplace is the virtual game's display name; no real
-  Okrika commerce, inventory, users, database or wallet is connected.
-- The app uses a bounded full-height game viewport and compact native dock.
-  Phone pages retain 8/8/4 apps, a pinned dock, touch targets and real chat money
-  review/confirmation. Furniture has a bottom catalogue and actual 3D preview,
-  movement, rotation, explicit placement, storage and confirmed system resale.
-- Startup does not wait for optional account configuration. Bootstrap has an
-  eight-second deadline and a reconnect state. The redundant DOM observer that
-  repeatedly rewrote unchanged marketplace text is removed. Outside batches
-  scenery/traffic and updates fixed roof-label transforms only when the view
-  changes; hidden scenes stop their rendering loop.
+The upgrade must affect the real playable Three.js world. Do not use screenshots/background renders as a substitute and do not mount a second renderer or parallel world/state system.
 
-## Verification at the first main checkpoint
+## Canonical renderer rules
 
-`npm run qa`: 280 passed, zero failed/skipped before the additional startup
-regression tests. `npm run build` generates 43 public files; `preview:build`
-generates the anonymous, self-contained preview. The four Windows runtime
-tests pass. The new startup checks verify a stalled optional request and a
-bootstrap timeout/reconnect without weakening authentication.
+- Keep one world renderer, one camera/input path, one player entity, one location registry, one interaction path and one multiplayer presence contract.
+- Direct Three.js remains the production renderer unless profiling demonstrates a blocker.
+- Preserve the root scene during travel, LOD changes, asset loads, reconnects, visibility changes and quality transitions.
+- A replacement chunk/LOD becomes visible only after it is ready; never transition `valid world -> blank -> replacement`.
 
-The fresh Docker production acceptance passed 43 authenticated Mongo tests and
-12 HTTP checks, followed by encrypted consistent backup, corruption rejection,
-complete snapshot restore and retained sessions, wallets and admin access
-after restart. This used isolated local services, not a live VPS mutation.
+## Production asset path
 
-Standalone Chromium verified Outside rendering, all 143 destinations, travel
-selection without client location mutation, portrait/landscape framing and
-resource cleanup. Integrated mobile signup and bounded WebGL rendering passed.
-The remaining integrated camera/travel/phone and furniture browser checks are
-being completed after this checkpoint; the final evidence is recorded below.
+Editable source asset -> consistent scale/origin/pivot -> UV/PBR authoring -> optional baked self-AO/light information -> collision/interaction metadata -> LOD variants -> GLB/glTF 2.0 -> prune/dedup/quantize -> Meshopt where measured -> KTX2/Basis textures where measured -> content-hashed/versioned static asset -> CDN/runtime cache -> Three.js loader/cache.
 
-The cloud proxy denied current requests to the public website/API. The previous
-live deployment evidence in `PRODUCTION_ACCEPTANCE.md` remains historical;
-this document does not claim the new revision has deployed or passed remote CI.
-The LagosLife browser comparison was blocked by a certificate authority error.
-Software WebGL measurements do not establish 60 FPS on physical iPhones or
-Android devices.
+Use GLTFLoader for production models. Use one geometry compression path per asset rather than double-compressing. KTX2Loader must call `detectSupport(renderer)` before compressed texture loads. Bundle all required decoder/transcoder assets under AbujaLife-controlled static paths.
+
+Repeated props such as trees, lamps, benches and common residential modules should use shared geometry/materials and InstancedMesh or glTF instancing where practical.
+
+## Lighting/materials
+
+- MeshStandardMaterial-compatible metallic/roughness PBR.
+- Colour/emissive textures are sRGB; normal/roughness/metalness/AO are data textures.
+- PMREM-prefiltered environment lighting for PBR reflections/fill.
+- One coherent warm sun/directional light.
+- Baked/static AO and indirect-light cues for architecture where appropriate.
+- Dynamic shadows/contact grounding only inside a measured near-player budget.
+- Movable furniture cannot depend on permanent baked floor shadows.
+- Preserve day/night/weather through lighting presets rather than replacing them.
+
+## World/detail strategy
+
+Near player: high-detail required assets and nearby multiplayer entities.
+
+Nearby destination: async prefetch.
+
+Mid distance: lower LOD/chunk detail.
+
+Far distance: simplified massing/skyline.
+
+Outside range: release only resources that are genuinely no longer referenced. Use LOD hysteresis so objects do not thrash at boundaries.
+
+The local Outside view remains a playable neighbourhood-scale scene around the residence. The wide Abuja map/destination overview is secondary and is generated from the same canonical location registry.
+
+## Abuja coverage
+
+Landmarks/districts must be authored as recognisable stylised Abuja interpretations with sensible spatial relationships, not random generic towers. Core coverage includes City Gate, CBD/institutional skyline character, National Mosque, National Christian Centre, National Assembly/Eagle Square government zone, CBN, Transcorp Hilton area, Millennium Park, Jabi Lake/commercial area, Magicland, National Stadium, WTC/Twin-Tower character and existing supported districts/venues.
+
+Important structures must connect to gameplay and multiplayer gathering/activity rather than exist only as decoration.
+
+## Interior coverage
+
+LAPO starter homes remain intentionally sparse but polished. Upgraded LAPO/NEPO homes should use premium cutaway/dollhouse composition, good proportions, warm materials and grounded furniture while preserving the existing authoritative furniture/property data model.
+
+Furniture interaction remains catalogue -> buy/choose -> actual 3D item -> drag/rotate -> validated Place, plus Move/Rotate/Store/Sell for owned items.
+
+## Performance and quality tiers
+
+Do not use identical GPU budgets on every device. Establish High/Medium/Low tiers from measured capability/frame time. Adjust DPR, shadow range/map size, LOD distance and cosmetic entity budgets without replacing the world with placeholder cubes.
+
+Track renderer info in development/admin diagnostics: FPS/frame time, calls, triangles, textures, geometries, active chunks and context-loss/asset-failure events.
+
+## Reliability
+
+Handle WebGL context loss/restoration, failed optional assets, cached-version mismatches, background/foreground, reconnect and partial district loads without dropping the whole scene.
+
+Service worker/runtime caching should cache versioned public static assets only and must never public-cache authenticated/private API responses.
+
+## Multiplayer/scale
+
+Render 3D locally. Durable economy/ownership/messages remain server-authoritative in MongoDB. Realtime motion/presence uses spatial/venue interest management and a lower network tick rate than render FPS. Do not globally broadcast all movement. Distributed presence/pub-sub may be introduced behind the existing contract when measured load requires it; Redis Pub/Sub is never durable message storage.
+
+## Acceptance evidence
+
+Release claims require actual gameplay evidence, not compilation alone: LAPO starter/upgraded home, NEPO home, local outside street, club/gym/marketplace, furniture placement, vehicles/characters/phone, repeated navigation, two-account multiplayer where possible, WebKit/mobile viewport checks, production build and CI.
+
+Do not claim 60 FPS, zero failures, unlimited scale or physical-device results without recorded measurements.

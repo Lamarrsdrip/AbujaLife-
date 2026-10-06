@@ -17,7 +17,7 @@ test('authored surfaces share resources within a scene, keep repeats independent
   assert.notEqual(planks.map,base);assert.equal(plaster.userData.surface,'plaster');
   assert.ok(planks.map.image.data[0]<planks.map.image.data[(8*128+8)*4],'authored plank joints are recessed in the height texture');
   let released=0;first.addEventListener('dispose',()=>released++);base.addEventListener('dispose',()=>released++);
-  a.dispose();assert.equal(released,2);assert.deepEqual(a.stats(),{textures:0,materials:0,size:128});b.dispose();
+  a.dispose();assert.equal(released,2);assert.deepEqual(a.stats(),{textures:0,materials:0,size:128,premium:true});b.dispose();
 });
 
 test('actual furniture groups stay pickable after batching and reuse the same model during a drag', t => {

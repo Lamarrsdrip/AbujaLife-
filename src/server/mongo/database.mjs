@@ -149,6 +149,8 @@ export async function ensureMongoSchema(db) {
   await payments.ensureMongoPaymentSchema(db);
   const rewards = await import('./rewardStore.mjs');
   await rewards.ensureMongoRewardSchema(db);
+  const civic = await import('./civicSchema.mjs');
+  await civic.ensureMongoCivicSchema(db);
   await db.collection('schema_versions').updateOne({ _id: 'normalized-v1' }, { $set: { version: MONGO_SCHEMA_VERSION, collections: [...MONGO_COLLECTIONS], updatedAt: new Date() } }, { upsert: true });
   return { version: MONGO_SCHEMA_VERSION, collections: [...MONGO_COLLECTIONS] };
 }
@@ -162,8 +164,9 @@ async function verifySchema(db) {
   const admin = await import('./adminStore.mjs');
   const payments = await import('./paymentStore.mjs');
   const rewards = await import('./rewardStore.mjs');
+  const civic = await import('./civicSchema.mjs');
   const definitions = {};
-  for (const group of [MONGO_INDEXES, social.MONGO_SOCIAL_INDEXES || {}, directory.MONGO_DIRECTORY_INDEXES || {}, presence.MONGO_PRESENCE_INDEXES || {}, admin.MONGO_ADMIN_INDEXES || {}, payments.MONGO_PAYMENT_INDEXES || {}, rewards.MONGO_REWARD_INDEXES || {}]) {
+  for (const group of [MONGO_INDEXES, social.MONGO_SOCIAL_INDEXES || {}, directory.MONGO_DIRECTORY_INDEXES || {}, presence.MONGO_PRESENCE_INDEXES || {}, admin.MONGO_ADMIN_INDEXES || {}, payments.MONGO_PAYMENT_INDEXES || {}, rewards.MONGO_REWARD_INDEXES || {}, civic.MONGO_CIVIC_INDEXES || {}]) {
     for (const [name, indexes] of Object.entries(group)) definitions[name] = [...(definitions[name] || []), ...indexes];
   }
   for (const [name, expected] of Object.entries(definitions)) {

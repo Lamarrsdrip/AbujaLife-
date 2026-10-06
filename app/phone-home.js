@@ -41,7 +41,9 @@ export function bindPhoneHome(root, { page = 0, onPageChange = () => {} } = {}) 
   const previous = pagination.querySelector('[data-phone-page-step="-1"]');
   const next = pagination.querySelector('[data-phone-page-step="1"]');
   const announcement = pagination.querySelector('.ph-page-announcement');
-  let current = phonePageIndex(page, pages.length);
+  const scheduleFrame = globalThis.requestAnimationFrame?.bind(globalThis) || (callback => { callback(); return 0; });
+  const cancelFrame = globalThis.cancelAnimationFrame?.bind(globalThis) || (() => {});
+  let current = phonePageIndex(page, pages.length), scrollFrame = 0;
 
   function sync(index) {
     current = phonePageIndex(index, pages.length);
@@ -57,16 +59,26 @@ export function bindPhoneHome(root, { page = 0, onPageChange = () => {} } = {}) 
     onPageChange(current);
   }
 
+  function pageOffset(index) {return pages[index].offsetLeft - pages[0].offsetLeft;}
+  function nearestPage() {
+    let index=0,best=Infinity;
+    for(let i=0;i<pages.length;i++){
+      const gap=Math.abs(viewport.scrollLeft-pageOffset(i));
+      if(gap<best){best=gap;index=i;}
+    }
+    return index;
+  }
+
   function go(index) {
     const target = phonePageIndex(index, pages.length);
     const reducedMotion = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    viewport.scrollTo({ left: pages[target].offsetLeft - pages[0].offsetLeft, behavior: reducedMotion ? 'instant' : 'smooth' });
+    viewport.scrollTo({ left: pageOffset(target), behavior: reducedMotion ? 'instant' : 'smooth' });
     sync(target);
   }
 
   function onScroll() {
-    const width = viewport.clientWidth;
-    if (width) sync(Math.round(viewport.scrollLeft / width));
+    if(scrollFrame)return;
+    scrollFrame=scheduleFrame(()=>{scrollFrame=0;sync(nearestPage());});
   }
 
   function onClick(event) {
@@ -82,7 +94,7 @@ export function bindPhoneHome(root, { page = 0, onPageChange = () => {} } = {}) 
     go(current + (event.key === 'ArrowLeft' ? -1 : 1));
   }
 
-  viewport.scrollLeft = pages[current].offsetLeft - pages[0].offsetLeft;
+  viewport.scrollLeft = pageOffset(current);
   sync(current);
   viewport.addEventListener('scroll', onScroll, { passive: true });
   viewport.addEventListener('keydown', onKey);
@@ -90,6 +102,7 @@ export function bindPhoneHome(root, { page = 0, onPageChange = () => {} } = {}) 
   return {
     getPage: () => current,
     destroy() {
+      if(scrollFrame)cancelFrame(scrollFrame);
       viewport.removeEventListener('scroll', onScroll);
       viewport.removeEventListener('keydown', onKey);
       pagination.removeEventListener('click', onClick);

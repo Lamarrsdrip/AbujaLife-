@@ -20,6 +20,7 @@ const liveAdSpaces = () => new Map((globalThis.__ABJ_ADS__?.spaces || []).map(sp
 
 function syncAdTiles(shell) {
   const spaces = liveAdSpaces();
+  const interactivePlots = shell?.classList?.contains('outside-city-v3');
   shell?.querySelectorAll('.outside-ad-label').forEach(button => {
     button.dataset.defaultLabel ||= button.textContent || '';
     const key = button.dataset.destinationKey || '';
@@ -32,8 +33,14 @@ function syncAdTiles(shell) {
     button.removeAttribute('data-ad-link');
     if (!validCreative) {
       button.replaceChildren(document.createTextNode(button.dataset.defaultLabel));
-      button.setAttribute('aria-hidden', 'true');
-      button.tabIndex = -1;
+      if (interactivePlots) {
+        button.removeAttribute('aria-hidden');
+        button.tabIndex = 0;
+        button.setAttribute('aria-label', `${button.dataset.defaultLabel}. Available advertising plot. Tap to view or buy.`);
+      } else {
+        button.setAttribute('aria-hidden', 'true');
+        button.tabIndex = -1;
+      }
       return;
     }
 

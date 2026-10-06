@@ -19,6 +19,16 @@ export const MONGO_CIVIC_INDEXES = Object.freeze({
   ],
 });
 
+export const MONGO_CIVIC_COLLECTIONS = Object.freeze(Object.keys(MONGO_CIVIC_INDEXES));
+
+/** Explicit non-DDL privileges. createIndex stays on the bootstrap identity. */
+export function mongoCivicRuntimePrivileges(database) {
+  return MONGO_CIVIC_COLLECTIONS.map(collection => ({
+    resource: { db: database, collection },
+    actions: ['find', 'insert', 'update', 'remove', 'listIndexes'],
+  }));
+}
+
 export async function ensureMongoCivicSchema(db) {
   for (const [name, indexes] of Object.entries(MONGO_CIVIC_INDEXES)) {
     for (const [keys, options] of indexes) await db.collection(name).createIndex(keys, options);

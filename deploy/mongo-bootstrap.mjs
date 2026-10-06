@@ -4,6 +4,7 @@ import {MongoClient} from 'mongodb';
 import {ensureMongoSchema, MONGO_COLLECTIONS, MONGO_APPEND_ONLY_COLLECTIONS} from '../src/server/mongo/database.mjs';
 import {ensureMongoAdSchema} from '../src/server/mongo/adStore.mjs';
 import {ensureMongoJackpotSchema, JACKPOT_COLLECTIONS, JACKPOT_APPEND_ONLY_COLLECTIONS} from '../src/server/mongo/jackpotSchema.mjs';
+import {mongoCivicRuntimePrivileges, MONGO_CIVIC_COLLECTIONS} from '../src/server/mongo/civicSchema.mjs';
 
 const database = process.env.MONGODB_DATABASE || 'abujalife_prod';
 const host = process.env.MONGODB_HOST || 'mongo:27017';
@@ -47,6 +48,7 @@ try {
       actions: JACKPOT_APPEND_ONLY_COLLECTIONS.includes(collection) ? ['find','insert','listIndexes'] : ['find','insert','update','remove','listIndexes']
     });
   }
+  privileges.push(...mongoCivicRuntimePrivileges(database));
   const existingRole = await db.command({rolesInfo: 'abujalife_runtime'});
   await db.command({[existingRole.roles.length ? 'updateRole' : 'createRole']: 'abujalife_runtime', privileges, roles: []});
   // Full replica-set mongodump --oplog is an instance-level operation. On
@@ -57,5 +59,5 @@ try {
     const existing = await db.command({usersInfo: user});
     await db.command({[existing.users.length ? 'updateUser' : 'createUser']: user, pwd: secret(passwordFile), roles});
   }
-  console.log(JSON.stringify({ok:true,database,replicaSet,collections:MONGO_COLLECTIONS.length+3+JACKPOT_COLLECTIONS.length,ledger:'find/insert only',adReceipts:'find/insert only',jackpotLedger:'find/insert only',appDDL:false}));
+  console.log(JSON.stringify({ok:true,database,replicaSet,collections:MONGO_COLLECTIONS.length+3+JACKPOT_COLLECTIONS.length+MONGO_CIVIC_COLLECTIONS.length,ledger:'find/insert only',adReceipts:'find/insert only',jackpotLedger:'find/insert only',civic:'find/insert/update/remove/listIndexes',appDDL:false}));
 } finally { await client.close(); }

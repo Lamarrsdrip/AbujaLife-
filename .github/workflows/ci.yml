@@ -20,6 +20,41 @@ jobs:
       - run: npm run build
       - run: npm run qa:infra
 
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm ci --ignore-scripts
+      - name: Install real browser engines
+        run: |
+          python -m pip install --disable-pip-version-check playwright
+          python -m playwright install --with-deps chromium webkit
+      - name: Resolve Playwright Chromium binary
+        shell: bash
+        run: |
+          echo "CHROMIUM_PATH=$(python - <<'PY'
+          from playwright.sync_api import sync_playwright
+          p = sync_playwright().start()
+          print(p.chromium.executable_path)
+          p.stop()
+          PY
+          )" >> "$GITHUB_ENV"
+      - name: Full Chromium resident journey
+        env:
+          ABUJALIFE_QA_ARTIFACTS: ${{ runner.temp }}/abujalife-browser
+        run: npm run qa:browser
+      - name: Mobile WebKit city-entry release gate
+        env:
+          ABUJALIFE_WEBKIT_ARTIFACTS: ${{ runner.temp }}/abujalife-webkit
+        run: python tests/city-entry-webkit.py
+
   windows:
     runs-on: windows-latest
     steps:

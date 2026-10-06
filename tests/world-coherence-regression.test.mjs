@@ -50,7 +50,7 @@ test('phone destination handoff closes the handset before civic travel continues
   const bridge=await read('app/civic-travel-phone-bridge.js');
   const index=await read('app/index.html');
   assert.match(bridge,/data-civic-travel/);
-  assert.match(bridge,/data-ph-action=\\"close\\"/);
+  assert.match(bridge,/data-ph-action=["']close["']/);
   assert.match(bridge,/capture:true/);
   assert.ok(index.indexOf('/civic-travel-phone-bridge.js')<index.indexOf('/civic-life.js'));
 });

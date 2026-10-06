@@ -21,13 +21,15 @@ test('AbujaLife civic life is explicitly fictional and has a complete playable e
   assert.ok(CIVIC_META.governmentBudget>CIVIC_META.nominationFee);
 });
 
-test('campaigns include public rallies, debates, transparent choices and abstract fictional risk without laundering mechanics',()=>{
+test('campaigns include public rallies, debates, transparent choices and abstract fictional risk without procedural crime mechanics',()=>{
   const ids=new Set(CIVIC_CAMPAIGN_ACTIONS.map(a=>a.id));
   for(const id of ['street-canvass','eagle-square-rally','icc-townhall','debate-performance','declare-finances','risky-backer'])assert.ok(ids.has(id),`${id} missing`);
   assert.ok(CIVIC_CAMPAIGN_ACTIONS.some(a=>Number(a.heat)>0));
   assert.ok(CIVIC_CAMPAIGN_ACTIONS.some(a=>Number(a.heat)<0));
   assert.ok(CIVIC_GOVERNMENT_ACTIONS.length>=4);
-  assert.equal(/launder|wash money|shell company/i.test(CIVIC_CAMPAIGN_ACTIONS.map(a=>a.description).join(' ')),false);
+  const copy=CIVIC_CAMPAIGN_ACTIONS.map(a=>a.description).join(' ');
+  assert.equal(/how to launder|wash (?:cash|money)|shell compan(?:y|ies)|smurfing|layering funds|evade reporting|hide transfers/i.test(copy),false);
+  assert.match(copy,/No (?:real-world )?(?:method|evasion technique).*depicted/i);
 });
 
 test('INEC, EFCC and court story destinations are real first-class AbujaLife venues',()=>{

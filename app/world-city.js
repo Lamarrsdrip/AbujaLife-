@@ -139,6 +139,22 @@ export function buildCity({profile={},place={},id='city',venues=[]}={}) {
  // The full-city landmark quarter mirrors the map registry. The legacy neighbourhood remains intact on the left;
  // these recognisable Abuja destinations extend the same walkable world instead of teleporting residents to a fake block.
  art+=rect(3540,0,width-3540,height,'#b4c59a')+rect(3600,92,width-3690,2420,'#c8cdb1',60)+rect(3590,2380,width-3650,236,'#718378')+`<path d="M3590 2498H${width}" stroke="#e8e0b7" stroke-width="4" stroke-dasharray="52 48"/>`;
+ // Abuja's landmark half needs enough surrounding city fabric to feel inhabited when the camera zooms out.
+ // These are intentionally non-interactive context blocks; named destinations below stay canonical.
+ for(const avenueX of [3740,4440,5140,5840,6540,7240,7940]){
+  art+=rect(avenueX,0,96,height,'#74867a')+`<path d="M${avenueX+48} 0V${height}" stroke="#e8e0b7" stroke-width="3" stroke-dasharray="46 44"/>`;
+ }
+ const landmarkPoints=CITY_LANDMARKS.map(landmarkWorldPoint),contextPalette=['#ddd6c3','#d2d0bf','#c9c8b6','#e4dcc6','#c7cfbf','#d7ccb6'];
+ for(let row=0;row<5;row++)for(let col=0;col<7;col++){
+  const cx=3780+col*645+(row%2)*96,groundY=520+row*690;
+  if(cx>width-220||groundY>height-150)continue;
+  if(landmarkPoints.some(point=>Math.hypot(point.x-cx,point.y-groundY)<380))continue;
+  const bw=220+(col%3)*36,bh=145+((row+col)%3)*48,left=cx-bw/2,top=groundY-bh,wall=contextPalette[(row*7+col)%contextPalette.length];
+  const windows=Array.from({length:Math.max(2,Math.floor((bw-36)/54))},(_,i)=>rect(left+20+i*54,top+34,31,42,'#6f8d8a',3)+rect(left+20+i*54,top+88,31,31,'#799590',3)).join('');
+  art+=`<g class="city-context-block" aria-hidden="true">${rect(left,top,bw,bh,wall,7)}${rect(left-9,top,bw+18,11,'#ede6d2',4)}${windows}<path d="M${left+bw} ${top+8}L${left+bw+20} ${top+22}V${groundY+4}L${left+bw} ${groundY}Z" fill="#aeb8a8"/><rect x="${left+bw*.43}" y="${groundY-62}" width="${bw*.18}" height="62" rx="3" fill="#58766d"/></g>`;
+  obstacles.push({x:left-7,y:top-8,w:bw+30,h:bh+20});
+  if((row+col)%2===0)art+=cityTree(left-26,groundY-10,.62,(row+col)%5===0);
+ }
  const localVenueIds=new Set(venues.map(v=>v.id));
  for(const landmark of CITY_LANDMARKS){
   const legacyLocal=['banex','jabi-lake'].includes(landmark.id)&&localVenueIds.has(landmark.id);

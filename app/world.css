@@ -105,3 +105,9 @@
 .world-art .airport-plane-a{animation-delay:-4s}
 @keyframes abujalife-airport-taxi{0%{transform:translateX(0)}48%{transform:translateX(520px)}52%{transform:translateX(520px) rotate(180deg)}100%{transform:translateX(0) rotate(180deg)}}
 @media (prefers-reduced-motion:reduce){.world-art .airport-plane{animation:none}}
+
+
+/* Airport movement is lightweight SVG ambience anchored to the actual airport landmark. */
+@keyframes abuja-airport-ground-move{0%{transform:translateX(0)}50%{transform:translateX(155px)}100%{transform:translateX(0)}}
+.world-scene .airport-plane-a{transform-box:fill-box;transform-origin:center;animation:abuja-airport-ground-move 9s linear infinite}
+@media (prefers-reduced-motion:reduce){.world-scene .airport-plane-a{animation:none}}

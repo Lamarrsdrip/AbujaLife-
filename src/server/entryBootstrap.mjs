@@ -39,7 +39,8 @@ async function mongoEntryProfile(store,id){
  const home=strip(row.homeRows[0]),{furnitureLayout={},storedFurniture=[],billsPaidAt,rentPaidAt,...homeFields}=home;
  const propertyRows=row.propertyRows||[];
  return{
-  id:row.id||row._id,username:row.username,displayName:row.displayName,settings:row.settings||{},lifeGoal:row.lifeGoal||'explore',onboardingComplete:row.onboardingComplete===true,createdAt:row.createdAt,
+  id:row.id||row._id,username:row.username,displayName:row.displayName,email:row.email||undefined,emailVerified:row.emailVerified===true,
+  settings:row.settings||{},lifeGoal:row.lifeGoal||'explore',onboardingComplete:row.onboardingComplete===true,createdAt:row.createdAt,
   origin:row.originRows[0].origin,appearance:strip(row.appearanceRows[0]),...strip(row.needsRows[0]),...strip(row.progressionRows[0]),...strip(row.stateRows[0]),
   home:homeFields,wallet:row.walletRows[0].balance,
   inventory:(row.inventoryRows||[]).map(item=>item.itemId),vehicleColors:Object.fromEntries((row.vehicleRows||[]).map(item=>[item.itemId,item.color])),

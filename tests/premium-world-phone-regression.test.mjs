@@ -20,7 +20,9 @@ test('realtime residents keep a visible fallback until their own WebGL rig is re
   assert.match(polishCss,/world-online-resident \.walker-body\{visibility:visible!important\}/);
   assert.match(polishCss,/world-online-resident\.has-webgl-resident \.walker-body\{visibility:hidden!important\}/);
   assert.doesNotMatch(polish,/has-webgl-resident/);
-  assert.match(read('app/phone.js'),/class="ph-put-away"/);
+  assert.doesNotMatch(read('app/phone.js'),/class="ph-put-away"/);
+  assert.match(read('app/phone.js'),/Put away/);
+  assert.doesNotMatch(polishCss,/ph-put-away/);
   assert.match(read('app/phone.js'),/AbujaLife Phone/);
   assert.doesNotMatch(polish,/ph-device-caption/);
 });

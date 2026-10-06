@@ -1,6 +1,4 @@
-.phone-root .ph-put-away{position:absolute;z-index:6;top:9px;right:10px;display:inline-flex;align-items:center;justify-content:center;min-height:28px;padding:0 11px;border-radius:999px;background:#ffffffd8;color:#17382c;font:800 12px/1 system-ui,-apple-system,sans-serif;letter-spacing:0}
-.phone-root .ph-status-icons{padding-right:62px}
-@media(max-width:700px){.phone-root .ph-put-away{display:inline-flex!important;top:calc(8px + env(safe-area-inset-top));right:max(10px,env(safe-area-inset-right));min-height:34px;min-width:64px;font-size:13px}}.abj-header-app-icon{display:block;width:46px;height:46px;border-radius:14px;object-fit:cover}.game-header .header-edition{display:none!important}
+.abj-header-app-icon{display:block;width:46px;height:46px;border-radius:14px;object-fit:cover}.game-header .header-edition{display:none!important}
 
 .game-nav{gap:8px!important;padding:10px 14px calc(10px + env(safe-area-inset-bottom))!important;background:linear-gradient(180deg,#0c382d 0%,#082e25 100%)!important;border-top:1px solid #ffffff12!important;box-shadow:0 -12px 28px #123b2c1a!important}.game-nav button{min-height:62px!important;border-radius:22px!important;transition:transform .16s ease,background .16s ease,color .16s ease!important}.game-nav button svg{width:24px!important;height:24px!important}.game-nav button span{font-size:11px!important;font-weight:800!important;letter-spacing:-.1px!important}.game-nav button.active{background:#f3f1e7!important;color:#1b4b3b!important;box-shadow:0 8px 24px #071d161f,inset 0 0 0 1px #fff!important}.game-nav button:active{transform:scale(.965)}
 
@@ -44,7 +42,10 @@
  .phone-root .ph-backdrop,.phone-root.phone-chat-open .ph-backdrop,.phone-root:has(input:focus,textarea:focus,select:focus) .ph-backdrop{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;padding:0!important;display:block!important;overflow:hidden!important;background:#10241c!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
  .phone-root .ph-device,.phone-root.phone-chat-open .ph-device,.phone-root.phone-keyboard-open .ph-device,.phone-root:has(input:focus,textarea:focus,select:focus) .ph-device{position:relative!important;width:100%!important;height:100%!important;min-height:0!important;max-width:none!important;max-height:none!important;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;background:#10241c!important;box-shadow:none!important}
  .phone-root .ph-screen,.phone-root.phone-keyboard-open .ph-screen,.phone-root:has(input:focus,textarea:focus,select:focus) .ph-screen{width:100%!important;height:100%!important;min-height:0!important;border:0!important;border-radius:0!important;overflow:hidden!important}
- .phone-root :is(.ph-hardware,.ph-device-caption){display:none!important}
+ .phone-root .ph-hardware{display:none!important}
+ .phone-root .ph-device-caption{display:flex!important;top:auto!important;bottom:max(4px,env(safe-area-inset-bottom));z-index:8;padding:0 16px;pointer-events:none}
+ .phone-root .ph-device-caption>span{display:none}
+ .phone-root .ph-device-caption button{pointer-events:auto;min-height:36px;color:#e7efe9}
  .phone-root .ph-statusbar{flex:0 0 calc(45px + env(safe-area-inset-top))!important;min-height:calc(45px + env(safe-area-inset-top))!important;padding:env(safe-area-inset-top) max(18px,env(safe-area-inset-right)) 0 max(18px,env(safe-area-inset-left))!important}
  .phone-root .ph-island{top:calc(8px + env(safe-area-inset-top))!important}
  .phone-root .ph-app-content,.phone-root.phone-keyboard-open .ph-app-content{min-height:0!important;height:auto!important;flex:1 1 auto!important;padding-bottom:max(18px,env(safe-area-inset-bottom))!important}

@@ -116,7 +116,8 @@ export function createSessionRuntime({store,admin,social=null,directory=null,cor
   if(id&&await admin.isSuspended(id))throw Object.assign(new Error('This account is suspended'),{status:403,code:'account_suspended'});
   return{token,id};
  }
- const chatPro=directory?createChatProRuntime({store,social,directory,env,fetchImpl,log,send,readJson:readBody,authenticate:async req=>{
+ const chatDirectory=directory||store.directory||null;
+ const chatPro=chatDirectory?createChatProRuntime({store,social,directory:chatDirectory,env,fetchImpl,log,send,readJson:readBody,authenticate:async req=>{
   const{id}=await residentFromRequest(req);if(!id)throw Object.assign(new Error('Sign in to your resident account'),{status:401,code:'authentication_required'});return id;
  }}):null;
  async function handle(req,res){

@@ -17,16 +17,16 @@ test('entry refresh never carries private cards between accounts or anonymous st
  for(const next of [{authenticated:true,entry:true,profile:{id:'other'},conversations:[]},{authenticated:false,entry:true},{authenticated:true,profile:session.profile,conversations:[]}])assert.equal(mergeCoreBootstrap(current,next),next);
 });
 
-test('successful login consumes the playable entry returned by the canonical auth route',async()=>{
+test('successful login accepts a tiny auth acknowledgement then reads the authoritative playable entry',async()=>{
  const calls=[];let reads=0;
- const result=await authenticateAccount({mode:'login',credentials:{username:'ada',password:'private'},api:async(path,options)=>{calls.push({path,options});return{...session,ok:true,residentId:'one'};},readSession:async()=>{reads++;throw new Error('must not read session after a complete auth response');}});
- assert.equal(result.profile.id,'one');assert.equal(reads,0);assert.equal(calls.length,1);assert.equal(calls[0].path,'/api/auth/login');assert.equal(Object.hasOwn(calls[0].options.body,'startup'),false);
+ const result=await authenticateAccount({mode:'login',credentials:{username:'ada',password:'private'},api:async(path,options)=>{calls.push({path,options});return{ok:true,authenticated:true,residentId:'one'};},readSession:async()=>{reads++;return session;}});
+ assert.equal(result.profile.id,'one');assert.equal(reads,1);assert.equal(calls.length,1);assert.equal(calls[0].path,'/api/auth/login');assert.equal(Object.hasOwn(calls[0].options.body,'startup'),false);
 });
 
-test('successful registration uses the canonical route with no startup flags or compatibility suffixes',async()=>{
- const calls=[];
- const result=await authenticateAccount({mode:'register',credentials:{username:'ada',password:'private'},api:async(path,options)=>{calls.push({path,options});return{...session,ok:true,residentId:'one'};},readSession:async()=>{throw new Error('unexpected read');}});
- assert.equal(result.profile.id,'one');assert.equal(calls[0].path,'/api/auth/register');assert.equal(calls[0].path.includes('?session=1'),false);assert.equal(Object.hasOwn(calls[0].options.body,'startup'),false);
+test('successful registration uses the same ack then entry contract with no compatibility routes',async()=>{
+ const calls=[];let reads=0;
+ const result=await authenticateAccount({mode:'register',credentials:{username:'ada',password:'private'},api:async(path,options)=>{calls.push({path,options});return{ok:true,authenticated:true,residentId:'one'};},readSession:async()=>{reads++;return session;}});
+ assert.equal(result.profile.id,'one');assert.equal(reads,1);assert.equal(calls[0].path,'/api/auth/register');assert.equal(calls[0].path.includes('?session=1'),false);assert.equal(Object.hasOwn(calls[0].options.body,'startup'),false);
 });
 
 test('interrupted auth can recover only the same genuine resident session without replaying the write',async()=>{
@@ -42,8 +42,14 @@ test('credential errors never fall back to an existing session',async()=>{
  assert.equal(reads,0);
 });
 
-test('auth response for another resident is rejected immediately',async()=>{
- await assert.rejects(authenticateAccount({mode:'login',credentials:{username:'ada'},api:async()=>({...session,profile:{...session.profile,id:'two',username:'bello'}}),readSession:async()=>session}),/could not be opened/);
+test('auth acknowledgement cannot switch to another resident entry',async()=>{
+ await assert.rejects(authenticateAccount({mode:'login',credentials:{username:'ada'},api:async()=>({ok:true,authenticated:true,residentId:'two'}),readSession:async()=>session}),/could not be opened/);
+});
+
+test('malformed auth acknowledgement is rejected before any entry read',async()=>{
+ let reads=0;
+ await assert.rejects(authenticateAccount({mode:'login',credentials:{username:'ada'},api:async()=>({ok:true,authenticated:true,profile:session.profile}),readSession:async()=>{reads++;return session;}}),/could not be opened/);
+ assert.equal(reads,0);
 });
 
 test('committed onboarding returns its profile without startup flags or another blocking entry read',async()=>{

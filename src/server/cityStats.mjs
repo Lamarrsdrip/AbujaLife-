@@ -60,7 +60,7 @@ export function createCityStats(store, { globalCacheMs = GLOBAL_CACHE_MS, zoneCa
     const day = abujaDateKey(now);
     const [onlineRows, totalPlayers, traffic, hotZoneRows] = await Promise.all([
       store.collection('presence_sessions').aggregate([
-        { $match: { expiresAt: { $gt: new Date(now) } } },
+        { $match: { presenceVisible: { $ne: false }, expiresAt: { $gt: new Date(now) } } },
         { $group: { _id: '$residentId' } },
         { $count: 'count' },
       ]).toArray(),
@@ -78,11 +78,18 @@ export function createCityStats(store, { globalCacheMs = GLOBAL_CACHE_MS, zoneCa
       const parsed = parseVenueZone(row._id);
       return parsed ? [{ ...parsed, zone: row._id, online: Number(row.online || 0) }] : [];
     });
+    const totalPlayerCount = Number(totalPlayers || 0);
+    const trackedVisitsAllTime = Number(traffic?.visitsAllTime || 0);
+    // Visit tracking was introduced after AbujaLife already had residents. Every
+    // registered resident has entered the city at least once, so the public
+    // all-time counter must never regress below the authoritative resident count.
+    // Once tracked repeat visits pass that historical floor, the real counter wins.
+    const visitsAllTime = Math.max(totalPlayerCount, trackedVisitsAllTime);
     const value = {
       onlineNow: countFrom(onlineRows),
-      totalPlayers: Number(totalPlayers || 0),
+      totalPlayers: totalPlayerCount,
       visitsToday: Number(traffic?.visitDays?.[day] || 0),
-      visitsAllTime: Number(traffic?.visitsAllTime || 0),
+      visitsAllTime,
       trackingSince: Number(traffic?.trackingSince || now),
       ...(hotPlaces.length ? { hotPlaces } : {}),
     };

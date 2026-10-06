@@ -4,6 +4,9 @@ import fs from 'node:fs';
 
 const read=file=>fs.readFileSync(new URL(`../${file}`,import.meta.url),'utf8');
 const world3d=read('app/world-3d.js');
+const lighting=read('app/world-lighting.js');
+const assets=read('app/world-assets.js');
+const vendor=read('scripts/vendor-three.mjs');
 const polish=read('app/abuja-game-polish-2026.js');
 const polishCss=read('app/abuja-game-polish-2026.css');
 const map=read('app/game-map.js');
@@ -24,6 +27,25 @@ test('premium 3D quality keeps soft shadows on capable phones with a constrained
   assert.match(world3d,/PCFSoftShadowMap/);
   assert.match(world3d,/powerPreference:constrained\?'low-power':'high-performance'/);
   assert.match(world3d,/mobile\?1\.3:1\.8/);
+});
+
+test('canonical renderer uses a local prefiltered environment instead of pretending hemisphere light is GI',()=>{
+  assert.match(world3d,/createWorldEnvironmentLighting/);
+  assert.match(world3d,/scene\.environment=ibl\.texture/);
+  assert.match(lighting,/PMREMGenerator/);
+  assert.match(lighting,/RoomEnvironment/);
+  assert.match(lighting,/if\(constrained\)return/);
+});
+
+test('world asset runtime supports local Meshopt and KTX2 without third-party hotlinks',()=>{
+  assert.match(assets,/GLTFLoader/);
+  assert.match(assets,/KTX2Loader/);
+  assert.match(assets,/detectSupport\(renderer\)/);
+  assert.match(assets,/setMeshoptDecoder\(MeshoptDecoder\)/);
+  assert.match(assets,/basisPath='\/vendor\/basis\/'/);
+  assert.match(vendor,/basis_transcoder\.wasm/);
+  assert.match(vendor,/shared-three/);
+  assert.doesNotMatch(assets,/https?:\/\//);
 });
 
 test('real mobile devices use the visual viewport instead of squeezing a second handset',()=>{

@@ -290,15 +290,3 @@
   .phone-root .ph-button:hover:not(:disabled){filter:brightness(1.04)}
   .phone-root :is(.ph-list-row,.ph-setting-row,.ph-property-row,.ph-browser-bookmark):hover{background-color:#ebf0e2}
 }
-
-
-/* 2026-10 final phone framing: keep the whole handset visible and calm on mobile. */
-.phone-root .ph-backdrop{padding:24px 16px 48px}
-.phone-root .ph-device{width:min(348px,calc(100vw - 44px),calc((100dvh - 100px)*.474));height:min(735px,calc(100dvh - 100px));border-radius:46px;padding:7px}
-.phone-root .ph-screen{border-radius:38px}
-@media(max-width:600px){
- .phone-root .ph-backdrop{padding:max(18px,env(safe-area-inset-top)) 16px max(38px,env(safe-area-inset-bottom))}
- .phone-root .ph-device{width:min(334px,calc(100vw - 42px));height:min(706px,calc(100dvh - 82px));max-height:calc(100dvh - 82px)}
- .phone-root.phone-chat-open .ph-backdrop{top:var(--ph-chat-viewport-top,0);height:var(--ph-chat-viewport-height,100dvh);bottom:auto;padding:10px 14px 24px}
- .phone-root.phone-chat-open .ph-device{width:min(334px,calc(100vw - 42px));height:min(706px,calc(var(--ph-chat-viewport-height,100dvh) - 42px));min-height:300px}
-}

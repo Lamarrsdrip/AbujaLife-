@@ -29,6 +29,18 @@ const LEGACY_HOME_FURNITURE = Object.freeze({
   'maitama-villa': Object.freeze(['bed','wardrobe','work-desk','accent-chair','library-shelf','sofa','kitchen-unit','fridge','dining-table','plant']),
 });
 
+// A successful home purchase now delivers a real owned furniture package. These are
+// catalogue items, not renderer-only props, so residents can move/store/sell them with
+// the existing authoritative furniture system. Higher tiers receive visibly richer
+// combinations while LAPO starter homes remain sparse until a paid home is acquired.
+const PURCHASED_HOME_FURNITURE = Object.freeze({
+  1:Object.freeze(['bed','sofa','dining-table','fridge','floor-lamp','plant']),
+  2:Object.freeze(['bed','sofa','dining-table','fridge','floor-lamp','plant','wardrobe','kitchen-unit','work-desk','office-chair','rug']),
+  3:Object.freeze(['bed','sofa','dining-table','fridge','floor-lamp','plant','wardrobe','kitchen-unit','work-desk','office-chair','rug','lounge-chair','coffee-table','tv','tall-plant','bedside-table']),
+  4:Object.freeze(['king-bed','premium-sofa','dining-table','fridge','floor-lamp','tall-plant','wardrobe','kitchen-island','work-desk','office-chair','large-rug','coffee-table','tv','music-speaker','storage-drawers','full-length-mirror','accent-chair']),
+  5:Object.freeze(['king-bed','premium-sofa','dining-table','fridge','floor-lamp','indoor-ficus','wardrobe','kitchen-island','work-desk','office-chair','large-rug','coffee-table','tv','floor-speaker','media-sideboard','full-length-mirror','accent-chair','library-shelf','balcony-bench','gaming-console','art-piece','table-lamp']),
+});
+
 async function migrateLegacyHomeFurniture(store, residentId, profile, options = {}) {
   if (!profile?.home || Number(profile.home.starterVersion || 0) >= 1) return profile;
   const layoutId = profile.home.layoutId || profile.home.propertyId;
@@ -69,6 +81,42 @@ async function migrateLegacyHomeFurniture(store, residentId, profile, options = 
   profile.inventory = [...new Set([...(profile.inventory || []), ...defaults])];
   profile.home = { ...profile.home, starterVersion: 1, furnishingPreset };
   profile.legacyHomeFurnitureMigrated = true;
+  return profile;
+}
+
+async function furnishPurchasedHome(store,residentId,profile,options={}){
+  if(!profile?.home||profile.home.tenure!=='own')return profile;
+  const property=store.propertyFor?.(profile,profile.home.propertyId);
+  if(!property||!Number.isInteger(property.tier)||property.tier<1)return profile;
+  if(profile.home.purchaseFurnishedPropertyId===property.id&&Number(profile.home.purchaseFurnishingTier||0)>=property.tier)return profile;
+
+  const session=options?.session||null,dbOptions=session?{session}:{};
+  // A browser cannot trigger this from a claimed property id. The persistent
+  // ownership row must already exist, so payment/ownership commits first.
+  const ownership=await store.collection('properties').findOne({residentId,propertyId:property.id,owned:true},dbOptions);
+  if(!ownership)return profile;
+
+  const packageItems=PURCHASED_HOME_FURNITURE[property.tier]||PURCHASED_HOME_FURNITURE[5];
+  const inventory=store.collection('inventory'),acquiredAt=store.clock();
+  const existing=await inventory.find({residentId,itemId:{$in:packageItems}},dbOptions).project({itemId:1}).toArray();
+  const existingIds=new Set(existing.map(row=>row.itemId)),granted=[];
+  for(const itemId of packageItems){
+    if(existingIds.has(itemId))continue;
+    await inventory.updateOne({residentId,itemId},{$setOnInsert:{_id:`${residentId}:${itemId}`,residentId,itemId,category:'furniture',acquiredAt,source:`purchased-home-tier-${property.tier}`,propertyId:property.id}},{...dbOptions,upsert:true});
+    granted.push(itemId);
+  }
+
+  const update={$set:{starterVersion:1,furnishingPreset:'nepo-furnished',purchaseFurnishedPropertyId:property.id,purchaseFurnishingTier:property.tier,purchaseFurnishedAt:acquiredAt}};
+  // Freshly delivered items have no previous home to preserve. Clearing only their
+  // saved coordinates lets the existing route-safe interior arranger place them.
+  if(granted.length){update.$pull={storedFurniture:{$in:granted}};update.$unset=Object.fromEntries(granted.map(itemId=>[`furnitureLayout.${itemId}`,'']));}
+  await store.collection('homes').updateOne({residentId,propertyId:property.id},update,dbOptions);
+
+  profile.inventory=[...new Set([...(profile.inventory||[]),...granted])];
+  profile.storedFurniture=(profile.storedFurniture||[]).filter(itemId=>!granted.includes(itemId));
+  profile.furnitureLayout={...(profile.furnitureLayout||{})};for(const itemId of granted)delete profile.furnitureLayout[itemId];
+  profile.home={...profile.home,starterVersion:1,furnishingPreset:'nepo-furnished',purchaseFurnishedPropertyId:property.id,purchaseFurnishingTier:property.tier,purchaseFurnishedAt:acquiredAt};
+  profile.purchasedHomeFurnished={propertyId:property.id,tier:property.tier,granted:[...granted]};
   return profile;
 }
 
@@ -114,8 +162,9 @@ export function installFastLocationActions(store) {
 
   const originalProfile = store.profile.bind(store);
   store.profile = async (residentId, options = {}) => {
-    const profile = await originalProfile(residentId, options);
-    await migrateLegacyHomeFurniture(store, residentId, profile, options);
+    let profile = await originalProfile(residentId, options);
+    profile=await migrateLegacyHomeFurniture(store,residentId,profile,options);
+    profile=await furnishPurchasedHome(store,residentId,profile,options);
     if(profile.vehiclePresence&&!cleanPresence(profile))profile.vehiclePresence=null;
     return profile;
   };
@@ -123,6 +172,11 @@ export function installFastLocationActions(store) {
   const originalAction = store.action.bind(store);
 
   store.action = async (residentId, action, payload = {}) => {
+    if(action==='move-home'){
+      const result=await originalAction(residentId,action,payload);
+      const profile=await store.profile(residentId);
+      return result&&typeof result==='object'?{...result,profile,purchasedHomeFurnished:profile.purchasedHomeFurnished||null}:result;
+    }
     if(action==='travel'||action==='return-home'||action==='arrive'||action==='toggle-driving'){
       const before=await store.profile(residentId),presence=cleanPresence(before);
       if(action==='return-home'&&before.location?.kind!=='home'&&before.home?.district===before.district){

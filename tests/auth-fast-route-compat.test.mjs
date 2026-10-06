@@ -31,7 +31,7 @@ test('explicit core startup and account writes retain authoritative bootstrap an
     }
     await apiFetch('/api/bootstrap');
   });
-  assert.deepEqual(calls,['/api/bootstrap/fast','/api/auth/register','/api/auth/login','/api/profile','/api/bootstrap']);
+  assert.deepEqual(calls,['/api/bootstrap?startup=1','/api/auth/register','/api/auth/login','/api/profile','/api/bootstrap']);
 });
 
 test('unreachable bootstrap never presents cached authentication or a fake successful response', async () => {
@@ -61,18 +61,13 @@ test('concurrent core reads share network work and return independently readable
   });
 });
 
-test('staggered deploy auth guard falls back instead of trapping anonymous users on Reconnect', async () => {
+test('city startup never depends on the optional fast bootstrap listener', async () => {
   const calls = [];
   await withFetch(async url => {
     calls.push(String(url));
-    if (String(url) === '/api/bootstrap/fast') {
-      return new Response(JSON.stringify({ ok: false, error: 'Sign in to your resident account', code: 'authentication_required' }), {
-        status: 401,
-        headers: { 'content-type': 'application/json' },
-      });
-    }
-    if (String(url) === '/api/bootstrap') {
-      return new Response(JSON.stringify({ authenticated: false }), {
+    if (String(url) === '/api/bootstrap/fast') throw new Error('optional fast bootstrap must not gate city entry');
+    if (String(url) === '/api/bootstrap?startup=1') {
+      return new Response(JSON.stringify({ authenticated: true, startup: true, profile: { id: 'resident-a' } }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       });
@@ -82,9 +77,9 @@ test('staggered deploy auth guard falls back instead of trapping anonymous users
     const { apiFetch } = await freshClient('bootstrap');
     const response = await apiFetch('/api/bootstrap');
     assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), { authenticated: false });
+    assert.deepEqual(await response.json(), { authenticated: true, startup: true, profile: { id: 'resident-a' } });
   });
-  assert.deepEqual(calls, ['/api/bootstrap/fast', '/api/bootstrap']);
+  assert.deepEqual(calls, ['/api/bootstrap?startup=1']);
 });
 
 test('genuine invalid login stays a single 401 and never doubles password work', async () => {
@@ -108,12 +103,12 @@ test('genuine invalid login stays a single 401 and never doubles password work',
   assert.deepEqual(calls, ['/api/auth/login/fast']);
 });
 
-test('Start Playing arms a fast bootstrap instead of blocking on the heavyweight city bootstrap', async () => {
+test('Start Playing uses compact authoritative bootstrap instead of the heavyweight city bootstrap', async () => {
   const calls = [];
   await withFetch(async (url, init = {}) => {
     calls.push([String(url), String(init.method || 'GET').toUpperCase()]);
-    if (String(url) === '/api/bootstrap/fast') {
-      return new Response(JSON.stringify({ authenticated: true, fastBootstrap: true, profile: { id: 'resident-1', onboardingComplete: false } }), {
+    if (String(url) === '/api/bootstrap?startup=1') {
+      return new Response(JSON.stringify({ authenticated: true, startup: true, profile: { id: 'resident-1', onboardingComplete: false } }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       });
@@ -129,22 +124,22 @@ test('Start Playing arms a fast bootstrap instead of blocking on the heavyweight
     }
     throw new Error(`Unexpected request ${url}`);
   }, async () => {
-    const { apiFetch } = await freshClient('start-playing');
-    const initial = await apiFetch('/api/bootstrap');
-    assert.equal(initial.status, 200);
-    const profile = await apiFetch('/api/profile', {
-      method: 'POST',
-      body: JSON.stringify({ onboardingComplete: true }),
-      headers: { 'content-type': 'application/json' },
+    const {apiFetch}=await freshClient('start-playing');
+    const initial=await apiFetch('/api/bootstrap');
+    assert.equal(initial.status,200);
+    const profile=await apiFetch('/api/profile',{
+      method:'POST',
+      body:JSON.stringify({onboardingComplete:true}),
+      headers:{'content-type':'application/json'},
     });
-    assert.equal(profile.status, 200);
-    const afterProfile = await apiFetch('/api/bootstrap');
-    assert.equal(afterProfile.status, 200);
-    assert.equal((await afterProfile.json()).fastBootstrap, true);
+    assert.equal(profile.status,200);
+    const afterProfile=await apiFetch('/api/bootstrap');
+    assert.equal(afterProfile.status,200);
+    assert.equal((await afterProfile.json()).startup,true);
   });
-  assert.deepEqual(calls, [
-    ['/api/bootstrap/fast', 'GET'],
-    ['/api/profile', 'POST'],
-    ['/api/bootstrap/fast', 'GET'],
+  assert.deepEqual(calls,[
+    ['/api/bootstrap?startup=1','GET'],
+    ['/api/profile','POST'],
+    ['/api/bootstrap?startup=1','GET'],
   ]);
 });

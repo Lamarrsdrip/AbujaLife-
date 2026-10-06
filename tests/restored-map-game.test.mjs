@@ -9,7 +9,7 @@ const sw=fs.readFileSync(new URL('../app/sw.js',import.meta.url),'utf8');
 test('main Map restores the authored 3D city overview instead of the utility street map',()=>{
   assert.match(map,/renderOutside/);
   assert.doesNotMatch(map,/renderMap/);
-  assert.match(map,/outside-city\.js/);
+  assert.match(map,/outside-city(?:-v\d+)?\.js/);
   assert.match(map,/data-nav-outside/);
   assert.match(map,/data-life-shortcut="map"/);
   assert.ok(index.indexOf('/game-map.js')<index.indexOf('/game-experience.js'),'3D map interceptor must register before the enhancement fallback');

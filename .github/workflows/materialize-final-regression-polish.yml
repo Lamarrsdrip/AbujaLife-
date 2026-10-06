@@ -25,6 +25,15 @@ jobs:
           python-version: '3.12'
       - name: Apply direct source fixes
         run: python -X utf8 scripts/final-regression-polish.py
+      - name: Preserve strict presence expiry
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('src/server/mongo/presenceStore.mjs')
+          s=p.read_text()
+          s=s.replace('leaseMs=75000','leaseMs=45000')
+          p.write_text(s)
+          PY
       - name: Repair generated regression test fixture
         run: |
           cat > tests/final-world-phone-regression.test.mjs <<'EOF'
@@ -64,14 +73,19 @@ jobs:
             assert.match(chat,/grid-template-columns:28px minmax\(0,1fr\) auto/);
           });
 
-          test('presence heartbeat is lightweight and stats refresh quickly',()=>{
+          test('presence heartbeat is lightweight, accurate and keeps strict expiry',()=>{
             const app=read('app/app.js'),prod=read('src/server/production-http.mjs'),stats=read('src/server/cityStats.mjs'),presence=read('src/server/mongo/presenceStore.mjs');
-            assert.match(app,/heartbeat:true/);assert.match(prod,/body\.heartbeat===true/);assert.match(stats,/GLOBAL_CACHE_MS = 1000/);assert.match(presence,/leaseMs=75000/);
+            assert.match(app,/heartbeat:true/);
+            assert.match(prod,/body\.heartbeat===true/);
+            assert.match(stats,/GLOBAL_CACHE_MS = 1000/);
+            assert.match(presence,/leaseMs=45000/);
           });
 
           test('driving route remains visibly guided',()=>{
             const world=read('app/world.css'),sim=read('app/world-simulator.js');
-            assert.match(world,/abjRouteDrive/);assert.match(world,/data-driving/);assert.match(sim,/dataset\.driving=String\(driving\)/);
+            assert.match(world,/abjRouteDrive/);
+            assert.match(world,/data-driving/);
+            assert.match(sim,/dataset\.driving=String\(driving\)/);
           });
           EOF
       - name: Remove one-time materializer

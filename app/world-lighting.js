@@ -1,8 +1,8 @@
-// Small authored environment scene for AbujaLife PBR image-based lighting.
+// Small authored RoomEnvironment for AbujaLife PBR image-based lighting.
 // Keeping this local avoids a runtime dependency on a missing Three addon while
 // still feeding PMREM a coherent neutral/warm environment. This is indirect
 // environment lighting, not a claim of realtime global illumination.
-function buildEnvironmentScene(T,{indoors=false}={}){
+function buildRoomEnvironment(T,{indoors=false}={}){
   const scene=new T.Scene();
   const geometry=new T.BoxGeometry(1,1,1);
   const roomMaterial=new T.MeshStandardMaterial({color:indoors?0xe8dcc6:0xdfe7dc,roughness:.92,metalness:0,side:T.BackSide});
@@ -26,7 +26,7 @@ function buildEnvironmentScene(T,{indoors=false}={}){
 export function createWorldEnvironmentLighting(T,renderer,{indoors=false,constrained=false}={}){
   if(constrained)return{texture:null,dispose(){}};
   const pmrem=new T.PMREMGenerator(renderer);
-  const room=buildEnvironmentScene(T,{indoors});
+  const room=buildRoomEnvironment(T,{indoors});
   const target=pmrem.fromScene(room,indoors?.035:.08,.1,100);
   room.userData.dispose?.();
   pmrem.dispose();

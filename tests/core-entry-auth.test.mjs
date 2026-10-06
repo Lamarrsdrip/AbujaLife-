@@ -40,7 +40,7 @@ test('compact startup reads only the resident core after authentication',async t
  const cookie=login.headers.get('set-cookie').split(';')[0];
  const {response,body}=await json(await fetch(`${f.base}/api/bootstrap?startup=1`,{headers:{cookie}}));
  assert.equal(response.status,200);assert.equal(body.authenticated,true);assert.equal(body.startup,true);assert.equal(body.profile.id,'resident-1');
- assert.deepEqual(body.conversations,[]);assert.deepEqual(body.notifications,[]);assert.deepEqual(body.nearby,[]);assert.equal(body.payments.deferred,true);
+ assert.deepEqual(body.conversations,[]);assert.deepEqual(body.notifications,[]);assert.deepEqual(body.nearby,[]);assert.equal(body.payments,null);
  assert.deepEqual(f.counters(),{profileReads:1,loginWrites:1,registerWrites:0});
 });
 

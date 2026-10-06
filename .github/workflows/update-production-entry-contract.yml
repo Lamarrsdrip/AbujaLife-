@@ -1,0 +1,36 @@
+name: Update production entry contract
+
+on:
+  push:
+    branches:
+      - fix/remove-legacy-startup-stack-2026-10-06
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/remove-legacy-startup-stack-2026-10-06
+      - shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path=Path('tests/production-integration.mjs')
+          text=path.read_text()
+          old="""  await check('Core startup, login and onboarding use real persistent state without optional bootstrap fan-out',async()=>{\n    const core=await request('/api/bootstrap?startup=1',{account:A});\n    assert.equal(core.status,200);assert.equal(core.data.startup,true);assert.equal(core.data.profile.id,A.id);assert.equal(core.data.payments,null);\n    assert.deepEqual(core.data.conversations,[]);assert.equal(core.data.profile.onboardingComplete,true);\n    const login=await request('/api/auth/login',{method:'POST',body:{username:A.username,password:A.password,startup:true}});\n    assert.equal(login.status,200);assert.equal(login.data.startup,true);assert.equal(login.data.profile.id,A.id);assert.match(login.cookie,/HttpOnly/);\n    const complete=await request('/api/profile',{account:A,method:'POST',body:{onboardingComplete:true,startup:true}});\n    assert.equal(complete.status,200);assert.equal(complete.data.profile.id,A.id);assert.equal(complete.data.profile.onboardingComplete,true);assert.equal(complete.data.profile.wallet,core.data.profile.wallet);\n  });"""
+          new="""  await check('Canonical entry, login and onboarding use one persistent session contract',async()=>{\n    const entry=await request('/api/entry',{account:A});\n    assert.equal(entry.status,200);assert.equal(entry.data.entry,true);assert.equal(entry.data.authenticated,true);assert.equal(entry.data.profile.id,A.id);assert.equal(entry.data.payments,null);\n    assert.deepEqual(entry.data.conversations,[]);assert.equal(entry.data.profile.onboardingComplete,true);\n    const login=await request('/api/auth/login',{method:'POST',body:{username:A.username,password:A.password}});\n    assert.equal(login.status,200);assert.equal(login.data.entry,true);assert.equal(login.data.authenticated,true);assert.equal(login.data.profile.id,A.id);assert.match(login.cookie,/HttpOnly/);\n    const complete=await request('/api/profile',{account:A,method:'POST',body:{onboardingComplete:true}});\n    assert.equal(complete.status,200);assert.equal(complete.data.profile.id,A.id);assert.equal(complete.data.profile.onboardingComplete,true);assert.equal(complete.data.profile.wallet,entry.data.profile.wallet);\n    const background=await request('/api/bootstrap',{account:A});\n    assert.equal(background.status,200);assert.equal(background.data.authenticated,true);assert.equal(background.data.profile.id,A.id);\n  });"""
+          if old not in text:
+              raise SystemExit('legacy production startup block not found')
+          path.write_text(text.replace(old,new))
+          PY
+          rm .github/workflows/update-production-entry-contract.yml
+          git config user.name "AbujaLife Architecture Cleanup"
+          git config user.email "actions@users.noreply.github.com"
+          git add tests/production-integration.mjs .github/workflows/update-production-entry-contract.yml
+          git commit -m "Test canonical production entry contract"
+          git push origin HEAD:fix/remove-legacy-startup-stack-2026-10-06

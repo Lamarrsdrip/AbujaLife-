@@ -327,9 +327,7 @@ async function goHome(){
  try{
   if(!await goOutdoors())return;
   const p=state.profile;
-  if(p.district!==p.home.district){travelSheet(p.home.district,true);return;}
-  toast('Making your way to your own home.');
-  if(cleanup?.performAsync)await cleanup.performAsync('enter-home');else await action('enter-home');
+  travelSheet(p.home.district,true);return;
  }finally{quickHomeNavigating=false;const button=root.querySelector('[data-quick-home]');if(button)button.disabled=state.profile.location?.kind==='home'&&view==='world'||!!state.profile.activeTrip;}
 }
 function openLifeMenu(){

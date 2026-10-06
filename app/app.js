@@ -416,6 +416,14 @@ async function goToVenue(venueId){
  const district=venue.district||(venue.districts&&!venue.districts.includes(state.profile.district)?venue.districts[0]:state.profile.district);
  travelSheet(district,false,venueId);
 }
+
+addEventListener('abj:open-map-venue',event=>{
+ const venueId=String(event.detail?.venueId||'');if(!venueId)return;
+ const venue=list(state.venues).find(place=>place.id===venueId);
+ if(!venue){toast('That Abuja destination is not available.');return;}
+ goToVenue(venueId);
+});
+
 function openCityPlaces(){
  const venue=currentVenue();
  openSheet(`<span class="eyebrow">${esc(place(state.profile.district)?.name||'YOUR NEIGHBOURHOOD')}</span><h2 id="sheet-title">Where shall we go?</h2><p class="muted">Choose a place, then choose how to get there: walk, bus, taxi, bike or your own car.</p><div class="city-places">${list(state.venues).map(v=>`<button class="city-place ${venue?.id===v.id?'current':''}" data-city-venue="${esc(v.id)}"><span class="venue-marker venue-${esc(v.id)}">${icon(v.id==='park'?'sun':v.id==='gym'?'profile':v.id==='restaurant'||v.id==='cafe'?'world':'map')}</span><span><small>${esc(v.category||'Around the city')}</small><strong>${esc(v.name)}</strong><p>${esc(v.description||'Explore this neighbourhood spot.')}</p></span>${icon('arrow')}</button>`).join('')}</div><button class="secondary full" data-city-map>Explore another district${icon('map')}</button>`,{wide:true});

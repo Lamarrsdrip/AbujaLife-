@@ -1,3 +1,4 @@
+import { CITY_LANDMARKS, cityLandmark } from './city-landmarks.mjs';
 // Authored game venues and prices, not verified business listings or property quotations.
 // Neighbourhood names come from the atlas; the walkable streets are game scenery.
 export const GAME_YEAR_MS = 28 * 86400000;
@@ -186,6 +187,32 @@ export const VENUE_ACTIONS = [
   { id:'national-christian-community', venueId:'national-christian-centre-hub', name:'Spend time with the community', cost:0, duration:16, animation:'social', effects:{social:22,mood:6} },
   { id:'stadium-train', venueId:'national-stadium-hub', name:'Train at the stadium', cost:800, duration:19, animation:'exercise', effects:{energy:-14,fun:20,stress:-18,mood:8} },
   { id:'stadium-meet', venueId:'national-stadium-hub', name:'Meet on the concourse', cost:0, duration:15, animation:'social', effects:{social:22,fun:10} },
+
+  { id:'airport-checkin', venueId:'airport-hub', name:'Check the departures hall', cost:0, duration:14, animation:'walk', effects:{fun:6,social:5,mood:4} },
+  { id:'airport-observe', venueId:'airport-hub', name:'Watch aircraft from the terminal', cost:0, duration:16, animation:'watch', effects:{fun:15,stress:-8,mood:6} },
+  { id:'stadium-event', venueId:'national-stadium-hub', name:'Join the match-day crowd', cost:0, duration:16, animation:'social', effects:{fun:18,social:18,mood:6} },
+  { id:'wtc-network', venueId:'wtc-abuja-hub', name:'Meet in the business lobby', cost:0, duration:15, animation:'social', effects:{social:20,mood:5} },
+  { id:'wtc-view', venueId:'wtc-abuja-hub', name:'Take in the CBD skyline', cost:0, duration:14, animation:'watch', effects:{fun:12,stress:-8} },
+  { id:'cbn-gallery', venueId:'cbn-experience', name:'Explore the finance gallery', cost:0, duration:16, animation:'watch', effects:{fun:10,mood:5} },
+  { id:'cbn-careers', venueId:'cbn-experience', name:'Visit the careers desk', cost:0, duration:14, animation:'social', effects:{social:8,mood:5} },
+  { id:'assembly-gallery', venueId:'national-assembly-hub', name:'Visit the civic gallery', cost:0, duration:16, animation:'watch', effects:{fun:10,social:8,mood:5} },
+  { id:'assembly-townhall', venueId:'national-assembly-hub', name:'Attend a fictional city town hall', cost:0, duration:18, animation:'social', effects:{social:18,fun:10} },
+  { id:'eagle-photo', venueId:'eagle-square-hub', name:'Walk the public square', cost:0, duration:15, animation:'walk', effects:{stress:-10,fun:10} },
+  { id:'national-mosque-visit', venueId:'national-mosque-hub', name:'Spend quiet time in the prayer hall', cost:0, duration:16, animation:'pray', effects:{stress:-20,mood:10} },
+  { id:'national-christian-visit', venueId:'national-christian-centre-hub', name:'Spend quiet time in the sanctuary', cost:0, duration:16, animation:'pray', effects:{stress:-20,mood:10} },
+  { id:'transcorp-meet', venueId:'transcorp-hilton-hub', name:'Meet in the main lobby', cost:0, duration:15, animation:'social', effects:{social:18,mood:5} },
+  { id:'millennium-relax', venueId:'millennium-park-hub', name:'Relax on the lawn', cost:0, duration:16, animation:'rest', effects:{stress:-20,fun:12} },
+  { id:'aso-viewpoint', venueId:'aso-rock-view', name:'Take in the Aso Rock view', cost:0, duration:16, animation:'watch', effects:{stress:-18,fun:12,mood:8} },
+  { id:'farmcity-social', venueId:'farm-city', name:'Join the Farm City hangout', cost:1200, duration:16, animation:'social', effects:{social:22,fun:16,stress:-8} },
+  { id:'jabi-lake-view', venueId:'jabi-lake', name:'Watch the water from the promenade', cost:0, duration:15, animation:'watch', effects:{stress:-18,fun:10} },
+  { id:'jabi-mall-shop', venueId:'jabi-lake-mall', name:'Browse the mall', cost:0, duration:16, animation:'shop', effects:{fun:14,social:8} },
+  { id:'jabi-mall-food', venueId:'jabi-lake-mall', name:'Meet at the food court', cost:2400, duration:16, animation:'eat', effects:{hunger:30,social:15,fun:12} },
+  { id:'icc-conference', venueId:'international-conference-centre', name:'Attend a city conference', cost:0, duration:18, animation:'watch', effects:{social:12,fun:10,mood:5} },
+  { id:'banex-browse', venueId:'banex', name:'Browse the tech counters', cost:0, duration:15, animation:'shop', effects:{fun:10,social:8} },
+  { id:'inec-registration', venueId:'inec-hq', name:'Visit the candidate registration desk', cost:0, duration:14, animation:'social', effects:{social:8,mood:4} },
+  { id:'inec-info', venueId:'inec-hq', name:'Read the AbujaLife election information', cost:0, duration:14, animation:'watch', effects:{fun:8,mood:4} },
+  { id:'efcc-briefing', venueId:'efcc-hq', name:'Visit the fictional integrity briefing', cost:0, duration:15, animation:'watch', effects:{fun:8,mood:4} },
+  { id:'court-gallery', venueId:'federal-high-court-hub', name:'Visit the fictional hearing gallery', cost:0, duration:16, animation:'watch', effects:{fun:8,mood:4} },
 ];
 
 const venue = (id, name, category, description) => ({
@@ -193,11 +220,12 @@ const venue = (id, name, category, description) => ({
   fictional: true,
   actionIds: VENUE_ACTIONS.filter(action => action.venueId === id).map(action => action.id),
 });
-const realVenue = (id,name,type,category,description,districts) => ({
-  ...venue(id,name,category,description),type,districts,fictional:false,
-  settingSource:'real-world-reference-authored-game-approximation',
-  affiliation:'Unofficial AbujaLife game interpretation; no affiliation or endorsement is implied.',
-});
+const realVenue = (id,name,type,category,description,districts) => {
+  const landmark=cityLandmark(id);
+  return {...venue(id,name,category,description),type,districts:districts || (landmark?.districtId ? [landmark.districtId] : undefined),fictional:false,outsideWorld:true,landmarkInterior:landmark?.interior||id,
+    settingSource:'real-world-reference-authored-game-approximation',
+    affiliation:'Unofficial AbujaLife game interpretation; no affiliation or endorsement is implied.'};
+};
 export const VENUES = [
   venue('restaurant', 'Courtyard Kitchen', 'Food & dining', 'An authored neighbourhood restaurant serving Nigerian favourites.'),
   venue('hotel', 'Capital Palm Hotel', 'Stay & wellness', 'Book a room to recharge or visit the spa.'),
@@ -208,12 +236,12 @@ export const VENUES = [
   venue('dealership', 'Abuja Car', 'Cars', 'Compare virtual vehicles, buy your own car and take the wheel.'),
   venue('estate-office', 'Abuja Home Finder', 'Homes', 'Compare neighbourhoods, view homes and choose rent or ownership.'),
   venue('furniture-store', 'Okrika Marketplace', 'Shopping', 'Browse furniture, clothes and home essentials, then arrange your purchases at home.'),
-  { ...venue('banex', 'Banex Tech Market', 'Tech & shopping', 'Computers, gadgets, repair counters and busy aisles in an original game interpretation of Banex.'), type: 'tech-market', districts: ['wuse-ii-a08'], settingSource: 'authored-game-scenery', nameSource: 'player-provided', pricesVerified: false },
+  { ...venue('banex', 'Banex Tech Market', 'Tech & shopping', 'Computers, gadgets, repair counters and busy aisles in an original game interpretation of Banex.'), type: 'tech-market', districts: ['wuse-ii-a08'], settingSource: 'authored-game-scenery', nameSource: 'player-provided', pricesVerified: false, outsideWorld:true, landmarkInterior:'banex' },
   venue('cafe', 'The Corner Café', 'Food & dining', 'A coffee stop with small chops and a place to unwind.'),
   venue('salon', 'Fresh Studio', 'Personal care', 'Take a little time for grooming and your next look.'),
   venue('mosque', 'Neighbourhood Mosque', 'Faith & community', 'A respectful, peaceful space for prayer and community.'),
   venue('church', 'Community Church', 'Faith & community', 'Make time for prayer, reflection and community.'),
-  { ...venue('jabi-lake', 'Jabi Lake', 'Outdoors', 'An authored lakeside game setting for walks, picnics and time by the water.'), districts: ['jabi'] },
+  { ...venue('jabi-lake', 'Jabi Lake', 'Outdoors', 'An authored lakeside game setting for walks, picnics and time by the water.'), districts: ['jabi'], outsideWorld:true, landmarkInterior:'jabi-lake' },
   { ...venue('club', 'Tokyo', 'Nightlife', 'A late-night AbujaLife club built around a packed LED dance floor, live DJ booth, moving colour, VIP seating and a full bar.'), kind: 'club', style: 'premium', settingSource: 'authored-game-scenery', nameSource: 'player-provided', pricesVerified: false },
   { ...venue('club-cage', 'Cage', 'Nightlife', 'A high-energy dance room with a packed floor, lighting rig, DJ sound, drinks bar and nonstop movement.'), kind: 'club', style: 'dance', districts: ['wuse-ii-a07'], settingSource: 'authored-game-scenery', nameSource: 'player-provided', pricesVerified: false },
   { ...venue('magic-city', 'Magic City', 'Nightlife', 'A vivid performance club with a lit stage, dancers, audience energy, lounge seating and a premium VIP corner.'), kind: 'club', style: 'stage-lounge', districts: ['garki-ii'], settingSource: 'authored-game-scenery', nameSource: 'player-provided', pricesVerified: false },
@@ -231,6 +259,14 @@ export const VENUES = [
   realVenue('national-mosque-hub','Abuja National Mosque','mosque','Faith & community','A respectful game interpretation centred on prayer, reflection and community.',['central-area']),
   realVenue('national-christian-centre-hub','National Christian Centre','church','Faith & community','A respectful game interpretation centred on prayer, reflection and community.',['central-area']),
   realVenue('national-stadium-hub','Moshood Abiola National Stadium','gym','Sport & events','A multiplayer sport destination for training, meetups and event-day activity.',['kukwaba']),
+  realVenue('airport-hub','Nnamdi Azikiwe International Airport','airport','Airport & travel','A recognisable game interpretation of Abuja airport with a terminal, gates, apron and moving aircraft.',['lugbe']),
+  realVenue('wtc-abuja-hub','World Trade Centre Abuja','wtc','Business & skyline','A game interpretation of the twin-tower CBD landmark with lobby and business spaces.',['central-area']),
+  realVenue('national-assembly-hub','National Assembly Complex','assembly','Civic & public life','A fictional civic gameplay interior inspired by the public-facing National Assembly landmark.',['central-area']),
+  realVenue('jabi-lake-mall','Jabi Lake Mall','mall','Shopping & social','A game interpretation of the shopping and food-court destination beside Jabi Lake.',['jabi']),
+  realVenue('international-conference-centre','International Conference Centre','conference','Events & conferences','A conference and town-hall destination with an auditorium and meeting foyer.',['central-area']),
+  realVenue('inec-hq','INEC Headquarters','inec','Civic & elections','The AbujaLife election registration destination used by the fictional City Story system.',['maitama']),
+  realVenue('efcc-hq','EFCC Headquarters','efcc','Civic storyline','A fictional integrity-story destination used only by AbujaLife civic gameplay.',['jabi']),
+  realVenue('federal-high-court-hub','Federal High Court Abuja','court','Civic storyline','A fictional hearing destination used only by AbujaLife civic gameplay.',['central-area']),
 ];
 
 export const NIGHTCLUB_IDS = VENUES.filter(place => place.kind === 'club').map(place => place.id);

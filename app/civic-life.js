@@ -49,7 +49,8 @@ function ensurePhoneEntry(){
   button.type='button';button.className='ph-launcher civic-phone-launcher';button.dataset.civicLauncher='';button.setAttribute('aria-label','Open AbujaLife City Story');
   button.innerHTML=`<span class="ph-app-icon civic-phone-icon">${ballotIcon}</span><span class="ph-app-label">City Story</span>`;
   button.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();openCivicLife();});
-  grid.append(button);
+  const firstPageAnchor=grid.children[3]||null;
+  if(firstPageAnchor)grid.insertBefore(button,firstPageAnchor);else grid.append(button);
 }
 ensurePhoneEntry();
 const phoneObserver=new MutationObserver(()=>ensurePhoneEntry());

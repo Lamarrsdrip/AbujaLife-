@@ -317,7 +317,15 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
   orbit.setZoom(next,{immediate});zoom=orientation().zoom;updateViewport();
   if(announce)container.querySelector('.world-zoom-announcement').textContent=`Environment zoom ${Math.round(orientation().targetZoom*100)} percent`;remember();return orientation().targetZoom;
  };
- const resetZoom=()=>{orbit.reset({immediate:false});camera={x:interior?scene.width/2:player.x,y:interior?scene.height/2:player.y-55};updateViewport();remember();return 1;};
+ const resetZoom=()=>{
+  if(!interior&&!trip){
+   const box=container.getBoundingClientRect(),aspect=Math.max(.45,box.width/Math.max(1,box.height));
+   const atOne=worldViewport({pixelWidth:box.width,pixelHeight:box.height,sceneWidth:scene.width,sceneHeight:scene.height,interior:false,transit:false,zoom:1,oblique,...orientation()});
+   const fit=clampWorldZoom(atOne.baseWidth/Math.max(scene.width*1.32,scene.height*aspect*1.45));
+   orbit.stopMomentum();orbit.setZoom(fit,{immediate:false});zoom=orientation().zoom;camera={x:scene.width/2,y:scene.height/2};updateViewport();remember();return fit;
+  }
+  orbit.reset({immediate:false});camera={x:interior?scene.width/2:player.x,y:interior?scene.height/2:player.y-55};updateViewport();remember();return 1;
+ };
  const touch=bindWorldTouch({surface:svg,enabled:()=>!inputBlocked()&&!trip,orbit,placing:()=>!!furnitureMode,onStart:stop,onItemDrag:e=>paintFurniture(furniturePointer(e)),onZoom:next=>setZoom(next),onChange:()=>{zoom=orientation().zoom;updateViewport();}});
  on(svg,'click',e=>{
   if(inputBlocked()||trip||touch.blocksClick())return;const person=e.target.closest('[data-world-resident]');if(person){const resident=neighbours.find(p=>String(p.id)===person.dataset.worldResident);if(resident)onResident(resident);return;}

@@ -18,12 +18,14 @@ async function withFetch(mock, run) {
   }
 }
 
-test('every startup=1 core refresh remains on the compact fast bootstrap', async () => {
+test('every startup=1 core refresh remains on the authoritative compact bootstrap', async () => {
   const calls = [];
   await withFetch(async url => {
     calls.push(String(url));
     if (String(url) === '/api/bootstrap') throw new Error('core refresh must never hit full bootstrap');
-    return new Response(JSON.stringify({ authenticated: true, fastBootstrap: true, profile: { id: 'resident-a' } }), {
+    if (String(url) === '/api/bootstrap/fast') throw new Error('core refresh must never depend on optional fast bootstrap');
+    if (String(url) !== '/api/bootstrap?startup=1') throw new Error(`Unexpected request ${url}`);
+    return new Response(JSON.stringify({ authenticated: true, startup: true, profile: { id: 'resident-a' } }), {
       status: 200,
       headers: { 'content-type': 'application/json' },
     });
@@ -32,27 +34,22 @@ test('every startup=1 core refresh remains on the compact fast bootstrap', async
     for (let i = 0; i < 4; i++) {
       const response = await apiFetch('/api/bootstrap?startup=1');
       assert.equal(response.status, 200);
-      assert.equal((await response.json()).fastBootstrap, true);
+      assert.equal((await response.json()).startup, true);
     }
   });
   assert.deepEqual(calls, [
-    '/api/bootstrap/fast',
-    '/api/bootstrap/fast',
-    '/api/bootstrap/fast',
-    '/api/bootstrap/fast',
+    '/api/bootstrap?startup=1',
+    '/api/bootstrap?startup=1',
+    '/api/bootstrap?startup=1',
+    '/api/bootstrap?startup=1',
   ]);
 });
 
-test('staggered deploy preserves startup=1 when the fast route is temporarily absent', async () => {
+test('staggered deploy does not probe the optional fast listener during core startup', async () => {
   const calls = [];
   await withFetch(async url => {
     calls.push(String(url));
-    if (String(url) === '/api/bootstrap/fast') {
-      return new Response(JSON.stringify({ ok: false, code: 'authentication_required', error: 'Sign in' }), {
-        status: 401,
-        headers: { 'content-type': 'application/json' },
-      });
-    }
+    if (String(url) === '/api/bootstrap/fast') throw new Error('optional fast listener must not gate startup');
     if (String(url) === '/api/bootstrap?startup=1') {
       return new Response(JSON.stringify({ authenticated: false, startup: true }), {
         status: 200,
@@ -66,5 +63,5 @@ test('staggered deploy preserves startup=1 when the fast route is temporarily ab
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { authenticated: false, startup: true });
   });
-  assert.deepEqual(calls, ['/api/bootstrap/fast', '/api/bootstrap?startup=1']);
+  assert.deepEqual(calls, ['/api/bootstrap?startup=1']);
 });

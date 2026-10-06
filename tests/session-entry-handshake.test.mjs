@@ -16,7 +16,7 @@ async function fixture(){
  return{
   server,
   base:`http://127.0.0.1:${server.address().port}`,
-  async close(){server.closeRealtime();await new Promise(resolve=>server.close(resolve));server.store.close();await fs.rm(dataDir,{recursive:true,force:true});}
+  async close(){server.closeRealtime();await new Promise(resolve=>server.close(resolve));await fs.rm(dataDir,{recursive:true,force:true});}
  };
 }
 

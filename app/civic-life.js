@@ -2,7 +2,7 @@ import { apiFetch } from './api-client.js';
 
 const phoneRoot=document.querySelector('#phone-root');
 const toastRoot=document.querySelector('#toast');
-const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=v=>`₦${new Intl.NumberFormat('en-NG',{maximumFractionDigits:0}).format(Number(v||0))}`;
 const ago=value=>{const ms=Date.now()-Number(value||0),m=Math.max(0,Math.floor(ms/60000));return m<1?'now':m<60?`${m}m ago`:m<1440?`${Math.floor(m/60)}h ago`:`${Math.floor(m/1440)}d ago`;};
 const ballotIcon='<svg class="ph-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v5H6zM4 8h16v13H4z"/><path d="m9 5 2 2 4-4M8 13h8M8 17h5"/></svg>';

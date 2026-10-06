@@ -29,7 +29,8 @@ test('campaigns include public rallies, debates, transparent choices and abstrac
   assert.ok(CIVIC_GOVERNMENT_ACTIONS.length>=4);
   const copy=CIVIC_CAMPAIGN_ACTIONS.map(a=>a.description).join(' ');
   assert.equal(/how to launder|wash (?:cash|money)|shell compan(?:y|ies)|smurfing|layering funds|evade reporting|hide transfers/i.test(copy),false);
-  assert.match(copy,/No (?:real-world )?(?:method|evasion technique).*depicted/i);
+  assert.match(copy,/No laundering method is depicted/i);
+  assert.match(copy,/no real-world evasion technique or payment method/i);
 });
 
 test('INEC, EFCC and court story destinations are real first-class AbujaLife venues',()=>{

@@ -63,6 +63,10 @@ export function createServer(options={}) {
       if(pathname==='/api/health'&&method==='GET')return json(res,200,{ok:true,service:'AbujaLife',storage:'sqlite'});
       if(pathname==='/api/bootstrap'&&method==='GET')return json(res,200,bootstrap(id));
       if(pathname==='/api/payments/config'&&method==='GET')return json(res,200,payments.publicConfig());
+      // Same public contract as production: account flags and the ad directory
+      // are readable before sign-in so the city shell does not log failed loads.
+      if(pathname==='/api/auth/config'&&method==='GET')return json(res,200,{ok:true,emailVerificationEnabled:false,passwordResetEnabled:false});
+      if(pathname==='/api/ads/world'&&method==='GET')return json(res,200,{ok:true,spaces:[],active:[]});
       if(pathname==='/payments/return'&&method==='GET'){const query=new URLSearchParams({payment:'return',transaction_id:(url.searchParams.get('transaction_id')||'').slice(0,100),tx_ref:(url.searchParams.get('tx_ref')||'').slice(0,160),status:(url.searchParams.get('status')||'').slice(0,40)});res.writeHead(303,{location:`/?${query}`,...headers});res.end();return;}
       if(pathname.startsWith('/api/')){
         if(!id)throw new GameError('Sign in to your resident account',401,'authentication_required');
@@ -120,6 +124,12 @@ export function createServer(options={}) {
         if(pathname==='/api/wallet/transfer'&&method==='POST')return json(res,200,store.transfer(id,body));
         if(pathname==='/api/action'&&method==='POST'){social.reconcileVisits(id);if(['topup','demo-topup'].includes(body.action)&&options.allowGameTopups!==true&&!admin.publicSettings().gameTopupsEnabled)throw new GameError('Use the configured payment provider to add game Naira.',403,'provider_required');const oldZone=store.zone(id),result=store.action(id,body.action,body.payload||{});social.reconcileVisits(id);if(store.zone(id)!==oldZone)broadcastPresence(id,oldZone);return json(res,200,result);}
         if(pathname==='/api/presence'&&method==='POST'){lastSeen.set(id,Date.now());reindex(id);if(body.pose){const raw=body.pose;const valid=raw&&['x','y','angle'].every(key=>Number.isFinite(raw[key]))&&raw.x>=0&&raw.y>=0&&raw.x<=20000&&raw.y<=20000&&Math.abs(raw.angle)<=36000;if(!valid)throw new GameError('Invalid world position');const pose={x:raw.x,y:raw.y,angle:raw.angle,moving:raw.moving===true,driving:raw.driving===true},zone=store.zone(id);poses.set(id,{zone,pose});if(store.profile(id).settings.presenceVisible)store.emitZone(id,'world-pose',{residentId:id,pose,zone,at:store.clock()});return json(res,200,{ok:true});}broadcastPresence(id);return json(res,200,{ok:true,people:store.people(id),nearby:store.nearby(id)});}
+        if(pathname==='/api/presence/nearby'&&method==='GET'){
+          const nearbyPeople=store.nearby(id),nowMs=Date.now(),onlineIds=new Set([id]);
+          for(const [residentId,seen] of lastSeen)if(nowMs-seen<45000)onlineIds.add(residentId);
+          const totalPlayers=Number(store.get('SELECT count(*) AS n FROM residents')?.n||0);
+          return json(res,200,{ok:true,nearby:nearbyPeople,stats:{onlineNow:onlineIds.size,totalPlayers,visitsToday:0,visitsAllTime:totalPlayers,trackingSince:store.clock(),hereNow:nearbyPeople.length+1},serverTime:store.clock()});
+        }
         if(pathname==='/api/travel/quote'&&method==='GET')return json(res,200,{ok:true,quote:store.quoteTravel(id,{district:url.searchParams.get('district'),mode:url.searchParams.get('mode')||'bus',venueId:url.searchParams.get('venueId')})});
         if(pathname==='/api/chat/location'&&method==='GET')return json(res,200,store.locationMessages(id));
         if(pathname==='/api/chat/location'&&method==='POST')return json(res,200,store.sendLocationMessage(id,body.text));

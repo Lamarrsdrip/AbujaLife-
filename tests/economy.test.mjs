@@ -219,7 +219,8 @@ test('authenticated HTTP wallet routes serve metadata and persist actual two-res
   app=await start();t.after(async()=>{app.closeRealtime();app.close();await once(app,'close');fs.rmSync(dataDir,{recursive:true,force:true});});
   const request=async(route,cookie,body)=>{const response=await fetch(`http://127.0.0.1:${app.address().port}${route}`,{method:body?'POST':'GET',headers:{...(cookie?{cookie}:{}),...(body?{'content-type':'application/json'}:{})},body:body?JSON.stringify(body):undefined});return{status:response.status,data:await response.json(),cookie:response.headers.get('set-cookie')?.split(';')[0]};};
   assert.equal((await request('/api/wallet')).status,401);
-  const ada=await request('/api/auth/register',null,{username:'wallet_ada',password:'a-test-password'}),bello=await request('/api/auth/register',null,{username:'wallet_bello',password:'a-test-password'});
+  const account=async username=>{const registered=await request('/api/auth/register',null,{username,password:'a-test-password'});assert.equal(registered.status,201);assert.equal(typeof registered.data.residentId,'string');const entry=await request('/api/entry',registered.cookie);assert.equal(entry.data.profile.id,registered.data.residentId);return{cookie:registered.cookie,data:entry.data};};
+  const ada=await account('wallet_ada'),bello=await account('wallet_bello');
   assert.equal(ada.data.walletMeta.currency,'NGN');assert.equal(ada.data.vehicleColors.length,7);assert.equal(ada.data.investmentMeta.periodMs,60000);
   const adaStart=ada.data.profile.wallet,belloStart=bello.data.profile.wallet,topup=await request('/api/wallet/topup',ada.cookie,{amount:10000,idempotencyKey:key()});assert.equal(topup.status,200);assert.equal(topup.data.profile.wallet,adaStart+10000);
   const payload={residentId:bello.data.profile.id,amount:2500,idempotencyKey:key()},transfer=await request('/api/wallet/transfer',ada.cookie,payload);assert.equal(transfer.status,200);

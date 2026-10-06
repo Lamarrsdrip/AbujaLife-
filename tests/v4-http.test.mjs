@@ -27,8 +27,9 @@ async function fixture(t) {
   server.listen(0,'127.0.0.1');await once(server,'listening');const base=`http://127.0.0.1:${server.address().port}`;
   const controllers=[];
   const request=async(route,{cookie,body,raw,headers={},method=body===undefined&&raw===undefined?'GET':'POST'}={})=>{const response=await fetch(base+route,{method,redirect:'manual',headers:{...(cookie?{cookie}:{}),...(body===undefined&&raw===undefined?{}:{'content-type':'application/json'}),...headers},...(body!==undefined?{body:JSON.stringify(body)}:raw!==undefined?{body:raw}:{})});const contentType=response.headers.get('content-type')||'',data=contentType.includes('json')?await response.json():await response.text();return{status:response.status,data,cookie:response.headers.get('set-cookie')?.split(';')[0],headers:response.headers};};
-  const login=async username=>{const result=await request('/api/auth/login',{body:{username,password:PASSWORD}});assert.equal(result.status,200);return{cookie:result.cookie,id:result.data.profile.id,profile:result.data.profile};};
-  const register=async username=>{const result=await request('/api/auth/register',{body:{username,displayName:username,password:PASSWORD}});assert.equal(result.status,201);return{cookie:result.cookie,id:result.data.profile.id,profile:result.data.profile};};
+  const session=async result=>{assert.equal(typeof result.data.residentId,'string');const entry=await request('/api/entry',{cookie:result.cookie});assert.equal(entry.status,200);assert.equal(entry.data.profile.id,result.data.residentId);return{cookie:result.cookie,id:entry.data.profile.id,profile:entry.data.profile};};
+  const login=async username=>{const result=await request('/api/auth/login',{body:{username,password:PASSWORD}});assert.equal(result.status,200);return session(result);};
+  const register=async username=>{const result=await request('/api/auth/register',{body:{username,displayName:username,password:PASSWORD}});assert.equal(result.status,201);return session(result);};
   const owner=await login('v4_owner'),a=await register('v4_ada'),b=await register('v4_bello'),c=await register('v4_chika');
   assert.equal(owner.id,ownerSession.residentId);
   const action=(person,name,payload={})=>request('/api/action',{cookie:person.cookie,body:{action:name,payload}});

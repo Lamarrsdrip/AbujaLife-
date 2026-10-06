@@ -17,6 +17,7 @@ export function interruptedRequest(error) {
 export function accountErrorMessage(error) {
   if (interruptedRequest(error)) return 'The connection was interrupted. Your progress is saved if the server received it. Please try again.';
   if (error?.status === 401 && error?.code === 'invalid_credentials') return error.message || 'Username or password is incorrect.';
+  if (error?.status === 401 && error?.code === 'session_not_ready') return 'Your sign-in completed, but your resident could not be opened. Please try again.';
   if (error?.status === 401) return 'Your session has expired. Please sign in again.';
   return error?.message || 'We could not complete this request. Please try again.';
 }
@@ -35,6 +36,11 @@ export async function authenticateAccount({api, mode, credentials, readSession})
     const result=await api(`/api/auth/${mode}?session=1`, {method:'POST', body:{...credentials}});
     if(!result?.authenticated)throw new Error('Your account session was not created. Please try again.');
     acknowledged=true;
+    if(result.profile){
+      if(sessionMatches(result,credentials))return result;
+      const error=new Error('Your account session could not be confirmed. Please try again.');
+      error.status=401;error.code='session_not_ready';throw error;
+    }
   } catch (error) {
     if (!interruptedRequest(error)) throw error;
     writeError=error;

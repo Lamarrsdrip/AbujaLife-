@@ -24,7 +24,7 @@ async function readBody(req,maxBytes=32768){
  catch(error){if(error.status)throw error;throw Object.assign(new Error('Send valid JSON'),{status:400,code:'invalid_json'});}
 }
 
-export function createCoreEntry({store,admin,social=null,corsOrigins=[],publicWebUrl='',secureCookies=true,log=()=>{}}={}){
+export function createCoreEntry({store,admin,social=null,corsOrigins=[],publicWebUrl='',secureCookies=true,entryState=null,log=()=>{}}={}){
  if(!store||!admin)throw new Error('Core entry requires the game store and admin store.');
  const allowed=new Set([cleanOrigin(publicWebUrl),...corsOrigins.map(cleanOrigin)].filter(Boolean));
  const limits=new Map();
@@ -47,10 +47,6 @@ export function createCoreEntry({store,admin,social=null,corsOrigins=[],publicWe
   const now=Number(store.clock?.()||Date.now());
   if(!id)return{authenticated:false,startup:true,serverTime:now};
   let profile=await store.profile(id),homeVisit=null;
-  // Most residents need exactly one profile read. A currently consented guest is
-  // the only exception: the 3D renderer needs the owner's validated home. Keep
-  // that one correctness-critical join without restoring social/chat hydration to
-  // every login.
   if(profile?.location?.kind==='visit'){
    if(!social?.reconcileVisits||!social?.visitState)throw Object.assign(new Error('This home visit is unavailable'),{status:403,code:'visit_unavailable'});
    await social.reconcileVisits(id);
@@ -95,7 +91,14 @@ export function createCoreEntry({store,admin,social=null,corsOrigins=[],publicWe
    const session=url.pathname==='/api/auth/login'?await store.login(payload):await store.register(payload);
    if(await admin.isSuspended(session.residentId)){await store.logout(session.token);throw Object.assign(new Error('This account is suspended'),{status:403,code:'account_suspended'});}
    log(url.pathname==='/api/auth/login'?'login_core':'signup_core',{residentId:session.residentId});
-   return send(res,url.pathname==='/api/auth/login'?200:201,{ok:true,authenticated:true,residentId:session.residentId},{'set-cookie':sessionCookie(session.token,{secureCookies})}),true;
+   let entry=null;
+   if(typeof entryState==='function'){
+    try{entry=await entryState(session.residentId);}catch(error){log('entry_handshake_deferred',{residentId:session.residentId,code:error?.code||'entry_failed'});}
+   }
+   const body=entry?.authenticated&&entry?.profile?.id===session.residentId
+    ?{...entry,ok:true,residentId:session.residentId}
+    :{ok:true,authenticated:true,residentId:session.residentId};
+   return send(res,url.pathname==='/api/auth/login'?200:201,body,{'set-cookie':sessionCookie(session.token,{secureCookies})}),true;
   }catch(error){send(res,error.status||500,{ok:false,error:error.message||'Please try again.',code:error.code||'core_entry_failed'});return true;}
  }
  return{handle,startupState};

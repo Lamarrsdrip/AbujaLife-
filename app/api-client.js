@@ -16,14 +16,12 @@ export function apiURL(path) {
   return new URL(path, url.origin).href;
 }
 
-// Core startup must stay on the authoritative bootstrap route. The production
-// API already supports startup=1 and returns the compact account state there.
-// Optional fast routes remain compatibility accelerators for non-core auth only.
+// City entry is a dedicated contract. `/api/entry` contains only the state
+// needed to draw the playable resident/world. The full bootstrap remains a
+// background hydration path and a rolling-deploy fallback only.
 let startupBootstrapPending = true;
 let postProfileBootstrapPending = false;
 const FAST_ROUTE_MISSING = new Set([404,405,501]);
-// Remove obsolete private-state snapshots. A stored profile cannot prove that
-// an account is still authenticated or that its wallet is current.
 try { globalThis.sessionStorage?.removeItem('abujalife.fast-bootstrap.v1'); } catch {}
 function requestsCoreState(options) {
   if(typeof options.body !== 'string')return options.body?.startup === true;
@@ -31,8 +29,7 @@ function requestsCoreState(options) {
 }
 
 // Realtime events can cause several surfaces to ask for the same fresh state at
-// once. Share only the in-flight GET; never cache a settled response, so a later
-// interaction always reaches the server and mutations are never hidden.
+// once. Share only the in-flight GET; never cache a settled response.
 const inFlightGets = new Map();
 
 async function fastRouteUnavailable(response) {
@@ -40,9 +37,6 @@ async function fastRouteUnavailable(response) {
   if (response.status !== 401) return false;
   try {
     const body = await response.clone().json();
-    // Older AbujaLife API builds route unknown /api/* paths through the generic
-    // authentication guard, so a missing fast route appears as this exact 401.
-    // Genuine bad-password 401s use invalid_credentials and must NOT retry.
     return body?.code === 'authentication_required';
   } catch {
     return false;
@@ -70,13 +64,10 @@ export function apiFetch(path, options = {}) {
   const coreWrite=requestsCoreState(options);
   const coreAuth=(loginRequest||registerRequest)&&coreWrite;
   if(coreAuth){startupBootstrapPending=false;postProfileBootstrapPending=false;}
-  // startup=1 is the authoritative compact boot contract. Never route the city
-  // entry gate through the optional /bootstrap/fast listener: if that listener
-  // is slow or stale, a valid session must still be able to open the city.
   const coreBootstrapRequest=startupBootstrapQuery||(plainBootstrapRequest&&(startupBootstrapPending||postProfileBootstrapPending));
   const fastLogin=loginRequest&&!coreAuth,fastRegister=registerRequest&&!coreAuth;
-  const primaryPath=coreBootstrapRequest?'/api/bootstrap?startup=1':fastLogin?'/api/auth/login/fast':fastRegister?'/api/auth/register/fast':logoutRequest?'/api/auth/logout/fast':path;
-  const fallbackPath=fastLogin?'/api/auth/login':fastRegister?'/api/auth/register':logoutRequest?'/api/auth/logout':null;
+  const primaryPath=coreBootstrapRequest?'/api/entry':fastLogin?'/api/auth/login/fast':fastRegister?'/api/auth/register/fast':logoutRequest?'/api/auth/logout/fast':path;
+  const fallbackPath=coreBootstrapRequest?'/api/bootstrap?startup=1':fastLogin?'/api/auth/login':fastRegister?'/api/auth/register':logoutRequest?'/api/auth/logout':null;
   const url=apiURL(primaryPath);
   const init={...options,signal,credentials:'include',cache:'no-store'};
 

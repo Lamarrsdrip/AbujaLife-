@@ -13,6 +13,7 @@ import { installMongoReadOptimizer } from './mongo/readOptimizer.mjs';
 import { createEmailDelivery } from './emailDelivery.mjs';
 import { createProductionServer, productionLog } from './production-http.mjs';
 import { attachCoreEntry } from './coreEntry.mjs';
+import { attachEntryBootstrap } from './entryBootstrap.mjs';
 import { attachFastStartup } from './fastStartup.mjs';
 import { installFastLocationActions } from './fastLocationActions.mjs';
 import { attachXIntegration } from './xIntegration.mjs';
@@ -51,14 +52,15 @@ export async function createProductionApplication({env=process.env,clock=Date.no
     const ads=new MongoAdStore({store,admin,payments,log});await ads.init({ensureIndexes:false});ads.attach();
     const server=createProductionServer({...config,store,social,directory,presence,admin,payments,rewards,ads,database,log});
     const coreEntry=attachCoreEntry(server,{store,admin,social,corsOrigins:config.corsOrigins,publicWebUrl:config.publicWebUrl,secureCookies:true,log});
+    const entryBootstrap=attachEntryBootstrap(server,{store,admin,social,corsOrigins:config.corsOrigins,publicWebUrl:config.publicWebUrl});
     const fastStartup=attachFastStartup(server,{store,admin,corsOrigins:config.corsOrigins,publicWebUrl:config.publicWebUrl,trustProxy:config.trustProxy,log});
     const x=attachXIntegration(server,{store,admin,database,env,publicWebUrl:config.publicWebUrl,apiPublicUrl:config.apiPublicUrl,corsOrigins:config.corsOrigins,fetchImpl});
     const jackpot=await attachJackpotRuntime(server,{store,admin,payments,database,env,publicWebUrl:config.publicWebUrl,apiPublicUrl:config.apiPublicUrl,corsOrigins:config.corsOrigins,log});
-    return{server,store,social,directory,presence,admin,payments,rewards,ads,coreEntry,fastStartup,x,jackpot,database,config,close:async()=>{server.closeRealtime();jackpot.close();if(server.listening)await new Promise(resolve=>server.close(resolve));await database.close();}};
+    return{server,store,social,directory,presence,admin,payments,rewards,ads,coreEntry,entryBootstrap,fastStartup,x,jackpot,database,config,close:async()=>{server.closeRealtime();jackpot.close();if(server.listening)await new Promise(resolve=>server.close(resolve));await database.close();}};
   }catch(error){await database.close();throw error;}
 }
 export async function startProduction(){
-  let app;try{app=await createProductionApplication();await new Promise((resolve,reject)=>{app.server.once('error',reject);app.server.listen(app.config.port,app.config.host,resolve);});productionLog('startup',{port:app.config.port,storage:'mongodb',database:'abujalife_prod',emailConfigured:app.store.auth.configuration().emailVerificationEnabled,xConfigured:app.x.configured,jackpotConfigured:true,coreEntry:true,fastStartup:true,fastLocationActions:true});}catch(error){productionLog('startup_failure',{code:error.code||'configuration_or_database_error'});if(app)await app.close();process.exitCode=1;return;}
+  let app;try{app=await createProductionApplication();await new Promise((resolve,reject)=>{app.server.once('error',reject);app.server.listen(app.config.port,app.config.host,resolve);});productionLog('startup',{port:app.config.port,storage:'mongodb',database:'abujalife_prod',emailConfigured:app.store.auth.configuration().emailVerificationEnabled,xConfigured:app.x.configured,jackpotConfigured:true,coreEntry:true,entryBootstrap:true,fastStartup:true,fastLocationActions:true});}catch(error){productionLog('startup_failure',{code:error.code||'configuration_or_database_error'});if(app)await app.close();process.exitCode=1;return;}
   let stopping=false;for(const signal of ['SIGTERM','SIGINT'])process.on(signal,async()=>{if(stopping)return;stopping=true;productionLog('shutdown',{signal});const timeout=setTimeout(()=>{productionLog('shutdown_timeout');process.exit(1);},10000);timeout.unref();try{await app.close();clearTimeout(timeout);process.exitCode=0;}catch{productionLog('shutdown_failure');process.exitCode=1;}});
   process.on('uncaughtException',()=>{productionLog('crash',{code:'uncaught_exception'});process.exit(1);});process.on('unhandledRejection',()=>{productionLog('crash',{code:'unhandled_rejection'});process.exit(1);});
 }

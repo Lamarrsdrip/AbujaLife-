@@ -18,11 +18,11 @@ async function withFetch(mock, run) {
   }
 }
 
-test('explicit core startup and account writes retain authoritative bootstrap and full hydration', async () => {
+test('explicit city startup routes through the dedicated entry contract', async () => {
   const calls=[];
   await withFetch(async url=>{
     calls.push(String(url));
-    return new Response(JSON.stringify({authenticated:true,profile:{id:'resident-a'}}),{status:200});
+    return new Response(JSON.stringify({authenticated:true,entry:true,profile:{id:'resident-a'}}),{status:200});
   },async()=>{
     const {apiFetch}=await freshClient('core');
     await apiFetch('/api/bootstrap?startup=1');
@@ -31,10 +31,26 @@ test('explicit core startup and account writes retain authoritative bootstrap an
     }
     await apiFetch('/api/bootstrap');
   });
-  assert.deepEqual(calls,['/api/bootstrap?startup=1','/api/auth/register','/api/auth/login','/api/profile','/api/bootstrap']);
+  assert.deepEqual(calls,['/api/entry','/api/auth/register','/api/auth/login','/api/profile','/api/bootstrap']);
 });
 
-test('unreachable bootstrap never presents cached authentication or a fake successful response', async () => {
+test('missing entry endpoint falls back to compact legacy bootstrap during rolling deploys', async () => {
+  const calls=[];
+  await withFetch(async url=>{
+    calls.push(String(url));
+    if(String(url)==='/api/entry')return new Response(JSON.stringify({ok:false}),{status:404});
+    if(String(url)==='/api/bootstrap?startup=1')return new Response(JSON.stringify({authenticated:true,startup:true,profile:{id:'resident-a'}}),{status:200});
+    throw new Error(`Unexpected request ${url}`);
+  },async()=>{
+    const {apiFetch}=await freshClient('entry-fallback');
+    const response=await apiFetch('/api/bootstrap?startup=1');
+    assert.equal(response.status,200);
+    assert.equal((await response.json()).profile.id,'resident-a');
+  });
+  assert.deepEqual(calls,['/api/entry','/api/bootstrap?startup=1']);
+});
+
+test('unreachable entry never presents cached authentication or a fake successful response', async () => {
   const original=globalThis.sessionStorage;
   let reads=0,removed=0;
   globalThis.sessionStorage={getItem(){reads++;return JSON.stringify({authenticated:true,profile:{id:'stale-user',wallet:1000000}});},removeItem(){removed++;}};
@@ -47,7 +63,7 @@ test('unreachable bootstrap never presents cached authentication or a fake succe
   }finally{if(original===undefined)delete globalThis.sessionStorage;else globalThis.sessionStorage=original;}
 });
 
-test('concurrent core reads share network work and return independently readable responses', async () => {
+test('concurrent city entry reads share network work and return independently readable responses', async () => {
   let calls=0,release;
   const gate=new Promise(resolve=>{release=resolve;});
   await withFetch(async()=>{calls++;await gate;return new Response(JSON.stringify({authenticated:false}),{status:200});},async()=>{
@@ -66,8 +82,8 @@ test('city startup never depends on the optional fast bootstrap listener', async
   await withFetch(async url => {
     calls.push(String(url));
     if (String(url) === '/api/bootstrap/fast') throw new Error('optional fast bootstrap must not gate city entry');
-    if (String(url) === '/api/bootstrap?startup=1') {
-      return new Response(JSON.stringify({ authenticated: true, startup: true, profile: { id: 'resident-a' } }), {
+    if (String(url) === '/api/entry') {
+      return new Response(JSON.stringify({ authenticated: true, startup: true, entry:true, profile: { id: 'resident-a' } }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       });
@@ -77,9 +93,9 @@ test('city startup never depends on the optional fast bootstrap listener', async
     const { apiFetch } = await freshClient('bootstrap');
     const response = await apiFetch('/api/bootstrap');
     assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), { authenticated: true, startup: true, profile: { id: 'resident-a' } });
+    assert.deepEqual(await response.json(), { authenticated: true, startup: true, entry:true, profile: { id: 'resident-a' } });
   });
-  assert.deepEqual(calls, ['/api/bootstrap?startup=1']);
+  assert.deepEqual(calls, ['/api/entry']);
 });
 
 test('genuine invalid login stays a single 401 and never doubles password work', async () => {
@@ -103,12 +119,12 @@ test('genuine invalid login stays a single 401 and never doubles password work',
   assert.deepEqual(calls, ['/api/auth/login/fast']);
 });
 
-test('Start Playing uses compact authoritative bootstrap instead of the heavyweight city bootstrap', async () => {
+test('Start Playing uses dedicated entry instead of heavyweight city bootstrap', async () => {
   const calls = [];
   await withFetch(async (url, init = {}) => {
     calls.push([String(url), String(init.method || 'GET').toUpperCase()]);
-    if (String(url) === '/api/bootstrap?startup=1') {
-      return new Response(JSON.stringify({ authenticated: true, startup: true, profile: { id: 'resident-1', onboardingComplete: false } }), {
+    if (String(url) === '/api/entry') {
+      return new Response(JSON.stringify({ authenticated: true, startup: true, entry:true, profile: { id: 'resident-1', onboardingComplete: false } }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       });
@@ -138,8 +154,8 @@ test('Start Playing uses compact authoritative bootstrap instead of the heavywei
     assert.equal((await afterProfile.json()).startup,true);
   });
   assert.deepEqual(calls,[
-    ['/api/bootstrap?startup=1','GET'],
+    ['/api/entry','GET'],
     ['/api/profile','POST'],
-    ['/api/bootstrap?startup=1','GET'],
+    ['/api/entry','GET'],
   ]);
 });

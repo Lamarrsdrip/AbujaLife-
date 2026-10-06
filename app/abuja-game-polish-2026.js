@@ -54,9 +54,25 @@ function auditPhone(scope=document){
     const text=label.textContent?.trim();
     if(text==='Outside')label.textContent='Map';
     else if(text==='Camera')label.textContent='Profile';
+    else if(text==='Xshare')label.textContent='Share';
   });
+  scope.querySelectorAll?.('.ph-page-intro h2').forEach(title=>{if(title.textContent?.trim()==='Camera & profile')title.textContent='Profile';});
   scope.querySelectorAll?.('.ph-about strong').forEach(label=>{if(label.textContent?.trim()==='iPhone 18 Pro Max')label.textContent='AbujaLife Phone';});
   scope.querySelectorAll?.('.ph-device-caption').forEach(label=>{if(/iphone/i.test(label.textContent||''))label.textContent='AbujaLife Phone';});
+}
+
+// world.js keeps an SVG safety body for each resident so a WebGL failure never
+// becomes a floating nametag. Once the canonical 3D renderer is mounted it has
+// a rig for every resident in the same neighbours array, so hide that one SVG
+// body. Context-loss CSS immediately exposes the safety body again.
+function syncResidentBodies(scope=document){
+  const canvases=[];
+  if(scope.matches?.('.world-canvas'))canvases.push(scope);
+  canvases.push(...scope.querySelectorAll?.('.world-canvas')||[]);
+  for(const canvas of new Set(canvases)){
+    const ready=canvas.dataset.characterRenderer==='webgl-3d'&&canvas.dataset.webglContext!=='lost';
+    canvas.querySelectorAll('.world-online-resident').forEach(node=>node.classList.toggle('has-webgl-resident',ready));
+  }
 }
 
 function syncPhoneViewport(){
@@ -72,10 +88,10 @@ function syncPhoneViewport(){
   phoneRoot.classList.toggle('abj-phone-input-active',Boolean(focused));
 }
 
-function decorate(scope=document){fixHeaderIcon(scope);cleanMyLife(scope);ensureMapNav(scope);ensureWholeCityButton(scope);ensureCivicPhoneApp(scope);auditPhone(scope);}
+function decorate(scope=document){fixHeaderIcon(scope);cleanMyLife(scope);ensureMapNav(scope);ensureWholeCityButton(scope);ensureCivicPhoneApp(scope);auditPhone(scope);syncResidentBodies(scope);}
 decorate();syncPhoneViewport();
-const observer=new MutationObserver(records=>{for(const record of records)for(const node of record.addedNodes){if(!(node instanceof Element))continue;decorate(node);decorate(document);}syncPhoneViewport();});
-observer.observe(document.documentElement,{childList:true,subtree:true});
+const observer=new MutationObserver(records=>{for(const record of records)for(const node of record.addedNodes){if(!(node instanceof Element))continue;decorate(node);decorate(document);}syncResidentBodies(document);syncPhoneViewport();});
+observer.observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['data-character-renderer','data-webgl-context']});
 addEventListener('hashchange',()=>queueMicrotask(()=>decorate()));
 addEventListener('resize',syncPhoneViewport,{passive:true});
 visualViewport?.addEventListener('resize',syncPhoneViewport,{passive:true});

@@ -73,10 +73,11 @@ export function apiFetch(path, options = {}) {
   // startup=1 is *always* core state. It must never drift back to the heavyweight
   // social/payment bootstrap after the first request or during periodic refreshes.
   const fastBootstrapRequest=startupBootstrapQuery||(plainBootstrapRequest&&(startupBootstrapPending||postProfileBootstrapPending));
-  // Account writes must return the compact authenticated state. The server's
-  // fast routes persist the session first and defer optional social/catalogue
-  // joins, so a slow feed can never block login or signup.
-  const fastLogin=loginRequest,fastRegister=registerRequest;
+  // Login/signup from the entry screen explicitly request startup state. Keep
+  // those writes on the authoritative auth route: it commits the session first
+  // and returns the compact startup bootstrap without depending on the optional
+  // fast-auth listener. Non-core/legacy account calls can still use fast routes.
+  const fastLogin=loginRequest&&!coreAuth,fastRegister=registerRequest&&!coreAuth;
   const primaryPath=fastBootstrapRequest?'/api/bootstrap/fast':fastLogin?'/api/auth/login/fast':fastRegister?'/api/auth/register/fast':logoutRequest?'/api/auth/logout/fast':path;
   // Preserve startup=1 on compatibility fallback. Dropping it silently turned
   // a compact recovery request into the full city bootstrap on old/staggered API

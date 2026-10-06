@@ -4,14 +4,12 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {createServer} from '../src/server/http.mjs';
-import {attachSessionRuntime} from '../src/server/sessionRuntime.mjs';
 
 const appearance={skinTone:'brown',hair:'crop',top:'forest',bottom:'charcoal',shoes:'white',body:'regular',face:'oval',presentation:'neutral',facialHair:'none',accessory:'none'};
 
 async function fixture(t){
  const dataDir=await fs.mkdtemp(path.join(os.tmpdir(),'abujalife-session-runtime-'));
- const server=createServer({dataDir});
- attachSessionRuntime(server,{store:server.store,admin:server.admin,social:server.social,corsOrigins:['http://localhost'],publicWebUrl:'http://localhost',secureCookies:false});
+ const server=createServer({dataDir,publicWebUrl:'http://localhost',corsOrigins:['http://localhost']});
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  t.after(async()=>{server.closeRealtime();await new Promise(resolve=>server.close(resolve));await fs.rm(dataDir,{recursive:true,force:true});});
  const base=`http://127.0.0.1:${server.address().port}`;
@@ -50,12 +48,13 @@ test('anonymous entry is harmless and logout invalidates the canonical session',
  const after=await f.request('/api/entry',{cookie});assert.equal(after.status,200);assert.equal(after.data.authenticated,false);
 });
 
-test('legacy startup stack is physically absent and normal runtimes only attach sessionRuntime',async()=>{
+test('legacy startup stack is physically absent and both HTTP servers dispatch one sessionRuntime directly',async()=>{
  const absent=['src/server/coreEntry.mjs','src/server/entryBootstrap.mjs','src/server/fastStartup.mjs'];
  for(const file of absent)await assert.rejects(fs.access(file));
- const [dev,production,client,auth,app,integration]=await Promise.all(['scripts/dev.mjs','src/server/production.mjs','app/api-client.js','app/auth-session.js','app/app.js','tests/production-integration.mjs'].map(file=>fs.readFile(file,'utf8')));
+ const [dev,production,localHttp,productionHttp,sessionSource,client,auth,app,integration]=await Promise.all(['scripts/dev.mjs','src/server/production.mjs','src/server/http.mjs','src/server/production-http.mjs','src/server/sessionRuntime.mjs','app/api-client.js','app/auth-session.js','app/app.js','tests/production-integration.mjs'].map(file=>fs.readFile(file,'utf8')));
  const runtimeText=`${dev}\n${production}`;
- assert.match(runtimeText,/attachSessionRuntime/);assert.match(production,/attachLiveActions/);assert.doesNotMatch(runtimeText,/attachCoreEntry|attachEntryBootstrap|attachFastStartup|coreEntry\.mjs|entryBootstrap\.mjs|fastStartup\.mjs/);
+ assert.doesNotMatch(runtimeText,/attachSessionRuntime/);assert.match(production,/attachLiveActions/);assert.doesNotMatch(runtimeText,/attachCoreEntry|attachEntryBootstrap|attachFastStartup|coreEntry\.mjs|entryBootstrap\.mjs|fastStartup\.mjs/);
+ const serverText=`${localHttp}\n${productionHttp}`;assert.match(localHttp,/sessionRuntime\.handle\(req,res\)/);assert.match(productionHttp,/sessionRuntime\.handle\(req,res\)/);assert.doesNotMatch(sessionSource,/attachSessionRuntime/);assert.doesNotMatch(serverText,/bootstrap\(session\.residentId|\{startup,\.\.\.credentials\}|startup:url\.searchParams|get\('startup'\)|startup===true/);
  const clientText=`${client}\n${auth}\n${app}`;
  for(const forbidden of ['/api/auth/login/fast','/api/auth/register/fast','/api/bootstrap/fast','?session=1','/api/bootstrap?startup=1'])assert.equal(clientText.includes(forbidden),false,`legacy client route survived: ${forbidden}`);
  assert.match(app,/startup\?'\/api\/entry':'\/api\/bootstrap'/);

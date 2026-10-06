@@ -12,7 +12,6 @@ import { MongoRewardStore } from './mongo/rewardStore.mjs';
 import { installMongoReadOptimizer } from './mongo/readOptimizer.mjs';
 import { createEmailDelivery } from './emailDelivery.mjs';
 import { createProductionServer, productionLog } from './production-http.mjs';
-import { attachSessionRuntime } from './sessionRuntime.mjs';
 import { attachLiveActions } from './liveActions.mjs';
 import { installFastLocationActions } from './fastLocationActions.mjs';
 import { attachXIntegration } from './xIntegration.mjs';
@@ -47,7 +46,7 @@ export async function createProductionApplication({env=process.env,clock=Date.no
     const rewards=new MongoRewardStore({store,admin,publicWebUrl:config.publicWebUrl});
     const ads=new MongoAdStore({store,admin,payments,log});await ads.init({ensureIndexes:false});ads.attach();
     const server=createProductionServer({...config,store,social,directory,presence,admin,payments,rewards,ads,database,log});
-    const sessionRuntime=attachSessionRuntime(server,{store,admin,social,corsOrigins:config.corsOrigins,publicWebUrl:config.publicWebUrl,secureCookies:true,log});
+    const sessionRuntime=server.sessionRuntime;
     const liveActions=attachLiveActions(server,{store,admin,corsOrigins:config.corsOrigins,publicWebUrl:config.publicWebUrl,trustProxy:config.trustProxy,log});
     const x=attachXIntegration(server,{store,admin,database,env,publicWebUrl:config.publicWebUrl,apiPublicUrl:config.apiPublicUrl,corsOrigins:config.corsOrigins,fetchImpl});
     const jackpot=await attachJackpotRuntime(server,{store,admin,payments,database,env,publicWebUrl:config.publicWebUrl,apiPublicUrl:config.apiPublicUrl,corsOrigins:config.corsOrigins,log});

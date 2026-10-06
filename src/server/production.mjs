@@ -37,9 +37,6 @@ export async function createProductionApplication({env=process.env,clock=Date.no
     const delivery=createEmailDelivery({env,publicWebUrl:config.publicWebUrl,fetchImpl,log});
     const auth=new MongoAuthStore({client:database.client,db:database.db,clock,...delivery});
     const store=new MongoGameStore({client:database.client,db:database.db,clock,originRandomInt,production:true,auth});
-    // Hot navigation such as leaving home must stay independent of the generic
-    // economy transaction. Keep the public action contract and realtime routing,
-    // but specialize the underlying state mutation before stores attach to it.
     installFastLocationActions(store);
     const social=new MongoSocialStore(store);await social.init({ensureIndexes:false});social.attachToGame();
     const directory=new MongoDirectoryStore(store,social);
@@ -51,8 +48,8 @@ export async function createProductionApplication({env=process.env,clock=Date.no
     const rewards=new MongoRewardStore({store,admin,publicWebUrl:config.publicWebUrl});
     const ads=new MongoAdStore({store,admin,payments,log});await ads.init({ensureIndexes:false});ads.attach();
     const server=createProductionServer({...config,store,social,directory,presence,admin,payments,rewards,ads,database,log});
-    const coreEntry=attachCoreEntry(server,{store,admin,social,corsOrigins:config.corsOrigins,publicWebUrl:config.publicWebUrl,secureCookies:true,log});
     const entryBootstrap=attachEntryBootstrap(server,{store,admin,social,corsOrigins:config.corsOrigins,publicWebUrl:config.publicWebUrl});
+    const coreEntry=attachCoreEntry(server,{store,admin,social,corsOrigins:config.corsOrigins,publicWebUrl:config.publicWebUrl,secureCookies:true,entryState:entryBootstrap.state,log});
     const fastStartup=attachFastStartup(server,{store,admin,corsOrigins:config.corsOrigins,publicWebUrl:config.publicWebUrl,trustProxy:config.trustProxy,log});
     const x=attachXIntegration(server,{store,admin,database,env,publicWebUrl:config.publicWebUrl,apiPublicUrl:config.apiPublicUrl,corsOrigins:config.corsOrigins,fetchImpl});
     const jackpot=await attachJackpotRuntime(server,{store,admin,payments,database,env,publicWebUrl:config.publicWebUrl,apiPublicUrl:config.apiPublicUrl,corsOrigins:config.corsOrigins,log});

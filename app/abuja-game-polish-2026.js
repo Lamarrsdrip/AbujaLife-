@@ -30,7 +30,7 @@ function ensureMapNav(scope=document){
     nav.addEventListener('click',event=>{const button=event.target.closest('[data-map-game-nav]');if(!button)return;const action=button.dataset.mapGameNav;if(action==='map'){map.querySelector('[data-outside-action="overview"]')?.click();return;}if(action==='play')closeMapThen(()=>appRoot?.querySelector('.game-nav [data-view="world"]')?.click());if(action==='life')closeMapThen(()=>appRoot?.querySelector('.game-nav [data-nav-life]')?.click());if(action==='phone')closeMapThen(()=>appRoot?.querySelector('.game-nav [data-phone="home"]')?.click());});
   });
 }
-function ensureWholeCityButton(scope=document){const stage=scope.querySelector?.('.game-content.view-world .world-stage');if(!stage||stage.querySelector('[data-open-whole-abuja]'))return;const button=document.createElement('button');button.type='button';button.className='abj-whole-city-button';button.dataset.openWholeAbuja='';button.innerHTML='<span>◇</span><strong>Whole Abuja</strong>';button.setAttribute('aria-label','Zoom out to the whole Abuja city view');button.onclick=()=>appRoot?.querySelector('.game-nav [data-nav-outside]')?.click();stage.append(button);}
+function ensureWholeCityButton(scope=document){const stage=scope.querySelector?.('.game-content.view-world .world-stage');if(!stage||stage.querySelector('[data-open-whole-abuja]'))return;const button=document.createElement('button');button.type='button';button.className='abj-whole-city-button';button.dataset.openWholeAbuja='';button.innerHTML='<span>◇</span><strong>Whole Abuja</strong>';button.setAttribute('aria-label','Open the whole Abuja city map');button.onclick=()=>appRoot?.querySelector('.game-nav [data-nav-outside]')?.click();stage.append(button);}
 
 function ensureCivicPhoneApp(scope=document){
   const grids=[...scope.querySelectorAll?.('.ph-app-grid')||[]];
@@ -42,8 +42,21 @@ function ensureCivicPhoneApp(scope=document){
     button.onclick=()=>window.dispatchEvent(new CustomEvent('abj:open-civic-life'));
     grid.append(button);
   }
-  // The main navigation calls this experience Map. Keep the phone wording aligned.
-  scope.querySelectorAll?.('.ph-app-label').forEach(label=>{if(label.textContent?.trim()==='Outside')label.textContent='Map';});
+}
+
+// Keep the virtual phone honest and player-oriented. Do not advertise a dead
+// feature as if it worked, and do not pretend the in-game device is a real
+// Apple model. Existing working screens stay intact; only misleading launcher
+// surfaces are corrected here while the canonical phone state remains phone.js.
+function auditPhone(scope=document){
+  scope.querySelectorAll?.('.ph-app-grid [data-app="calls"]').forEach(button=>button.remove());
+  scope.querySelectorAll?.('.ph-app-label').forEach(label=>{
+    const text=label.textContent?.trim();
+    if(text==='Outside')label.textContent='Map';
+    else if(text==='Camera')label.textContent='Profile';
+  });
+  scope.querySelectorAll?.('.ph-about strong').forEach(label=>{if(label.textContent?.trim()==='iPhone 18 Pro Max')label.textContent='AbujaLife Phone';});
+  scope.querySelectorAll?.('.ph-device-caption').forEach(label=>{if(/iphone/i.test(label.textContent||''))label.textContent='AbujaLife Phone';});
 }
 
 function syncPhoneViewport(){
@@ -59,7 +72,7 @@ function syncPhoneViewport(){
   phoneRoot.classList.toggle('abj-phone-input-active',Boolean(focused));
 }
 
-function decorate(scope=document){fixHeaderIcon(scope);cleanMyLife(scope);ensureMapNav(scope);ensureWholeCityButton(scope);ensureCivicPhoneApp(scope);}
+function decorate(scope=document){fixHeaderIcon(scope);cleanMyLife(scope);ensureMapNav(scope);ensureWholeCityButton(scope);ensureCivicPhoneApp(scope);auditPhone(scope);}
 decorate();syncPhoneViewport();
 const observer=new MutationObserver(records=>{for(const record of records)for(const node of record.addedNodes){if(!(node instanceof Element))continue;decorate(node);decorate(document);}syncPhoneViewport();});
 observer.observe(document.documentElement,{childList:true,subtree:true});

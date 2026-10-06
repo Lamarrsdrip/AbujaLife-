@@ -55,7 +55,7 @@ test('legacy startup stack is physically absent and normal runtimes only attach 
  for(const file of absent)await assert.rejects(fs.access(file));
  const [dev,production,client,auth,app]=await Promise.all(['scripts/dev.mjs','src/server/production.mjs','app/api-client.js','app/auth-session.js','app/app.js'].map(file=>fs.readFile(file,'utf8')));
  const runtimeText=`${dev}\n${production}`;
- assert.match(runtimeText,/attachSessionRuntime/);assert.doesNotMatch(runtimeText,/attachCoreEntry|attachEntryBootstrap|attachFastStartup/);
+ assert.match(runtimeText,/attachSessionRuntime/);assert.match(production,/attachLiveActions/);assert.doesNotMatch(runtimeText,/attachCoreEntry|attachEntryBootstrap|attachFastStartup|coreEntry\.mjs|entryBootstrap\.mjs|fastStartup\.mjs/);
  const clientText=`${client}\n${auth}\n${app}`;
  for(const forbidden of ['/api/auth/login/fast','/api/auth/register/fast','/api/bootstrap/fast','?session=1','/api/bootstrap?startup=1'])assert.equal(clientText.includes(forbidden),false,`legacy client route survived: ${forbidden}`);
  assert.match(app,/startup\?'\/api\/entry':'\/api\/bootstrap'/);

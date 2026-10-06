@@ -48,11 +48,13 @@ test('Capital Palm Hotel exposes a hotel-purpose scene instead of a generic room
 
 test('phone destination handoff closes the handset before civic travel continues',async()=>{
   const bridge=await read('app/civic-travel-phone-bridge.js');
+  const freeRoam=await read('app/world-free-roam.js');
   const index=await read('app/index.html');
   assert.match(bridge,/data-civic-travel/);
   assert.match(bridge,/data-ph-action=["']close["']/);
   assert.match(bridge,/capture:true/);
-  assert.ok(index.indexOf('/civic-travel-phone-bridge.js')<index.indexOf('/civic-life.js'));
+  assert.match(freeRoam,/import ['"]\.\/civic-travel-phone-bridge\.js['"]/);
+  assert.doesNotMatch(index,/src=["']\/civic-travel-phone-bridge\.js["']/);
 });
 
 test('play-mode roof labels are smaller and collision-decluttered without changing Map UI',async()=>{

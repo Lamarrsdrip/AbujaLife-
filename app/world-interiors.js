@@ -2,11 +2,13 @@
 // library remains intact in world-interiors-base.js; this file makes sure every
 // real Abuja landmark enters an interior whose layout matches what people do
 // there instead of falling through to the default restaurant scene.
-import {buildInterior as buildBaseInterior,furnitureGhost,furnitureDimensions} from './world-interiors-base.js';
+import {buildInterior as buildBaseInterior} from './world-interiors-base.js';
 import {cityLandmark} from '../src/shared/city-landmarks.mjs';
 import {venueFor} from '../src/shared/life.mjs';
 
-export {furnitureGhost,furnitureDimensions};
+// Preserve the complete long-lived public API (furniture helpers, route guards,
+// ghosts, dimensions, etc.) while this module owns only venue-aware buildInterior.
+export * from './world-interiors-base.js';
 
 const LANDMARK_TEMPLATE=Object.freeze({
   airport:'estate-office',
@@ -77,7 +79,7 @@ function relabelScene(scene,{name,template,purpose}){
   for(const [from,to] of swaps)art=replaceAllSafe(art,from,to);
   scene.art=art;
   scene.title=name||scene.title;
-  if(purpose)scene.subtitle=purpose.replaceAll(' · ',' · ').toLowerCase().replace(/^./,c=>c.toUpperCase());
+  if(purpose)scene.subtitle=purpose.toLowerCase().replace(/^./,c=>c.toUpperCase());
   return scene;
 }
 

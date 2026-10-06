@@ -24,7 +24,8 @@ const landmarkActions=[
   {id:'inec-meet-candidates',venueId:'inec-hq',name:'Meet other aspiring candidates',cost:0,duration:16,animation:'social',effects:{social:18,fun:6}},
   {id:'efcc-integrity-briefing',venueId:'efcc-hq',name:'Financial integrity briefing',cost:0,duration:15,animation:'watch',effects:{mood:4,stress:-4}},
   {id:'efcc-public-lobby',venueId:'efcc-hq',name:'Visit the public lobby',cost:0,duration:14,animation:'walk',effects:{social:6,mood:3}},
-  {id:'court-public-hearing',venueId:'federal-high-court-hub',name:'Attend a public civic hearing',cost:0,duration:18,animation:'watch',effects:{social:8,mood:3}}
+  {id:'court-public-hearing',venueId:'federal-high-court-hub',name:'Attend a public civic hearing',cost:0,duration:18,animation:'watch',effects:{social:8,mood:3}},
+  {id:'court-legal-briefing',venueId:'federal-high-court-hub',name:'Join a public legal briefing',cost:0,duration:16,animation:'social',effects:{social:10,stress:-4,mood:4}}
 ];
 
 for(const venue of landmarkVenues)if(!VENUES.some(existing=>existing.id===venue.id))VENUES.push(Object.freeze(venue));

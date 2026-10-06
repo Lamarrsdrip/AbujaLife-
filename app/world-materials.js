@@ -1,7 +1,7 @@
 // Premium procedural AbujaLife surfaces. Every texture is generated locally so the
 // live city never waits on a CDN and every scene can release its own GPU resources.
 export function createWorldMaterialLibrary(T, {size = 128} = {}) {
-  const textures = new Map(), materials = new Map();
+  const textures = new Map(), dataTextures = new Map(), materials = new Map();
   const clamp = value => Math.max(0, Math.min(255, Math.round(value)));
   const fract = value => value - Math.floor(value);
   const smooth = (a,b,x) => { const t=Math.max(0,Math.min(1,(x-a)/(b-a))); return t*t*(3-2*t); };
@@ -60,7 +60,21 @@ export function createWorldMaterialLibrary(T, {size = 128} = {}) {
     map.name=`AbujaLife premium authored ${type}`; map.colorSpace=T.SRGBColorSpace;
     map.wrapS=map.wrapT=T.RepeatWrapping; map.magFilter=T.LinearFilter; map.minFilter=T.LinearMipmapLinearFilter;
     map.generateMipmaps=true; map.anisotropy=4; map.needsUpdate=true;
-    map.userData={surface:type,authored:true,premium:true}; textures.set(key,map); return map;
+    map.userData={surface:type,authored:true,premium:true,usage:'color'}; textures.set(key,map); return map;
+  }
+
+  // PBR data textures must stay linear. Reusing an sRGB colour texture as a
+  // bump/roughness source makes the relief response physically incorrect and
+  // over-contrasty. The data view deliberately shares authored pixels but has
+  // its own Texture state and GPU colour-space interpretation.
+  function dataTexture(type, repeatX = 1, repeatY = 1) {
+    const key=`${type}:${repeatX.toFixed(3)}:${repeatY.toFixed(3)}`;
+    if(dataTextures.has(key))return dataTextures.get(key);
+    const map=texture(type,repeatX,repeatY).clone();
+    map.name=`AbujaLife premium authored ${type} data`;
+    map.colorSpace=T.NoColorSpace ?? '';
+    map.userData={surface:type,authored:true,premium:true,usage:'data'};
+    map.needsUpdate=true;dataTextures.set(key,map);return map;
   }
 
   const defaults={
@@ -79,13 +93,14 @@ export function createWorldMaterialLibrary(T, {size = 128} = {}) {
     const {repeatX=1,repeatY=1,...options}=extra;
     const textured=['wood','planks','plaster','fabric','stone','tile','bath','road','grass','rug'].includes(type);
     const map=textured?texture(type,repeatX,repeatY):null;
+    const bumpMap=textured?dataTexture(type,repeatX,repeatY):null;
     const physical=['ceramic','glass','fabric'].includes(type)&&T.MeshPhysicalMaterial;
     const Klass=physical?T.MeshPhysicalMaterial:T.MeshStandardMaterial;
-    const base={color,metalness:0,...defaults[type],...(map?{map,bumpMap:map}:{}),...options};
+    const base={color,metalness:0,...defaults[type],...(map?{map,bumpMap}:{}),...options};
     if(type==='fabric'&&physical)Object.assign(base,{sheen:0.22,sheenRoughness:.78,sheenColor:new T.Color(color).lerp(new T.Color('#fff4e4'),.15)});
     const result=new Klass(base);result.name=`AbujaLife premium ${type}`;result.userData={surface:type,premium:true};
     materials.set(key,result);return result;
   }
 
-  return {texture,material,stats:()=>({textures:textures.size,materials:materials.size,size,premium:true}),dispose(){for(const map of textures.values())map.dispose();for(const mat of materials.values())mat.dispose();textures.clear();materials.clear();}};
+  return {texture,dataTexture,material,stats:()=>({textures:textures.size+dataTextures.size,materials:materials.size,size,premium:true}),dispose(){for(const map of textures.values())map.dispose();for(const map of dataTextures.values())map.dispose();for(const mat of materials.values())mat.dispose();textures.clear();dataTextures.clear();materials.clear();}};
 }

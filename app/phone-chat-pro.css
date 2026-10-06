@@ -1,0 +1,105 @@
+#phone-root.chat-pro-ready{--pro-green:#173f34;--pro-green-2:#235b49;--pro-cream:#f7f3ea;--pro-ink:#17201d;--pro-muted:#75817b;--pro-line:rgba(23,32,29,.1);--pro-shadow:0 16px 42px rgba(18,35,29,.14)}
+#phone-root.chat-pro-ready .ph-phone,#phone-root.chat-pro-ready .phone-shell{background:linear-gradient(180deg,#fbfaf7 0%,#f4f0e8 100%)}
+#phone-root.chat-pro-ready .ph-thread-scroll{scroll-behavior:smooth;padding-bottom:12px}
+#phone-root.chat-pro-ready .pro-inbox-kicker{display:block;margin:0 0 2px;font-size:9px;line-height:1.2;letter-spacing:.16em;font-weight:800;color:#789087}
+#phone-root.chat-pro-ready .pro-inbox-row{transition:transform .16s ease,background .16s ease,border-color .16s ease}
+@media (hover:hover){#phone-root.chat-pro-ready .pro-inbox-row:hover{transform:translateY(-1px);background:rgba(255,255,255,.82)}}
+#phone-root.chat-pro-ready .ph-message{position:relative;transition:transform .16s ease;will-change:transform}
+#phone-root.chat-pro-ready .ph-message::before{content:'↩';position:absolute;left:-31px;top:50%;transform:translateY(-50%) scale(calc(.72 + var(--reply-progress,0)*.28));opacity:var(--reply-progress,0);width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:#fff;color:var(--pro-green);box-shadow:0 6px 16px rgba(17,37,30,.14);pointer-events:none}
+#phone-root.chat-pro-ready .ph-bubble{border-radius:18px;box-shadow:0 5px 16px rgba(22,35,31,.06)}
+#phone-root.chat-pro-ready .ph-message.mine .ph-bubble{border-bottom-right-radius:7px}
+#phone-root.chat-pro-ready .ph-message:not(.mine) .ph-bubble{border-bottom-left-radius:7px}
+#phone-root.chat-pro-ready .pro-flash .ph-bubble,#phone-root.chat-pro-ready .pro-flash .ph-transfer-message{animation:proFlash .9s ease}
+@keyframes proFlash{0%,100%{box-shadow:0 5px 16px rgba(22,35,31,.06)}45%{box-shadow:0 0 0 4px rgba(50,122,93,.2),0 10px 24px rgba(22,35,31,.14)}}
+
+#phone-root .pro-reply-quote{width:100%;border:0;border-left:3px solid rgba(42,115,88,.65);border-radius:10px;background:rgba(255,255,255,.48);padding:7px 8px;margin:0 0 8px;display:flex;align-items:center;gap:7px;text-align:left;color:inherit}
+#phone-root .ph-message.mine .pro-reply-quote{background:rgba(255,255,255,.17);border-left-color:rgba(255,255,255,.72)}
+#phone-root .pro-reply-quote svg{width:14px;height:14px;flex:0 0 14px;opacity:.72}
+#phone-root .pro-reply-quote div{min-width:0;display:grid;gap:1px}
+#phone-root .pro-reply-quote strong{font-size:10px;line-height:1.2;font-weight:800}
+#phone-root .pro-reply-quote small{font-size:10px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.72}
+
+#phone-root .ph-transfer-message{min-width:min(264px,76vw);padding:13px 14px!important;border-radius:19px!important;background:linear-gradient(155deg,#fffefb,#f3eee4)!important;border:1px solid rgba(26,64,51,.12)!important;color:#17201d!important;box-shadow:0 12px 28px rgba(24,52,42,.1)!important}
+#phone-root .ph-message.mine .ph-transfer-message{background:linear-gradient(155deg,#204f40,#173e34)!important;color:#fff!important;border-color:rgba(255,255,255,.1)!important}
+#phone-root .pro-transfer-top{display:grid;grid-template-columns:30px 1fr auto;align-items:center;gap:8px}
+#phone-root .pro-transfer-mark{width:29px;height:29px;border-radius:50%;display:grid;place-items:center;background:rgba(34,112,82,.11);color:#236f55}
+#phone-root .ph-message.mine .pro-transfer-mark{background:rgba(255,255,255,.13);color:#dff6e9}
+#phone-root .pro-transfer-mark svg{width:15px;height:15px}
+#phone-root .pro-transfer-top>span:nth-child(2){display:grid;gap:1px}
+#phone-root .pro-transfer-top small{font-size:8px;letter-spacing:.13em;font-weight:850;opacity:.58}
+#phone-root .pro-transfer-top strong{font-size:11px;line-height:1.2}
+#phone-root .pro-transfer-top em{font-style:normal;font-size:9px;font-weight:800;padding:4px 7px;border-radius:999px;background:rgba(38,128,91,.09);color:#257555}
+#phone-root .ph-message.mine .pro-transfer-top em{background:rgba(255,255,255,.11);color:#e8fff4}
+#phone-root .pro-transfer-amount{font-size:27px;line-height:1;font-weight:850;letter-spacing:-.04em;margin:14px 0 7px}
+#phone-root .pro-transfer-person{font-size:11px;opacity:.78}
+#phone-root .pro-transfer-note{margin-top:10px;padding:8px 10px;border-radius:10px;background:rgba(25,51,42,.06);font-size:11px;line-height:1.35;font-style:italic}
+#phone-root .ph-message.mine .pro-transfer-note{background:rgba(255,255,255,.09)}
+#phone-root .pro-transfer-foot{display:flex;justify-content:space-between;gap:12px;margin-top:12px;padding-top:9px;border-top:1px solid currentColor;font-size:8.5px;opacity:.48;letter-spacing:.02em}
+
+#phone-root .pro-media-message{padding:5px!important;overflow:hidden;min-width:210px;max-width:min(290px,76vw)}
+#phone-root .pro-image-open{border:0;padding:0;margin:0;width:100%;display:block;border-radius:14px;overflow:hidden;background:#dfe6e2;position:relative;min-height:130px;color:inherit}
+#phone-root .pro-image-open img{display:block;width:100%;max-height:330px;object-fit:cover;position:relative;z-index:2}
+#phone-root .pro-image-loading{position:absolute;inset:0;display:grid;place-items:center;font-size:11px;font-weight:750;opacity:.55}
+#phone-root .pro-image-message>p{margin:8px 7px 5px;font-size:12px;line-height:1.38}
+#phone-root .pro-image-message>.pro-reply-quote{margin:1px 1px 5px;width:calc(100% - 2px)}
+#phone-root .pro-voice-message{padding:9px 10px!important;min-width:min(245px,72vw)}
+#phone-root .pro-voice-player{display:grid;grid-template-columns:34px minmax(120px,1fr) 34px;align-items:center;gap:8px}
+#phone-root .pro-voice-player>button{width:34px;height:34px;border:0;border-radius:50%;display:grid;place-items:center;background:rgba(25,65,51,.1);color:inherit}
+#phone-root .ph-message.mine .pro-voice-player>button{background:rgba(255,255,255,.16)}
+#phone-root .pro-voice-player>button svg{width:17px;height:17px}
+#phone-root .pro-wave{position:relative;height:36px;display:flex;align-items:center}
+#phone-root .pro-wave>div{position:absolute;inset:0;display:flex;align-items:center;gap:2px;overflow:hidden;opacity:.55;pointer-events:none}
+#phone-root .pro-wave i{width:2px;height:var(--h);border-radius:3px;background:currentColor;display:block;flex:1;max-width:3px}
+#phone-root .pro-wave input{position:absolute;inset:0;width:100%;opacity:.001;cursor:pointer}
+#phone-root .pro-voice-player time{font-size:9px;font-variant-numeric:tabular-nums;opacity:.62;text-align:right}
+#phone-root .pro-deleted{display:flex;align-items:center;gap:7px;font-size:11px!important;font-style:italic;opacity:.68}
+#phone-root .pro-deleted svg{width:14px;height:14px}
+
+#phone-root .ph-composer{display:flex;align-items:flex-end;gap:6px!important;padding:7px!important;border-radius:22px!important;background:rgba(255,255,255,.96)!important;box-shadow:0 10px 28px rgba(20,42,34,.13)!important;border:1px solid rgba(25,61,49,.09)!important}
+#phone-root .ph-composer textarea{min-width:0!important;max-height:112px!important;padding:8px 4px!important;line-height:1.35!important;background:transparent!important}
+#phone-root .pro-composer-action{width:34px;height:34px;flex:0 0 34px;border:0;border-radius:50%;display:grid;place-items:center;background:transparent;color:#587068}
+#phone-root .pro-composer-action:active{background:rgba(31,87,66,.09);transform:scale(.95)}
+#phone-root .pro-composer-action svg{width:19px;height:19px}
+#phone-root .pro-composer-extras{margin:0 4px 7px}
+#phone-root .pro-composer-extras:empty{display:none}
+#phone-root .pro-reply-draft,#phone-root .pro-recording,#phone-root .pro-voice-draft,#phone-root .pro-image-draft{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:14px;background:rgba(255,255,255,.97);border:1px solid rgba(22,58,46,.09);box-shadow:0 8px 24px rgba(18,39,32,.1);color:#17201d}
+#phone-root .pro-reply-draft>span{width:28px;height:28px;border-radius:9px;background:#edf5f0;color:#256247;display:grid;place-items:center}
+#phone-root .pro-reply-draft>span svg{width:15px;height:15px}
+#phone-root .pro-reply-draft>div,#phone-root .pro-voice-draft>div,#phone-root .pro-image-draft>div{min-width:0;display:grid;gap:1px;flex:1}
+#phone-root .pro-reply-draft strong,#phone-root .pro-voice-draft strong,#phone-root .pro-image-draft strong{font-size:11px}
+#phone-root .pro-reply-draft small,#phone-root .pro-voice-draft small,#phone-root .pro-image-draft small{font-size:9.5px;color:#78837f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#phone-root .pro-reply-draft>button,#phone-root .pro-voice-draft>button,#phone-root .pro-image-draft>button{border:0;background:transparent;width:31px;height:31px;border-radius:50%;display:grid;place-items:center;color:#53645e}
+#phone-root .pro-reply-draft>button svg,#phone-root .pro-voice-draft>button svg,#phone-root .pro-image-draft>button svg{width:16px;height:16px}
+#phone-root .pro-image-draft img{width:46px;height:46px;border-radius:10px;object-fit:cover;background:#e8ece9}
+#phone-root .pro-draft-send{width:auto!important;border-radius:11px!important;padding:0 10px!important;display:flex!important;gap:5px!important;background:#1d5944!important;color:#fff!important;font-weight:800!important;font-size:10px!important}
+#phone-root .pro-draft-send.loading{opacity:.55;pointer-events:none}
+#phone-root .pro-recording{background:#fff9f7}
+#phone-root .pro-record-dot{width:9px;height:9px;border-radius:50%;background:#d64b42;box-shadow:0 0 0 0 rgba(214,75,66,.35);animation:recordPulse 1.2s infinite}
+@keyframes recordPulse{70%{box-shadow:0 0 0 7px rgba(214,75,66,0)}100%{box-shadow:0 0 0 0 rgba(214,75,66,0)}}
+#phone-root .pro-recording strong{font-size:11px}
+#phone-root .pro-recording time{font-size:10px;font-variant-numeric:tabular-nums;color:#7a514d;margin-right:auto}
+#phone-root .pro-recording button{border:0;border-radius:10px;padding:7px 9px;font-size:10px;font-weight:800;background:#f0ece8;color:#4c5854}
+#phone-root .pro-recording button:last-child{background:#1d5944;color:#fff}
+#phone-root .pro-presence{display:block;margin-top:2px;font-size:9px;line-height:1.2;color:#537b68;font-weight:700}
+#phone-root .pro-presence.recording{color:#9b554f}
+
+.pro-message-actions{position:fixed;z-index:10050;left:50%;bottom:max(14px,env(safe-area-inset-bottom));width:min(360px,calc(100vw - 22px));transform:translate(-50%,24px);opacity:0;pointer-events:none;padding:8px;border-radius:20px;background:rgba(250,249,246,.98);box-shadow:0 24px 64px rgba(14,30,24,.28);border:1px solid rgba(20,50,40,.1);backdrop-filter:blur(18px);transition:.18s ease}
+.pro-message-actions.open{transform:translate(-50%,0);opacity:1;pointer-events:auto}
+.pro-message-actions button{width:100%;border:0;background:transparent;display:flex;align-items:center;gap:11px;text-align:left;padding:10px 11px;border-radius:13px;color:#1d2824}
+.pro-message-actions button:active{background:rgba(27,76,58,.08)}
+.pro-message-actions button svg{width:18px;height:18px;flex:0 0 18px;color:#52645d}
+.pro-message-actions button span{display:grid;gap:2px}
+.pro-message-actions button strong{font-size:12px}
+.pro-message-actions button small{font-size:9.5px;color:#7a8580}
+.pro-message-actions button.danger,.pro-message-actions button.danger svg{color:#a23d3d}
+
+.pro-image-viewer{position:fixed;z-index:10100;inset:0;background:rgba(7,13,11,.96);display:grid;grid-template-rows:auto 1fr auto;padding:max(16px,env(safe-area-inset-top)) 14px max(18px,env(safe-area-inset-bottom));color:#fff;animation:viewerIn .18s ease}
+@keyframes viewerIn{from{opacity:0}to{opacity:1}}
+.pro-image-viewer>button{justify-self:end;width:39px;height:39px;border:0;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.11);color:#fff}
+.pro-image-viewer>button svg{width:20px;height:20px}
+.pro-viewer-stage{min-height:0;overflow:hidden;display:grid;place-items:center;touch-action:pinch-zoom}
+.pro-viewer-stage img{max-width:100%;max-height:100%;object-fit:contain;transform-origin:center;transition:transform .14s ease;user-select:none;-webkit-user-drag:none}
+.pro-image-viewer>small{text-align:center;font-size:10px;opacity:.62;padding-top:10px}
+
+@media(max-width:480px){#phone-root .ph-transfer-message{min-width:min(245px,74vw)}#phone-root .pro-transfer-amount{font-size:25px}.pro-message-actions{bottom:max(8px,env(safe-area-inset-bottom))}}
+@media(prefers-reduced-motion:reduce){#phone-root.chat-pro-ready .ph-message,.pro-message-actions,.pro-image-viewer{transition:none!important;animation:none!important}}

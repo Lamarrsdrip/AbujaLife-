@@ -1,7 +1,7 @@
 import { LoadingManager } from './vendor/three.module.js';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
-import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { GLTFLoader } from './vendor/GLTFLoader.js';
+import { KTX2Loader } from './vendor/KTX2Loader.js';
+import { MeshoptDecoder } from './vendor/meshopt_decoder.js';
 
 const cache=new Map();
 const pending=new Map();

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node scripts/vendor-three.mjs && node --watch scripts/dev.mjs",
     "start": "node src/server/production.mjs",
-    "preqa": "python scripts/city-world-integrity-patch.py",
+    "preqa": "python scripts/city-world-integrity-patch.py && python scripts/city-world-integrity-hotfix.py",
     "qa": "node scripts/qa.mjs && node --test tests/*.test.mjs",
     "qa:browser": "python tests/browser-smoke.py",
     "assets:build": "node scripts/vendor-three.mjs",

@@ -14,7 +14,6 @@
     "qa:gameplay": "python tests/gameplay-smoke.py",
     "qa:premium": "python tests/premium-smoke.py",
     "build": "node scripts/vendor-three.mjs && node scripts/build-production.mjs && node scripts/finalize-world-assets.mjs",
-    "postbuild": "node scripts/ci-city-integrity-commit.mjs",
     "qa:production": "node tests/production-integration.mjs",
     "qa:mongo": "node --test tests/mongo-*.integration.mjs",
     "qa:infra": "node deploy/test-production.mjs"

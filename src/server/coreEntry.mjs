@@ -24,7 +24,7 @@ async function readBody(req,maxBytes=32768){
  catch(error){if(error.status)throw error;throw Object.assign(new Error('Send valid JSON'),{status:400,code:'invalid_json'});}
 }
 
-export function createCoreEntry({store,admin,corsOrigins=[],publicWebUrl='',secureCookies=true,log=()=>{}}={}){
+export function createCoreEntry({store,admin,social=null,corsOrigins=[],publicWebUrl='',secureCookies=true,log=()=>{}}={}){
  if(!store||!admin)throw new Error('Core entry requires the game store and admin store.');
  const allowed=new Set([cleanOrigin(publicWebUrl),...corsOrigins.map(cleanOrigin)].filter(Boolean));
  const limits=new Map();
@@ -46,7 +46,21 @@ export function createCoreEntry({store,admin,corsOrigins=[],publicWebUrl='',secu
  async function startupState(id){
   const now=Number(store.clock?.()||Date.now());
   if(!id)return{authenticated:false,startup:true,serverTime:now};
-  const profile=await store.profile(id);
+  let profile=await store.profile(id),homeVisit=null;
+  // Most residents need exactly one profile read. A currently consented guest is
+  // the only exception: the 3D renderer needs the owner's validated home. Keep
+  // that one correctness-critical join without restoring social/chat hydration to
+  // every login.
+  if(profile?.location?.kind==='visit'){
+   if(!social?.reconcileVisits||!social?.visitState)throw Object.assign(new Error('This home visit is unavailable'),{status:403,code:'visit_unavailable'});
+   await social.reconcileVisits(id);
+   profile=await store.profile(id);
+   if(profile?.location?.kind==='visit'){
+    const visitState=await social.visitState(id);
+    homeVisit=visitState?.visit||null;
+    if(!homeVisit)throw Object.assign(new Error('This home visit is unavailable'),{status:403,code:'visit_unavailable'});
+   }
+  }
   const residentProperties=profile?.origin?.residence?[...properties,profile.origin.residence]:properties;
   return{
    authenticated:true,startup:true,profile,
@@ -58,7 +72,7 @@ export function createCoreEntry({store,admin,corsOrigins=[],publicWebUrl='',secu
    serverTime:now,clock:abujaTime(now),weather:seasonalWeather(now),clubSchedule:clubSchedule(now),
    loans:Array.isArray(profile.loans)?profile.loans:[],workSchedule:null,workSchedules:{},activeChallenge:null,
    people:[],friends:[],friendRequests:[],conversations:[],notifications:[],invitations:[],nearby:[],events:[],blocked:[],muted:[],transactions:[],
-   homeVisit:null,homeVisitRequests:[],homeVisitors:[],admin:null,payments:{deferred:true}
+   homeVisit,homeVisitRequests:[],homeVisitors:[],admin:null,payments:{deferred:true}
   };
  }
  async function handle(req,res){

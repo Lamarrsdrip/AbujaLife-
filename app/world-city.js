@@ -107,12 +107,26 @@ export function buildCity({profile={},place={},id='city',venues=[]}={}) {
   {id:'bear-barn',x:2840,y:3970,w:440,h:284,name:'Bear Barn',tag:'YOUR PEOPLE · YOUR EVENING',accent:'#99784e',wall:'#d1bf9f',kind:'restaurant'}
  ];
  for(const spec of specs) {
-  if(spec.id!=='home'&&!venues.some(venue=>venue.id===spec.id))continue;
-  spec.name=venues.find(v=>v.id===spec.id)?.name||spec.name;
+  const localVenue=venues.find(venue=>venue.id===spec.id);
+  spec.name=localVenue?.name||spec.name;
   art+=building(spec);
   obstacles.push({x:spec.x-4,y:spec.y-spec.h-8,w:spec.w+31,h:spec.h+18});
   const isHome=spec.id==='home',canHome=profile.home?.district===profile.district||!profile.district;
-  interactables.push({id:spec.id,x:spec.x+spec.w/2,y:spec.y+58,label:isHome?(canHome?'Your front door':'View homes'):(venues.find(v=>v.id===spec.id)?.name||spec.name),action:isHome?(canHome?'enter-home':'estate-office'):'enter-venue',payload:isHome?{}:{venueId:spec.id},radius:78,icon:isHome?'⌂':({restaurant:'♨',gym:'↗',hotel:'✦',cinema:'▷',dealership:'↔','estate-office':'⌂','furniture-store':'▱',grocery:'✿'}[spec.id])});
+  // Abuja should still look like a city when a venue belongs to another district.
+  // Only the authoritative local venue (or the resident's own home) is directly enterable.
+  if(isHome||localVenue)interactables.push({id:spec.id,x:spec.x+spec.w/2,y:spec.y+58,label:isHome?(canHome?'Your front door':'View homes'):(localVenue?.name||spec.name),action:isHome?(canHome?'enter-home':'estate-office'):'enter-venue',payload:isHome?{}:{venueId:spec.id},radius:78,icon:isHome?'⌂':({restaurant:'♨',gym:'↗',hotel:'✦',cinema:'▷',dealership:'↔','estate-office':'⌂','furniture-store':'▱',grocery:'✿'}[spec.id])});
+ }
+ const neighbourhoodFabric=[
+  {x:40,y:1188,w:330,h:145,c:'#d9d1be'},{x:430,y:1200,w:285,h:132,c:'#c9cfbf'},{x:820,y:1192,w:310,h:150,c:'#e0d7c2'},
+  {x:2140,y:1200,w:320,h:145,c:'#d2c9b6'},{x:2570,y:1200,w:300,h:138,c:'#c8d0c0'},{x:2960,y:1200,w:315,h:150,c:'#ddd4be'},
+  {x:820,y:2840,w:325,h:154,c:'#d4cbb8'},{x:1370,y:2840,w:315,h:146,c:'#cad1c1'},{x:2160,y:2840,w:330,h:150,c:'#e0d6c0'},
+  {x:2700,y:2840,w:310,h:142,c:'#cdd0bd'},{x:3050,y:3650,w:300,h:148,c:'#d9ceb9'},{x:1710,y:3650,w:330,h:150,c:'#c9d0bf'}
+ ];
+ for(const [i,b] of neighbourhoodFabric.entries()){
+  const top=b.y-b.h,windows=Array.from({length:4},(_,k)=>rect(b.x+28+k*(b.w-62)/4,top+38,34,42,'#76918b',3)+rect(b.x+28+k*(b.w-62)/4,top+91,34,28,'#829a91',3)).join('');
+  art+=`<g class="city-neighbourhood-fabric" aria-hidden="true">${rect(b.x,top,b.w,b.h,b.c,7)}${rect(b.x-7,top,b.w+14,10,'#eee7d4',4)}${windows}${rect(b.x+b.w*.44,b.y-58,b.w*.14,58,'#617a70',3)}</g>`;
+  obstacles.push({x:b.x-5,y:top-6,w:b.w+20,h:b.h+14});
+  if(i%2===0)art+=cityTree(b.x-24,b.y-8,.58,i%4===0);
  }
  art+=garden(1340,1102,362,352,true)+garden(155,1850,640,280)+garden(2250,1860,1030,280,true);
  obstacles.push({x:1440,y:1216,w:164,h:115});

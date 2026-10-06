@@ -113,3 +113,17 @@
 
 @media(max-width:480px){#phone-root .ph-transfer-message{min-width:min(245px,74vw)}#phone-root .pro-transfer-amount{font-size:25px}.pro-message-actions{bottom:max(8px,env(safe-area-inset-bottom))}}
 @media(prefers-reduced-motion:reduce){#phone-root.chat-pro-ready .ph-message,.pro-message-actions,.pro-image-viewer{transition:none!important;animation:none!important}}
+
+
+/* Compact, receipt-like Naira transfer card. */
+#phone-root.chat-pro-ready .ph-message:has(.ph-transfer-message){max-width:min(88%,290px);width:auto}
+#phone-root .ph-transfer-message{width:min(272px,100%)!important;max-width:100%!important;min-width:0!important;overflow:hidden!important;padding:12px 13px!important}
+#phone-root .pro-transfer-top{grid-template-columns:28px minmax(0,1fr) auto!important;gap:8px!important}
+#phone-root .pro-transfer-top>span:nth-child(2){min-width:0!important;overflow:hidden}
+#phone-root .pro-transfer-top small,#phone-root .pro-transfer-top strong{display:block;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;word-break:normal!important;overflow-wrap:normal!important}
+#phone-root .pro-transfer-top em{white-space:nowrap!important;flex:none}
+#phone-root .pro-transfer-amount{font-size:clamp(22px,7vw,28px)!important;line-height:1.05!important;white-space:nowrap!important;word-break:normal!important;overflow-wrap:normal!important;overflow:hidden;text-overflow:ellipsis;margin:13px 0 7px!important}
+#phone-root .pro-transfer-person{display:block;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;word-break:normal!important;overflow-wrap:normal!important}
+#phone-root .pro-transfer-foot{display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;align-items:center!important;gap:8px!important}
+#phone-root .pro-transfer-foot span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:380px){#phone-root.chat-pro-ready .ph-message:has(.ph-transfer-message){max-width:92%}#phone-root .ph-transfer-message{width:100%!important}#phone-root .pro-transfer-top em{font-size:8px;padding:4px 6px}}

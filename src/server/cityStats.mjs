@@ -1,6 +1,6 @@
 const VISIT_WINDOW_MS = 30 * 60 * 1000;
-const GLOBAL_CACHE_MS = 4000;
-const ZONE_CACHE_MS = 2500;
+const GLOBAL_CACHE_MS = 1000;
+const ZONE_CACHE_MS = 1000;
 const STATS_ID = 'city-traffic';
 const HOT_PLACE_LIMIT = 8;
 

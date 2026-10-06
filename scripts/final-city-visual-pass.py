@@ -1,5 +1,4 @@
 from pathlib import Path
-import re
 
 ROOT=Path(__file__).resolve().parents[1]
 def read(p): return (ROOT/p).read_text(encoding='utf-8')
@@ -9,14 +8,17 @@ def once(s,old,new,label):
     if c!=1: raise SystemExit(f'{label}: expected 1 anchor, got {c}')
     return s.replace(old,new,1)
 
-# Feed the ACTUAL WebGL renderer the same full city the SVG interaction layer already owns.
+# Feed the ACTUAL WebGL renderer the same full city the SVG interaction layer already owns,
+# while preserving district authority: remote buildings are visual context, never local venue IDs.
 p='app/world-city.js'; s=read(p)
 anchor=" return {width,height,art,obstacles,interactables,buildings:specs.filter(spec=>spec.id==='home'||venues.some(venue=>venue.id===spec.id)),spawn:{x:445,y:679},"
 insert=""" const landmarkSizes={airport:[520,220],cityGate:[260,170],stadium:[360,250],magicland:[330,240],wtc:[300,300],cbn:[250,285],assembly:[360,220],eagle:[300,165],mosque:[300,250],church:[270,230],transcorp:[340,240],millennium:[360,250],aso:[320,220],farmCity:[300,205],jabiLake:[430,250],mall:[330,220],conference:[320,225],banex:[320,210],inec:[290,220],efcc:[310,230],court:[310,225]};
  const legacyIds=new Set(specs.map(b=>b.id));
  const contextBuildings=neighbourhoodFabric.map((b,i)=>({id:`context-${i}`,x:b.x,y:b.y,w:b.w,h:b.h,name:'',wall:b.c,floors:2,context:true}));
  const landmarkBuildings=CITY_LANDMARKS.filter(landmark=>!legacyIds.has(landmark.id)).map(landmark=>{const point=landmarkWorldPoint(landmark),size=landmarkSizes[landmark.builder]||[290,210];return{id:landmark.id,x:point.x-size[0]/2,y:point.y+size[1]/2,w:size[0],h:size[1],name:landmark.short||landmark.name,wall:'#d8d3c4',floors:landmark.builder==='wtc'?7:landmark.builder==='cbn'?6:landmark.builder==='transcorp'?4:landmark.builder==='inec'||landmark.builder==='efcc'||landmark.builder==='court'?3:2,landmarkBuilder:landmark.builder,frontY:true};});
- const visibleBuildings=[...specs,...contextBuildings,...landmarkBuildings];
+ const visibleLegacyBuildings=specs.map(spec=>spec.id==='home'||localVenueIds.has(spec.id)?spec:{...spec,id:`context-spec-${spec.id}`,name:'',context:true});
+ const safeLandmarkBuildings=landmarkBuildings.map(b=>localVenueIds.has(b.id)?b:{...b,id:`context-landmark-${b.id}`,name:'',context:true});
+ const visibleBuildings=[...visibleLegacyBuildings,...contextBuildings,...safeLandmarkBuildings];
 
  return {width,height,art,obstacles,interactables,buildings:visibleBuildings,spawn:{x:445,y:679},"""
 s=once(s,anchor,insert,'full WebGL building catalogue')
@@ -63,14 +65,15 @@ new="""      p.name=`Authored building: ${b.id||b.name||'residence'}`;
 s=once(s,old,new,'use specialised landmark 3D renderer')
 write(p,s)
 
-# Strengthen regression coverage: the visible world and WebGL scene must share one city catalogue.
+# Strengthen regression coverage: visible city and WebGL share geometry without weakening local venue identity.
 p='tests/final-world-phone-regression.test.mjs'; s=read(p)
 addition="""
 
 test('live WebGL Outside receives the complete city and recognisable landmarks',()=>{
   const city=read('app/world-city.js'),three=read('app/world-3d-scenes.js');
-  assert.match(city,/const visibleBuildings=\[\.\.\.specs,\.\.\.contextBuildings,\.\.\.landmarkBuildings\]/);
-  assert.match(city,/landmarkBuilder:landmark\.builder/);
+  assert.match(city,/const visibleLegacyBuildings=/);
+  assert.match(city,/const safeLandmarkBuildings=/);
+  assert.match(city,/context-landmark-/);
   assert.match(city,/buildings:visibleBuildings/);
   assert.match(three,/renderLandmarkBuilding/);
   for(const builder of ['airport','cityGate','stadium','wtc','cbn','assembly','mosque','transcorp','inec'])assert.match(three,new RegExp(`case'${builder}'`));

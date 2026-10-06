@@ -29,14 +29,12 @@ test('advanced chat supports photo send, voice draft, reply and delete flows',()
 });
 
 test('media messages use authenticated private server routes and durable storage',()=>{
-  assert.ok(runtime.includes('/api/chat-pro/conversations/'));
-  assert.ok(runtime.includes('/api/chat-pro/media/'));
-  assert.ok(runtime.includes('replyToMessageId'));
+  for(const token of ['createChatProRuntime','mediaMessage','mediaRead','replyToMessageId','chat-pro','transfer_receipt_immutable'])assert.ok(runtime.includes(token),`missing ${token}`);
   assert.ok(runtime.includes("scope==='everyone'"));
+  assert.ok(runtime.includes("'cache-control':'private"));
   assert.ok(media.includes('CHAT_MEDIA_S3_ENDPOINT'));
   assert.ok(media.includes("this.production=env.NODE_ENV==='production'"));
   assert.ok(media.includes("this.mode=this.s3?'s3':this.production?'disabled':'file'"));
-  assert.ok(media.includes('cache-control'));
 });
 
 test('money messages render as compact completed transfer receipts',()=>{

@@ -1,10 +1,18 @@
+import crypto from 'node:crypto';
 import { GameError } from './errors.mjs';
+import { routeForJourney } from '../shared/abuja-navigation.mjs';
 
 const clamp = value => Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
 
 function fail(condition, message, status = 400, code = 'invalid_action') {
   if (!condition) throw new GameError(message, status, code);
 }
+
+const ownedVehicle=(profile,vehicleId)=>Boolean(vehicleId&&profile?.inventory?.includes(vehicleId)&&Object.hasOwn(profile?.vehicleColors||{},vehicleId));
+const locationVenue=profile=>profile?.location?.kind==='home'?'home':profile?.location?.venue||'neighbourhood';
+const vehicleIsWithResident=(profile,presence=profile?.vehiclePresence)=>Boolean(presence?.state==='parked'&&ownedVehicle(profile,presence.vehicleId)&&presence.district===profile?.district&&presence.venue===locationVenue(profile));
+const cleanPresence=(profile,presence=profile?.vehiclePresence)=>ownedVehicle(profile,presence?.vehicleId)?presence:null;
+const secondsForLocalRoute=(profile,mode)=>{const route=routeForJourney({fromDistrict:profile.district,fromVenue:profile.location?.kind==='venue'?profile.location.venue:null,toDistrict:profile.home?.district||profile.district,returningHome:true,homeDistrict:profile.home?.district||profile.district});const speed=mode==='car'?175:70;return Math.max(mode==='car'?6:9,Math.min(24,Math.round(Math.max(1,route?.distance||1)/speed)));};
 
 // Old AbujaLife interiors predate resident-owned furniture. Those rooms drew several
 // removable pieces directly into the scene, so a resident could see a sofa or bed but
@@ -64,18 +72,41 @@ async function migrateLegacyHomeFurniture(store, residentId, profile, options = 
   return profile;
 }
 
+async function writeVehiclePresence(store,residentId,presence,{emit=true}={}){
+  await store.collection('player_state').updateOne({residentId},presence?{$set:{vehiclePresence:presence}}:{$unset:{vehiclePresence:''}});
+  const profile=await store.profile(residentId);
+  if(emit)await store.emitUser(residentId,'profile',{profile});
+  return profile;
+}
+
+async function beginSameDistrictHomeTrip(store,residentId,profile,payload={}){
+  const timestamp=store.clock(),presence=cleanPresence(profile),keepCar=vehicleIsWithResident(profile,presence)&&payload.leaveVehicle!==true;
+  const requested=payload.mode||'walk',mode=keepCar&&(requested==='walk'||requested==='car')?'car':requested==='car'&&!keepCar?'walk':requested;
+  fail(mode==='walk'||mode==='car','Choose walking or your nearby car for this short trip');
+  const seconds=secondsForLocalRoute(profile,mode),vehicleId=mode==='car'?presence.vehicleId:null;
+  let trip,replayed=false;
+  await store.transaction(async session=>{
+    const state=await store.collection('player_state').findOne({residentId},{session,projection:{district:1,location:1,activeTrip:1,vehiclePresence:1}});
+    fail(state,'Resident persistence is incomplete',503,'storage_incomplete');
+    if(state.activeTrip?.returningHome&&state.activeTrip.destination===profile.home.district){trip=state.activeTrip;replayed=true;return;}
+    fail(!state.activeTrip,'Your journey is still in progress',409,'trip_in_progress');
+    fail(state.location?.kind!=='home','You are already home',409,'already_home');
+    trip={id:crypto.randomUUID(),destination:profile.home.district,mode,cost:0,seconds,vehicleId,arrivesAt:timestamp+seconds*1000,returningHome:true};
+    const nextPresence=vehicleId?{vehicleId,state:'transit',district:profile.district,venue:locationVenue(profile),destinationDistrict:profile.home.district,destinationVenue:'home',updatedAt:timestamp}:state.vehiclePresence;
+    const update={$set:{activeTrip:trip,drivingVehicle:null,location:{kind:'transit',district:profile.district,venue:'journey'},...(nextPresence?{vehiclePresence:nextPresence}:{})}};
+    const changed=await store.collection('player_state').updateOne({_id:state._id,residentId,activeTrip:state.activeTrip??null},update,{session});
+    fail(changed.modifiedCount===1,'Your location changed; try again',409,'location_changed');
+  });
+  const next=await store.profile(residentId);if(!replayed)await store.emitUser(residentId,'profile',{profile:next});
+  return {ok:true,profile:next,trip,replayed,fastLocation:true};
+}
+
 /**
  * Installs bounded, hot-path location transitions on an existing MongoGameStore.
  *
- * `leave-home` used to flow through the generic economy/action transaction. That
- * path reconstructs the complete resident, writes several unrelated normalized
- * documents and records an economy operation even though leaving a house changes
- * only player_state (plus the normal needs clock). Under load this made a simple
- * navigation tap compete with wallet, inventory, loan and social reads.
- *
- * Keep the public store.action contract so production-http retains its existing
- * authorization, social reconciliation, old/new-zone detection and realtime
- * presence broadcast. Only the internal mutation is specialized.
+ * Besides the optimized leave-home mutation, this layer owns the durable transition
+ * between resident location and personal-vehicle presence. High-frequency car motion
+ * remains visual/realtime state; only driving/transit/parked transitions are stored.
  */
 export function installFastLocationActions(store) {
   fail(store && typeof store.action === 'function' && typeof store.transaction === 'function' && typeof store.collection === 'function' && typeof store.profile === 'function', 'Fast location actions require the Mongo game store', 500, 'storage_unavailable');
@@ -84,12 +115,38 @@ export function installFastLocationActions(store) {
   const originalProfile = store.profile.bind(store);
   store.profile = async (residentId, options = {}) => {
     const profile = await originalProfile(residentId, options);
-    return migrateLegacyHomeFurniture(store, residentId, profile, options);
+    await migrateLegacyHomeFurniture(store, residentId, profile, options);
+    if(profile.vehiclePresence&&!cleanPresence(profile))profile.vehiclePresence=null;
+    return profile;
   };
 
   const originalAction = store.action.bind(store);
 
   store.action = async (residentId, action, payload = {}) => {
+    if(action==='travel'||action==='return-home'||action==='arrive'||action==='toggle-driving'){
+      const before=await store.profile(residentId),presence=cleanPresence(before);
+      if(action==='return-home'&&before.location?.kind!=='home'&&before.home?.district===before.district){
+        return beginSameDistrictHomeTrip(store,residentId,before,payload);
+      }
+      let adjusted=payload;
+      if((action==='travel'||action==='return-home')&&vehicleIsWithResident(before,presence)&&payload.leaveVehicle!==true&&(payload.mode==null||payload.mode==='walk'))adjusted={...payload,mode:'car'};
+      const previousTrip=before.activeTrip;
+      const result=await originalAction(residentId,action,adjusted);
+      let after=result?.profile||await store.profile(residentId),nextPresence=null,shouldWrite=false;
+      if((action==='travel'||action==='return-home')&&after.activeTrip?.mode==='car'&&ownedVehicle(before,after.activeTrip.vehicleId)){
+        nextPresence={vehicleId:after.activeTrip.vehicleId,state:'transit',district:before.district,venue:locationVenue(before),destinationDistrict:after.activeTrip.destination,destinationVenue:after.activeTrip.returningHome?'home':after.activeTrip.venueId||'neighbourhood',updatedAt:store.clock()};shouldWrite=true;
+      }else if(action==='arrive'&&previousTrip?.mode==='car'&&ownedVehicle(after,previousTrip.vehicleId)){
+        nextPresence={vehicleId:previousTrip.vehicleId,state:'parked',district:after.district,venue:locationVenue(after),updatedAt:store.clock()};shouldWrite=true;
+      }else if(action==='toggle-driving'){
+        const vehicleId=after.drivingVehicle||before.drivingVehicle||presence?.vehicleId;
+        if(ownedVehicle(after,vehicleId)){
+          nextPresence={vehicleId,state:after.drivingVehicle?'driving':'parked',district:after.district,venue:locationVenue(after),updatedAt:store.clock()};shouldWrite=true;
+        }
+      }
+      if(shouldWrite){after=await writeVehiclePresence(store,residentId,nextPresence);return {...result,profile:after,vehiclePresence:nextPresence};}
+      return result;
+    }
+
     if (action !== 'leave-home') return originalAction(residentId, action, payload);
 
     const timestamp = store.clock();
@@ -98,7 +155,7 @@ export function installFastLocationActions(store) {
     await store.transaction(async session => {
       const playerState = await store.collection('player_state').findOne(
         { residentId },
-        { session, projection: { district: 1, location: 1, activeTrip: 1, drivingVehicle: 1 } },
+        { session, projection: { district: 1, location: 1, activeTrip: 1, drivingVehicle: 1, vehiclePresence: 1 } },
       );
       fail(playerState, 'Resident persistence is incomplete', 503, 'storage_incomplete');
       fail(!playerState.activeTrip, 'Your journey is still in progress', 409, 'trip_in_progress');
@@ -129,6 +186,9 @@ export function installFastLocationActions(store) {
         needsUpdate.social = clamp(Number(needs.social || 0) - minutes * 0.05);
       }
 
+      const presence=playerState.vehiclePresence?.state==='parked'&&playerState.vehiclePresence.district===playerState.district&&playerState.vehiclePresence.venue==='home'
+        ?{...playerState.vehiclePresence,venue:'neighbourhood',updatedAt:timestamp}
+        :playerState.vehiclePresence;
       const changed = await store.collection('player_state').updateOne(
         {
           _id: playerState._id,
@@ -140,6 +200,7 @@ export function installFastLocationActions(store) {
           $set: {
             drivingVehicle: null,
             location: { kind: 'public', district: playerState.district, venue: 'neighbourhood' },
+            ...(presence?{vehiclePresence:presence}:{}),
           },
         },
         { session },

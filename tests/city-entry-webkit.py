@@ -33,7 +33,7 @@ async def wait_healthy(server):
             await asyncio.sleep(.15)
     raise RuntimeError('AbujaLife dev server did not become healthy')
 
-async def complete_onboarding(page):
+async def complete_onboarding(page, api_events):
     await expect(page.locator('#onboarding-form')).to_be_visible(timeout=20000)
     for _ in range(10):
         form = page.locator('#onboarding-form')
@@ -62,7 +62,20 @@ async def complete_onboarding(page):
         if not await next_button.count():
             raise AssertionError('Onboarding has no visible continue control')
         await next_button.click()
-    await expect(page.locator('#onboarding-form')).to_have_count(0, timeout=20000)
+    try:
+        await expect(page.locator('#onboarding-form')).to_have_count(0, timeout=20000)
+    except AssertionError as original:
+        error_text = ''
+        if await page.locator('#onboarding-error').count():
+            error_text = (await page.locator('#onboarding-error').inner_text()).strip()
+        step = await page.locator('.onboarding-progress strong').inner_text() if await page.locator('.onboarding-progress strong').count() else 'unknown'
+        session = None
+        try:
+            response = await page.request.get(f'{BASE}/api/entry')
+            session = {'status': response.status, 'body': await response.json()}
+        except Exception as error:
+            session = {'error': str(error)}
+        raise AssertionError(f'onboarding did not finish; step={step!r}; ui_error={error_text!r}; api_events={api_events[-12:]}; session={session}') from original
 
 async def assert_playable(page, label):
     await expect(page.locator('.loading-state')).to_have_count(0, timeout=20000)
@@ -111,8 +124,10 @@ async def main():
                     page = await context.new_page()
                     page_errors = []
                     console_errors = []
+                    api_events = []
                     page.on('pageerror', lambda error: page_errors.append(str(error)))
                     page.on('console', lambda message: console_errors.append(message.text) if message.type == 'error' else None)
+                    page.on('response', lambda response: api_events.append({'method': response.request.method, 'path': response.url.replace(BASE, ''), 'status': response.status}) if '/api/' in response.url else None)
 
                     await page.goto(BASE, wait_until='domcontentloaded')
                     await expect(page.locator('#auth-form')).to_be_visible(timeout=20000)
@@ -120,7 +135,7 @@ async def main():
                     await page.locator('[name="username"]').fill(USERNAME)
                     await page.locator('[name="password"]').fill(PASSWORD)
                     await page.locator('.auth-submit').click()
-                    await complete_onboarding(page)
+                    await complete_onboarding(page, api_events)
                     first = await assert_playable(page, 'fresh resident')
 
                     logout = await context.request.post(f'{BASE}/api/auth/logout', data={})
@@ -144,7 +159,7 @@ async def main():
                     if fatal_console:
                         raise AssertionError(f'WebKit console errors: {fatal_console}')
 
-                    print(json.dumps({'ok': True, 'engine': 'webkit-mobile', 'fresh': first, 'login': second, 'reload': third}))
+                    print(json.dumps({'ok': True, 'engine': 'webkit-mobile', 'fresh': first, 'login': second, 'reload': third, 'apiEvents': api_events[-20:]}))
                     await context.close()
                     await browser.close()
             finally:

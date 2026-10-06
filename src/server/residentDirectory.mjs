@@ -20,6 +20,7 @@ const visible = alias => `NOT EXISTS (SELECT 1 FROM moderation b WHERE b.kind='b
 export class ResidentDirectory {
   constructor(store) {
     this.store = store;
+    store.directory = this;
     store.db.exec(`CREATE INDEX IF NOT EXISTS residents_directory ON residents(created_at DESC,id DESC);
       CREATE INDEX IF NOT EXISTS messages_history ON messages(conversation_id,created_at DESC,id DESC);
       CREATE INDEX IF NOT EXISTS members_inbox ON members(resident_id,conversation_id);

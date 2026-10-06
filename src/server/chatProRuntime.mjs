@@ -82,7 +82,7 @@ export function createChatProRuntime({store,social=null,directory=null,authentic
       const saved=store.insertConversationMessage(id,conversationId,messageText);row=saved.row;members=saved.members;saveSqliteMeta(row.id,conversationId,id,{kind,...(replyTo?{replyTo}:{}),...(media?{media}:{})});store.run('INSERT INTO message_operations VALUES(?,?,?,?,?)',id,key,fingerprint,row.id,row.created_at);
       for(const target of members)if(target!==id&&!store.blocked(id,target)&&!store.muted(target,id)){const notice={id:crypto.randomUUID(),kind:'message',title:store.profile(id).displayName,body:messageText.slice(0,140),link:`conversation:${conversationId}`,createdAt:row.created_at,readAt:null};store.run('INSERT INTO notifications(id,resident_id,kind,title,body,link,created_at,read_at,sender_id) VALUES(?,?,?,?,?,?,?,NULL,?)',notice.id,target,notice.kind,notice.title,notice.body,notice.link,notice.createdAt,id);notices.push({target,notice});}
     });
-    const view=store.messageView(row);if(!replayed){for(const target of members)if(!store.blocked(id,target))store.emitUser(target,'message',view);for(const{target,notice}of notices)this.emitUser?.(target,'notification',notice);}return{ok:true,message:view,replayed};
+    const view=store.messageView(row);if(!replayed){for(const target of members)if(!store.blocked(id,target))store.emitUser(target,'message',view);for(const{target,notice}of notices)store.emitUser?.(target,'notification',notice);}return{ok:true,message:view,replayed};
   }
   async function emitUpdate(row,senderId){
     if(mongo){const event=social.messageEvent(row);for await(const member of social.fanoutMembers(row.conversationId,senderId))store.emitUser?.(member.residentId,'message',event);return;}

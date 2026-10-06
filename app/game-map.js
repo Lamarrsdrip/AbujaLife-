@@ -1,10 +1,10 @@
 import { apiFetch } from './api-client.js';
-import { renderOutside } from './outside-city.js';
+import { renderOutside } from './outside-city-v2.js';
 import { TRANSPORT_MODES } from '../src/shared/life.mjs';
 
 const appRoot=document.querySelector('#app');
 const toastRoot=document.querySelector('#toast');
-const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[char]));
 const money=value=>`₦${new Intl.NumberFormat('en-NG',{maximumFractionDigits:0}).format(Number(value||0))}`;
 let overlay=null,cleanup=null,snapshot=null,busy=false;
 
@@ -55,8 +55,7 @@ async function openCityMap({focusVenueId=null}={}){
  busy=false;
 }
 
-// Register before the enhancement layer so every visible Map affordance opens
-// the authored 3D city overview, never the old utility street-map surface.
+// Every visible Map affordance opens the authored 3D Abuja overview.
 document.addEventListener('click',event=>{
  const target=event.target.closest?.('.game-nav [data-nav-outside],[data-life-open-map],[data-life-shortcut="map"],[data-hot-venue]');if(!target)return;
  event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();void openCityMap({focusVenueId:target.dataset.hotVenue||null});
@@ -66,9 +65,6 @@ const observer=new MutationObserver(()=>{
   const button=appRoot?.querySelector('.game-nav [data-nav-outside]');
   if(!button)return;
   const label=button.querySelector('span');
-  // Assigning textContent always replaces the text node. Doing that from a
-  // subtree childList observer retriggers the observer forever and freezes
-  // the page the moment the playable shell appears.
   if(label&&label.textContent!=='Map')label.textContent='Map';
   if(button.getAttribute('aria-label')!=='Open AbujaLife Map')button.setAttribute('aria-label','Open AbujaLife Map');
   if(button.title!=='Map')button.title='Map';

@@ -46,7 +46,17 @@ function building({id,x,y,w,h,name,tag,wall='#e7dcc1',accent='#4b705d',floors=1,
 }
 
 const ellipse = (cx,cy,rx,ry,fill,extra='') => `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="${fill}" ${extra}/>`;
-const landmarkWorldPoint=place=>({x:3900+(place.lon-7.2642)*15500,y:430+(9.09-place.lat)*18000});
+const WORLD_LANDMARK_LAYOUT=Object.freeze({
+  'airport-hub':[4050,3800],'efcc-hq':[4850,3720],
+  'city-gate-plaza':[4020,3010],'national-stadium-hub':[4800,3000],'magicland':[5580,3010],
+  'jabi-lake':[6380,3180],'jabi-lake-mall':[7160,3180],
+  'banex':[4700,2200],'farm-city':[5480,2180],'federal-high-court-hub':[6280,2190],
+  'wtc-abuja-hub':[4040,1510],'cbn-experience':[4820,1510],'national-christian-centre-hub':[5600,1510],
+  'international-conference-centre':[6380,1510],'eagle-square-hub':[7160,1510],'aso-rock-view':[7980,1510],
+  'national-mosque-hub':[4060,680],'national-assembly-hub':[5000,680],'transcorp-hilton-hub':[5940,690],
+  'millennium-park-hub':[6880,680],'inec-hq':[7900,690]
+});
+const landmarkWorldPoint=place=>{const point=WORLD_LANDMARK_LAYOUT[place.id];return point?{x:point[0],y:point[1]}:{x:3900+(place.lon-7.2642)*15500,y:430+(9.09-place.lat)*18000};};
 function landmarkExterior(place,x,y){
   const id=esc(place.id),label=esc(place.short||place.name),b=place.builder,w=place.id==='airport-hub'?430:place.id==='national-stadium-hub'?330:place.id==='jabi-lake-mall'?320:270,h=['wtc','transcorp'].includes(b)?330:['assembly','mosque','church','inec','efcc','court'].includes(b)?240:190,left=x-w/2,top=y-h;
   let body='';

@@ -1,10 +1,8 @@
 import { createServer } from '../src/server/http.mjs';
-import { attachSessionRuntime } from '../src/server/sessionRuntime.mjs';
 import { attachXIntegration } from '../src/server/xIntegration.mjs';
 const port = Number(process.env.PORT || 8787);
-const server = createServer({production:process.argv.includes('--prod')});
 const localOrigin=`http://localhost:${port}`;
-attachSessionRuntime(server,{store:server.store,admin:server.admin,social:server.social,corsOrigins:[localOrigin],publicWebUrl:localOrigin,secureCookies:false});
+const server = createServer({production:process.argv.includes('--prod'),publicWebUrl:localOrigin,corsOrigins:[localOrigin]});
 attachXIntegration(server,{store:server.store,env:process.env,publicWebUrl:process.env.PUBLIC_WEB_URL||localOrigin,apiPublicUrl:process.env.API_PUBLIC_URL||localOrigin,corsOrigins:[process.env.PUBLIC_WEB_URL||localOrigin],fetchImpl:fetch});
 server.on('error',error=>{
   console.error(error.code==='EADDRINUSE'?`Port ${port} is already in use. Choose another PORT or stop the AbujaLife process using it.`:error.message);

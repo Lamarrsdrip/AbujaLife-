@@ -8,6 +8,7 @@ import { VEHICLE_COLORS } from '../shared/vehicles.mjs';
 import { GameStore, GameError, catalog, properties, transportModes, appearanceOptions, activities } from './gameStore.mjs';
 import { SocialStore } from './socialStore.mjs';
 import { AdminStore } from './adminStore.mjs';
+import { createSessionRuntime } from './sessionRuntime.mjs';
 import { PaymentStore } from './paymentStore.mjs';
 import { RewardStore } from './rewardStore.mjs';
 import { ResidentDirectory } from './residentDirectory.mjs';
@@ -49,7 +50,10 @@ export function createServer(options={}) {
     const base=store.bootstrap(id),visits=social.visitState(id);
     return {...publicBootstrap(),...base,nearby:base.nearby.map(person=>({...person,pose:poses.get(person.id)?.zone===store.zone(id)?poses.get(person.id).pose:null})),properties:store.propertiesFor?.(id)||properties,workSchedules:Object.fromEntries(Object.keys(store.publicJobs()).map(key=>[key,jobSchedule(key,base.profile,store.clock())])),homeVisit:visits.visit,homeVisitRequests:visits.requests,homeVisitors:visits.visitors,admin:admin.status(id)};
   };
+  const sessionOrigin=options.publicWebUrl||'http://localhost';
+  const sessionRuntime=createSessionRuntime({store,admin,social,corsOrigins:options.corsOrigins||[sessionOrigin],publicWebUrl:sessionOrigin,secureCookies:false});
   const server=http.createServer(async(req,res)=>{
+    if(await sessionRuntime.handle(req,res))return;
     try{
       const url=new URL(req.url,'http://localhost'),pathname=url.pathname,method=req.method||'GET';
       if(pathname==='/api/payments/webhook'&&method==='POST')return json(res,200,await payments.handleWebhook(await readRawBody(req),req.headers['flutterwave-signature']));
@@ -60,9 +64,6 @@ export function createServer(options={}) {
       if(pathname==='/api/bootstrap'&&method==='GET')return json(res,200,bootstrap(id));
       if(pathname==='/api/payments/config'&&method==='GET')return json(res,200,payments.publicConfig());
       if(pathname==='/payments/return'&&method==='GET'){const query=new URLSearchParams({payment:'return',transaction_id:(url.searchParams.get('transaction_id')||'').slice(0,100),tx_ref:(url.searchParams.get('tx_ref')||'').slice(0,160),status:(url.searchParams.get('status')||'').slice(0,40)});res.writeHead(303,{location:`/?${query}`,...headers});res.end();return;}
-      if(pathname==='/api/auth/register'&&method==='POST'){if(!admin.publicSettings().registrationOpen)throw new GameError('New registration is currently paused.',503);rateLimit(req,'auth',12);const session=await store.register(await readBody(req));setSession(res,req,session.token);return json(res,201,bootstrap(session.residentId));}
-      if(pathname==='/api/auth/login'&&method==='POST'){rateLimit(req,'auth',12);const session=await store.login(await readBody(req));if(admin.isSuspended(session.residentId)){store.logout(session.token);throw new GameError('This account is suspended. Contact the game administrator.',403,'account_suspended');}setSession(res,req,session.token);return json(res,200,bootstrap(session.residentId));}
-      if(pathname==='/api/auth/logout'&&method==='POST'){await readBody(req);store.logout(token);setSession(res,req,'');if(id){for(const [stream,client] of clients)if(client.token===token)stream.end();if(![...clients.values()].some(client=>client.id===id))lastSeen.delete(id);broadcastPresence(id);}return json(res,200,{ok:true,authenticated:false});}
       if(pathname.startsWith('/api/')){
         if(!id)throw new GameError('Sign in to your resident account',401,'authentication_required');
         if(pathname==='/api/realtime'&&method==='GET'){
@@ -154,5 +155,5 @@ export function createServer(options={}) {
     }catch(error){if(res.headersSent){res.end();return;}if(!(error instanceof GameError))console.error('AbujaLife request error:',error);json(res,error.status||500,{ok:false,error:error instanceof GameError?error.message:'Something went wrong. Please try again.',code:error.code||'server_error'});}
   });
   const heartbeat=setInterval(()=>{for(const [res,client] of clients){if(!store.session(client.token)||admin.isSuspended(client.id)){res.end();continue;}lastSeen.set(client.id,Date.now());res.write(': heartbeat\n\n');}for(const [id,time] of lastSeen)if(Date.now()-time>45000){lastSeen.delete(id);broadcastPresence(id);}},20000);heartbeat.unref();
-  server.store=store;server.admin=admin;server.social=social;server.payments=payments;server.rewards=rewards;server.closeRealtime=()=>{for(const res of clients.keys())res.end();};server.on('close',()=>{closed=true;clearInterval(heartbeat);store.close();});return server;
+  server.sessionRuntime=sessionRuntime;server.store=store;server.admin=admin;server.social=social;server.payments=payments;server.rewards=rewards;server.closeRealtime=()=>{for(const res of clients.keys())res.end();};server.on('close',()=>{closed=true;clearInterval(heartbeat);store.close();});return server;
 }

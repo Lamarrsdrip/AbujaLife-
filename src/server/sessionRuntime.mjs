@@ -141,15 +141,3 @@ export function createSessionRuntime({store,admin,social=null,corsOrigins=[],pub
  }
  return{handle,state};
 }
-
-export function attachSessionRuntime(server,options={}){
- const runtime=createSessionRuntime(options),listeners=server.listeners('request');
- if(!listeners.length)throw new Error('Cannot attach session runtime before the HTTP request handler exists.');
- server.removeAllListeners('request');
- server.on('request',(req,res)=>{
-  let pathname='';try{pathname=new URL(req.url,'https://api.abujacity.life').pathname;}catch{}
-  if((pathname==='/api/entry'&&req.method==='GET')||(AUTH_PATHS.has(pathname)&&req.method==='POST')){void runtime.handle(req,res);return;}
-  for(const listener of listeners)listener.call(server,req,res);
- });
- return runtime;
-}

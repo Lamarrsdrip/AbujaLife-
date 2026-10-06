@@ -4,14 +4,44 @@
 import './civic-travel-phone-bridge.js';
 import {renderWorld as renderSimulator,avatarSVG} from './world-simulator.js';
 import {polishWorldPresentation} from './world-presentation.js';
+import {createStreetPresenceLayer,streetPresenceMode} from './world-presence.js';
 
 export {avatarSVG};
 
 function renderWithPresentation(container,options){
-  const cleanup=renderSimulator(container,options);
+  const profile=options.profile||{},tagsOnly=streetPresenceMode(profile),initialPeople=Array.isArray(options.people)?options.people:[];
+  // The public street deliberately receives no remote resident bodies. Their
+  // authoritative realtime poses are rendered by the lightweight tag layer below.
+  // Once the resident enters a home/building we pass the same people through and
+  // the existing simulator/WebGL path shows full characters plus head labels.
+  const cleanup=renderSimulator(container,tagsOnly?{...options,people:[]}:options);
   const disposePresentation=polishWorldPresentation(container);
-  const wrapped=()=>{disposePresentation();cleanup?.();};
-  if(cleanup&&typeof cleanup==='function')Object.assign(wrapped,cleanup);
+  const streetPresence=tagsOnly&&cleanup?createStreetPresenceLayer(container,{
+    people:initialPeople,
+    profileId:profile.id,
+    onResident:options.onResident,
+    project:point=>cleanup.worldToScreen?.(point),
+  }):null;
+  if(!tagsOnly)container.dataset.multiplayerPresence='resident-avatars';
+  const wrapped=()=>{
+    streetPresence?.dispose();
+    disposePresentation();
+    cleanup?.();
+    if(container.dataset.multiplayerPresence==='resident-avatars')delete container.dataset.multiplayerPresence;
+  };
+  if(cleanup&&typeof cleanup==='function'){
+    Object.assign(wrapped,cleanup);
+    if(tagsOnly){
+      const simulatorUpdateResidents=cleanup.updateResidents?.bind(cleanup);
+      wrapped.updateResidents=next=>{
+        streetPresence?.updateResidents(next);
+        // Keep the underlying 2D/3D resident collection empty outside so there is
+        // never a second body hidden behind the public street tag.
+        return simulatorUpdateResidents?.([]);
+      };
+      wrapped.updateResidentPose=data=>streetPresence?.updateResidentPose(data)===true;
+    }
+  }
   return wrapped;
 }
 

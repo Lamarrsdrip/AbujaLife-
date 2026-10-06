@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { CIVIC_META,CIVIC_PARTIES,CIVIC_CAMPAIGN_ACTIONS,CIVIC_GOVERNMENT_ACTIONS,civicCycle } from '../src/shared/civic-life.mjs';
 import { ABUJA_2026_LANDMARK_VENUE_IDS } from '../src/shared/abuja-landmarks-2026.mjs';
+import { MONGO_CIVIC_COLLECTIONS, MONGO_CIVIC_INDEXES, mongoCivicRuntimePrivileges } from '../src/server/mongo/civicSchema.mjs';
 
 const read=file=>fs.readFileSync(new URL(`../${file}`,import.meta.url),'utf8');
 const runtime=read('src/server/civicIntegration-v2.mjs');
@@ -55,4 +56,21 @@ test('civic runtime is attached in both local gameplay and production',()=>{
   assert.match(production,/attachCivicRuntime/);
   assert.match(production,/civicConfigured:true/);
   assert.match(dev,/attachCivicRuntime/);
+});
+
+test('restricted app role can read civic indexes without DDL',()=>{
+  const linux=read('deploy/mongo-bootstrap.mjs');
+  const windows=read('deploy/windows/bootstrap-mongo.mjs');
+  assert.match(linux,/mongoCivicRuntimePrivileges\(database\)/);
+  assert.match(windows,/mongoCivicRuntimePrivileges\(config\.database\)/);
+  assert.doesNotMatch(linux,/civic[\s\S]{0,120}createIndex/);
+  assert.doesNotMatch(windows,/createIndex/);
+  const privileges=mongoCivicRuntimePrivileges('abujalife_prod');
+  assert.deepEqual(privileges.map(row=>row.resource.collection), [...MONGO_CIVIC_COLLECTIONS]);
+  assert.deepEqual(new Set(MONGO_CIVIC_COLLECTIONS), new Set(Object.keys(MONGO_CIVIC_INDEXES)));
+  for (const row of privileges) {
+    assert.deepEqual(row.actions, ['find','insert','update','remove','listIndexes']);
+    assert.equal(row.actions.includes('createIndex'), false);
+    assert.equal(row.resource.db, 'abujalife_prod');
+  }
 });

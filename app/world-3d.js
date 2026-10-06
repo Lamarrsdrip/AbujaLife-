@@ -7,6 +7,7 @@ import { createCharacter as character, animateCharacter as animate } from './wor
 import { ambientAppearance } from '../src/shared/avatars.mjs';
 import { furnitureSurfaceRect } from '../src/shared/furniture-metadata.mjs';
 import { createWorldMaterialLibrary } from './world-materials.js';
+import { createWorldEnvironmentLighting } from './world-lighting.js';
 
 const DEPTH = Math.SQRT1_2;
 const avatarPreviews=new WeakMap();
@@ -62,6 +63,9 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
   const shower=new THREE.Group();const dropMaterial=new THREE.MeshStandardMaterial({color:'#b3e3ea',transparent:true,opacity:.7,roughness:.1,emissive:'#5c9aa7',emissiveIntensity:.2});for(let i=0;i<28;i++)ellipsoid(shower,dropMaterial,0,0,0,.7,2.8,.7,6);scene.add(shower);
   const isClub=venue?.kind==='club'||['club','club-cage','magic-city','bear-barn'].includes(venue?.id);
   const indoors=kind==='home'||kind==='visit'||kind==='venue'&&!['park','jabi-lake'].includes(venue?.id);
+  const ibl=createWorldEnvironmentLighting(THREE,renderer,{indoors,constrained});
+  if(ibl.texture){scene.environment=ibl.texture;scene.environmentIntensity=indoors?.72:.38;container.dataset.environmentLighting='pmrem';}
+  else container.dataset.environmentLighting='compatibility';
   const clubPalette=venue?.id==='club-cage'?['#42ddff','#8e72ff','#ff4d9d','#78f0b0']:venue?.id==='magic-city'?['#ff63ca','#bd8bff','#ffd36c','#70d8ff']:venue?.id==='bear-barn'?['#ffb35d','#d97683','#82a58f','#f0d28e']:['#ff43ad','#5ce2ff','#b27cff','#ffc95f'];
   const clubColors=clubPalette.map(value=>new THREE.Color(value));
   const clubLights=[];
@@ -123,7 +127,7 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
       if(mobile&&++qualityFrames>=20&&performance.now()-qualityStart>=2500){const fps=qualityFrames*1000/(performance.now()-qualityStart);if(fps<28&&renderer.getPixelRatio()>1)renderer.setPixelRatio(1);qualityStart=performance.now();qualityFrames=0;}
       if(++frames%10===0){const model=transport?environment?.playerModel?.():own.root;if(model?.visible){bounds.makeEmpty();model.traverse(part=>{if(part.isMesh&&!part.userData.excludeFromBounds){if(!part.geometry.boundingBox)part.geometry.computeBoundingBox();bounds.union(partBounds.copy(part.geometry.boundingBox).applyMatrix4(part.matrixWorld));}});let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;for(const x of[bounds.min.x,bounds.max.x])for(const y of[bounds.min.y,bounds.max.y])for(const z of[bounds.min.z,bounds.max.z]){projected.set(x,y,z).project(camera);const sx=rect.left+(projected.x+1)*rect.width/2,sy=rect.top+(1-projected.y)*rect.height/2;minX=Math.min(minX,sx);minY=Math.min(minY,sy);maxX=Math.max(maxX,sx);maxY=Math.max(maxY,sy);}container.dataset.playerModelBounds=JSON.stringify({x:minX,y:minY,width:maxX-minX,height:maxY-minY});}}
     },
-    dispose(){if(disposed)return;disposed=true;container.querySelectorAll?.('[data-world-resident].has-webgl-resident').forEach(node=>node.classList.remove('has-webgl-resident'));renderer.domElement.removeEventListener('webglcontextlost',lose);renderer.domElement.removeEventListener('webglcontextrestored',restore);renderer.domElement.remove();container.removeAttribute('data-character-renderer');container.removeAttribute('data-environment-renderer');container.removeAttribute('data-webgl-residents');if(environment){scene.remove(environment.group);environment.dispose();}scene.remove(own.root);own.dispose();for(const rig of[...npcs,...online]){scene.remove(rig.root);rig.dispose();}characterSurfaces.dispose();const geometrySet=new Set(),materialSet=new Set();scene.traverse(o=>{if(o.geometry)geometrySet.add(o.geometry);if(o.material)for(const m of Array.isArray(o.material)?o.material:[o.material])materialSet.add(m);});geometrySet.forEach(g=>g.dispose());materialSet.forEach(m=>m.dispose());sun.shadow.map?.dispose();renderer.dispose();}
+    dispose(){if(disposed)return;disposed=true;container.querySelectorAll?.('[data-world-resident].has-webgl-resident').forEach(node=>node.classList.remove('has-webgl-resident'));renderer.domElement.removeEventListener('webglcontextlost',lose);renderer.domElement.removeEventListener('webglcontextrestored',restore);renderer.domElement.remove();container.removeAttribute('data-character-renderer');container.removeAttribute('data-environment-renderer');container.removeAttribute('data-webgl-residents');container.removeAttribute('data-environment-lighting');if(environment){scene.remove(environment.group);environment.dispose();}ibl.dispose();scene.environment=null;scene.remove(own.root);own.dispose();for(const rig of[...npcs,...online]){scene.remove(rig.root);rig.dispose();}characterSurfaces.dispose();const geometrySet=new Set(),materialSet=new Set();scene.traverse(o=>{if(o.geometry)geometrySet.add(o.geometry);if(o.material)for(const m of Array.isArray(o.material)?o.material:[o.material])materialSet.add(m);});geometrySet.forEach(g=>g.dispose());materialSet.forEach(m=>m.dispose());sun.shadow.map?.dispose();renderer.dispose();}
   };
 }
 

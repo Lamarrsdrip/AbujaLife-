@@ -6,13 +6,15 @@ const read=file=>fs.readFileSync(new URL(`../${file}`,import.meta.url),'utf8');
 const entry=read('app/world.js');
 const trip=read('app/world-trip.js');
 const routeScene=read('app/world-route-scene.js');
-const legacy=read('app/world-free-roam.js');
+const freeRoam=read('app/world-free-roam.js');
+const simulator=read('app/world-simulator.js');
 
 test('active trips no longer enter the generic buildJourney highway',()=>{
  assert.match(entry,/renderTripWorld/);
  assert.match(entry,/profile\?\.activeTrip/);
  assert.doesNotMatch(entry,/buildJourney/);
- assert.match(legacy,/buildJourney/); // retained only inside isolated old free-roam source until safe deletion
+ assert.match(simulator,/buildJourney/); // unreachable for trips; retained until free-roam extraction is fully verified
+ assert.match(freeRoam,/vehiclePresence/);
 });
 
 test('trip renderer follows graph samples with tangent heading and no artificial shake',()=>{

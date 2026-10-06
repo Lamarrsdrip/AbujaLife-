@@ -31,6 +31,6 @@ test('nightclubs have denser crowds, active dance motion and dynamic colour ligh
   assert.ok((interiors.match(/activity:'dance'/g)||[]).length>=10);
   assert.match(world3d,/const clubLights=\[\]/);
   assert.match(world3d,/new THREE.PointLight/);
-  assert.ok(world3d.includes('renderer.toneMappingExposure=partyOn?1.16:1.04'));
+  assert.ok(world3d.includes('renderer.toneMappingExposure=partyOn?1.16:1.06'));
   assert.match(character,/const bounce=.*sway=.*step=/);
 });

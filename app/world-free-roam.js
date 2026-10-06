@@ -1,6 +1,7 @@
 // Free-roam adapter around the long-lived world simulator. Vehicle possession is
 // authoritative server state; reorder only the presentation list so the same parked
 // personal car is the one rendered outside after a trip or venue visit.
+import './civic-travel-phone-bridge.js';
 import {renderWorld as renderSimulator,avatarSVG} from './world-simulator.js';
 import {polishWorldPresentation} from './world-presentation.js';
 

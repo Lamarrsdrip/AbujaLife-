@@ -40,7 +40,7 @@ async function openJourney(district,venueId){
  panel.querySelectorAll('[data-map-mode]:not(:disabled)').forEach(button=>button.onclick=()=>selectMode(button.dataset.mapMode));
  panel.querySelector('[data-map-go]').onclick=async event=>{
   if(!selected||!quote||busy)return;busy=true;event.currentTarget.disabled=true;event.currentTarget.textContent='Heading out…';
-  try{await leaveInterior();let result;if(selected==='walk'&&sameDistrict&&venueId)result=await action('enter-venue',{venueId});else result=await action('travel',{district,mode:selected,...(venueId?{venueId}:{})});if(result?.profile)snapshot.profile=result.profile;closeMap();toast(venue?`On your way to ${venue.name}.`:`Journey to ${destination} started.`);setTimeout(()=>location.hash='#world',0);}catch(error){toast(error.message);busy=false;event.currentTarget.disabled=false;event.currentTarget.textContent='Try again';}
+  try{await leaveInterior();let result;if(selected==='walk'&&sameDistrict&&venueId)result=await action('enter-venue',{venueId});else result=await action('travel',{district,mode:selected,...(venueId?{venueId}:{})});if(result?.profile){snapshot.profile=result.profile;window.dispatchEvent(new CustomEvent('abujalife:profile',{detail:{profile:result.profile}}));}closeMap();toast(venue?`On your way to ${venue.name}.`:`Journey to ${destination} started.`);if(location.hash!=='#world')location.hash='#world';}catch(error){toast(error.message);busy=false;event.currentTarget.disabled=false;event.currentTarget.textContent='Try again';}
  };
 }
 
@@ -62,4 +62,15 @@ document.addEventListener('click',event=>{
  event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();void openCityMap({focusVenueId:target.dataset.hotVenue||null});
 },true);
 
-const observer=new MutationObserver(()=>{const button=appRoot?.querySelector('.game-nav [data-nav-outside]');if(button){button.querySelector('span')&&(button.querySelector('span').textContent='Map');button.setAttribute('aria-label','Open AbujaLife Map');}});if(appRoot)observer.observe(appRoot,{childList:true,subtree:true});
+const observer=new MutationObserver(()=>{
+  const button=appRoot?.querySelector('.game-nav [data-nav-outside]');
+  if(!button)return;
+  const label=button.querySelector('span');
+  // Assigning textContent always replaces the text node. Doing that from a
+  // subtree childList observer retriggers the observer forever and freezes
+  // the page the moment the playable shell appears.
+  if(label&&label.textContent!=='Map')label.textContent='Map';
+  if(button.getAttribute('aria-label')!=='Open AbujaLife Map')button.setAttribute('aria-label','Open AbujaLife Map');
+  if(button.title!=='Map')button.title='Map';
+});
+if(appRoot)observer.observe(appRoot,{childList:true,subtree:true});

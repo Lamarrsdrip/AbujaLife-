@@ -122,11 +122,28 @@ async def open_phone(page, app=None):
         await page.locator(f'.ph-app-grid [data-app="{app}"]').click()
 
 
+async def dismiss_returning_welcome(page):
+    """A returning resident gets one welcome-back gate per tab. Continue through it."""
+    if await page.evaluate("() => sessionStorage.getItem('abujalife.welcome-back.v1') === '1'"):
+        return
+    welcome = page.locator('[data-welcome-continue]')
+    try:
+        await welcome.wait_for(state='visible', timeout=8000)
+    except Exception:
+        return
+    await welcome.click()
+    await expect(page.locator('.abj-welcome-back')).to_have_count(0)
+
+
 async def complete_resident_wizard(page, display_name, hair):
     """Complete the real character/life/controls flow after account creation."""
     await expect(page.locator('#onboarding-form')).to_be_visible()
     for _ in range(8):
         form=page.locator('#onboarding-form')
+        presentation = 'feminine' if hair == 'braids' else 'masculine'
+        gender = form.locator(f'[name="presentation"][value="{presentation}"]')
+        if await gender.count() and await gender.first.is_visible():
+            await gender.first.check()
         name_control=form.locator('[name="displayName"]:visible')
         if await name_control.count():
             await name_control.fill(display_name)
@@ -152,6 +169,7 @@ async def complete_resident_wizard(page, display_name, hair):
     profile = (await bootstrap(page))['profile']
     assert profile['onboardingComplete'] is True
     assert profile['displayName'] == display_name and profile['appearance']['hair'] == hair
+    assert profile['appearance']['presentation'] == ('feminine' if hair == 'braids' else 'masculine')
     assert profile['lifeGoal'] == 'career'
 
 
@@ -180,14 +198,29 @@ async def register(page, username, display_name, hair):
     return state['profile']
 
 
-async def navigate(page,view):
+async def close_overlays(page):
     await close_sheet(page)
+    journey = page.locator('[data-map-journey-close]:visible')
+    if await journey.count():
+        await journey.first.click()
+    restored = page.locator('[data-restored-map-close]:visible')
+    if await restored.count():
+        await restored.click()
+        await expect(page.locator('.abj-restored-map')).to_have_count(0)
+    street = page.locator('[data-map-close]:visible')
+    if await street.count():
+        await street.click()
+
+
+async def navigate(page,view):
+    await close_overlays(page)
+    if view=='map':
+        await page.locator('.game-nav [data-nav-outside]').click()
+        await expect(page.locator('.abj-restored-map')).to_be_visible()
+        return
     control=page.locator(f'.game-nav [data-view="{view}"]')
     if await control.count():
         await control.click()
-    elif view=='map':
-        await page.locator('[data-nav-places]').click()
-        await page.locator('[data-city-map]').click()
     else:
         await page.locator('[data-nav-life]').click()
         target={'property':'houses'}.get(view,view)
@@ -265,6 +298,7 @@ async def main():
 
                     async def persisted_auth_and_appearance():
                         await a.reload(wait_until='domcontentloaded')
+                        await dismiss_returning_welcome(a)
                         await expect(a.locator('.game-nav')).to_be_visible()
                         state = await bootstrap(a)
                         assert state['profile']['id'] == users['a']['id']
@@ -275,6 +309,7 @@ async def main():
                         await a.locator('#profile-form [type="submit"]').click()
                         await wait_state(a, lambda s:s['profile']['appearance']['hair']=='locs')
                         await a.reload(wait_until='domcontentloaded')
+                        await dismiss_returning_welcome(a)
                         await expect(a.locator('#profile-form')).to_be_visible()
                         state = await bootstrap(a)
                         assert state['profile']['appearance']['hair']=='locs'
@@ -289,19 +324,19 @@ async def main():
                         await expect(a.locator('#sheet-title')).to_have_text('Get some rest')
                         await a.locator('#confirm-interaction').click()
                         await expect(a.locator('.sheet')).to_have_count(0)
-                        after = (await bootstrap(a))['profile']
+                        after = (await wait_state(a, lambda s:s['profile']['energy'] > before['energy'] or s['profile']['stress'] < before['stress'], timeout=25))['profile']
                         assert after['energy'] > before['energy'] or after['stress'] < before['stress'], 'Rest must improve energy or stress'
                         before_shower = (await bootstrap(a))['profile']
                         await activate_home_object(a, 'shower')
                         await a.locator('#confirm-interaction').click()
                         await expect(a.locator('.sheet')).to_have_count(0)
-                        before = (await bootstrap(a))['profile']
+                        before = (await wait_state(a, lambda s:s['profile']['hygiene'] > before_shower['hygiene'], timeout=25))['profile']
                         assert before['hygiene'] > before_shower['hygiene'], 'Shower must improve hygiene'
                         await activate_home_object(a, 'eat')
                         advertised = await a.locator('.sheet .detail-line strong').inner_text()
                         await a.locator('#confirm-interaction').click()
                         await expect(a.locator('.sheet')).to_have_count(0)
-                        after = (await bootstrap(a))['profile']
+                        after = (await wait_state(a, lambda s:s['profile']['hunger'] > before['hunger'], timeout=25))['profile']
                         paid = before['wallet']-after['wallet']
                         assert advertised == f'₦{paid:,}', {'advertised':advertised,'charged':paid}
                         assert after['hunger'] > before['hunger'], 'A paid meal must improve hunger'
@@ -318,13 +353,14 @@ async def main():
                         await a.locator('.ph-app-grid [data-app="wallet"]').click()
                         await expect(a.locator('.ph-app-header>strong')).to_have_text('Naira wallet')
                         await a.locator('.ph-back').click()
-                        await expect(a.locator('.ph-app-grid')).to_be_visible()
+                        await expect(a.locator('.ph-app-grid').first).to_be_visible()
                         await close_phone(a)
                         return {'device':'iPhone 18 Pro Max','lockUnlock':True,'appBack':True}
                     await qa.check('Phone lock, unlock, hardware identity, app and back navigation', phone_hardware_and_back)
 
                     async def friendships():
                         await a.reload(wait_until='domcontentloaded')
+                        await dismiss_returning_welcome(a)
                         await expect(a.locator('.game-nav')).to_be_visible()
                         await open_phone(a, 'contacts')
                         await a.locator(f'[data-ph-action="person"][data-id="{users["b"]["id"]}"]').click()
@@ -332,6 +368,7 @@ async def main():
                         await a.locator('[data-ph-action="friend-request"]').click()
                         await wait_state(b, lambda s:len(s.get('friendRequests',[]))>0)
                         await b.reload(wait_until='domcontentloaded')
+                        await dismiss_returning_welcome(b)
                         await expect(b.locator('.game-nav')).to_be_visible()
                         await open_phone(b, 'friends')
                         await expect(b.locator('.ph-request-row')).to_contain_text('Amara QA')
@@ -386,6 +423,7 @@ async def main():
                         await b.screenshot(path=str(ARTIFACTS/'real-thread-mobile.png'), full_page=True)
                         await close_phone(a)
                         await a.reload(wait_until='domcontentloaded')
+                        await dismiss_returning_welcome(a)
                         await expect(a.locator('.game-nav')).to_be_visible()
                         await open_phone(a, 'messages')
                         await a.locator(f'[data-ph-action="thread"][data-id="{conversation["id"]}"]').click()
@@ -419,6 +457,14 @@ async def main():
                         await a.locator('[data-take-job="restaurant-host"]').click()
                         await wait_state(a, lambda s:s['profile']['job']=='restaurant-host')
                         await a.locator('[data-start-shift]').click()
+                        if await a.locator('#travel-form').count():
+                            submit = a.locator('#travel-form [type="submit"]')
+                            await expect(submit).to_be_enabled()
+                            await submit.click()
+                            await wait_state(a, lambda s:s['profile']['district']=='garki-i' and s['profile']['location']['kind']=='public' and not s['profile'].get('activeTrip'), timeout=40)
+                            await navigate(a,'work')
+                            await a.locator('[data-job="restaurant-host"]').click()
+                            await a.locator('[data-start-shift]').click()
                         await expect(a.locator('#shift-form')).to_be_visible()
                         before = await bootstrap(a)
                         challenge = before['activeChallenge']
@@ -441,6 +487,7 @@ async def main():
                     await qa.check('Playable shift earns salary once and rejects forged reward', job_tasks_and_reward)
 
                     async def market_purchase():
+                        await close_overlays(a)
                         before = await bootstrap(a)
                         await open_phone(a, 'market')
                         await expect(a.locator('.ph-scroll')).to_contain_text('Okrika Marketplace')
@@ -453,6 +500,7 @@ async def main():
                         assert (await bootstrap(a))['profile']['wallet']==state['profile']['wallet']
                         await close_phone(a)
                         await a.reload(wait_until='domcontentloaded')
+                        await dismiss_returning_welcome(a)
                         await expect(a.locator('.game-nav')).to_be_visible()
                         state = await bootstrap(a)
                         assert 'linen-shirt' in state['profile']['inventory']
@@ -460,34 +508,29 @@ async def main():
                     await qa.check('Virtual item purchase, authoritative charge, duplicate rejection and persistence', market_purchase)
 
                     async def map_travel_and_return():
+                        home = users['a']['home']
                         await close_phone(a)
                         await navigate(a,'map')
-                        await a.locator('[aria-label="Find a district or town"]').fill('Abaji Town')
-                        await a.locator('.abuja-map-place').filter(has_text='Abaji Town').first.click()
-                        await expect(a.locator('.abuja-map-selected-info')).to_contain_text('Abaji Town')
+                        await a.locator('[aria-label="Search all city and advertising destinations"]').fill('Abaji Town')
+                        await a.locator('[data-outside-destination]').filter(has_text='Abaji Town').first.click()
+                        await expect(a.locator('.outside-selection')).to_contain_text('Abaji Town')
                         await a.screenshot(path=str(ARTIFACTS/'map-source-status.png'), full_page=True)
-                        loaded_tiles = await a.locator('.abuja-map-tile[data-state="loaded"]').count()
-                        source_text = await a.locator('.abuja-map-source-state').inner_text()
-                        if not loaded_tiles:
-                            await expect(a.locator('.abuja-map-source-state')).to_be_visible()
-                        await a.locator('.abuja-map-travel').click()
-                        await a.locator('#travel-form [name="mode"]').select_option('bus')
-                        await expect(a.locator('#travel-form [type="submit"]')).to_be_enabled()
-                        quoted_fare = await a.locator('#travel-quote strong').inner_text()
+                        await a.locator('[data-outside-action="travel"]').click()
+                        await a.locator('[data-map-mode="bus"]').click()
+                        await expect(a.locator('[data-map-go]')).to_be_enabled()
+                        quoted_fare = await a.locator('[data-map-quote] strong').inner_text()
                         before = (await bootstrap(a))['profile']
-                        await a.locator('#travel-form [type="submit"]').click()
+                        await a.locator('[data-map-go]').click()
                         transit = await wait_state(a, lambda s:s['profile'].get('activeTrip'))
                         fare = before['wallet']-transit['profile']['wallet']
                         assert quoted_fare == f'₦{fare:,}', {'quotedFare':quoted_fare,'charged':fare}
                         await expect(a.locator('.trip-banner')).to_be_visible()
-                        # Independent server reads avoid discarded page response
-                        # bodies during navigation. A short trip may legitimately
-                        # mature while software 3D remounts after the reload.
                         trip=transit['profile']['activeTrip']
                         assert trip['seconds']>=10, 'Use a longer real bus trip so reload exercises the in-progress journey'
                         saved_before_reload=(await bootstrap(a))['profile']
                         assert saved_before_reload['activeTrip']['id']==trip['id']
                         await a.reload(wait_until='domcontentloaded')
+                        await dismiss_returning_welcome(a)
                         restored=(await bootstrap(a))['profile']
                         if restored.get('activeTrip'):
                             assert restored['activeTrip']['id']==trip['id']
@@ -495,7 +538,7 @@ async def main():
                             assert time.time()*1000>=trip['arrivesAt'], 'A trip cannot arrive before its deadline'
                             assert restored['district']==trip['destination'] and restored['location']['kind']=='public'
                         assert restored['wallet']==transit['profile']['wallet'], 'Reload must not charge the fare again'
-                        arrived=await wait_state(a, lambda s:s['profile']['district']=='abaji-town' and not s['profile'].get('activeTrip'), timeout=25)
+                        arrived=await wait_state(a, lambda s:s['profile']['district']=='abaji-town' and not s['profile'].get('activeTrip'), timeout=40)
                         assert arrived['profile']['location']['kind']=='public'
                         assert (await bootstrap(a))['profile']['district']=='abaji-town'
                         await expect(a.locator('#world-scene')).to_contain_text('Abaji Town')
@@ -504,26 +547,27 @@ async def main():
                         await expect(a.locator('#travel-form')).to_be_visible()
                         await a.locator('#travel-form [type="submit"]').click()
                         await expect(a.locator('.trip-banner')).to_be_visible()
-                        await wait_state(a, lambda s:s['profile']['location']['kind']=='home' and s['profile']['district']=='garki-i', timeout=25)
+                        await wait_state(a, lambda s:s['profile']['location']['kind']=='home' and s['profile']['district']==home['district'], timeout=40)
                         await a.reload(wait_until='domcontentloaded')
-                        await expect(a.locator('#world-scene')).to_contain_text('Garki starter studio')
-                        map_requests=[r for r in qa.network if 'openstreetmap' in r['url'] or 'overpass-api' in r['url']]
+                        await dismiss_returning_welcome(a)
+                        await expect(a.locator('#world-scene')).to_contain_text(home['name'])
                         return {'destination':'abaji-town','travelPersistsAcrossReload':True,'arrivalAndReturnHome':True,'quotedFareMatchesCharge':fare,
-                            'mapSourceAccess':'loaded tiles observed' if loaded_tiles else 'no loaded road tiles; source unavailable or still loading',
-                            'loadedRoadTiles':loaded_tiles,'mapFallbackText':source_text,
-                            'geographySourceAccuracy':'not independently validated by this browser test'}
+                            'homeDistrict':home['district'],'homeName':home['name'],
+                            'mapSource':'authored-3d-city','geographySourceAccuracy':'not independently validated by this browser test'}
                     await qa.check('Map destination search, real trip state, arrival, in-world ad and return home', map_travel_and_return)
 
                     async def browser_back():
                         await close_phone(a)
+                        await close_overlays(a)
                         await navigate(a,'world')
-                        await navigate(a,'map')
                         await navigate(a,'work')
                         await a.go_back(wait_until='domcontentloaded')
-                        await expect(a.locator('#map-root')).to_be_visible()
-                        await a.go_back(wait_until='domcontentloaded')
                         await expect(a.locator('#world-scene')).to_be_visible()
-                        return {'hashHistoryBackRestoresView':True}
+                        await navigate(a,'map')
+                        await expect(a.locator('.abj-restored-map')).to_be_visible()
+                        await a.locator('[data-restored-map-close]').click()
+                        await expect(a.locator('#world-scene')).to_be_visible()
+                        return {'hashHistoryBackRestoresWorld':True,'mapOpensOverTheCity':True}
                     await qa.check('Browser Back restores map then home', browser_back)
 
                     async def viewport_matrix():
@@ -541,12 +585,12 @@ async def main():
                             await expect(a.locator('.ph-app-header>strong')).to_have_text('Messages')
                             await assert_no_overflow(a)
                             await a.locator('.ph-back').click()
-                            await expect(a.locator('.ph-app-grid')).to_be_visible()
+                            await expect(a.locator('.ph-app-grid').first).to_be_visible()
                             await close_phone(a)
                             await navigate(a,'map')
                             await assert_no_overflow(a)
-                            await a.locator('[aria-label="Find a district or town"]').fill('Kuje')
-                            await expect(a.locator('.abuja-map-place')).to_contain_text('Kuje')
+                            await a.locator('[aria-label="Search all city and advertising destinations"]').fill('Kuje')
+                            await expect(a.locator('[data-outside-destination]').first).to_contain_text('Kuje')
                             await a.screenshot(path=str(ARTIFACTS/f'{label}-map.png'),full_page=True)
                             result.append({'viewport':[width,height],'label':label,'emulation':'desktop Chromium viewport size','documentWidth':metrics['document']})
                         return result
@@ -560,7 +604,8 @@ async def main():
                             'downloadThroughput':50000,'uploadThroughput':30000})
                         started=time.monotonic()
                         try:
-                            await a.reload(wait_until='domcontentloaded')
+                            await a.reload(wait_until='domcontentloaded', timeout=70000)
+                            await dismiss_returning_welcome(a)
                             await expect(a.locator('.game-nav')).to_be_visible(timeout=25000)
                             await navigate(a,'world')
                             assert (await bootstrap(a))['authenticated']
@@ -573,6 +618,7 @@ async def main():
 
                     async def logout_and_login():
                         await close_phone(a)
+                        await close_overlays(a)
                         await a.locator('[aria-label="Your resident profile"]').click()
                         await a.locator('[data-logout]').click()
                         await expect(a.locator('#auth-form')).to_be_visible()

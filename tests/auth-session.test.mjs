@@ -10,6 +10,8 @@ test('entry refresh keeps hydrated social cards while committed core state updat
  const next={authenticated:true,entry:true,profile:{...session.profile,wallet:95000,location:{kind:'public'}},nearby:[],conversations:[],payments:null,homeVisit:null};
  const merged=mergeCoreBootstrap(current,next);
  assert.equal(merged.profile,next.profile);assert.equal(merged.homeVisit,null);assert.equal(merged.conversations,current.conversations);assert.equal(merged.payments,current.payments);assert.deepEqual(merged.nearby,[]);
+ assert.equal(mergeCoreBootstrap({...current,activeChallenge:{id:'shift'},workSchedule:{day:'today'}},next).activeChallenge.id,'shift');
+ assert.equal(mergeCoreBootstrap({...current,activeChallenge:null},{...next,activeChallenge:null}).activeChallenge,null);
 });
 
 test('entry refresh never carries private cards between accounts or anonymous state',()=>{

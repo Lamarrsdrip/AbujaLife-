@@ -5,6 +5,11 @@ export function mergeCoreBootstrap(current,next) {
   const merged={...next};
   const locationKey=p=>[p?.district,p?.location?.kind,p?.location?.venue,p?.location?.ownerId,p?.location?.visitId].join(':');
   for(const key of deferredFields)if(current[key]!==undefined && (key!=='nearby'||locationKey(current.profile)===locationKey(next.profile)))merged[key]=current[key];
+  // /api/entry is the minimal snapshot. Its null shift/schedule placeholders
+  // mean "not loaded", not "this resident has no shift". Replacing a live
+  // challenge here deletes the work form while the player is answering it.
+  if(current.activeChallenge&&!next.activeChallenge)merged.activeChallenge=current.activeChallenge;
+  if(current.workSchedule&&!next.workSchedule)merged.workSchedule=current.workSchedule;
   return merged;
 }
 

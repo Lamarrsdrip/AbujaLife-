@@ -46,6 +46,7 @@ abujacity.life {
         X-Frame-Options DENY
         Strict-Transport-Security "max-age=31536000; includeSubDomains"
         Permissions-Policy "camera=(), microphone=(), geolocation=()"
+        Alt-Svc "clear"
         Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tile.openstreetmap.org; font-src 'self'; connect-src 'self' https://api.abujacity.life https://overpass-api.de; frame-src https:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; upgrade-insecure-requests"
     }
     @noCache {

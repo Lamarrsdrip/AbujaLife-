@@ -41,6 +41,8 @@ export function bindPhoneHome(root, { page = 0, onPageChange = () => {} } = {}) 
   const previous = pagination.querySelector('[data-phone-page-step="-1"]');
   const next = pagination.querySelector('[data-phone-page-step="1"]');
   const announcement = pagination.querySelector('.ph-page-announcement');
+  const scheduleFrame = globalThis.requestAnimationFrame?.bind(globalThis) || (callback => globalThis.setTimeout(callback, 0));
+  const cancelFrame = globalThis.cancelAnimationFrame?.bind(globalThis) || (handle => globalThis.clearTimeout(handle));
   let current = phonePageIndex(page, pages.length), scrollFrame = 0;
 
   function sync(index) {
@@ -76,7 +78,7 @@ export function bindPhoneHome(root, { page = 0, onPageChange = () => {} } = {}) 
 
   function onScroll() {
     if(scrollFrame)return;
-    scrollFrame=requestAnimationFrame(()=>{scrollFrame=0;sync(nearestPage());});
+    scrollFrame=scheduleFrame(()=>{scrollFrame=0;sync(nearestPage());});
   }
 
   function onClick(event) {
@@ -100,7 +102,7 @@ export function bindPhoneHome(root, { page = 0, onPageChange = () => {} } = {}) 
   return {
     getPage: () => current,
     destroy() {
-      if(scrollFrame)cancelAnimationFrame(scrollFrame);
+      if(scrollFrame)cancelFrame(scrollFrame);
       viewport.removeEventListener('scroll', onScroll);
       viewport.removeEventListener('keydown', onKey);
       pagination.removeEventListener('click', onClick);

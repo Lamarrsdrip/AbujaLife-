@@ -174,7 +174,7 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
  const entry=worldEntryState(scene,profile,persistentScene?sceneMemory.get(key):undefined),saved=entry.saved;scene.spawn=entry.spawn;
  const nav=makeNavigation(scene,driving?24:10);
  const initial=saved?{x:saved.x,y:saved.y}:scene.spawn;
- let player={x:initial.x,y:initial.y},camera={x:saved?.cameraX??player.x,y:saved?.cameraY??player.y},angle=saved?.angle||0,dir=saved?.dir||1,disposed=false,raf=0,lastTime=0,elapsed=0,travelDistance=0,walkPhase=0,path=[],pending=null,nearby=null,moving=false,sprinting=false,arrived=false,furnitureMode=null,furnitureRotation=0,activity=null,lastStatus='',parked={x:saved?.parked?.x??scene.spawn.x+144,y:saved?.parked?.y??scene.spawn.y+108};
+ let player={x:initial.x,y:initial.y},camera={x:saved?.cameraX??player.x,y:saved?.cameraY??player.y},angle=saved?.angle||0,dir=saved?.dir||1,disposed=false,raf=0,lastTime=0,elapsed=0,travelDistance=0,walkPhase=0,path=[],pending=null,routeRepairs=0,nearby=null,moving=false,sprinting=false,arrived=false,furnitureMode=null,furnitureRotation=0,activity=null,lastStatus='',parked={x:saved?.parked?.x??scene.spawn.x+144,y:saved?.parked?.y??scene.spawn.y+108};
  if(saved&&saved.driving&&!driving&&!interior&&!trip){parked={...player};player.x+=78;}
  if(saved&&!saved.driving&&driving){player={...parked};camera={...player};}
  // Furniture and scene geometry can change between visits; repair stale positions.
@@ -240,7 +240,7 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
  const updateRoute=()=>{routeNode.setAttribute('d',path.length?`M${player.x} ${player.y} ${path.map(p=>`L${p.x} ${p.y}`).join(' ')}`:'');destinationNode.toggleAttribute('hidden',!path.length);if(path.length)destinationNode.setAttribute('transform',`translate(${path.at(-1).x} ${path.at(-1).y})`);};
  const stop=()=>{path=[];const interrupted=pending;pending=null;interrupted?.after?.(false);moving=false;updateRoute();};
  const dispatch=(action,payload,after)=>{try{Promise.resolve(onInteract(action,payload||{})).then(result=>after?.(result!==false&&result!==null)).catch(error=>{say(error.message||'Try that again.');after?.(false);});}catch(error){say(error.message||'Try that again.');after?.(false);}};
- const moveTo=(x,y,point=null)=>{if(trip||preview||activity)return false;const target={x:clamp(Number(x)||0,24,scene.width-24),y:clamp(Number(y)||0,24,scene.height-24)};path=nav.path(player,target);pending=point;updateRoute();if(!path.length){say('That spot is out of reach. Try the open path.');pending=null;return false;}say(point?`${driving?'Driving':'Walking'} to ${point.label.toLowerCase()}…`:driving?'Taking the wheel.':'On your way.');container.focus({preventScroll:true});poke();return true;};
+ const moveTo=(x,y,point=null)=>{if(trip||preview||activity)return false;const target={x:clamp(Number(x)||0,24,scene.width-24),y:clamp(Number(y)||0,24,scene.height-24)};path=nav.path(player,target);pending=point;routeRepairs=0;updateRoute();if(!path.length){say('That spot is out of reach. Try the open path.');pending=null;return false;}say(point?`${driving?'Driving':'Walking'} to ${point.label.toLowerCase()}…`:driving?'Taking the wheel.':'On your way.');container.focus({preventScroll:true});poke();return true;};
  const activate=point=>{if(!point||trip||furnitureMode||activity){point?.after?.(false);return;}pending=null;stop();remember();if(driving&&point.action!=='toggle-driving'){say('Park your car and get out to go inside.');return;}const task=point.action==='venue-action'?VENUE_ACTIONS.find(a=>a.id===point.payload?.activityId):null;if(task){animateActivity(task.animation,task.duration,()=>dispatch(point.action,point.payload,point.after),task.name);}else dispatch(point.action,point.payload,point.after);};
  const requestPoint=point=>{if(!point)return false;if(driving&&point.action!=='toggle-driving'){say('Get out of your car to enter a place.');return false;}if(distance(player,point)<(point.radius||66)){activate(point);return true;}return moveTo(point.x,point.y,point);};
  const perform=(action,payload={},after=null)=>{
@@ -405,7 +405,7 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
   activityTimer=setTimeout(step,100);
  }
  const tick=time=>{
-  raf=0;if(disposed)return;if(playbackBlocked()){syncPlayback();return;}let dt=lastTime?Math.min(.12,(time-lastTime)/1000):0;lastTime=time;frameCount++;
+  raf=0;if(disposed)return;if(playbackBlocked()){syncPlayback();return;}const frameDt=lastTime?Math.min(1,(time-lastTime)/1000):0;let dt=Math.min(.12,frameDt);lastTime=time;frameCount++;
   const currentNow=now();if(Math.floor(currentNow/1000)!==lastClockSecond){lastClockSecond=Math.floor(currentNow/1000);clock=abujaTime(currentNow);weather=reportedWeather||seasonalWeather(currentNow);const musicButton=container.querySelector('.world-sound-toggle');if(musicButton){const closed=isClub&&!clubSchedule(currentNow).isOpen;musicButton.disabled=closed||profile.settings?.soundEnabled===false;if(closed){musicButton.textContent='DJ off duty';musicButton.title=clubSchedule(currentNow).openingHours;}else if(musicButton.textContent==='DJ off duty'){musicButton.textContent=isClub?'Music off':'Ambience off';musicButton.title=isClub?'Original club beats · tap to listen':'Original Abuja ambience · tap to listen';}}container.dataset.timeOfDay=clock.isNight?'night':'day';container.dataset.abujaTime=clock.label;container.dataset.weather=weather.condition||'clear';timeChip.innerHTML=`<time datetime="${new Date(currentNow).toISOString()}">${clock.label} WAT</time><span title="${escape(weather.label||'Seasonal game weather')}">${weather.condition==='rain'?'Rain':weather.condition==='cloudy'?'Cloudy':weather.condition==='hazy'?'Hazy':'Clear'} · ${Math.round(weather.temperatureC??28)}° <small>${weather.source==='seasonal-simulation'?'game weather':'weather'}</small></span>`;}
   if(oblique&&container.dataset.environmentRenderer!=='webgl-3d'){oblique=false;updateViewport();}
   const blocked=inputBlocked();sound.setActive(!blocked&&(!isClub||clubSchedule(currentNow).isOpen));if(blocked&&!preview)dt=0;elapsed+=dt;if(blocked){keyboard.clear();joy.x=joy.y=0;}
@@ -414,7 +414,25 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
   if(trip){const duration=Math.max(1,Number(trip.seconds)||30)*1000,start=Number(trip.arrivesAt)-duration,progress=clamp((currentNow-start)/duration,0,1);player.x=450+progress*(scene.width-1000);player.y=889+Math.sin(elapsed*.6)*3;angle=0;moving=progress<1;walkPhase+=dt*10;if(progress>=1&&!arrived){arrived=true;Promise.resolve(onArrive?.(trip.id)).then(ok=>{if(ok===false)arrived=false;});}}
   else if(!blocked&&!furnitureMode&&!activity){let dx=(keyboard.has('d')||keyboard.has('arrowright')?1:0)-(keyboard.has('a')||keyboard.has('arrowleft')?1:0)+joy.x,dy=(keyboard.has('s')||keyboard.has('arrowdown')?1:0)-(keyboard.has('w')||keyboard.has('arrowup')?1:0)+joy.y;
    const inputLength=Math.hypot(dx,dy);if(inputLength>.06){if(path.length)stop();dx/=Math.max(1,inputLength);dy/=Math.max(1,inputLength);const velocity=screenVectorToWorld({x:dx,y:dy},oblique,orientation()),velocityLength=Math.hypot(velocity.x,velocity.y);dx=velocity.x/Math.max(1,velocityLength);dy=velocity.y/Math.max(1,velocityLength);const run=sprinting||keyboard.has('shift')||Math.hypot(joy.x,joy.y)>.82;const speed=driving?(run?455:300):(run?212:127);updatePlayer(dx*speed*dt,dy*speed*dt,dt);}
-   else if(path.length){const target=path[0],gap=distance(player,target),speed=driving?285:172,step=speed*dt;if(gap<Math.max(5,step)){const last=path.shift();player={x:last.x,y:last.y};updateRoute();}else {const collision=updatePlayer((target.x-player.x)/gap*step,(target.y-player.y)/gap*step,dt);if(collision&&distance(old,player)<.1){stop();say('Try the clear path around that object.');}}if(pending&&distance(player,pending)<Math.min(35,pending.radius||60)){const destination=pending;pending=null;stop();activate(destination);}else if(!path.length&&pending){const destination=pending;pending=null;stop();if(distance(player,destination)<(destination.radius||75))activate(destination);}}
+   else if(path.length){
+    // Slow WebGL frames must not stretch a short walk past the time a player
+    // will wait. Follow the cleared route for up to half a second of real
+    // time each frame, and interact as soon as the destination's own radius
+    // is reached instead of abandoning the walk on a one-frame bump.
+    const speed=driving?285:172;let budget=speed*Math.min(.5,frameDt),stalled=false;
+    for(let hop=0;path.length&&budget>1&&hop<12;hop++){
+     const target=path[0],gap=distance(player,target);
+     if(gap<=Math.max(5,budget)){const last=path.shift();budget-=gap;player={x:last.x,y:last.y};updateRoute();}
+     else {const before={...player};const collision=updatePlayer((target.x-player.x)/gap*budget,(target.y-player.y)/gap*budget,Math.min(.5,frameDt));budget=0;if(collision&&distance(before,player)<.1)stalled=true;}
+    }
+    const inReach=point=>distance(player,point)<(point.radius||75);
+    if(pending&&inReach(pending)){const destination=pending;pending=null;path=[];updateRoute();activate(destination);}
+    else if(stalled&&pending){
+     const destination=pending,retry=routeRepairs<2?nav.path(player,destination):[];
+     if(retry.length&&distance(player,retry[0])>6){routeRepairs++;path=retry;updateRoute();}
+     else {pending=null;path=[];updateRoute();say('Try the clear path around that object.');}
+    }else if(!path.length&&pending){const destination=pending;pending=null;updateRoute();if(inReach(destination))activate(destination);else say('That spot is out of reach. Try the open path.');}
+   }
    moving=distance(old,player)>.05;
   }
   if(activity)paintActivity();

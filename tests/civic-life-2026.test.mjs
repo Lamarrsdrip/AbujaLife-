@@ -38,7 +38,12 @@ test('INEC, EFCC and court story destinations are real first-class AbujaLife ven
 });
 
 test('server civic runtime enforces one vote per resident, physical polling and idempotent money actions',()=>{
-  assert.match(runtime,/createIndex\(\{cycleId:1,voterId:1\},\{unique:true\}\)/);
+  const schema=read('src/server/mongo/civicSchema.mjs');
+  const database=read('src/server/mongo/database.mjs');
+  assert.match(schema,/cycleId: 1, voterId: 1/);
+  assert.match(schema,/unique: true/);
+  assert.match(database,/ensureMongoCivicSchema/);
+  assert.doesNotMatch(runtime,/createIndex\(/);
   assert.match(runtime,/profile\?\.district===profile\?\.home\?\.district/);
   assert.match(runtime,/idempotency_required/);
   assert.match(runtime,/store\.economyOperation/);

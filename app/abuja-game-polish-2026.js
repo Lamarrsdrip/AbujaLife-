@@ -32,18 +32,6 @@ function ensureMapNav(scope=document){
 }
 function ensureWholeCityButton(scope=document){const stage=scope.querySelector?.('.game-content.view-world .world-stage');if(!stage||stage.querySelector('[data-open-whole-abuja]'))return;const button=document.createElement('button');button.type='button';button.className='abj-whole-city-button';button.dataset.openWholeAbuja='';button.innerHTML='<span>◇</span><strong>Whole Abuja</strong>';button.setAttribute('aria-label','Open the whole Abuja city map');button.onclick=()=>appRoot?.querySelector('.game-nav [data-nav-outside]')?.click();stage.append(button);}
 
-function ensureCivicPhoneApp(scope=document){
-  const grids=[...scope.querySelectorAll?.('.ph-app-grid')||[]];
-  if(scope.matches?.('.ph-app-grid'))grids.unshift(scope);
-  for(const grid of new Set(grids)){
-    if(grid.querySelector('[data-civic-phone-app]'))continue;
-    const button=document.createElement('button');button.type='button';button.className='ph-launcher civic-phone-launcher';button.dataset.civicPhoneApp='';button.setAttribute('aria-label','Open City Story and Election');
-    button.innerHTML='<span class="ph-app-icon civic-phone-icon" aria-hidden="true"><span style="font-size:27px;line-height:1">◆</span></span><span class="ph-app-label">City Story</span>';
-    button.onclick=()=>window.dispatchEvent(new CustomEvent('abj:open-civic-life'));
-    grid.append(button);
-  }
-}
-
 // Keep the virtual phone honest and player-oriented. Do not advertise a dead
 // feature as if it worked, and do not pretend the in-game device is a real
 // Apple model. Existing working screens stay intact; only misleading launcher
@@ -57,22 +45,7 @@ function auditPhone(scope=document){
     else if(text==='Xshare')label.textContent='Share';
   });
   scope.querySelectorAll?.('.ph-page-intro h2').forEach(title=>{if(title.textContent?.trim()==='Camera & profile')title.textContent='Profile';});
-  scope.querySelectorAll?.('.ph-about strong').forEach(label=>{if(label.textContent?.trim()==='iPhone 18 Pro Max')label.textContent='AbujaLife Phone';});
-  scope.querySelectorAll?.('.ph-device-caption').forEach(label=>{if(/iphone/i.test(label.textContent||''))label.textContent='AbujaLife Phone';});
-}
-
-// world.js keeps an SVG safety body for each resident so a WebGL failure never
-// becomes a floating nametag. Once the canonical 3D renderer is mounted it has
-// a rig for every resident in the same neighbours array, so hide that one SVG
-// body. Context-loss CSS immediately exposes the safety body again.
-function syncResidentBodies(scope=document){
-  const canvases=[];
-  if(scope.matches?.('.world-canvas'))canvases.push(scope);
-  canvases.push(...scope.querySelectorAll?.('.world-canvas')||[]);
-  for(const canvas of new Set(canvases)){
-    const ready=canvas.dataset.characterRenderer==='webgl-3d'&&canvas.dataset.webglContext!=='lost';
-    canvas.querySelectorAll('.world-online-resident').forEach(node=>node.classList.toggle('has-webgl-resident',ready));
-  }
+  scope.querySelectorAll?.('#ph-device-name,.ph-about strong').forEach(label=>{if(/iphone/i.test(label.textContent||''))label.textContent='AbujaLife Phone';});
 }
 
 function syncPhoneViewport(){
@@ -88,10 +61,10 @@ function syncPhoneViewport(){
   phoneRoot.classList.toggle('abj-phone-input-active',Boolean(focused));
 }
 
-function decorate(scope=document){fixHeaderIcon(scope);cleanMyLife(scope);ensureMapNav(scope);ensureWholeCityButton(scope);ensureCivicPhoneApp(scope);auditPhone(scope);syncResidentBodies(scope);}
+function decorate(scope=document){fixHeaderIcon(scope);cleanMyLife(scope);ensureMapNav(scope);ensureWholeCityButton(scope);auditPhone(scope);}
 decorate();syncPhoneViewport();
-const observer=new MutationObserver(records=>{for(const record of records)for(const node of record.addedNodes){if(!(node instanceof Element))continue;decorate(node);decorate(document);}syncResidentBodies(document);syncPhoneViewport();});
-observer.observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['data-character-renderer','data-webgl-context']});
+const observer=new MutationObserver(records=>{for(const record of records)for(const node of record.addedNodes){if(!(node instanceof Element))continue;decorate(node);decorate(document);}syncPhoneViewport();});
+observer.observe(document.documentElement,{childList:true,subtree:true});
 addEventListener('hashchange',()=>queueMicrotask(()=>decorate()));
 addEventListener('resize',syncPhoneViewport,{passive:true});
 visualViewport?.addEventListener('resize',syncPhoneViewport,{passive:true});

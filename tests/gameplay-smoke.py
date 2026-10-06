@@ -201,7 +201,7 @@ async def close_phone(page):
 async def open_phone(page,app=None):
     await close_phone(page)
     await page.locator('[data-phone="home"]:visible').first.click()
-    await expect(page.locator('#ph-device-name')).to_have_text('iPhone 18 Pro Max')
+    await expect(page.locator('#ph-device-name')).to_have_text('AbujaLife Phone')
     if await page.locator('.ph-unlock').count():
         await page.locator('.ph-unlock').click()
     else:

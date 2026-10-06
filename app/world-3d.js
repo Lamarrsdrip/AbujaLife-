@@ -107,6 +107,7 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
     },
     draw({player,camera:position,width,height,orientation={},angle,phase,time,moving,transport,driving,activity,clock,weather,clubOpen,carColor,carStyle,ownVehicle,parked,trafficPositions,trip,npcPositions=[],onlinePositions=[]}){
       if(lost||disposed||container.isConnected===false||document.hidden)return;
+      syncResidentFallbacks();
       const now=performance.now(),cameraChanged=cameraDirty||!previousCamera||previousCamera.x!==position.x||previousCamera.y!==position.y||previousCamera.width!==width||previousCamera.height!==height||previousCamera.yaw!==orientation.yaw||previousCamera.elevation!==orientation.elevation;
       const playerBusy=cameraChanged||moving||transport||activity||environment?.furniturePreview?.();
       const lively=!indoors&&(weather?.condition==='rain'||npcPositions.some(p=>p.moving||p.activity)||isClub&&clubOpen);

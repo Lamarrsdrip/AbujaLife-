@@ -19,6 +19,10 @@ test('realtime residents keep a visible fallback until their own WebGL rig is re
   assert.match(world3d,/renderer\.render\(scene,camera\)/);
   assert.match(polishCss,/world-online-resident \.walker-body\{visibility:visible!important\}/);
   assert.match(polishCss,/world-online-resident\.has-webgl-resident \.walker-body\{visibility:hidden!important\}/);
+  assert.doesNotMatch(polish,/has-webgl-resident/);
+  assert.match(read('app/phone.js'),/class="ph-put-away"/);
+  assert.match(read('app/phone.js'),/AbujaLife Phone/);
+  assert.doesNotMatch(polish,/ph-device-caption/);
 });
 
 test('premium 3D quality keeps soft shadows on capable phones with a constrained fallback',()=>{
@@ -55,8 +59,9 @@ test('real mobile devices use the visual viewport instead of squeezing a second 
   assert.match(polishCss,/@media\(max-width:700px\)[\s\S]*\.phone-root\{top:var\(--abj-phone-vtop/);
   assert.match(polishCss,/\.phone-root \.ph-device[\s\S]*width:100%!important[\s\S]*height:100%!important/);
   assert.match(polishCss,/phone-keyboard-open \.ph-chat-thread \.ph-composer\{position:relative!important/);
-  assert.match(polish,/dataset\.civicPhoneApp/);
-  assert.match(polish,/City Story/);
+  assert.match(read('app/civic-life.js'),/data-civic-launcher/);
+  assert.match(read('app/civic-life.js'),/City Story/);
+  assert.doesNotMatch(polish,/civicPhoneApp/);
 });
 
 test('the main Map uses the premium Abuja v4 diorama and includes civic destinations',()=>{

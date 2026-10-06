@@ -43,7 +43,7 @@ export function openCivicLife(){if(overlay)return;overlay=document.createElement
 
 function ensurePhoneEntry(){
   if(!phoneRoot||phoneRoot.querySelector('[data-civic-launcher]'))return;
-  const grids=phoneRoot.querySelectorAll('.ph-app-grid'),grid=grids[grids.length-1];
+  const grid=phoneRoot.querySelector('.ph-app-grid');
   if(!grid)return;
   const button=document.createElement('button');
   button.type='button';button.className='ph-launcher civic-phone-launcher';button.dataset.civicLauncher='';button.setAttribute('aria-label','Open AbujaLife City Story');

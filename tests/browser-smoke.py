@@ -113,7 +113,7 @@ async def close_phone(page):
 async def open_phone(page, app=None):
     await close_phone(page)
     await page.locator('.game-nav [data-phone="home"]').click()
-    await expect(page.locator('#ph-device-name')).to_have_text('iPhone 18 Pro Max')
+    await expect(page.locator('#ph-device-name')).to_have_text('AbujaLife Phone')
     if await page.locator('.ph-unlock').count():
         await page.locator('.ph-unlock').click()
     else:
@@ -345,7 +345,7 @@ async def main():
 
                     async def phone_hardware_and_back():
                         await a.locator('.game-nav [data-phone="home"]').click()
-                        await expect(a.locator('#ph-device-name')).to_have_text('iPhone 18 Pro Max')
+                        await expect(a.locator('#ph-device-name')).to_have_text('AbujaLife Phone')
                         await expect(a.locator('.ph-unlock')).to_be_visible()
                         await a.screenshot(path=str(ARTIFACTS/'phone-lock-desktop.png'), full_page=True)
                         await a.locator('.ph-unlock').click()
@@ -355,7 +355,7 @@ async def main():
                         await a.locator('.ph-back').click()
                         await expect(a.locator('.ph-app-grid').first).to_be_visible()
                         await close_phone(a)
-                        return {'device':'iPhone 18 Pro Max','lockUnlock':True,'appBack':True}
+                        return {'device':'AbujaLife Phone','lockUnlock':True,'appBack':True}
                     await qa.check('Phone lock, unlock, hardware identity, app and back navigation', phone_hardware_and_back)
 
                     async def friendships():

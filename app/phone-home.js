@@ -41,8 +41,8 @@ export function bindPhoneHome(root, { page = 0, onPageChange = () => {} } = {}) 
   const previous = pagination.querySelector('[data-phone-page-step="-1"]');
   const next = pagination.querySelector('[data-phone-page-step="1"]');
   const announcement = pagination.querySelector('.ph-page-announcement');
-  const scheduleFrame = globalThis.requestAnimationFrame?.bind(globalThis) || (callback => globalThis.setTimeout(callback, 0));
-  const cancelFrame = globalThis.cancelAnimationFrame?.bind(globalThis) || (handle => globalThis.clearTimeout(handle));
+  const scheduleFrame = globalThis.requestAnimationFrame?.bind(globalThis) || (callback => { callback(); return 0; });
+  const cancelFrame = globalThis.cancelAnimationFrame?.bind(globalThis) || (() => {});
   let current = phonePageIndex(page, pages.length), scrollFrame = 0;
 
   function sync(index) {

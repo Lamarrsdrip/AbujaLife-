@@ -566,5 +566,5 @@ async function boot(){
 }
 // Registration belongs in the same-origin module so the production CSP can
 // reject inline scripts. The self-contained browser preview has no worker.
-if('serviceWorker' in navigator&&['localhost','127.0.0.1'].includes(location.hostname)){navigator.serviceWorker.getRegistrations().then(registrations=>Promise.all(registrations.map(registration=>registration.unregister()))).catch(()=>{});}else if('serviceWorker' in navigator&&document.documentElement.dataset.preview!=='browser'){navigator.serviceWorker.register('/sw.js',{scope:'/',updateViaCache:'none'}).then(()=>install.refresh()).catch(()=>{});}
+if('serviceWorker' in navigator&&location.protocol!=='https:'){navigator.serviceWorker.getRegistrations().then(registrations=>Promise.all(registrations.map(registration=>registration.unregister()))).catch(()=>{});}else if('serviceWorker' in navigator&&document.documentElement.dataset.preview!=='browser'){navigator.serviceWorker.register('/sw.js',{scope:'/',updateViaCache:'none'}).then(()=>install.refresh()).catch(()=>{});}
 boot();

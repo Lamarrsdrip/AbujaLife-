@@ -53,6 +53,7 @@ jobs:
       - name: Full Chromium resident journey
         env:
           ABUJALIFE_QA_ARTIFACTS: ${{ runner.temp }}/abujalife-browser
+          ABUJALIFE_QA_CLOCK_HOUR_WAT: '18'
         run: npm run qa:browser
 
   windows:

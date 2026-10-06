@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {authenticateAccount,finishOnboarding,accountErrorMessage,mergeCoreBootstrap} from '../app/auth-session.js';
 
 const timeout=()=>new DOMException('Fetch is aborted','TimeoutError');
-const session={authenticated:true,profile:{id:'one',username:'ada',onboardingComplete:true,wallet:100000}};
+const session={authenticated:true,startup:true,profile:{id:'one',username:'ada',onboardingComplete:true,wallet:100000}};
 test('core refresh keeps loaded social cards while committed wallet and location update immediately',()=>{
  const current={...session,conversations:[{id:'dm-one',unread:2}],nearby:[{id:'private-guest'}],payments:{enabled:true},homeVisit:{owner:'old'}};
  const next={authenticated:true,startup:true,profile:{...session.profile,wallet:95000,location:{kind:'public'}},nearby:[],conversations:[],payments:null,homeVisit:null};
@@ -15,10 +15,15 @@ test('core refresh never carries private cards between different or expired acco
  const current={...session,conversations:[{id:'private-dm'}]};
  for(const next of [{authenticated:true,startup:true,profile:{id:'other'},conversations:[]},{authenticated:false,startup:true},{authenticated:true,profile:session.profile,conversations:[]}])assert.equal(mergeCoreBootstrap(current,next),next);
 });
-test('lost signup response recovers its genuine session without repeating registration',async()=>{
+test('successful login acknowledges auth first then reads the compact session exactly once',async()=>{
+ const calls=[];let reads=0;
+ const result=await authenticateAccount({mode:'login',credentials:{username:'ada',password:'private'},api:async(path,options)=>{calls.push({path,options});return{ok:true,authenticated:true,residentId:'one'};},readSession:async()=>{reads++;return session;}});
+ assert.equal(result,session);assert.equal(reads,1);assert.equal(calls.length,1);assert.equal(calls[0].path,'/api/auth/login?session=1');assert.equal(calls[0].options.body.startup,undefined);
+});
+test('lost signup acknowledgement recovers its genuine session without repeating registration',async()=>{
  const writes=[];let reads=0;
  const result=await authenticateAccount({mode:'register',credentials:{username:'Ada',password:'private'},api:async(path,options)=>{writes.push({path,options});throw timeout();},readSession:async()=>{reads++;return session;}});
- assert.equal(result,session);assert.equal(writes.length,1);assert.equal(reads,1);assert.equal(writes[0].options.body.startup,true);
+ assert.equal(result,session);assert.equal(writes.length,1);assert.equal(reads,1);assert.equal(writes[0].path,'/api/auth/register?session=1');assert.equal(writes[0].options.body.startup,undefined);
 });
 test('wrong credentials and another resident never masquerade as successful signup',async()=>{
  let reads=0;const denied=Object.assign(new Error('Wrong password'),{status:401});

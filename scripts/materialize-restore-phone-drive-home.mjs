@@ -64,4 +64,14 @@ const mustReplace = (source, before, after, label) => {
   write(path, test);
 }
 
+// 6) Update the Chat Pro contract: media/realtime stays Pro, transfer receipts intentionally use the native card.
+{
+  const path = 'tests/chat-pro.test.mjs';
+  let test = read(path);
+  const before = `test('money messages render as compact completed transfer receipts',()=>{\n  for(const token of ['Transfer sent','Money received','Completed','In-game transfer'])assert.ok(client.includes(token),\`missing \${token}\`);\n  assert.match(css,/\\.pro-transfer-amount/);\n  assert.match(css,/\\.ph-transfer-message/);\n});`;
+  const after = `test('money messages keep the native AbujaLife premium receipt while Chat Pro handles media and realtime',()=>{\n  assert.ok(client.includes('Keep native AbujaLife cream/gold Naira receipt presentation'));\n  assert.doesNotMatch(css,/\\.pro-transfer-amount/);\n  assert.doesNotMatch(css,/ph-transfer-message\\{min-width:/);\n  assert.ok(read('app/phone.js').includes('YOU SENT NAIRA'));\n  assert.ok(read('app/phone.js').includes('Transfer confirmed · No fee'));\n});`;
+  test = mustReplace(test, before, after, 'Chat Pro transfer receipt contract');
+  write(path, test);
+}
+
 console.log('Restored previous phone kit + native receipt and routed Home through transport chooser.');

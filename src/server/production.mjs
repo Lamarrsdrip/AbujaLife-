@@ -50,7 +50,7 @@ export async function createProductionApplication({env=process.env,clock=Date.no
     const rewards=new MongoRewardStore({store,admin,publicWebUrl:config.publicWebUrl});
     const ads=new MongoAdStore({store,admin,payments,log});await ads.init({ensureIndexes:false});ads.attach();
     const server=createProductionServer({...config,store,social,directory,presence,admin,payments,rewards,ads,database,log});
-    const coreEntry=attachCoreEntry(server,{store,admin,corsOrigins:config.corsOrigins,publicWebUrl:config.publicWebUrl,secureCookies:true,log});
+    const coreEntry=attachCoreEntry(server,{store,admin,social,corsOrigins:config.corsOrigins,publicWebUrl:config.publicWebUrl,secureCookies:true,log});
     const fastStartup=attachFastStartup(server,{store,admin,corsOrigins:config.corsOrigins,publicWebUrl:config.publicWebUrl,trustProxy:config.trustProxy,log});
     const x=attachXIntegration(server,{store,admin,database,env,publicWebUrl:config.publicWebUrl,apiPublicUrl:config.apiPublicUrl,corsOrigins:config.corsOrigins,fetchImpl});
     const jackpot=await attachJackpotRuntime(server,{store,admin,payments,database,env,publicWebUrl:config.publicWebUrl,apiPublicUrl:config.apiPublicUrl,corsOrigins:config.corsOrigins,log});

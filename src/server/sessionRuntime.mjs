@@ -4,6 +4,7 @@ import { VEHICLE_COLORS } from '../shared/vehicles.mjs';
 import { ORIGIN_META } from '../shared/origins.mjs';
 import { catalog, properties, transportModes, appearanceOptions, activities } from '../shared/catalogue.mjs';
 import { abujaTime, clubSchedule, seasonalWeather } from '../shared/simulation.mjs';
+import { createChatProRuntime } from './chatProRuntime.mjs';
 
 const COOKIE='abujalife_session=';
 const JSON_HEADERS={'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','referrer-policy':'no-referrer','x-frame-options':'DENY'};
@@ -65,7 +66,7 @@ async function entryProfile(store,id){
  return store.profile(id);
 }
 
-export function createSessionRuntime({store,admin,social=null,corsOrigins=[],publicWebUrl='',secureCookies=true,log=()=>{}}={}){
+export function createSessionRuntime({store,admin,social=null,directory=null,corsOrigins=[],publicWebUrl='',secureCookies=true,log=()=>{},env=process.env,fetchImpl=fetch}={}){
  if(!store||!admin)throw new Error('Session runtime requires the game store and admin store.');
  const allowed=new Set([cleanOrigin(publicWebUrl),...corsOrigins.map(cleanOrigin)].filter(Boolean));
  const limits=new Map();
@@ -93,7 +94,7 @@ export function createSessionRuntime({store,admin,social=null,corsOrigins=[],pub
    await social.reconcileVisits(id);profile=await entryProfile(store,id);
    if(profile?.location?.kind==='visit'){
     const visitState=await social.visitState(id);homeVisit=visitState?.visit||null;
-    if(!homeVisit)throw Object.assign(new Error('This home visit is unavailable'),{status:403,code:'visit_unavailable'});
+    if(!homeVisit)throw Object.assign(new Error('This home visit is unavailable'),{status:503,code:'visit_unavailable'});
    }
   }
   const residentProperties=profile?.origin?.residence?[...properties,profile.origin.residence]:properties;
@@ -115,13 +116,18 @@ export function createSessionRuntime({store,admin,social=null,corsOrigins=[],pub
   if(id&&await admin.isSuspended(id))throw Object.assign(new Error('This account is suspended'),{status:403,code:'account_suspended'});
   return{token,id};
  }
+ const chatPro=directory?createChatProRuntime({store,social,directory,env,fetchImpl,log,send,readJson:readBody,authenticate:async req=>{
+  const{id}=await residentFromRequest(req);if(!id)throw Object.assign(new Error('Sign in to your resident account'),{status:401,code:'authentication_required'});return id;
+ }}):null;
  async function handle(req,res){
   let url;try{url=new URL(req.url,'https://api.abujacity.life');}catch{return false;}
   const entry=url.pathname==='/api/entry'&&req.method==='GET';
   const auth=AUTH_PATHS.has(url.pathname)&&req.method==='POST';
-  if(!entry&&!auth)return false;
+  const chat=chatPro?.matches(url,req.method||'GET')===true;
+  if(!entry&&!auth&&!chat)return false;
   try{
    if(!cors(req,res))return true;
+   if(chat){await chatPro.handle(req,res,url);return true;}
    if(entry){const{id}=await residentFromRequest(req);send(res,200,await state(id));return true;}
    requireJson(req);const payload=await readBody(req);
    if(url.pathname==='/api/auth/logout'){
@@ -138,5 +144,5 @@ export function createSessionRuntime({store,admin,social=null,corsOrigins=[],pub
    send(res,url.pathname==='/api/auth/login'?200:201,{ok:true,authenticated:true,residentId:session.residentId},{'set-cookie':sessionCookie(session.token,{secureCookies})});return true;
   }catch(error){send(res,error.status||500,{ok:false,error:error.message||'Please try again.',code:error.code||'session_runtime_failed'});return true;}
  }
- return{handle,state};
+ return{handle,state,chatPro};
 }

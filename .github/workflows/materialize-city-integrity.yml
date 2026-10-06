@@ -1,0 +1,65 @@
+name: Materialize Abuja city integrity
+
+on:
+  push:
+    branches: [fix/city-world-integrity-2026-10-06]
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/city-world-integrity-2026-10-06
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply the reviewed city source changes
+        run: |
+          python -X utf8 scripts/city-world-integrity-patch.py
+          python -X utf8 scripts/city-world-integrity-hotfix.py
+          python -X utf8 scripts/city-world-integrity-finalize.py
+      - name: Remove one-time materialization machinery
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('package.json')
+          pkg=json.loads(p.read_text())
+          pkg.get('scripts',{}).pop('preqa',None)
+          pkg.get('scripts',{}).pop('postbuild',None)
+          p.write_text(json.dumps(pkg,indent=2)+'\n')
+          for name in [
+            'scripts/city-world-integrity-patch.py',
+            'scripts/city-world-integrity-hotfix.py',
+            'scripts/city-world-integrity-finalize.py',
+            'scripts/ci-city-integrity-commit.mjs',
+            '.github/workflows/materialize-city-integrity.yml',
+          ]:
+            Path(name).unlink(missing_ok=True)
+          PY
+      - run: npm ci --ignore-scripts
+      - name: Full Node QA
+        run: npm run qa
+      - name: Windows runtime contract on Linux parser/runtime
+        run: node --test deploy/windows/runtime.test.mjs
+      - name: Production build
+        run: npm run build
+      - name: Infrastructure QA
+        run: npm run qa:infra
+      - name: Commit actual source, not patch machinery
+        run: |
+          git diff --check
+          git config user.name GhostDev
+          git config user.email 110933245+Lamarrsdrip@users.noreply.github.com
+          git add -A
+          git commit -m "fix: make Abuja landmarks one playable city"
+          git push origin HEAD:fix/city-world-integrity-2026-10-06

@@ -20,8 +20,9 @@ export function accountErrorMessage(error) {
   return error?.message || 'We could not complete this request. Please try again.';
 }
 
-function sessionMatches(recovered,credentials={}) {
+function sessionMatches(recovered,credentials={},residentId=null) {
   if(!recovered?.authenticated||!recovered.profile)return false;
+  if(residentId&&recovered.profile.id!==residentId)return false;
   const username=credentials.username?.trim().toLowerCase();
   const email=credentials.email?.trim().toLowerCase();
   if(username)return recovered.profile.username?.toLowerCase()===username || (username.includes('@')&&recovered.profile.email?.toLowerCase()===username);
@@ -29,10 +30,9 @@ function sessionMatches(recovered,credentials={}) {
 }
 
 export async function authenticateAccount({api, mode, credentials, readSession}) {
+  let acknowledgement;
   try {
-    const result=await api(`/api/auth/${mode}`, {method:'POST', body:{...credentials}});
-    if(!sessionMatches(result,credentials))throw new Error('Your resident could not be opened. Please try again.');
-    return result;
+    acknowledgement=await api(`/api/auth/${mode}`, {method:'POST', body:{...credentials}});
   } catch (error) {
     if (!interruptedRequest(error)) throw error;
     let recovered;
@@ -40,6 +40,14 @@ export async function authenticateAccount({api, mode, credentials, readSession})
     if(sessionMatches(recovered,credentials))return recovered;
     throw error;
   }
+
+  if(!acknowledgement?.ok||acknowledgement.authenticated!==true||typeof acknowledgement.residentId!=='string'||!acknowledgement.residentId){
+    throw new Error('Your resident could not be opened. Please try again.');
+  }
+
+  const recovered=await readSession();
+  if(sessionMatches(recovered,credentials,acknowledgement.residentId))return recovered;
+  throw new Error('Your resident could not be opened. Please try again.');
 }
 
 export async function finishOnboarding({api, draft, residentId, readSession}) {

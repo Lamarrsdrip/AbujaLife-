@@ -90,6 +90,7 @@ try {
   // Caddy only after the candidate API is healthy; the PowerShell helper
   // validates a staged Caddyfile and restores the previous file on failure.
   command('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(destination, 'deploy', 'windows', 'configure-frontend.ps1'), '-ReleaseDirectory', destination, '-Root', config.root], config.root);
+  command('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(destination, 'deploy', 'windows', 'clear-quic-advertisement.ps1')], config.root);
   console.log(JSON.stringify({ ok: true, ...next, port: config.apiPort, binding: '127.0.0.1', task: config.apiTask }));
 } catch (error) {
   await closeCandidate();

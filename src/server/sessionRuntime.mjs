@@ -134,9 +134,8 @@ export function createSessionRuntime({store,admin,social=null,corsOrigins=[],pub
    }
    const session=url.pathname==='/api/auth/login'?await store.login(payload):await store.register(payload);
    if(await admin.isSuspended(session.residentId)){await store.logout(session.token);throw Object.assign(new Error('This account is suspended'),{status:403,code:'account_suspended'});}
-   const entryState=await state(session.residentId);
    log(url.pathname==='/api/auth/login'?'login':'signup',{residentId:session.residentId});
-   send(res,url.pathname==='/api/auth/login'?200:201,{...entryState,ok:true,residentId:session.residentId},{'set-cookie':sessionCookie(session.token,{secureCookies})});return true;
+   send(res,url.pathname==='/api/auth/login'?200:201,{ok:true,authenticated:true,residentId:session.residentId},{'set-cookie':sessionCookie(session.token,{secureCookies})});return true;
   }catch(error){send(res,error.status||500,{ok:false,error:error.message||'Please try again.',code:error.code||'session_runtime_failed'});return true;}
  }
  return{handle,state};

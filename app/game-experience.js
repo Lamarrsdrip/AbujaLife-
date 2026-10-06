@@ -49,13 +49,17 @@ function ensurePulse(){
   const shell=appRoot?.querySelector('.game-shell'),header=shell?.querySelector('.game-header');if(!shell||!header)return;
   let pulse=shell.querySelector('.abj-city-pulse');
   if(!pulse){pulse=document.createElement('div');pulse.className='abj-city-pulse';pulse.innerHTML=`<span title="Visits to AbujaLife today">👀 <strong data-city-visits>${compact(stats?.visitsToday)}</strong> today</span><span class="is-online" title="Residents online now"><i></i><strong data-city-online>${compact(stats?.onlineNow)}</strong> online</span><span class="is-here" title="Residents in your current place"><b>◎</b><strong data-city-here>${compact(stats?.hereNow)}</strong> here</span>`;shell.append(pulse);}
-  const bottom=Math.round(header.getBoundingClientRect().bottom+8);pulse.style.setProperty('--abj-pulse-top',`${bottom}px`);pulse.querySelector('.is-here')?.classList.toggle('is-empty',Number(stats?.hereNow||0)<=1);
+  const bottom=`${Math.round(header.getBoundingClientRect().bottom+8)}px`;
+  if(pulse.style.getPropertyValue('--abj-pulse-top')!==bottom)pulse.style.setProperty('--abj-pulse-top',bottom);
+  const here=pulse.querySelector('.is-here'),empty=Number(stats?.hereNow||0)<=1;
+  if(here&&here.classList.contains('is-empty')!==empty)here.classList.toggle('is-empty',empty);
 }
 
 function relabelMap(){
   const button=appRoot?.querySelector('.game-nav [data-nav-outside]');if(!button)return;
   const label=button.querySelector('span');if(label&&label.textContent!=='Map')label.textContent='Map';
-  button.setAttribute('aria-label','Open Abuja map');button.title='Map';
+  if(button.getAttribute('aria-label')!=='Open Abuja map')button.setAttribute('aria-label','Open Abuja map');
+  if(button.title!=='Map')button.title='Map';
 }
 
 function renderHotPlaces(host){
@@ -161,7 +165,7 @@ async function openJourney(district,venueId=null){
   panel.querySelectorAll('[data-journey-mode]:not(:disabled)').forEach(button=>button.onclick=()=>choose(button.dataset.journeyMode));
   panel.querySelector('[data-journey-go]').onclick=async event=>{
     if(!selected||!quote)return;event.currentTarget.disabled=true;event.currentTarget.textContent='Heading out…';
-    try{await ensurePublicLocation();let result;if(selected==='walk'&&sameDistrict&&venueId)result=await gameAction('enter-venue',{venueId});else result=await gameAction('travel',{district,mode:selected,...(venueId?{venueId}:{})});if(result?.profile){snapshot.profile=result.profile;lastSnapshotAt=Date.now();}panel.remove();closeMap();toast(venue?`On your way to ${venue.name}.`:`Journey to ${destination} started.`);}catch(error){toast(error.message);event.currentTarget.disabled=false;event.currentTarget.textContent='Try again';}
+    try{await ensurePublicLocation();let result;if(selected==='walk'&&sameDistrict&&venueId)result=await gameAction('enter-venue',{venueId});else result=await gameAction('travel',{district,mode:selected,...(venueId?{venueId}:{})});if(result?.profile){snapshot.profile=result.profile;lastSnapshotAt=Date.now();window.dispatchEvent(new CustomEvent('abujalife:profile',{detail:{profile:result.profile}}));}panel.remove();closeMap();toast(venue?`On your way to ${venue.name}.`:`Journey to ${destination} started.`);}catch(error){toast(error.message);event.currentTarget.disabled=false;event.currentTarget.textContent='Try again';}
   };
 }
 

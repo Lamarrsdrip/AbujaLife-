@@ -32,7 +32,7 @@ let stateRequestEpoch=0;
 const referralResident = new URL(location.href).searchParams.get('resident')?.match(/^[A-Za-z0-9:_-]{1,80}$/)?.[0] || null;
 const authRecovery=createAuthRecovery({link:consumeAuthLink(location,history),api:(...args)=>api(...args)});
 let onboardingStep=0, onboardingDraft, pendingVenue;
-let quickHomeNavigating=false,outsideNavigating=false;
+let quickHomeNavigating=false,outsideNavigating=false,viewEpoch=0;
 let pendingFurnitureItem;
 let serverClockAt=Date.now(), serverClockObservedAt=performance.now();
 function gameNow(){return serverClockAt+Math.max(0,performance.now()-serverClockObservedAt);}
@@ -60,7 +60,7 @@ async function api(path,options={}) {
  return body;
 }
 function toast(message){const el=document.querySelector('#toast');el.textContent=message;el.classList.add('visible');clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.classList.remove('visible'),4000);}
-async function refresh({render=true,startup=true}={}){const epoch=++stateRequestEpoch,next=await api(startup?'/api/entry':'/api/bootstrap');if(epoch!==stateRequestEpoch)return state;state=mergeCoreBootstrap(state,next);serverClockAt=Number(state.serverTime)||Date.now();serverClockObservedAt=performance.now();if(render)renderMain();else{const balance=root.querySelector('.wallet-button');if(balance){balance.querySelector('strong').textContent=`₦${money(state.profile?.wallet)}`;balance.setAttribute('aria-label',`Naira balance, ₦${money(state.profile?.wallet)}. Open wallet`);}cleanup?.updateResidents?.(list(state.nearby));}phone.render();showWorkReminder();void install.refresh();if(startup&&state.profile?.onboardingComplete)hydrateStartup();return state;}
+async function refresh({render=true,startup=true}={}){const epoch=++stateRequestEpoch,next=await api(startup?'/api/entry':'/api/bootstrap');if(epoch!==stateRequestEpoch)return state;state=mergeCoreBootstrap(state,next);serverClockAt=Number(state.serverTime)||Date.now();serverClockObservedAt=performance.now();if(state.profile?.activeTrip)armTripArrival();if(render)renderMain();else{const balance=root.querySelector('.wallet-button');if(balance){balance.querySelector('strong').textContent=`₦${money(state.profile?.wallet)}`;balance.setAttribute('aria-label',`Naira balance, ₦${money(state.profile?.wallet)}. Open wallet`);}cleanup?.updateResidents?.(list(state.nearby));}phone.render();showWorkReminder();void install.refresh();if(startup&&state.profile?.onboardingComplete)hydrateStartup();return state;}
 function expireAccount(){stream?.close();phone.close();stateRequestEpoch++;state={authenticated:false};authMode='login';authDraft.password='';authNotice='Your session has expired. Sign in to continue with your saved resident.';renderMain();}
 function hydrateStartup(){
  if(!state.authenticated||!state.entry)return;
@@ -105,6 +105,18 @@ const posePublisher=createWorldPresencePublisher({read:()=>{
 },send:pose=>api('/api/presence',{method:'POST',body:{pose}})});
 setInterval(()=>void posePublisher.publish(),500);
 setInterval(()=>{if(state.authenticated&&!document.hidden&&!document.querySelector('[aria-modal="true"]'))refresh({render:false}).catch(()=>{});},60000);
+let tripArrivalTimer=0,tripArrivalInFlight=false,nextArriveAttempt=0;
+function armTripArrival(retry=false){
+ clearTimeout(tripArrivalTimer);tripArrivalTimer=0;
+ const trip=state.profile?.activeTrip;
+ if(!state.authenticated||!trip)return;
+ const wait=Number(trip.arrivesAt)-gameNow();
+ tripArrivalTimer=setTimeout(()=>{void completeTrip(trip.id);},Math.max(retry?400:0,wait+60));
+}
+function showCity(){
+ view='world';
+ if(location.hash!=='#world')history.replaceState({view:'world'},'',`${location.pathname}${location.search}#world`);
+}
 function navigate(destination,details={}){
  if(destination==='map'&&!details.utility)destination='outside';
  if(!['world','outside','map','work','market','property','profile'].includes(destination))destination='world';
@@ -125,6 +137,28 @@ function navigate(destination,details={}){
  if(destination==='world'&&details.garage)openGarage();
  if(destination==='world'&&details.homeVisits)lifePanels.openVisits({q:details.visitSearch||''});
 }
+addEventListener('abujalife:profile',event=>{
+ const profile=event.detail?.profile;
+ if(!profile||profile.id!==state.profile?.id)return;
+ const previous=locationKey(state.profile),previousTrip=state.profile.activeTrip?.id||'';
+ state.profile=profile;
+ armTripArrival();
+ const tripChanged=(profile.activeTrip?.id||'')!==previousTrip;
+ if(tripChanged&&profile.activeTrip){
+  view='world';
+  if(location.hash!=='#world')history.pushState({view:'world'},'',`${location.pathname}${location.search}#world`);
+  renderMain();
+  return;
+ }
+ if((previous!==locationKey(profile)||tripChanged)&&['world','outside'].includes(view))renderMain();
+ else if(!['world','outside'].includes(view))renderMain();
+ else syncProfileChrome();
+});
+addEventListener('hashchange',()=>{
+ const next=(location.hash.slice(1)==='map'?'outside':location.hash.slice(1))||'world';
+ if(!['world','outside','work','market','property','profile'].includes(next)||next===view)return;
+ view=next;phone.close();closeSheet();renderMain();
+});
 addEventListener('popstate',()=>{view=(location.hash.slice(1)==='map'?'outside':location.hash.slice(1))||'world';phone.close();closeSheet();renderMain();});
 addEventListener('keydown',event=>{if(event.key==='Escape')closeSheet();});
 function scheduleRealtimeRefresh(){
@@ -134,14 +168,17 @@ function scheduleRealtimeRefresh(){
   refresh({render:false}).then(next=>{
    const locationChanged=previousLocation!==locationKey(next.profile);
    if(locationChanged&&['world','outside'].includes(view)){renderMain();return;}
-   if(!['world','outside'].includes(view)&&!document.querySelector('.sheet')&&!root.contains(document.activeElement))renderMain();
+   if(!['world','outside'].includes(view)&&locationChanged&&!document.querySelector('.sheet,#shift-form')&&!root.contains(document.activeElement))renderMain();
+   else syncProfileChrome();
   }).catch(()=>{});
  },250);
 }
 function connectRealtime(){
  stream?.close();if(!state.authenticated||authRecovery.snapshot().kind&&!['idle','complete'].includes(authRecovery.snapshot().status))return;stream=createApiEventSource('/api/realtime');
  for(const type of ['ready','presence','event','location-chat','typing','message','notification','invitation','profile','receipt','world-pose','player-emote','club-spray','social-post','social-like','social-comment','home-visit','home-visit-request','home-visit-ended'])stream.addEventListener(type,event=>{
-  let data;try{data=JSON.parse(event.data);}catch{return;}phone.handleEvent(type,data);
+  let data;try{data=JSON.parse(event.data);}catch{return;}
+  if(type==='presence'&&data.resident?.id){const live=data.resident;state.people=list(state.people).map(person=>person.id===live.id?{...person,...live}:person);}
+  phone.handleEvent(type,data);
   if(type==='message'&&!data.receipt&&data.senderId!==state.profile?.id&&data.conversationId)api(`/api/conversations/${encodeURIComponent(data.conversationId)}/delivered`,{method:'POST',body:{...(Number.isSafeInteger(data.seq)?{uptoSeq:data.seq}:{}),createdAt:data.createdAt,uptoMessageId:data.id}}).catch(()=>{});
   if(type==='world-pose'){if(data.residentId!==state.profile?.id)cleanup?.updateResidentPose?.(data);dispatchLivingCity('world-pose',{data});return;}
   if(type==='player-emote'||type==='club-spray'){dispatchLivingCity(type,{data});return;}
@@ -169,16 +206,21 @@ async function action(name,payload={}){
   // location transition is allowed to rebuild the world; ordinary state
   // changes reconcile in place so the WebGL scene never flashes away.
   if(result.profile){
+   if(name==='start-shift'&&result.challenge)state.activeChallenge=result.challenge;
+   if(name==='complete-shift')state.activeChallenge=null;
+   if(result.workSchedule)state.workSchedule=result.workSchedule;
    if(previousLocation!==locationKey(result.profile))state.nearby=[];
    state.profile=result.profile;
    if(view==='outside'&&result.profile.location?.kind!=='public')view='world';
    if(previousLocation!==locationKey(result.profile)&&['world','outside'].includes(view))renderMain();
+   else if(!['world','outside'].includes(view))renderMain();
    else syncProfileChrome();
+   armTripArrival();
   }
   void refresh({render:false}).catch(()=>{});
   return result;
  }
- catch(error){toast(error.message);return null;}finally{busy=false;}
+ catch(error){if(!(name==='arrive'&&error.code==='trip_in_progress'))toast(error.message);return null;}finally{busy=false;}
 }
 function syncProfileChrome(){
  const p=state.profile;if(!p)return;
@@ -223,7 +265,7 @@ function renderAuth(){
  root.querySelector('[data-forgot-password]')?.addEventListener('click',()=>{authMode='forgot';authError='';authNotice='';authDraft.password='';renderMain();});
  const form=root.querySelector('#auth-form');form.addEventListener('input',e=>{if(e.target.name)authDraft[e.target.name]=e.target.value;if(e.target.name==='username')authUsernameEdited=!!e.target.value;if(registering&&e.target.name==='displayName'&&!authUsernameEdited){const stem=e.target.value.normalize('NFKD').replace(/\p{Diacritic}/gu,'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');if(stem){authDraft.username=stem.slice(0,20)+'_abj';form.elements.username.value=authDraft.username;}}});
  bindPasswordVisibility(form);
- form.onsubmit=async e=>{e.preventDefault();const submit=form.querySelector('[type=submit]');if(submit.disabled)return;submit.disabled=true;submit.setAttribute('aria-busy','true');authError='';form.querySelector('#auth-error').textContent='';const fields=Object.fromEntries(new FormData(form)),values=registering?{...fields,appearance:draft,...(referralResident?{referrerId:referralResident}:{})}:loginCredentials(fields.username,fields.password);try{state=await authenticateAccount({api,mode:registering?'register':'login',credentials:values,readSession:()=>api('/api/entry')});authDraft.password='';authNotice='';view='world';renderMain();connectRealtime();hydrateStartup();if(registering&&fields.email&&authConfig.emailVerificationEnabled){toast('Your account is ready. Check your email to confirm your address.');}}catch(error){authError=accountErrorMessage(error);form.querySelector('#auth-error').textContent=authError;submit.disabled=false;submit.removeAttribute('aria-busy');}};
+ form.onsubmit=async e=>{e.preventDefault();const submit=form.querySelector('[type=submit]');if(submit.disabled)return;submit.disabled=true;submit.setAttribute('aria-busy','true');authError='';form.querySelector('#auth-error').textContent='';const fields=Object.fromEntries(new FormData(form)),values=registering?{...fields,appearance:draft,...(referralResident?{referrerId:referralResident}:{})}:loginCredentials(fields.username,fields.password);try{state=await authenticateAccount({api,mode:registering?'register':'login',credentials:values,readSession:()=>api('/api/entry')});authDraft.password='';authNotice='';showCity();renderMain();connectRealtime();hydrateStartup();if(registering&&fields.email&&authConfig.emailVerificationEnabled){toast('Your account is ready. Check your email to confirm your address.');}}catch(error){authError=accountErrorMessage(error);form.querySelector('#auth-error').textContent=authError;submit.disabled=false;submit.removeAttribute('aria-busy');}};
 }
 function renderPasswordRequest(){
  renderAuthPage(`<span class="eyebrow">ACCOUNT RECOVERY</span><h2>Find your way home.</h2><p class="auth-intro">Enter your username or email. If your account has an email address, we will send a password reset link.</p><form id="password-request-form"><label>Username or email<input name="username" required maxlength="254" autocomplete="username" autocapitalize="none" spellcheck="false" value="${esc(authDraft.username)}"></label><p class="form-error" role="alert"></p><p class="auth-success" role="status"></p><button class="primary auth-submit" type="submit">Send reset link${icon('arrow')}</button></form><button class="text-button auth-back" type="button" data-back-to-login>Back to sign in</button>`);
@@ -254,11 +296,12 @@ function renderOnboarding(){
  form.querySelector('[name=displayName]')?.addEventListener('input',e=>{onboardingDraft.displayName=e.target.value;root.querySelector('#onboarding-resident-name').textContent=e.target.value||'Your resident';});
  form.querySelectorAll('[name=lifeGoal]').forEach(input=>input.onchange=()=>{onboardingDraft.lifeGoal=input.value;});
  form.querySelector('[data-onboarding-back]')?.addEventListener('click',()=>{onboardingStep--;renderMain();});
- form.onsubmit=async e=>{e.preventDefault();const values=Object.fromEntries(new FormData(form));if(values.displayName)onboardingDraft.displayName=values.displayName.trim();if(values.lifeGoal)onboardingDraft.lifeGoal=values.lifeGoal;if(onboardingStep<4){onboardingStep++;renderMain();window.scrollTo(0,0);return;}const submit=form.querySelector('[type=submit]');if(submit.disabled)return;submit.disabled=true;try{state.profile=await finishOnboarding({api,draft:onboardingDraft,residentId:state.profile.id,readSession:()=>api('/api/entry')});onboardingDraft=undefined;onboardingStep=0;view='world';renderMain();connectRealtime();hydrateStartup();toast('How far? Welcome to your Abuja life. Walk to your front door to explore.');}catch(error){if(error.status===401){expireAccount();return;}form.querySelector('#onboarding-error').textContent=accountErrorMessage(error);submit.disabled=false;}};
+ form.onsubmit=async e=>{e.preventDefault();const values=Object.fromEntries(new FormData(form));if(values.displayName)onboardingDraft.displayName=values.displayName.trim();if(values.lifeGoal)onboardingDraft.lifeGoal=values.lifeGoal;if(onboardingStep<4){onboardingStep++;renderMain();window.scrollTo(0,0);return;}const submit=form.querySelector('[type=submit]');if(submit.disabled)return;submit.disabled=true;try{state.profile=await finishOnboarding({api,draft:onboardingDraft,residentId:state.profile.id,readSession:()=>api('/api/entry')});onboardingDraft=undefined;onboardingStep=0;showCity();renderMain();connectRealtime();hydrateStartup();toast('How far? Welcome to your Abuja life. Walk to your front door to explore.');}catch(error){if(error.status===401){expireAccount();return;}form.querySelector('#onboarding-error').textContent=accountErrorMessage(error);submit.disabled=false;}};
 }
 function header(){const p=state.profile;const needs=[['Energy','energy','⚡'],['Food','hunger','⌁'],['Fun','fun','◌'],['Toilet','bladder','◒'],['Clean','hygiene','✦'],['Social','social','♧']];return `<header class="game-header"><a href="#world" class="wordmark" data-view="world" aria-label="AbujaLife home">${brandMark({compact:true})}</a><span class="header-edition">YOUR CITY. YOUR STORY.</span><button class="needs-header" data-open-needs aria-label="Open your life needs">${needs.map(([label,key,icon])=>`<span class="needs-header-item"><i aria-hidden="true">${icon}</i><b>${label}</b><em style="--need:${Math.max(0,Math.min(100,Number(p[key]??(key==='bladder'?86:0))))}%"></em></span>`).join('')}</button><button class="wallet-button" data-phone="wallet" aria-label="Naira balance, ₦${money(p.wallet)}. Open wallet"><span>Naira balance</span><strong>₦${money(p.wallet)}</strong></button><button class="earn-header" data-phone="earn" aria-label="Open Earn Game Naira">+ Earn</button><button class="resident-button" data-view="profile" aria-label="Your resident profile">${avatarSVG(p.appearance,{size:40})}</button></header>`;}
 function nav(){const unread=list(state.conversations).reduce((n,c)=>n+Number(c.unread||0),0)+list(state.notifications).filter(n=>!n.readAt&&!n.read).length;return `<nav class="game-nav" aria-label="Game navigation"><button data-view="world" class="${view==='world'?'active':''}" ${view==='world'?'aria-current="page"':''}>${icon('world')}<span>Play</span></button><button data-nav-outside class="${view==='outside'?'active':''}">${icon('map')}<span>Outside</span></button><button data-nav-life class="${['work','market','property','profile'].includes(view)?'active':''}">${icon('sun')}<span>My life</span></button><button data-phone="home" class="phone-launch">${icon('phone')}<span>Phone</span>${unread?`<i class="nav-badge">${unread}</i>`:''}</button></nav>`;}
 function renderMain(){
+ const epoch=++viewEpoch;
  cleanup?.();cleanup=undefined;const recovery=authRecovery.snapshot();if(recovery.kind&&!['complete','idle'].includes(recovery.status)){renderAuthRecovery();return;}if(!state.authenticated){renderAuth();return;}
  if(!state.profile?.onboardingComplete){phone.close();renderOnboarding();return;}
  if(!['world','outside','map','work','market','property','profile'].includes(view))view='world';
@@ -266,7 +309,9 @@ function renderMain(){
  root.innerHTML=`<div class="game-shell ${['world','outside'].includes(view)?'is-playing':''}">${header()}<main class="game-content view-${view}">${({world:worldMarkup,outside:outsideMarkup,map:mapMarkup,work:workMarkup,market:marketMarkup,property:propertyMarkup,profile:profileMarkup})[view]()}</main>${nav()}</div>`;
  root.querySelectorAll('[data-view]').forEach(b=>b.onclick=e=>{e.preventDefault();navigate(b.dataset.view);});root.querySelectorAll('[data-phone]').forEach(b=>b.onclick=()=>{furnitureCatalogue.close({restoreFocus:false});phone.open(b.dataset.phone==='home'?undefined:b.dataset.phone);});
  root.querySelector('[data-nav-outside]').onclick=()=>navigate('outside');root.querySelectorAll('[data-open-needs]').forEach(b=>b.onclick=openNeeds);root.querySelector('[data-nav-life]').onclick=openLifeMenu;
- ({world:bindWorld,outside:bindOutside,map:bindMap,work:bindWork,market:bindMarket,property:bindProperties,profile:bindProfile})[view]();
+ const binder=({world:bindWorld,outside:bindOutside,map:bindMap,work:bindWork,market:bindMarket,property:bindProperties,profile:bindProfile})[view];
+ if(view==='world'||view==='outside')requestAnimationFrame(()=>{if(epoch===viewEpoch)binder();});
+ else binder();
  enhanceProductPreviews(root,{appearance:state.profile?.appearance});
  void install.refresh();
 }
@@ -317,8 +362,21 @@ function bindWorld(){
  }
  if(p.activeTrip)bindTrip(p.activeTrip);
 }
-async function completeTrip(tripId){if(await action('arrive',{tripId})){pendingVenue=undefined;if(state.profile.location?.kind==='home'&&pendingFurnitureItem){const itemId=pendingFurnitureItem;pendingFurnitureItem=undefined;openFurniture(itemId);}toast(currentVenue()?`You’ve arrived at ${currentVenue().name}.`:'You’ve arrived.');}}
-function bindTrip(trip){const update=()=>{const left=Math.max(0,Math.ceil((Number(trip.arrivesAt)-gameNow())/1000));const el=root.querySelector('[data-trip-countdown]'),button=root.querySelector('[data-arrive]');if(el&&button){el.textContent=left?`${left}s to go`:'You’ve arrived';button.disabled=left>0;}};update();const timer=setInterval(update,250),previous=cleanup;cleanup=Object.assign(()=>{clearInterval(timer);previous?.();},previous);root.querySelector('[data-arrive]').onclick=()=>completeTrip(trip.id);}
+async function completeTrip(tripId){
+ const trip=state.profile?.activeTrip;
+ if(!trip||(tripId&&trip.id!==tripId))return !state.profile?.activeTrip;
+ if(performance.now()<nextArriveAttempt)return false;
+ if(gameNow()+120<Number(trip.arrivesAt)){armTripArrival();return false;}
+ if(tripArrivalInFlight||busy){armTripArrival(true);return false;}
+ tripArrivalInFlight=true;nextArriveAttempt=performance.now()+350;
+ try{
+  const result=await action('arrive',{tripId:trip.id});
+  if(result){pendingVenue=undefined;if(state.profile.location?.kind==='home'&&pendingFurnitureItem){const itemId=pendingFurnitureItem;pendingFurnitureItem=undefined;openFurniture(itemId);}toast(currentVenue()?`You’ve arrived at ${currentVenue().name}.`:'You’ve arrived.');return true;}
+  if(state.profile?.activeTrip?.id===trip.id)armTripArrival(true);
+  return false;
+ }finally{tripArrivalInFlight=false;}
+}
+function bindTrip(trip){const update=()=>{const left=Math.max(0,Math.ceil((Number(trip.arrivesAt)-gameNow())/1000));const el=root.querySelector('[data-trip-countdown]'),button=root.querySelector('[data-arrive]');if(el&&button){el.textContent=left?`${left}s to go`:'You’ve arrived';button.disabled=left>0;}if(left===0&&state.profile?.activeTrip?.id===trip.id)void completeTrip(trip.id);};update();const timer=setInterval(update,250),previous=cleanup;cleanup=Object.assign(()=>{clearInterval(timer);previous?.();},previous);root.querySelector('[data-arrive]').onclick=()=>completeTrip(trip.id);}
 async function interact(name,payload={}){
  if(name==='leave-visit'){try{const result=await api('/api/home/visits/leave',{method:'POST',body:{}});await refresh();toast('You stepped outside.');return result;}catch(error){toast(error.message);return false;}}
  if(name==='visit-interact'){
@@ -533,7 +591,7 @@ async function openAccountSecurity(){
   form.onsubmit=async e=>{e.preventDefault();const submit=form.querySelector('[type=submit]'),error=form.querySelector('[role=alert]'),notice=form.querySelector('[role=status]');submit.disabled=true;error.textContent='';notice.textContent='';try{const email=form.elements.email.value.trim(),changing=email.toLowerCase()!==String(account.email||'').toLowerCase();await api('/api/auth/email/request',{method:'POST',body:changing?{email,password:form.elements.password.value}:{}});form.elements.password.value='';notice.textContent='Check your inbox and spam folder for the confirmation link. Your current email remains in place until you confirm a new address.';}catch(failure){error.textContent=failure.message;}finally{submit.disabled=false;}};
  }catch(failure){if(sheet.isConnected){sheet.innerHTML=`<button type="button" class="sheet-close" aria-label="Close account settings">${icon('close')}</button><h2 id="sheet-title">Account &amp; security</h2><p class="form-error" role="alert">${esc(failure.message)}</p><button class="secondary" type="button" data-account-retry>Try again</button>`;sheet.querySelector('.sheet-close').onclick=closeSheet;sheet.querySelector('[data-account-retry]').onclick=openAccountSecurity;}}
 }
-function bindProfile(){root.querySelector('[data-account-security]')?.addEventListener('click',openAccountSecurity);const form=root.querySelector('#profile-form');cleanup=mountAvatarPreview(root.querySelector('.profile-portrait'),state.profile.appearance||{});form.querySelectorAll('[data-appearance]').forEach(s=>s.onchange=()=>{const appearance={...state.profile.appearance,...Object.fromEntries(new FormData(form))},preview=root.querySelector('.profile-portrait');preview.querySelector('svg')?.remove();preview.insertAdjacentHTML('afterbegin',avatarSVG(appearance,{size:280,fullBody:true}));cleanup?.update?.(appearance);});form.onsubmit=async e=>{e.preventDefault();const {displayName,lifeGoal,...appearance}=Object.fromEntries(new FormData(form));try{await api('/api/profile',{method:'POST',body:{displayName,lifeGoal,appearance:{...state.profile.appearance,...appearance}}});await refresh();toast('Looking like yourself.');}catch(error){toast(error.message);}};root.querySelector('[data-logout]').onclick=async()=>{await api('/api/auth/logout',{method:'POST',body:{}});stream?.close();phone.close();state=await api('/api/entry');authMode='login';authNotice='';renderMain();};}
+function bindProfile(){root.querySelector('[data-account-security]')?.addEventListener('click',openAccountSecurity);const form=root.querySelector('#profile-form');cleanup=mountAvatarPreview(root.querySelector('.profile-portrait'),state.profile.appearance||{});form.querySelectorAll('[data-appearance]').forEach(s=>s.onchange=()=>{const appearance={...state.profile.appearance,...Object.fromEntries(new FormData(form))},preview=root.querySelector('.profile-portrait');preview.querySelector('svg')?.remove();preview.insertAdjacentHTML('afterbegin',avatarSVG(appearance,{size:280,fullBody:true}));cleanup?.update?.(appearance);});form.onsubmit=async e=>{e.preventDefault();const {displayName,lifeGoal,...appearance}=Object.fromEntries(new FormData(form));try{await api('/api/profile',{method:'POST',body:{displayName,lifeGoal,appearance:{...state.profile.appearance,...appearance}}});await refresh();toast('Looking like yourself.');}catch(error){toast(error.message);}};root.querySelector('[data-logout]').onclick=async()=>{await api('/api/auth/logout',{method:'POST',body:{}});stream?.close();phone.close();state=await api('/api/entry');authMode='login';authNotice='';view='world';if(location.hash)history.replaceState({},'',`${location.pathname}${location.search}`);renderMain();};}
 function residentSheet(resident){
  if(typeof resident==='string')resident=list(state.people).find(p=>p.id===resident);if(!resident)return;
  openSheet(`<div class="resident-sheet-portrait">${avatarSVG(resident.appearance,{size:115})}</div><span class="eyebrow">${resident.online?'ONLINE NOW':'RESIDENT'}</span><h2 id="sheet-title">${esc(resident.displayName)}</h2><p class="muted">@${esc(resident.username)}</p><div class="button-pair"><button class="secondary" id="request-friend">Add friend</button><button class="primary" id="message-resident">Message</button></div>`);

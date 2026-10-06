@@ -18,7 +18,10 @@ async function start(dataDir) {
 
 async function register(request,username) {
   const result=await request('/api/auth/register',{body:{username,displayName:username==='ada'?'Ada':'Bello',password:'test-password-123'}});
-  assert.equal(result.status,201);assert.ok(result.cookie);return{cookie:result.cookie,id:result.data.profile.id,startingWallet:result.data.profile.wallet};
+  assert.equal(result.status,201);assert.ok(result.cookie);assert.equal(typeof result.data.residentId,'string');assert.equal('profile' in result.data,false);
+  const entry=await request('/api/entry',{cookie:result.cookie});
+  assert.equal(entry.status,200);assert.equal(entry.data.profile.id,result.data.residentId);
+  return{cookie:result.cookie,id:entry.data.profile.id,startingWallet:entry.data.profile.wallet};
 }
 
 test('two real residents persist friendship, messages, unread state and purchases after restart',async t=>{
@@ -40,7 +43,7 @@ test('two real residents persist friendship, messages, unread state and purchase
   state=await app.request('/api/bootstrap',{cookie:ada.cookie});assert.equal(state.data.authenticated,true);assert.equal(state.data.profile.wallet,ada.startingWallet-2300);assert.deepEqual(state.data.profile.inventory,['plant']);assert.equal(state.data.friends[0].id,bello.id);
   assert.equal((await app.request(`/api/conversations/${conversation.id}/messages`,{cookie:bello.cookie})).data.messages.length,1);
   const badLogin=await app.request('/api/auth/login',{body:{username:'ada',password:'wrong-password'}});assert.equal(badLogin.status,401);
-  const login=await app.request('/api/auth/login',{body:{username:'ada',password:'test-password-123'}});assert.equal(login.data.profile.id,ada.id);
+  const login=await app.request('/api/auth/login',{body:{username:'ada',password:'test-password-123'}});assert.equal(login.data.residentId,ada.id);assert.equal((await app.request('/api/entry',{cookie:login.cookie})).data.profile.id,ada.id);
   await app.request('/api/auth/logout',{cookie:login.cookie,body:{}});assert.equal((await app.request('/api/bootstrap',{cookie:login.cookie})).data.authenticated,false);
 });
 
@@ -71,4 +74,18 @@ test('SSE presence and nearby chat are real, location scoped and privacy aware',
   const history=(await app.request('/api/chat/location',{cookie:bello.cookie})).data;assert.equal(history.messages.length,1);
   await app.request('/api/profile',{cookie:bello.cookie,body:{settings:{presenceVisible:false}}});state=(await app.request('/api/bootstrap',{cookie:ada.cookie})).data;assert.equal(state.nearby.length,0);assert.equal(state.people[0].online,false);assert.equal(state.people[0].district,null);
   await app.request('/api/action',{cookie:bello.cookie,body:{action:'enter-home'}});assert.equal((await app.request('/api/chat/location',{cookie:bello.cookie})).data.messages.length,0);
+});
+
+test('city shell endpoints match the production contract used before and after sign-in',async t=>{
+  const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'abujalife-shell-')),app=await start(dataDir);t.after(async()=>{await app.close();fs.rmSync(dataDir,{recursive:true,force:true});});
+  const config=await app.request('/api/auth/config');
+  assert.equal(config.status,200);assert.equal(config.data.ok,true);assert.equal(config.data.emailVerificationEnabled,false);assert.equal(config.data.passwordResetEnabled,false);
+  const ads=await app.request('/api/ads/world?zoom=1&limit=96');
+  assert.equal(ads.status,200);assert.deepEqual(ads.data.spaces,[]);assert.deepEqual(ads.data.active,[]);
+  assert.equal((await app.request('/api/presence/nearby')).status,401);
+  const ada=await register(app.request,'ada');
+  const nearby=await app.request('/api/presence/nearby',{cookie:ada.cookie});
+  assert.equal(nearby.status,200);assert.deepEqual(nearby.data.nearby,[]);assert.equal(nearby.data.stats.onlineNow,1);assert.equal(nearby.data.stats.hereNow,1);assert.equal(typeof nearby.data.serverTime,'number');
+  assert.equal((await app.request('/api/auth/config',{cookie:ada.cookie})).status,200);
+  assert.equal((await app.request('/api/ads/world',{cookie:ada.cookie})).status,200);
 });

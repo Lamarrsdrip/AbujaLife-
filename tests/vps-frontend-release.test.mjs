@@ -24,6 +24,16 @@ test('Caddy serves the release manifest revision and validates before activation
   assert.match(frontend, /# BEGIN ABUJALIFE FRONTEND/);
 });
 
+test('AbujaLife Caddy clears the HTTP/3 advertisement without editing other sites', () => {
+  assert.match(frontend, /Alt-Svc "clear"/);
+  assert.match(fs.readFileSync('deploy/caddy-api.snippet', 'utf8'), /header Alt-Svc clear/);
+  assert.match(fs.readFileSync('deploy/configure-caddy.ps1', 'utf8'), /header Alt-Svc clear/);
+  const clear = fs.readFileSync('deploy/windows/clear-quic-advertisement.ps1', 'utf8');
+  assert.match(clear, /\^api\\.abujacity\\.life/);
+  assert.match(clear, /header Alt-Svc clear/);
+  assert.ok(deploy.indexOf('clear-quic-advertisement.ps1') > deploy.indexOf('configure-frontend.ps1'));
+});
+
 test('frontend CI validates the build without publishing a drifting Hostinger branch', { skip: !fs.existsSync(workflowPath) }, () => {
   const workflow = fs.readFileSync(workflowPath, 'utf8');
   assert.match(workflow, /Verify the static site ships in the VPS release/);

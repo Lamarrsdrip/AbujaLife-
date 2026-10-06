@@ -149,8 +149,10 @@ test('authenticated local HTTP body keys and chat transfer receipts persist for 
   t.after(async()=>{await close();fs.rmSync(dataDir,{recursive:true,force:true});});
   const request=async(route,cookie,body)=>{const response=await fetch(base+route,{method:body===undefined?'GET':'POST',headers:{...(cookie?{cookie}:{}),...(body===undefined?{}:{'content-type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)})});return{status:response.status,body:await response.json(),cookie:response.headers.get('set-cookie')?.split(';')[0]};};
   await start();
-  const ada=await request('/api/auth/register',null,{username:'http_chat_ada',displayName:'Ada',password:'Disposable-chat-password'}),bello=await request('/api/auth/register',null,{username:'http_chat_bello',displayName:'Bello',password:'Disposable-chat-password'});
-  assert.equal(ada.status,201);assert.equal(bello.status,201);
+  const adaAck=await request('/api/auth/register',null,{username:'http_chat_ada',displayName:'Ada',password:'Disposable-chat-password'}),belloAck=await request('/api/auth/register',null,{username:'http_chat_bello',displayName:'Bello',password:'Disposable-chat-password'});
+  assert.equal(adaAck.status,201);assert.equal(belloAck.status,201);assert.equal(typeof adaAck.body.residentId,'string');assert.equal(typeof belloAck.body.residentId,'string');
+  const ada={cookie:adaAck.cookie,body:(await request('/api/entry',adaAck.cookie)).body},bello={cookie:belloAck.cookie,body:(await request('/api/entry',belloAck.cookie)).body};
+  assert.equal(ada.body.profile.id,adaAck.body.residentId);assert.equal(bello.body.profile.id,belloAck.body.residentId);
   const conversationId=(await request('/api/conversations',ada.cookie,{residentId:bello.body.profile.id})).body.conversation.id;
   const messagePath=`/api/conversations/${conversationId}/messages`,messageBody={text:'A real HTTP message',idempotencyKey:key(),kind:'transfer',transfer:{amount:99999999}};
   const sent=await request(messagePath,ada.cookie,messageBody),again=await request(messagePath,ada.cookie,messageBody);

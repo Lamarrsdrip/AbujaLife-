@@ -174,7 +174,7 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
  const entry=worldEntryState(scene,profile,persistentScene?sceneMemory.get(key):undefined),saved=entry.saved;scene.spawn=entry.spawn;
  const nav=makeNavigation(scene,driving?24:10);
  const initial=saved?{x:saved.x,y:saved.y}:scene.spawn;
- let player={x:initial.x,y:initial.y},camera={x:saved?.cameraX??player.x,y:saved?.cameraY??player.y},angle=saved?.angle||0,dir=saved?.dir||1,disposed=false,raf=0,lastTime=0,elapsed=0,travelDistance=0,walkPhase=0,path=[],pending=null,nearby=null,moving=false,sprinting=false,arrived=false,furnitureMode=null,furnitureRotation=0,activity=null,lastStatus='',parked={x:saved?.parked?.x??scene.spawn.x+144,y:saved?.parked?.y??scene.spawn.y+108};
+ let player={x:initial.x,y:initial.y},camera={x:saved?.cameraX??player.x,y:saved?.cameraY??player.y},angle=saved?.angle||0,dir=saved?.dir||1,disposed=false,raf=0,lastTime=0,elapsed=0,travelDistance=0,walkPhase=0,path=[],pending=null,routeRepairs=0,nearby=null,moving=false,sprinting=false,arrived=false,furnitureMode=null,furnitureRotation=0,activity=null,lastStatus='',parked={x:saved?.parked?.x??scene.spawn.x+144,y:saved?.parked?.y??scene.spawn.y+108};
  if(saved&&saved.driving&&!driving&&!interior&&!trip){parked={...player};player.x+=78;}
  if(saved&&!saved.driving&&driving){player={...parked};camera={...player};}
  // Furniture and scene geometry can change between visits; repair stale positions.
@@ -214,7 +214,13 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
  let clock=abujaTime(now()),weather=reportedWeather||seasonalWeather(now()),lastClockSecond=-1;
  const sound=createClubAudio({enabled:profile.settings?.soundEnabled!==false,mode:isClub?'club':'ambient',onState:playing=>{const button=container.querySelector('.world-sound-toggle');if(button){const label=isClub?'Music':'Ambience';button.textContent=playing?`${label} on`:`${label} off`;button.setAttribute('aria-pressed',String(playing));}}});
  {const button=document.createElement('button');button.className='world-sound-toggle';button.type='button';button.textContent=isClub?'Music off':'Ambience off';button.setAttribute('aria-pressed','false');button.setAttribute('aria-label',isClub?'Toggle original synthesized club music':'Toggle original Abuja city ambience');button.disabled=profile.settings?.soundEnabled===false;button.title=button.disabled?'Enable sound in Settings first':isClub?'Original club beats · tap to listen':'Original Abuja ambience · tap to listen';button.onclick=()=>sound.toggle();container.append(button);}
- const characterRenderer=createCharacterRenderer(container,{appearance:profile.appearance,pedestrians:scene.pedestrians,neighbours,scene,profile,kind,venue,place});
+ let characterRenderer=null;
+ const mountCharacterRenderer=()=>{
+  if(disposed||characterRenderer||preview)return;
+  characterRenderer=createCharacterRenderer(container,{appearance:profile.appearance,pedestrians:scene.pedestrians,neighbours,scene,profile,kind,venue,place});
+  if(container.dataset.environmentRenderer==='webgl-3d'){oblique=true;updateViewport();}
+  armLoop();
+ };
  let oblique=container.dataset.environmentRenderer==='webgl-3d';
  const roofLabels=document.createElement('div');roofLabels.className='world-roof-labels';container.append(roofLabels);
  const roofEntries=(scene.buildings||[]).filter(b=>b.name).map(b=>{
@@ -234,7 +240,7 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
  const updateRoute=()=>{routeNode.setAttribute('d',path.length?`M${player.x} ${player.y} ${path.map(p=>`L${p.x} ${p.y}`).join(' ')}`:'');destinationNode.toggleAttribute('hidden',!path.length);if(path.length)destinationNode.setAttribute('transform',`translate(${path.at(-1).x} ${path.at(-1).y})`);};
  const stop=()=>{path=[];const interrupted=pending;pending=null;interrupted?.after?.(false);moving=false;updateRoute();};
  const dispatch=(action,payload,after)=>{try{Promise.resolve(onInteract(action,payload||{})).then(result=>after?.(result!==false&&result!==null)).catch(error=>{say(error.message||'Try that again.');after?.(false);});}catch(error){say(error.message||'Try that again.');after?.(false);}};
- const moveTo=(x,y,point=null)=>{if(trip||preview||activity)return false;const target={x:clamp(Number(x)||0,24,scene.width-24),y:clamp(Number(y)||0,24,scene.height-24)};path=nav.path(player,target);pending=point;updateRoute();if(!path.length){say('That spot is out of reach. Try the open path.');pending=null;return false;}say(point?`${driving?'Driving':'Walking'} to ${point.label.toLowerCase()}…`:driving?'Taking the wheel.':'On your way.');container.focus({preventScroll:true});return true;};
+ const moveTo=(x,y,point=null)=>{if(trip||preview||activity)return false;const target={x:clamp(Number(x)||0,24,scene.width-24),y:clamp(Number(y)||0,24,scene.height-24)};path=nav.path(player,target);pending=point;routeRepairs=0;updateRoute();if(!path.length){say('That spot is out of reach. Try the open path.');pending=null;return false;}say(point?`${driving?'Driving':'Walking'} to ${point.label.toLowerCase()}…`:driving?'Taking the wheel.':'On your way.');container.focus({preventScroll:true});poke();return true;};
  const activate=point=>{if(!point||trip||furnitureMode||activity){point?.after?.(false);return;}pending=null;stop();remember();if(driving&&point.action!=='toggle-driving'){say('Park your car and get out to go inside.');return;}const task=point.action==='venue-action'?VENUE_ACTIONS.find(a=>a.id===point.payload?.activityId):null;if(task){animateActivity(task.animation,task.duration,()=>dispatch(point.action,point.payload,point.after),task.name);}else dispatch(point.action,point.payload,point.after);};
  const requestPoint=point=>{if(!point)return false;if(driving&&point.action!=='toggle-driving'){say('Get out of your car to enter a place.');return false;}if(distance(player,point)<(point.radius||66)){activate(point);return true;}return moveTo(point.x,point.y,point);};
  const perform=(action,payload={},after=null)=>{
@@ -335,21 +341,29 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
   if(nudges[control]&&furnitureMode){const [x,y]=nudges[control],vector=screenVectorToWorld({x,y},oblique,orientation());paintFurniture({x:furnitureCursor.x+vector.x,y:furnitureCursor.y+vector.y});}
  });
  const updateJoy=e=>{const rect=joyNode.getBoundingClientRect(),dx=e.clientX-(rect.left+rect.width/2),dy=e.clientY-(rect.top+rect.height/2),length=Math.hypot(dx,dy),max=rect.width*.32,limit=Math.min(length,max);joy.x=length>4?dx/length*limit/max:0;joy.y=length>4?dy/length*limit/max:0;joyKnob.style.transform=`translate(${joy.x*max}px,${joy.y*max}px)`;};
- on(joyNode,'pointerdown',e=>{if(inputBlocked()||trip)return;e.preventDefault();container.focus({preventScroll:true});stop();orbit.stopMomentum();joy.pointer=e.pointerId;joyNode.setPointerCapture(e.pointerId);updateJoy(e);joyNode.classList.add('is-active');});
+ on(container,'pointerdown',()=>poke());
+ on(joyNode,'pointerdown',e=>{if(inputBlocked()||trip)return;e.preventDefault();container.focus({preventScroll:true});stop();orbit.stopMomentum();joy.pointer=e.pointerId;joyNode.setPointerCapture(e.pointerId);updateJoy(e);joyNode.classList.add('is-active');poke();});
  on(joyNode,'pointermove',e=>{if(joy.pointer===e.pointerId){e.preventDefault();updateJoy(e);}});
  const releaseJoy=e=>{if(e&&joy.pointer!==e.pointerId)return;joy.x=joy.y=0;joy.pointer=null;joyKnob.style.transform='translate(0,0)';joyNode.classList.remove('is-active');};
  on(joyNode,'pointerup',releaseJoy);on(joyNode,'pointercancel',releaseJoy);on(joyNode,'lostpointercapture',releaseJoy);
  const sprintButton=container.querySelector('[data-world-control="sprint"]');on(sprintButton,'pointerdown',e=>{e.preventDefault();sprinting=true;sprintButton.setPointerCapture(e.pointerId);sprintButton.classList.add('is-active');});for(const type of ['pointerup','pointercancel','lostpointercapture'])on(sprintButton,type,()=>{sprinting=false;sprintButton.classList.remove('is-active');});
  const movementKeys=['arrowup','arrowdown','arrowleft','arrowright','w','a','s','d'];
- on(window,'keydown',e=>{const k=e.key.toLowerCase();if(inputBlocked())return;if(container.contains(e.target)&&['+','=','-','0'].includes(k)){e.preventDefault();if(k==='0')resetZoom();else setZoom(k==='-'?zoom/WORLD_ZOOM.step:zoom*WORLD_ZOOM.step,{announce:true});return;}if(trip)return;if(furnitureMode&&(k==='r'||k==='escape')){e.preventDefault();if(k==='escape')setFurnitureMode(null);else{furnitureRotation=(furnitureRotation+90)%360;paintFurniture(furnitureCursor);}return;}if(movementKeys.includes(k)||k==='shift'){e.preventDefault();container.focus({preventScroll:true});keyboard.add(k);if(k!=='shift'){stop();orbit.stopMomentum();}}if(k==='e'&&!e.repeat){e.preventDefault();if(driving)perform('toggle-driving');else if(nearby)requestPoint(nearby);}if((k==='enter'||k===' ')&&e.target.closest('[data-world-target]')){e.preventDefault();requestPoint(scene.interactables.find(p=>p.id===e.target.closest('[data-world-target]').dataset.worldTarget));}});
+ on(window,'keydown',e=>{poke();const k=e.key.toLowerCase();if(inputBlocked())return;if(container.contains(e.target)&&['+','=','-','0'].includes(k)){e.preventDefault();if(k==='0')resetZoom();else setZoom(k==='-'?zoom/WORLD_ZOOM.step:zoom*WORLD_ZOOM.step,{announce:true});return;}if(trip)return;if(furnitureMode&&(k==='r'||k==='escape')){e.preventDefault();if(k==='escape')setFurnitureMode(null);else{furnitureRotation=(furnitureRotation+90)%360;paintFurniture(furnitureCursor);}return;}if(movementKeys.includes(k)||k==='shift'){e.preventDefault();container.focus({preventScroll:true});keyboard.add(k);if(k!=='shift'){stop();orbit.stopMomentum();}}if(k==='e'&&!e.repeat){e.preventDefault();if(driving)perform('toggle-driving');else if(nearby)requestPoint(nearby);}if((k==='enter'||k===' ')&&e.target.closest('[data-world-target]')){e.preventDefault();requestPoint(scene.interactables.find(p=>p.id===e.target.closest('[data-world-target]').dataset.worldTarget));}});
  on(window,'keyup',e=>keyboard.delete(e.key.toLowerCase()));
  const resetInput=()=>{sound?.setActive(false);keyboard.clear();releaseJoy();sprinting=false;touch.reset();sprintButton.classList.remove('is-active');lastTime=0;};
- let inViewport=true,pageActive=true;
+ let inViewport=true,pageActive=true,idleTimer=0,activeUntil=0;
  const playbackBlocked=()=>document.hidden||!pageActive||!inViewport||modalOpen();
+ const armLoop=()=>{
+  if(disposed||playbackBlocked())return;
+  clearTimeout(idleTimer);idleTimer=0;
+  container.dataset.renderPaused='false';
+  if(!raf)raf=requestAnimationFrame(time=>tick(time));
+ };
+ const poke=()=>{activeUntil=performance.now()+500;armLoop();};
  const syncPlayback=()=>{
   if(disposed)return;
-  if(playbackBlocked()){cancelAnimationFrame(raf);raf=0;resetInput();container.dataset.renderPaused='true';}
-  else {container.dataset.renderPaused='false';if(!raf)raf=requestAnimationFrame(tick);}
+  if(playbackBlocked()){cancelAnimationFrame(raf);raf=0;clearTimeout(idleTimer);idleTimer=0;resetInput();container.dataset.renderPaused='true';}
+  else armLoop();
  };
  on(window,'blur',resetInput);on(window,'focus',syncPlayback);
  on(document,'visibilitychange',()=>{resetInput();if(document.hidden)remember(true);syncPlayback();});
@@ -366,22 +380,65 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
   let blocked=false;const steps=Math.max(1,Math.ceil(Math.hypot(dx,dy)/9));for(let i=0;i<steps;i++){if(!nav.contains(player.x+dx/steps,player.y)){player.x+=dx/steps;}else blocked=true;if(!nav.contains(player.x,player.y+dy/steps)){player.y+=dy/steps;}else blocked=true;}
   const amount=Math.hypot(dx,dy);if(amount>.1){walkPhase+=dt*(sprinting||keyboard.has('shift')?15:10);travelDistance+=amount;angle=Math.atan2(dy,dx)*180/Math.PI;if(Math.abs(dx)>.2)dir=dx<0?-1:1;}return blocked;
  };
+ let activityTimer=0;
+ function finishActivity(){
+  if(!activity||disposed)return;
+  clearTimeout(activityTimer);activityTimer=0;
+  const cb=activity.done;activity=null;
+  container.removeAttribute('data-activity');container.removeAttribute('data-activity-object');container.removeAttribute('data-activity-progress');
+  container.querySelector('.world-activity-prop')?.remove();statusNode.classList.remove('is-activity');
+  say('A little better than before.');cb?.();
+ }
+ function paintActivity(){
+  if(!activity||disposed)return;
+  activity.elapsed=Math.max(0,performance.now()-activity.started);
+  const progress=clamp(activity.elapsed/activity.duration,0,1);
+  walkPhase+=.08;container.dataset.activityProgress=progress.toFixed(3);
+  container.querySelector('.world-activity-progress')?.setAttribute('stroke-dashoffset',String(126*(1-progress)));
+  statusNode.classList.add('is-activity');statusNode.style.setProperty('--activity-progress',String(progress));
+  if(frameCount%20===0)say(`${activity.label} · ${Math.max(1,Math.ceil((activity.duration-activity.elapsed)/1000))}s`);
+  if(progress>=1)finishActivity();
+ }
+ function armActivityClock(){
+  clearTimeout(activityTimer);
+  const step=()=>{activityTimer=0;if(disposed||!activity)return;paintActivity();if(activity)activityTimer=setTimeout(step,100);};
+  activityTimer=setTimeout(step,100);
+ }
  const tick=time=>{
-  raf=0;if(disposed)return;if(playbackBlocked()){syncPlayback();return;}raf=requestAnimationFrame(tick);let dt=lastTime?Math.min(.12,(time-lastTime)/1000):0;lastTime=time;frameCount++;
+  raf=0;if(disposed)return;if(playbackBlocked()){syncPlayback();return;}const frameDt=lastTime?Math.min(1,(time-lastTime)/1000):0;let dt=Math.min(.12,frameDt);lastTime=time;frameCount++;
   const currentNow=now();if(Math.floor(currentNow/1000)!==lastClockSecond){lastClockSecond=Math.floor(currentNow/1000);clock=abujaTime(currentNow);weather=reportedWeather||seasonalWeather(currentNow);const musicButton=container.querySelector('.world-sound-toggle');if(musicButton){const closed=isClub&&!clubSchedule(currentNow).isOpen;musicButton.disabled=closed||profile.settings?.soundEnabled===false;if(closed){musicButton.textContent='DJ off duty';musicButton.title=clubSchedule(currentNow).openingHours;}else if(musicButton.textContent==='DJ off duty'){musicButton.textContent=isClub?'Music off':'Ambience off';musicButton.title=isClub?'Original club beats · tap to listen':'Original Abuja ambience · tap to listen';}}container.dataset.timeOfDay=clock.isNight?'night':'day';container.dataset.abujaTime=clock.label;container.dataset.weather=weather.condition||'clear';timeChip.innerHTML=`<time datetime="${new Date(currentNow).toISOString()}">${clock.label} WAT</time><span title="${escape(weather.label||'Seasonal game weather')}">${weather.condition==='rain'?'Rain':weather.condition==='cloudy'?'Cloudy':weather.condition==='hazy'?'Hazy':'Clear'} · ${Math.round(weather.temperatureC??28)}° <small>${weather.source==='seasonal-simulation'?'game weather':'weather'}</small></span>`;}
   if(oblique&&container.dataset.environmentRenderer!=='webgl-3d'){oblique=false;updateViewport();}
   const blocked=inputBlocked();sound.setActive(!blocked&&(!isClub||clubSchedule(currentNow).isOpen));if(blocked&&!preview)dt=0;elapsed+=dt;if(blocked){keyboard.clear();joy.x=joy.y=0;}
   const orbitState=orbit.tick(dt);zoom=orbitState.zoom;if(orbitState.changed)updateViewport();
   const old={...player};moving=false;
-  if(trip){const duration=Math.max(1,Number(trip.seconds)||30)*1000,start=Number(trip.arrivesAt)-duration,progress=clamp((currentNow-start)/duration,0,1);player.x=450+progress*(scene.width-1000);player.y=889+Math.sin(elapsed*.6)*3;angle=0;moving=progress<1;walkPhase+=dt*10;if(progress>=1&&!arrived){arrived=true;say('You have arrived. Welcome to your next chapter.');if(onArrive)onArrive(trip.id);}}
+  if(trip){const duration=Math.max(1,Number(trip.seconds)||30)*1000,start=Number(trip.arrivesAt)-duration,progress=clamp((currentNow-start)/duration,0,1);player.x=450+progress*(scene.width-1000);player.y=889+Math.sin(elapsed*.6)*3;angle=0;moving=progress<1;walkPhase+=dt*10;if(progress>=1&&!arrived){arrived=true;Promise.resolve(onArrive?.(trip.id)).then(ok=>{if(ok===false)arrived=false;});}}
   else if(!blocked&&!furnitureMode&&!activity){let dx=(keyboard.has('d')||keyboard.has('arrowright')?1:0)-(keyboard.has('a')||keyboard.has('arrowleft')?1:0)+joy.x,dy=(keyboard.has('s')||keyboard.has('arrowdown')?1:0)-(keyboard.has('w')||keyboard.has('arrowup')?1:0)+joy.y;
    const inputLength=Math.hypot(dx,dy);if(inputLength>.06){if(path.length)stop();dx/=Math.max(1,inputLength);dy/=Math.max(1,inputLength);const velocity=screenVectorToWorld({x:dx,y:dy},oblique,orientation()),velocityLength=Math.hypot(velocity.x,velocity.y);dx=velocity.x/Math.max(1,velocityLength);dy=velocity.y/Math.max(1,velocityLength);const run=sprinting||keyboard.has('shift')||Math.hypot(joy.x,joy.y)>.82;const speed=driving?(run?455:300):(run?212:127);updatePlayer(dx*speed*dt,dy*speed*dt,dt);}
-   else if(path.length){const target=path[0],gap=distance(player,target),speed=driving?285:172,step=speed*dt;if(gap<Math.max(5,step)){const last=path.shift();player={x:last.x,y:last.y};updateRoute();}else {const collision=updatePlayer((target.x-player.x)/gap*step,(target.y-player.y)/gap*step,dt);if(collision&&distance(old,player)<.1){stop();say('Try the clear path around that object.');}}if(pending&&distance(player,pending)<Math.min(35,pending.radius||60)){const destination=pending;pending=null;stop();activate(destination);}else if(!path.length&&pending){const destination=pending;pending=null;stop();if(distance(player,destination)<(destination.radius||75))activate(destination);}}
+   else if(path.length){
+    // Slow WebGL frames must not stretch a short walk past the time a player
+    // will wait. Follow the cleared route for up to half a second of real
+    // time each frame, and interact as soon as the destination's own radius
+    // is reached instead of abandoning the walk on a one-frame bump.
+    const speed=driving?285:172;let budget=speed*Math.min(.5,frameDt),stalled=false;
+    for(let hop=0;path.length&&budget>1&&hop<12;hop++){
+     const target=path[0],gap=distance(player,target);
+     if(gap<=Math.max(5,budget)){const last=path.shift();budget-=gap;player={x:last.x,y:last.y};updateRoute();}
+     else {const before={...player};const collision=updatePlayer((target.x-player.x)/gap*budget,(target.y-player.y)/gap*budget,Math.min(.5,frameDt));budget=0;if(collision&&distance(before,player)<.1)stalled=true;}
+    }
+    const inReach=point=>distance(player,point)<(point.radius||75);
+    if(pending&&inReach(pending)){const destination=pending;pending=null;path=[];updateRoute();activate(destination);}
+    else if(stalled&&pending){
+     const destination=pending,retry=routeRepairs<2?nav.path(player,destination):[];
+     if(retry.length&&distance(player,retry[0])>6){routeRepairs++;path=retry;updateRoute();}
+     else {pending=null;path=[];updateRoute();say('Try the clear path around that object.');}
+    }else if(!path.length&&pending){const destination=pending;pending=null;updateRoute();if(inReach(destination))activate(destination);else say('That spot is out of reach. Try the open path.');}
+   }
    moving=distance(old,player)>.05;
   }
-  if(activity){activity.elapsed+=dt*1000;const progress=clamp(activity.elapsed/activity.duration,0,1);walkPhase+=dt*6;container.dataset.activityProgress=progress.toFixed(3);container.querySelector('.world-activity-progress')?.setAttribute('stroke-dashoffset',String(126*(1-progress)));statusNode.classList.add('is-activity');statusNode.style.setProperty('--activity-progress',String(progress));if(frameCount%20===0)say(`${activity.label} · ${Math.max(1,Math.ceil((activity.duration-activity.elapsed)/1000))}s`);if(progress>=1){const cb=activity.done;activity=null;container.removeAttribute('data-activity');container.removeAttribute('data-activity-object');container.querySelector('.world-activity-prop')?.remove();statusNode.classList.remove('is-activity');say('A little better than before.');cb?.();}}
+  if(activity)paintActivity();
   if(trip){camera.x=player.x;camera.y=player.y-55;}
-  const targetCam={x:player.x+(moving&&driving?Math.cos(angle*Math.PI/180)*100:0),y:player.y-55};const ease=1-Math.exp(-dt*(driving?4.5:6));camera.x+=(targetCam.x-camera.x)*ease;camera.y+=(targetCam.y-camera.y)*ease;camera=constrainWorldCamera(camera,viewport(),scene);
+  else if(!moving){camera=constrainWorldCamera({x:player.x,y:player.y-55},viewport(),scene);}
+  else {const targetCam={x:player.x+(driving?Math.cos(angle*Math.PI/180)*100:0),y:player.y-55};const ease=1-Math.exp(-dt*(driving?4.5:6));camera.x+=(targetCam.x-camera.x)*ease;camera.y+=(targetCam.y-camera.y)*ease;camera=constrainWorldCamera(camera,viewport(),scene);}
   groundGroup.setAttribute('transform',worldFloorTransform(camera,viewport()));
   svg.setAttribute('viewBox',`${(camera.x-viewWidth/2).toFixed(2)} ${(camera.y-viewHeight/2).toFixed(2)} ${viewWidth.toFixed(2)} ${viewHeight.toFixed(2)}`);
   playerNode.setAttribute('transform',`translate(${player.x.toFixed(2)} ${player.y.toFixed(2)})`);carNode.setAttribute('transform',`rotate(${angle.toFixed(2)})`);facingNode.setAttribute('transform',`scale(${dir} 1)`);
@@ -408,17 +465,26 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
   if(frameCount%5===0||moving){nearby=scene.interactables.filter(p=>!driving||p.action==='toggle-driving').filter(p=>distance(player,p)<(p.radius||76)).sort((a,b)=>distance(player,a)-distance(player,b))[0]||null;container.querySelectorAll('.world-point').forEach(node=>node.classList.toggle('is-nearby',node.dataset.worldTarget===nearby?.id));interactButton.querySelector('span').textContent=driving?'Park & get out':nearby?.label||'Explore';interactButton.classList.toggle('is-ready',driving||!!nearby);container.dataset.playerX=player.x.toFixed(2);container.dataset.playerY=player.y.toFixed(2);container.dataset.cameraX=camera.x.toFixed(2);container.dataset.cameraY=camera.y.toFixed(2);const screen=worldToScreen(player,{left:0,top:0,width:container.clientWidth,height:container.clientHeight},camera,viewport());container.dataset.playerScreenX=screen.x.toFixed(2);container.dataset.playerScreenY=screen.y.toFixed(2);container.dataset.moving=String(moving);container.dataset.distance=travelDistance.toFixed(1);container.dataset.nearby=nearby?.id||'';const miniPlayer=container.querySelector('.world-minimap-player'),miniView=container.querySelector('.world-minimap-view');miniPlayer?.setAttribute('cx',String(player.x));miniPlayer?.setAttribute('cy',String(player.y));if(miniView){miniView.setAttribute('x',String(camera.x-viewWidth/2));miniView.setAttribute('y',String(camera.y-viewHeight/2));miniView.setAttribute('width',String(viewWidth));miniView.setAttribute('height',String(viewHeight));}if(moving&&!pending&&!trip)say(driving?'Windows down. The city is yours.':keyboard.has('shift')||sprinting?'Picking up the pace.':nearby?`${nearby.label} · press E to interact`:'Going places.');}
   for(const person of neighbours){const pose=residentPoses.get(String(person.id)),node=container.querySelector(`[data-world-resident="${CSS.escape(String(person.id))}"]`);if(node&&pose)node.setAttribute('transform',`translate(${pose.x} ${pose.y})`);}
   if(frameCount%60===0)remember();
+  const standing=!moving&&!activity&&!trip&&!furnitureMode&&!path.length&&!joy.pointer&&!orbitState.active&&performance.now()>activeUntil;
+  if(standing&&frameCount>6&&(preview||characterRenderer)){
+   container.dataset.renderPaused='idle';
+   const ambient=!preview&&!interior&&!playbackBlocked();
+   idleTimer=setTimeout(armLoop,ambient?150:1000);
+   return;
+  }
+  if(!playbackBlocked())raf=requestAnimationFrame(time=>tick(time));
  };
  function animateActivity(name,seconds=4,done,label) {
-  stop();const labels={eat:'Enjoying your meal',exercise:'Making time to move',rest:'Resting and recharging',sleep:'Sleeping and recharging',shower:'Freshening up',watch:'Enjoying the film',shop:'Choosing the essentials',walk:'Taking in the garden',groom:'A little self care',pray:'A quiet moment',social:'Making a connection',dance:'Finding your rhythm',dice:'Rolling the dice'};
+  poke();stop();const labels={eat:'Enjoying your meal',exercise:'Making time to move',rest:'Resting and recharging',sleep:'Sleeping and recharging',shower:'Freshening up',watch:'Enjoying the film',shop:'Choosing the essentials',walk:'Taking in the garden',groom:'A little self care',pray:'A quiet moment',social:'Making a connection',dance:'Finding your rhythm',dice:'Rolling the dice'};
   const targetKinds={sleep:['bed','king-bed'],rest:['sofa','premium-sofa','chair'],shower:['shower'],exercise:['treadmill','bench-press']};const object=(scene.objects||[]).filter(o=>(targetKinds[name]||[]).includes(o.kind)).sort((a,b)=>distance(player,{x:a.x+a.w/2,y:a.y+a.h/2})-distance(player,{x:b.x+b.w/2,y:b.y+b.h/2}))[0];
-  activity={name,object,elapsed:0,duration:Math.max(1,seconds)*1000,done,label:label||labels[name]||'Taking a moment'};container.dataset.activity=name;container.dataset.activityObject=object?.kind||'';container.querySelector('.world-activity-prop')?.remove();
+  activity={name,object,elapsed:0,started:performance.now(),duration:Math.max(1,seconds)*1000,done,label:label||labels[name]||'Taking a moment'};container.dataset.activity=name;container.dataset.activityObject=object?.kind||'';container.querySelector('.world-activity-prop')?.remove();
   const ns='http://www.w3.org/2000/svg',prop=document.createElementNS(ns,'g');prop.setAttribute('class','world-activity-prop');
   prop.innerHTML=`<g transform="translate(39 -67)"><circle r="21" fill="#f8f0dfe8"/><circle class="world-activity-progress" r="20" fill="none" stroke="#73966b" stroke-width="3" stroke-dasharray="126" stroke-dashoffset="126" transform="rotate(-90)"/><text y="5" text-anchor="middle" font-size="17" fill="#577d50">${{eat:'♨',exercise:'↗',rest:'z',sleep:'z',shower:'≋',watch:'▷',shop:'▱',walk:'♧',groom:'✦',pray:'·',social:'◌',dance:'♫',dice:'⚄'}[name]||'✦'}</text></g>${name==='shower'?'<g class="activity-water" stroke="#b5e2d9" stroke-width="2" stroke-linecap="round"><path d="M-15-93V-83M-5-101V-88M8-96V-80M18-87V-75M-13-76V-65M3-74V-61M16-64V-52"/></g>':''}${name==='shop'?'<path d="M20-35H39L36-14H23Z" fill="#d8b984"/><path d="M24-35V-41Q30-48 36-41V-35" fill="none" stroke="#93754f" stroke-width="2"/>':''}`;
-  playerNode.append(prop);say(activity.label);return true;
+  playerNode.append(prop);say(activity.label);armActivityClock();return true;
  }
  syncPlayback();
- const cleanup=()=>{if(disposed)return;stop();disposed=true;remember(true);cancelAnimationFrame(raf);raf=0;touch.dispose();overlayObserver?.disconnect();visibilityObserver?.disconnect();characterRenderer?.dispose();sound?.dispose();observer?.disconnect();listeners.forEach(remove=>remove());container.classList.remove('world-playable');};
+ if(!preview)requestAnimationFrame(mountCharacterRenderer);
+ const cleanup=()=>{if(disposed)return;stop();disposed=true;remember(true);cancelAnimationFrame(raf);raf=0;clearTimeout(idleTimer);idleTimer=0;clearTimeout(activityTimer);activityTimer=0;activity=null;touch.dispose();overlayObserver?.disconnect();visibilityObserver?.disconnect();characterRenderer?.dispose();sound?.dispose();observer?.disconnect();listeners.forEach(remove=>remove());container.classList.remove('world-playable');};
  cleanup.updateResidents=next=>{knownResidents=(Array.isArray(next)?next:[]).filter(p=>p.id!==profile.id&&p.online);const present=new Set(knownResidents.map(p=>String(p.id)));for(const id of [...residentPoses.keys()])if(!present.has(id)){residentPoses.delete(id);residentTargets.delete(id);residentUpdatedAt.delete(id);}for(const person of knownResidents){const id=String(person.id);if(usablePose(person.pose)){if(!residentPoses.has(id))residentPoses.set(id,{...person.pose});residentTargets.set(id,{...person.pose});residentUpdatedAt.set(id,now());}else if(Object.hasOwn(person,'pose')){residentPoses.delete(id);residentTargets.delete(id);residentUpdatedAt.delete(id);}}neighbours=knownResidents.filter(p=>usablePose(residentPoses.get(String(p.id)))).slice(0,50);container.querySelector('.world-online').innerHTML=neighbours.map(residentMarkup).join('');characterRenderer?.setResidents?.(neighbours);};
  cleanup.updateResidentPose=data=>{const id=String(data?.residentId||''),pose=data?.pose;if(!usablePose(pose))return false;const current=residentPoses.get(id),last=residentUpdatedAt.get(id)||0,gap=current?Math.hypot(pose.x-current.x,pose.y-current.y):Infinity;if(!current||gap>720||now()-last>10000)residentPoses.set(id,{...pose});residentTargets.set(id,{...pose});residentUpdatedAt.set(id,now());if(!neighbours.some(p=>String(p.id)===id)&&knownResidents.some(p=>String(p.id)===id))cleanup.updateResidents(knownResidents.map(p=>String(p.id)===id?{...p,pose}:p));return true;};
  cleanup.walkTo=moveTo;cleanup.perform=perform;cleanup.performAsync=(action,payload={})=>new Promise(resolve=>{if(!perform(action,payload,resolve))resolve(false);});cleanup.setFurnitureMode=setFurnitureMode;cleanup.cancelNavigation=stop;cleanup.focus=()=>container.focus({preventScroll:true});cleanup.getFurnitureState=()=>({placed:[...container.querySelectorAll('[data-furniture-item],[data-home-item]')].map(n=>n.dataset.furnitureItem||n.dataset.homeItem).filter((id,i,a)=>a.indexOf(id)===i),stored:scene.storedFurniture||[],placements:scene.furniturePlacements||[]});cleanup.getMotionState=()=>({...player,angle,cameraX:camera.x,cameraY:camera.y,zoom,viewWidth,viewHeight,moving,driving,activity:activity?.name||null,pathLength:path.length,nearby:nearby?.id,travelDistance,scene:kind});cleanup.animateAction=animateActivity;cleanup.animateActivity=animateActivity;cleanup.setZoom=setZoom;cleanup.resetZoom=resetZoom;cleanup.getCameraState=()=>({x:camera.x,y:camera.y,...orientation(),zoom,width:viewWidth,height:viewHeight,oblique,minZoom:WORLD_ZOOM.min,maxZoom:WORLD_ZOOM.max});cleanup.worldToScreen=point=>worldToScreen(point,svg.getBoundingClientRect(),camera,viewport());

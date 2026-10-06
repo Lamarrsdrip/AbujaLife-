@@ -122,7 +122,7 @@ test('real local HTTP exposes bounded inbox pages and authorized delivered ackno
   const base=`http://127.0.0.1:${server.address().port}`;
   const request=async(route,cookie,body)=>{const res=await fetch(base+route,{method:body===undefined?'GET':'POST',headers:{...(cookie?{cookie}:{}),...(body===undefined?{}:{'content-type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)})});return{status:res.status,body:await res.json(),cookie:res.headers.get('set-cookie')?.split(';')[0]};};
   const accounts=[];
-  for(const username of ['http_inbox_ada','http_inbox_bello','http_inbox_chika']){const account=await request('/api/auth/register',null,{username,password:'Disposable-inbox-password'});assert.equal(account.status,201);accounts.push(account);}
+  for(const username of ['http_inbox_ada','http_inbox_bello','http_inbox_chika']){const account=await request('/api/auth/register',null,{username,password:'Disposable-inbox-password'});assert.equal(account.status,201);assert.equal(typeof account.body.residentId,'string');const entry=await request('/api/entry',account.cookie);assert.equal(entry.body.profile.id,account.body.residentId);accounts.push({cookie:account.cookie,body:entry.body});}
   const [ada,bello,chika]=accounts;
   const dm=(await request('/api/conversations',ada.cookie,{residentId:bello.body.profile.id})).body.conversation.id;
   const other=(await request('/api/conversations',ada.cookie,{residentId:chika.body.profile.id})).body.conversation.id;

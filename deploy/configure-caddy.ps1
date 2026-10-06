@@ -22,6 +22,7 @@ $snippet = @"
 
 api.abujacity.life {
     encode zstd gzip
+    header Alt-Svc clear
     request_body {
         max_size 1MB
     }

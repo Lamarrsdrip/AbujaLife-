@@ -1,4 +1,5 @@
 import { pathToFileURL } from 'node:url';
+import '../shared/abuja-landmarks-2026.mjs';
 import { connectMongo } from './mongo/database.mjs';
 import { MongoGameStore } from './mongo/gameStore.mjs';
 import { MongoSocialStore } from './mongo/socialStore.mjs';

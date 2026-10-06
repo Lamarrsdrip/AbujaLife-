@@ -10,6 +10,7 @@ delete pkg.scripts?.preqa;
 delete pkg.scripts?.postbuild;
 writeFileSync('package.json',`${JSON.stringify(pkg,null,2)}\n`);
 rmSync('scripts/city-world-integrity-patch.py',{force:true});
+rmSync('scripts/city-world-integrity-hotfix.py',{force:true});
 rmSync('scripts/ci-city-integrity-commit.mjs',{force:true});
 const run=(cmd,args)=>execFileSync(cmd,args,{stdio:'inherit'});
 run('git',['config','user.name','GhostDev']);

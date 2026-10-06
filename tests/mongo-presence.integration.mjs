@@ -26,8 +26,11 @@ test('Real Mongo HTTP peers receive street, venue and consented home poses, incl
     return{value,cookie:response.headers.get('set-cookie')?.split(';')[0]};
   }
   async function register(label){
-    const result=await request('/api/auth/register',null,{username:`pose_${label}_${crypto.randomBytes(5).toString('hex')}`,displayName:`Presence ${label}`,password:'Disposable presence acceptance password!',startup:true});
-    return{id:result.value.profile.id,cookie:result.cookie};
+    const result=await request('/api/auth/register',null,{username:`pose_${label}_${crypto.randomBytes(5).toString('hex')}`,displayName:`Presence ${label}`,password:'Disposable presence acceptance password!'});
+    assert.equal(typeof result.value.residentId,'string');assert.equal(result.value.profile,undefined);
+    const entry=await request('/api/entry',{cookie:result.cookie});
+    assert.equal(entry.value.profile.id,result.value.residentId);
+    return{id:result.value.residentId,cookie:result.cookie};
   }
   async function stream(account){
     const controller=new AbortController(),events=[];

@@ -149,12 +149,12 @@ export async function runPublicAcceptance({ phase, env = process.env } = {}) {
           const account = { username: `qa_${label.toLowerCase()}_${suffix}`, password: crypto.randomBytes(24).toString('base64url') };
           evidence.accounts[label] = account; await save();
           const registered = await request('/api/auth/register', { method: 'POST', body: { username: account.username, password: account.password, displayName: `Production QA ${label}` } });
-          success(registered, 201); account.id = registered.data.profile.id; account.cookie = sessionCookie(registered.cookie); await save();
+          success(registered, 201); expect(typeof registered.data.residentId === 'string' && registered.data.profile === undefined, 'register_must_acknowledge_without_profile'); account.id = registered.data.residentId; account.cookie = sessionCookie(registered.cookie); await save();
           const registrationCookie = account.cookie;
           success(await request('/api/auth/logout', { account, method: 'POST', body: {} }));
           expect((await request('/api/wallet', { account: { cookie: registrationCookie } })).status === 401, 'logout_must_revoke_registration_session');
           const loggedIn = await request('/api/auth/login', { method: 'POST', body: { username: account.username, password: account.password } });
-          success(loggedIn); expect(loggedIn.data.profile.id === account.id, 'login_identity_changed'); account.cookie = sessionCookie(loggedIn.cookie); await save();
+          success(loggedIn); expect(loggedIn.data.residentId === account.id && loggedIn.data.profile === undefined, 'login_identity_changed'); account.cookie = sessionCookie(loggedIn.cookie); await save();
           success(await request('/api/profile', { account, method: 'POST', body: { appearance: { presentation }, onboardingComplete: true } }));
         }
         expect(new Set(Object.values(evidence.accounts).map(account => account.id)).size === 3, 'accounts_must_be_distinct');
@@ -260,10 +260,10 @@ export async function runPublicAcceptance({ phase, env = process.env } = {}) {
       await check('All three saved accounts explicitly log in again after restart without losing persisted state', async () => {
         for (const [label, account] of Object.entries(evidence.accounts)) {
           const loggedIn = await request('/api/auth/login', { method: 'POST', body: { username: account.username, password: account.password } });
-          success(loggedIn); expect(loggedIn.data.profile.id === account.id, 'saved_login_identity_mismatch');
+          success(loggedIn); expect(loggedIn.data.residentId === account.id && loggedIn.data.profile === undefined, 'saved_login_identity_mismatch');
           account.cookie = sessionCookie(loggedIn.cookie); await save();
           const { ledger, ...expected } = evidence.expected[label];
-          expect(equal(snapshot(loggedIn.data.profile), expected), 'saved_login_state_mismatch');
+          expect(equal(snapshot(await profile(account)), expected), 'saved_login_state_mismatch');
         }
       });
       await check('Public SSE reconnects after backend restart and delivers a new persistent message', async () => {

@@ -74,6 +74,8 @@ try{
   const username='infra_'+crypto.randomBytes(5).toString('hex');
   const response=await fetch(base+'/api/auth/register',{method:'POST',headers:{origin:'https://abujacity.life','content-type':'application/json'},body:JSON.stringify({username,password:crypto.randomBytes(18).toString('base64url'),displayName:'Before backup'})});
   assert.equal(response.status,201);const registered=await response.json(),cookie=response.headers.get('set-cookie').split(';')[0];
+  assert.equal(registered.authenticated,true);assert.equal(typeof registered.residentId,'string');assert.equal(registered.profile,undefined);
+  const entryResponse=await fetch(base+'/api/entry',{headers:{origin:'https://abujacity.life',cookie}});assert.equal(entryResponse.status,200);const entry=await entryResponse.json();assert.equal(entry.profile.id,registered.residentId);
   await compose(['exec','-T','api','node','deploy/admin-bootstrap.mjs','--username',username]);
   client=new MongoClient(uri);await client.connect();const db=client.db('abujalife_prod');
   const ledgerCount=await db.collection('ledger').countDocuments();
@@ -88,15 +90,15 @@ try{
   await restoreAdmin.db('abujalife_prod').collection('restore_post_snapshot_probe').insertOne({_id:'must-not-survive',createdAfterSnapshot:true});
   const corruptName='tampered.abjl.enc',corrupt=fs.readFileSync(encrypted);corrupt[24]^=1;fs.writeFileSync(path.join(directory,'backups',corruptName),corrupt,{mode:0o600});
   let corruptionRejected=false;try{await run(process.execPath,['deploy/restore-run.mjs',corruptName,'--confirm','abujalife_prod'],{capture:true,env:{ABUJALIFE_OPS_IMAGE:'abujalife-ops:unavailable-fixture-image'}});}catch{corruptionRejected=true;}
-  assert.ok(corruptionRejected);assert.equal((await db.collection('residents').findOne({id:registered.profile.id})).displayName,'After backup');
+  assert.ok(corruptionRejected);assert.equal((await db.collection('residents').findOne({id:registered.residentId})).displayName,'After backup');
   assert.ok(await restoreAdmin.db('abujalife_prod').collection('restore_post_snapshot_probe').findOne({_id:'must-not-survive'}));
   await run(process.execPath,['deploy/restore-run.mjs',filename,'--confirm','abujalife_prod'],{env:{ABUJALIFE_OPS_IMAGE:'abujalife-ops:unavailable-fixture-image'}});
   assert.equal(await restoreAdmin.db('abujalife_prod').collection('restore_post_snapshot_probe').countDocuments(),0);
-  assert.equal((await db.collection('residents').findOne({id:registered.profile.id})).displayName,'Before backup');assert.equal(await db.collection('ledger').countDocuments(),ledgerCount);
+  assert.equal((await db.collection('residents').findOne({id:registered.residentId})).displayName,'Before backup');assert.equal(await db.collection('ledger').countDocuments(),ledgerCount);
   await run(process.execPath,['deploy/compose.mjs','up','-d','--no-build','--no-deps','api']);
   base='http://127.0.0.1:'+recordedPort;
   await waitFor(async()=>(await fetch(base+'/api/health',{signal:AbortSignal.timeout(1000)})).ok,'Restored API');
-  const persisted=await fetch(base+'/api/bootstrap',{headers:{origin:'https://abujacity.life',cookie}});assert.equal(persisted.status,200);const restored=await persisted.json();assert.equal(restored.profile.wallet,registered.profile.wallet);assert.equal(restored.profile.displayName,'Before backup');assert.equal(restored.admin.role,'superadmin');
+  const persisted=await fetch(base+'/api/bootstrap',{headers:{origin:'https://abujacity.life',cookie}});assert.equal(persisted.status,200);const restored=await persisted.json();assert.equal(restored.profile.wallet,entry.profile.wallet);assert.equal(restored.profile.displayName,'Before backup');assert.equal(restored.admin.role,'superadmin');
   console.log('PASS actual API container runs as UID 1000; recorded immutable images selected; consistent encrypted backup; tampering rejects before writes; complete snapshot excludes newer collections; database/session/wallet/admin survive restore and process restart.');
 }catch(error){failed=true;console.error(error.message);}
 finally{

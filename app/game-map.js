@@ -4,7 +4,7 @@ import { TRANSPORT_MODES } from '../src/shared/life.mjs';
 
 const appRoot=document.querySelector('#app');
 const toastRoot=document.querySelector('#toast');
-const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[char]));
+const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const money=value=>`₦${new Intl.NumberFormat('en-NG',{maximumFractionDigits:0}).format(Number(value||0))}`;
 let overlay=null,cleanup=null,snapshot=null,busy=false;
 

@@ -11,7 +11,8 @@ const entries={
   'three.module':'node_modules/three/build/three.module.js',
   GLTFLoader:'node_modules/three/examples/jsm/loaders/GLTFLoader.js',
   KTX2Loader:'node_modules/three/examples/jsm/loaders/KTX2Loader.js',
-  meshopt_decoder:'node_modules/three/examples/jsm/libs/meshopt_decoder.module.js'
+  meshopt_decoder:'node_modules/three/examples/jsm/libs/meshopt_decoder.module.js',
+  RoomEnvironment:'node_modules/three/examples/jsm/environments/RoomEnvironment.js'
 };
 for(const [name,entry] of Object.entries(entries))await build({
   absWorkingDir:root,
@@ -30,4 +31,4 @@ const basisOutput=path.join(output,'basis');
 await fs.mkdir(basisOutput,{recursive:true});
 for(const file of ['basis_transcoder.js','basis_transcoder.wasm'])await fs.copyFile(path.join(basisSource,file),path.join(basisOutput,file));
 await fs.copyFile(path.join(root,'node_modules/three/LICENSE'),path.join(output,'LICENSE.three.txt'));
-console.log('Built local Three.js 0.180.0 renderer, GLTF/KTX2/Meshopt loaders and Basis transcoder.');
+console.log('Built local Three.js 0.180.0 renderer, IBL environment, GLTF/KTX2/Meshopt loaders and Basis transcoder.');

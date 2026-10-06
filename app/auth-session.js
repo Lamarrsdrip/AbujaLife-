@@ -21,20 +21,31 @@ export function accountErrorMessage(error) {
   return error?.message || 'We could not complete this request. Please try again.';
 }
 
+function sessionMatches(recovered,credentials={}) {
+  if(!recovered?.authenticated||!recovered.profile)return false;
+  const username=credentials.username?.trim().toLowerCase();
+  const email=credentials.email?.trim().toLowerCase();
+  if(username)return recovered.profile.username?.toLowerCase()===username || (username.includes('@')&&recovered.profile.email?.toLowerCase()===username);
+  return email ? recovered.profile.email?.toLowerCase()===email : true;
+}
+
 export async function authenticateAccount({api, mode, credentials, readSession}) {
+  let acknowledged=false,writeError=null;
   try {
-    return await api(`/api/auth/${mode}`, {method:'POST', body:{...credentials, startup:true}});
+    const result=await api(`/api/auth/${mode}?session=1`, {method:'POST', body:{...credentials}});
+    if(!result?.authenticated)throw new Error('Your account session was not created. Please try again.');
+    acknowledged=true;
   } catch (error) {
     if (!interruptedRequest(error)) throw error;
-    let recovered;
-    try { recovered = await readSession(); } catch { throw error; }
-    const expected = credentials.username?.trim().toLowerCase();
-    const matchesIdentity = expected
-      ? recovered.profile?.username?.toLowerCase() === expected
-      : credentials.email && recovered.profile?.email?.toLowerCase() === credentials.email.trim().toLowerCase();
-    if (recovered.authenticated && recovered.profile && matchesIdentity) return recovered;
-    throw error;
+    writeError=error;
   }
+  let recovered;
+  try { recovered=await readSession(); }
+  catch (error) { throw acknowledged ? error : writeError; }
+  if(sessionMatches(recovered,credentials))return recovered;
+  if(writeError)throw writeError;
+  const error=new Error('Your account session could not be confirmed. Please try again.');
+  error.status=401;error.code='session_not_ready';throw error;
 }
 
 export async function finishOnboarding({api, draft, residentId, readSession}) {

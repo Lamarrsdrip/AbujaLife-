@@ -10,6 +10,7 @@ const publicAssetExtensions = new Set(['.css', '.png', '.jpg', '.jpeg', '.gif', 
 export const productionEntryPoints = Object.freeze({
   app: 'app/app.js',
   admin: 'app/admin.js',
+  'phone-chat-pro': 'app/phone-chat-pro.js',
   'game-ui-kit': 'app/game-ui-kit.js',
   ads: 'app/ads.js',
   integrations: 'app/integrations.js',

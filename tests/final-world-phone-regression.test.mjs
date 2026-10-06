@@ -48,3 +48,14 @@ test('driving route remains visibly guided',()=>{
   assert.match(world,/data-driving/);
   assert.match(sim,/dataset\.driving=String\(driving\)/);
 });
+
+
+test('live WebGL Outside receives the complete city and recognisable landmarks',()=>{
+  const city=read('app/world-city.js'),three=read('app/world-3d-scenes.js');
+  assert.match(city,/const visibleLegacyBuildings=/);
+  assert.match(city,/const safeLandmarkBuildings=/);
+  assert.match(city,/context-landmark-/);
+  assert.match(city,/buildings:visibleBuildings/);
+  assert.match(three,/renderLandmarkBuilding/);
+  for(const builder of ['airport','cityGate','stadium','wtc','cbn','assembly','mosque','transcorp','inec'])assert.match(three,new RegExp(`case'${builder}'`));
+});

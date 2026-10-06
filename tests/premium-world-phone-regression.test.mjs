@@ -33,7 +33,7 @@ test('real mobile devices use the visual viewport instead of squeezing a second 
   assert.match(polishCss,/@media\(max-width:700px\)[\s\S]*\.phone-root\{top:var\(--abj-phone-vtop/);
   assert.match(polishCss,/\.phone-root \.ph-device[\s\S]*width:100%!important[\s\S]*height:100%!important/);
   assert.match(polishCss,/phone-keyboard-open \.ph-chat-thread \.ph-composer\{position:relative!important/);
-  assert.match(polish,/data\.civicPhoneApp/);
+  assert.match(polish,/dataset\.civicPhoneApp/);
   assert.match(polish,/City Story/);
 });
 

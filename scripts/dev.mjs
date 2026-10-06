@@ -1,3 +1,4 @@
+import '../src/shared/abuja-landmarks-2026.mjs';
 import { createServer } from '../src/server/http.mjs';
 import { attachXIntegration } from '../src/server/xIntegration.mjs';
 const port = Number(process.env.PORT || 8787);

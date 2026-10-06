@@ -12,7 +12,7 @@ test('Outside keeps city fabric visible while direct entry stays district-author
 });
 
 test('house exposes Go Out and deduplicates authored versus saved furniture',()=>{
-  const app=read('app/app.js'),interiors=read('app/world-interiors.js');
+  const app=read('app/app.js'),interiors=[read('app/world-interiors.js'),read('app/world-interiors-base.js')].join('\n');
   assert.match(app,/world-go-out-shortcut/);
   assert.match(app,/>Go Out</);
   assert.match(interiors,/entryByItem=new Map/);
@@ -26,12 +26,24 @@ test('map opens at medium overview but retains extreme zoom',()=>{
   assert.match(map,/minZoom:\.22,maxZoom:24/);
 });
 
-test('phone stays framed and Naira receipts cannot collapse vertically',()=>{
-  const phone=read('app/phone.css'),chat=read('app/phone-chat-pro.css');
-  assert.match(phone,/whole handset visible/);
-  assert.match(chat,/receipt-like Naira transfer card/);
-  assert.match(chat,/white-space:nowrap!important/);
-  assert.match(chat,/grid-template-columns:28px minmax\(0,1fr\) auto/);
+test('phone uses the previous full handset kit and native premium Naira receipt',()=>{
+  const phone=read('app/phone.css'),chat=read('app/phone-chat-pro.css'),chatJs=read('app/phone-chat-pro.js'),base=read('app/phone.js');
+  assert.doesNotMatch(phone,/2026-10 final phone framing/);
+  assert.match(phone,/\.ph-device\{position:relative;width:min\(360px/);
+  assert.doesNotMatch(chat,/ph-transfer-message\{min-width:/);
+  assert.doesNotMatch(chat,/receipt-like Naira transfer card/);
+  assert.match(chatJs,/function transformTransfer\(\)\{\/\* Keep native AbujaLife cream\/gold Naira receipt presentation\. \*\/\}/);
+  assert.match(base,/YOU SENT NAIRA/);
+  assert.match(base,/Transfer confirmed · No fee/);
+});
+
+test('World Home always opens the travel chooser so owned cars can drive home',()=>{
+  const app=read('app/app.js');
+  const home=app.slice(app.indexOf('async function goHome()'),app.indexOf('function openLifeMenu()'));
+  assert.match(home,/travelSheet\(p\.home\.district,true\);return;/);
+  assert.doesNotMatch(home,/cleanup\?\.performAsync\)await cleanup\.performAsync\('enter-home'\)/);
+  assert.match(app,/const ownsCar=list\(state\.catalog\)\.some\(item=>item\.category==='vehicle'/);
+  assert.match(app,/const modes=TRANSPORT_MODES\.filter\(mode=>mode\.id!=='car'\|\|ownsCar\)/);
 });
 
 test('presence heartbeat is lightweight, accurate and keeps strict expiry',()=>{

@@ -72,7 +72,7 @@ export function createCoreEntry({store,admin,social=null,corsOrigins=[],publicWe
    serverTime:now,clock:abujaTime(now),weather:seasonalWeather(now),clubSchedule:clubSchedule(now),
    loans:Array.isArray(profile.loans)?profile.loans:[],workSchedule:null,workSchedules:{},activeChallenge:null,
    people:[],friends:[],friendRequests:[],conversations:[],notifications:[],invitations:[],nearby:[],events:[],blocked:[],muted:[],transactions:[],
-   homeVisit,homeVisitRequests:[],homeVisitors:[],admin:null,payments:{deferred:true}
+   homeVisit,homeVisitRequests:[],homeVisitors:[],admin:null,payments:null
   };
  }
  async function handle(req,res){

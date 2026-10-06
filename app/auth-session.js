@@ -1,8 +1,7 @@
-// Recover ambiguous network outcomes by reading the genuine session. Never
-// replay registration or another write simply because its response was lost.
+// Entry is the only session/bootstrap contract used to enter AbujaLife.
 const deferredFields=['people','friends','friendRequests','conversations','notifications','invitations','nearby','events','blocked','muted','transactions','homeVisitRequests','homeVisitors','payments'];
 export function mergeCoreBootstrap(current,next) {
-  if(!next.startup || !current.authenticated || current.profile?.id!==next.profile?.id)return next;
+  if(!next?.entry || !current.authenticated || current.profile?.id!==next.profile?.id)return next;
   const merged={...next};
   const locationKey=p=>[p?.district,p?.location?.kind,p?.location?.venue,p?.location?.ownerId,p?.location?.visitId].join(':');
   for(const key of deferredFields)if(current[key]!==undefined && (key!=='nearby'||locationKey(current.profile)===locationKey(next.profile)))merged[key]=current[key];
@@ -17,8 +16,7 @@ export function interruptedRequest(error) {
 export function accountErrorMessage(error) {
   if (interruptedRequest(error)) return 'The connection was interrupted. Your progress is saved if the server received it. Please try again.';
   if (error?.status === 401 && error?.code === 'invalid_credentials') return error.message || 'Username or password is incorrect.';
-  if (error?.status === 401 && error?.code === 'session_not_ready') return 'Your sign-in completed, but your resident could not be opened. Please try again.';
-  if (error?.status === 401) return 'Your session has expired. Please sign in again.';
+  if (error?.status === 401) return 'Please sign in again.';
   return error?.message || 'We could not complete this request. Please try again.';
 }
 
@@ -31,32 +29,22 @@ function sessionMatches(recovered,credentials={}) {
 }
 
 export async function authenticateAccount({api, mode, credentials, readSession}) {
-  let acknowledged=false,writeError=null;
   try {
-    const result=await api(`/api/auth/${mode}?session=1`, {method:'POST', body:{...credentials}});
-    if(!result?.authenticated)throw new Error('Your account session was not created. Please try again.');
-    acknowledged=true;
-    if(result.profile){
-      if(sessionMatches(result,credentials))return result;
-      const error=new Error('Your account session could not be confirmed. Please try again.');
-      error.status=401;error.code='session_not_ready';throw error;
-    }
+    const result=await api(`/api/auth/${mode}`, {method:'POST', body:{...credentials}});
+    if(!sessionMatches(result,credentials))throw new Error('Your resident could not be opened. Please try again.');
+    return result;
   } catch (error) {
     if (!interruptedRequest(error)) throw error;
-    writeError=error;
+    let recovered;
+    try { recovered=await readSession(); } catch { throw error; }
+    if(sessionMatches(recovered,credentials))return recovered;
+    throw error;
   }
-  let recovered;
-  try { recovered=await readSession(); }
-  catch (error) { throw acknowledged ? error : writeError; }
-  if(sessionMatches(recovered,credentials))return recovered;
-  if(writeError)throw writeError;
-  const error=new Error('Your account session could not be confirmed. Please try again.');
-  error.status=401;error.code='session_not_ready';throw error;
 }
 
 export async function finishOnboarding({api, draft, residentId, readSession}) {
   try {
-    const result = await api('/api/profile', {method:'POST', body:{...draft, onboardingComplete:true, startup:true}});
+    const result = await api('/api/profile', {method:'POST', body:{...draft, onboardingComplete:true}});
     if (result.profile?.onboardingComplete) return result.profile;
   } catch (error) {
     if (!interruptedRequest(error)) throw error;

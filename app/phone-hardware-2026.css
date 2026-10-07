@@ -63,7 +63,9 @@
   padding-bottom:7px;
 }
 #phone-root.phone-root.phone-keyboard-open .ph-device{
-  width:min(320px,calc(100vw - 20px),calc((var(--ph-chat-viewport-height,100dvh) - 18px)*.474));
+  width:min(320px,calc(100vw - 20px));
+  height:calc(var(--ph-chat-viewport-height,100dvh) - 14px);
+  aspect-ratio:auto;
   max-height:calc(var(--ph-chat-viewport-height,100dvh) - 14px);
 }
 #phone-root.phone-root.phone-keyboard-open .ph-device-caption{display:none}

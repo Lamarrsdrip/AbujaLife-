@@ -5,6 +5,12 @@ import { productionLog } from '../../src/server/production-http.mjs';
 const config = configuration();
 const port = process.env.ABUJALIFE_CANDIDATE_PORT ? Number(process.env.ABUJALIFE_CANDIDATE_PORT) : config.apiPort;
 if (![18787, 18788].includes(port)) throw new Error('Only the dedicated private API and candidate ports are allowed.');
+const runtimeEnv = apiEnvironment(config, port);
+// Chat Pro is attached below the production HTTP/session runtime, whose legacy
+// constructor defaults to process.env. Mirror only the runtime identity and
+// persistent chat-media path so it cannot fall back into a versioned release.
+process.env.NODE_ENV = runtimeEnv.NODE_ENV;
+process.env.CHAT_MEDIA_DIR = runtimeEnv.CHAT_MEDIA_DIR;
 let app, stopping = false;
 async function shutdown(reason) {
   if (stopping) return;
@@ -16,7 +22,7 @@ async function shutdown(reason) {
   catch { process.exit(1); }
 }
 try {
-  app = await createProductionApplication({ env: apiEnvironment(config, port) });
+  app = await createProductionApplication({ env: runtimeEnv });
   await new Promise((resolve, reject) => { app.server.once('error', reject); app.server.listen(port, '127.0.0.1', resolve); });
   productionLog('startup', { port, storage: 'mongodb', database: config.database });
   if (process.send) process.send({ type: 'ready', port });

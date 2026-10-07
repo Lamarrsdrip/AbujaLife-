@@ -20,7 +20,7 @@ DirectoryIndex index.html
   <FilesMatch "\.(html|webmanifest)$|^(runtime-config|sw|admin|app)\.js$">
     Header set Cache-Control "no-store"
   </FilesMatch>
-  <FilesMatch "^(apple-touch-icon|icon-192|icon-512|icon-maskable-512)\.png$">
+  <FilesMatch "^(favicon\.ico|icon\.svg|(?:apple-touch-icon|icon-192|icon-512|icon-maskable-512)\.png)$">
     Header set Cache-Control "no-cache, no-store, must-revalidate, max-age=0"
   </FilesMatch>
   <FilesMatch "(?:\.[a-f0-9]{8,}|-[A-Z0-9]{8})\.(js|css|glb|gltf|bin|ktx2|wasm)$">

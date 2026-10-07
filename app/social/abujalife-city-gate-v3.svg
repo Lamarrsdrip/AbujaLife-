@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630"><rect width="1200" height="630" fill="#f4f1e6"/><circle cx="1190" cy="25" r="180" fill="#e9dcc0"/><g transform="translate(64 103) scale(.78)">
+  <defs>
+    <linearGradient id="bg" x1="50" y1="34" x2="458" y2="474" gradientUnits="userSpaceOnUse"><stop stop-color="#337053"/><stop offset="1" stop-color="#1b4835"/></linearGradient>
+    <linearGradient id="stone" x1="256" y1="112" x2="256" y2="350" gradientUnits="userSpaceOnUse"><stop stop-color="#f8dfaa"/><stop offset="1" stop-color="#dfb766"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="url(#bg)"/>
+  <circle cx="421" cy="86" r="82" fill="#d9ad5d" opacity=".92"/>
+  <rect x="35" y="35" width="442" height="442" rx="102" fill="#1b4835"/>
+  <path d="M143 300V181c0-10 8-18 18-18h54v137h-72Zm154-137h54c10 0 18 8 18 18v119h-72V163Z" fill="url(#stone)"/>
+  <path d="M169 179c21-47 50-70 87-70s66 23 87 70l-31 16c-15-30-33-45-56-45s-41 15-56 45l-31-16Z" fill="#efd18a"/>
+  <path d="M174 197h164v38H174z" fill="#c99344"/>
+  <path d="M207 235h98v65h-98z" fill="#173d2c"/>
+  <path d="M153 187h38v93h-38zm168 0h38v93h-38z" fill="#f9e6b9"/>
+  <path d="M207 300h98l82 150H125l82-150Z" fill="#35634d"/>
+  <path d="M256 320v104" stroke="#fff0c8" stroke-width="7" stroke-linecap="round"/>
+</g><text x="514" y="234" font-family="Arial" font-weight="700" font-size="87" letter-spacing="-4" fill="#193f32">Abuja<tspan fill="#b37443">Life</tspan><tspan fill="#b37443">.</tspan></text><text x="519" y="286" font-family="Arial" font-weight="700" font-size="17" letter-spacing="5" fill="#64806b">THE CAPITAL IS YOURS</text><text x="514" y="374" font-family="Arial" font-size="32" fill="#193f32">Your city. Your people. Your story.</text><text x="516" y="422" font-family="Arial" font-size="23" fill="#64806b">Explore Abuja and build your life together.</text><rect x="514" y="478" width="298" height="54" rx="27" fill="#e0e8dc"/><text x="541" y="513" font-family="Arial" font-weight="700" font-size="23" fill="#193f32">abujacity.life</text></svg>

@@ -179,7 +179,7 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
   });
  }
  scene.pedestrians ||= [];scene.traffic ||= [];
- const ownVehicle=typeof profile.drivingVehicle==='string'?profile.drivingVehicle:vehicleIds.find(v=>profile.inventory?.includes(v));
+ const ownVehicle=trip?.vehicleId||profile.drivingVehicle||(profile.vehiclePresence?profile.vehiclePresence.district===profile.district&&profile.vehiclePresence.state!=='transit'?profile.vehiclePresence.vehicleId:null:vehicleIds.find(v=>profile.inventory?.includes(v)));
  const driving=!!profile.drivingVehicle&&!interior&&!trip,transport=trip?trip.mode!=='walk':driving;
  const recordedCarDistrict=storedCarDistrict(profile);
  const carWithYou=driving||trip?.mode==='car'||!recordedCarDistrict||recordedCarDistrict===profile.district;

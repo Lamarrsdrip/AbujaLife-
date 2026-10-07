@@ -11,6 +11,7 @@ import { vehicleIllustration } from './vehicle-art.js';
 import { createPhone } from './phone.js';
 import { renderWorld, avatarSVG } from './world.js';
 import { rememberCarDistrict } from './world-simulator.js';
+import { playableSceneKey } from './scene-lifecycle.js';
 import { renderMap } from './map.js';
 import { createHomeEditor } from './home-editor.js';
 import { createFurnitureCatalogue } from './furniture-catalogue.js';
@@ -34,6 +35,7 @@ const referralResident = new URL(location.href).searchParams.get('resident')?.ma
 const authRecovery=createAuthRecovery({link:consumeAuthLink(location,history),api:(...args)=>api(...args)});
 let onboardingStep=0, onboardingDraft, pendingVenue;
 let quickHomeNavigating=false,outsideNavigating=false,viewEpoch=0;
+let renderedSceneKey=null;
 let pendingFurnitureItem;
 let serverClockAt=Date.now(), serverClockObservedAt=performance.now();
 function gameNow(){return serverClockAt+Math.max(0,performance.now()-serverClockObservedAt);}
@@ -171,7 +173,7 @@ function scheduleRealtimeRefresh(){
    const locationChanged=previousLocation!==locationKey(next.profile);
    if(locationChanged&&['world','outside'].includes(view)){renderMain();return;}
    if(!['world','outside'].includes(view)&&locationChanged&&!document.querySelector('.sheet,#shift-form')&&!root.contains(document.activeElement))renderMain();
-   else syncProfileChrome();
+   else renderMain();
   }).catch(()=>{});
  },250);
 }
@@ -216,7 +218,7 @@ async function action(name,payload={}){
    if(view==='outside'&&result.profile.location?.kind!=='public')view='world';
    if(previousLocation!==locationKey(result.profile)&&['world','outside'].includes(view))renderMain();
    else if(!['world','outside'].includes(view))renderMain();
-   else syncProfileChrome();
+   else renderMain();
    armTripArrival();
   }
   void refresh({render:false}).catch(()=>{});
@@ -303,6 +305,11 @@ function renderOnboarding(){
 function header(){const p=state.profile;const needs=[['Energy','energy','⚡'],['Food','hunger','⌁'],['Fun','fun','◌'],['Toilet','bladder','◒'],['Clean','hygiene','✦'],['Social','social','♧']];return `<header class="game-header"><a href="#world" class="wordmark" data-view="world" aria-label="AbujaLife home">${brandMark({compact:true})}</a><span class="header-edition">YOUR CITY. YOUR STORY.</span><button class="needs-header" data-open-needs aria-label="Open your life needs">${needs.map(([label,key,icon])=>`<span class="needs-header-item"><i aria-hidden="true">${icon}</i><b>${label}</b><em style="--need:${Math.max(0,Math.min(100,Number(p[key]??(key==='bladder'?86:0))))}%"></em></span>`).join('')}</button><button class="wallet-button" data-phone="wallet" aria-label="Naira balance, ₦${money(p.wallet)}. Open wallet"><span>Naira balance</span><strong>₦${money(p.wallet)}</strong></button><button class="earn-header" data-phone="earn" aria-label="Open Earn Game Naira">+ Earn</button><button class="resident-button" data-view="profile" aria-label="Your resident profile">${avatarSVG(p.appearance,{size:40})}</button></header>`;}
 function nav(){const unread=list(state.conversations).reduce((n,c)=>n+Number(c.unread||0),0)+list(state.notifications).filter(n=>!n.readAt&&!n.read).length;return `<nav class="game-nav" aria-label="Game navigation"><button data-view="world" class="${view==='world'?'active':''}" ${view==='world'?'aria-current="page"':''}>${icon('world')}<span>Play</span></button><button data-nav-outside class="${view==='outside'?'active':''}">${icon('map')}<span>Outside</span></button><button data-nav-life class="${['work','market','property','profile'].includes(view)?'active':''}">${icon('sun')}<span>My life</span></button><button data-phone="home" class="phone-launch">${icon('phone')}<span>Phone</span>${unread?`<i class="nav-badge">${unread}</i>`:''}</button></nav>`;}
 function renderMain(){
+ const nextSceneKey=playableSceneKey(view,state);
+ if(nextSceneKey&&nextSceneKey===renderedSceneKey&&root.querySelector('#world-scene')){
+  syncProfileChrome();cleanup?.updateResidents?.(list(state.nearby));return;
+ }
+ renderedSceneKey=nextSceneKey;
  const epoch=++viewEpoch;
  cleanup?.();cleanup=undefined;const recovery=authRecovery.snapshot();if(recovery.kind&&!['complete','idle'].includes(recovery.status)){renderAuthRecovery();return;}if(!state.authenticated){renderAuth();return;}
  if(!state.profile?.onboardingComplete){phone.close();renderOnboarding();return;}
@@ -410,7 +417,7 @@ async function interact(name,payload={}){
  document.querySelector('#confirm-interaction').onclick=()=>{closeSheet();const complete=async()=>{if(await action(name))toast('A little better than before.');};if(cleanup?.animateActivity)cleanup.animateActivity(name==='relax'?'rest':name,({sleep:18,shower:16,relax:16,eat:15,exercise:18})[name]||15,complete);else complete();};
 }
 async function goOutdoors(options={}){
- const keepVehicle=options.keepVehicle===true;
+ const keepVehicle=options.keepVehicle===true||options.keepDriving===true;
  if(state.profile.activeTrip)return false;
  if(state.profile.location?.kind==='visit'){const result=await(cleanup?.performAsync?cleanup.performAsync('leave-visit'):interact('leave-visit'));return Boolean(result)&&state.profile.location.kind!=='visit';}
  if(state.profile.drivingVehicle&&!keepVehicle){if(!await action('toggle-driving',{vehicleId:null}))return false;if(state.profile?.id)rememberCarDistrict(state.profile.id,state.profile.district);}
@@ -421,6 +428,7 @@ async function goOutdoors(options={}){
 async function goToVenue(venueId){
  const venue=list(state.venues).find(v=>v.id===venueId);if(!venue)return;
  if(quickHomeNavigating)return;
+ if(currentVenue()?.id===venueId){closeSheet();if(view!=='world')navigate('world');toast(`You’re already inside ${venue.name}.`);return;}
  const district=venue.district||(venue.districts&&!venue.districts.includes(state.profile.district)?venue.districts[0]:state.profile.district);
  travelSheet(district,false,venueId);
 }
@@ -529,7 +537,9 @@ function travelSheet(district,returningHome=false,venueId=null,preferMode=null){
  if(state.profile.activeTrip){toast('Finish this journey before choosing another destination.');return;}
  const venue=list(state.venues).find(v=>v.id===venueId),sameDistrict=district===state.profile.district;
  const ownsCar=list(state.catalog).some(item=>item.category==='vehicle'&&state.profile.inventory.includes(item.id));
- const modes=TRANSPORT_MODES.filter(mode=>mode.id!=='car'||ownsCar),defaultMode=preferMode&&modes.some(mode=>mode.id===preferMode)?preferMode:sameDistrict?'walk':'bus';
+ const presence=state.profile.vehiclePresence,locationVenue=state.profile.location?.kind==='home'?'home':state.profile.location?.venue||'neighbourhood';
+ const nearbyVehicleId=state.profile.drivingVehicle||(presence?.state==='parked'&&presence.district===state.profile.district&&presence.venue===locationVenue?presence.vehicleId:null);
+ const modes=TRANSPORT_MODES.filter(mode=>mode.id!=='car'||ownsCar),defaultMode=preferMode&&modes.some(mode=>mode.id===preferMode)?preferMode:nearbyVehicleId?'car':sameDistrict?'walk':'bus';
  openSheet(`<span class="eyebrow">${returningHome?'BACK TO YOUR OWN HOME':'GETTING AROUND'}</span><h2 id="sheet-title">${esc(returningHome?state.profile.home.name:venue?.name||destination.name)}</h2><p class="muted">${esc(destination.name)} · Choose your ride.</p><form id="travel-form"><fieldset class="travel-mode-options"><legend>How are you going?</legend>${modes.map(mode=>`<label class="travel-mode-option"><input type="radio" name="mode" value="${esc(mode.id)}" ${mode.id===defaultMode?'checked':''} ${mode.id==='walk'&&!sameDistrict?'disabled':''}><span><strong>${esc(mode.name)}</strong><small>${mode.id==='walk'&&!sameDistrict?'Available within your current neighbourhood':esc(mode.description)}</small></span></label>`).join('')}</fieldset><div class="detail-line travel-quote" id="travel-quote" aria-live="polite">Checking your fare…</div><p class="travel-fare-note" id="travel-fare-note">Game Naira · compressed journey times.</p><button class="primary full" type="submit" disabled>Start journey${icon('arrow')}</button></form>`);
  const form=sheetRoot.querySelector('#travel-form');let quoteSequence=0,quote=null,submitting=false;
  const getQuote=async()=>{
@@ -546,7 +556,7 @@ function travelSheet(district,returningHome=false,venueId=null,preferMode=null){
    const result=await api(`/api/travel/quote?district=${encodeURIComponent(district)}&mode=${encodeURIComponent(mode)}${venueId?`&venueId=${encodeURIComponent(venueId)}`:''}`);
    if(sequence!==quoteSequence||!form.isConnected)return;
    quote=result.quote;const walk=mode==='walk',affordable=quote.cost<=state.profile.wallet;
-   form.querySelector('#travel-quote').innerHTML=`<span>${walk?'Walk to the entrance':`${quote.seconds}s journey`}</span><strong>${quote.cost?`₦${money(quote.cost)}`:'Free'}</strong>`;
+   form.querySelector('#travel-quote').innerHTML=`<span>${walk?'Walk to the entrance':returningHome&&sameDistrict?'Drive to your own home':`${quote.seconds}s journey`}</span><strong>${quote.cost?`₦${money(quote.cost)}`:'Free'}</strong>`;
    form.querySelector('#travel-fare-note').textContent=affordable?'Game Naira · charged when you start. Journey times are compressed.':'You need more game Naira for this fare. Choose Walk or another ride.';
    button.innerHTML=`${walk?'Walk there':quote.cost?`Pay ₦${money(quote.cost)} & go`:'Start journey'}${icon('arrow')}`;button.disabled=!affordable;
   }catch(error){if(sequence===quoteSequence&&form.isConnected)form.querySelector('#travel-quote').textContent=error.message;}
@@ -555,13 +565,14 @@ function travelSheet(district,returningHome=false,venueId=null,preferMode=null){
  form.onsubmit=async e=>{
   e.preventDefault();const mode=form.elements.mode.value;
   if(submitting||!quote||quote.mode!==mode||quote.cost>state.profile.wallet)return;
-  submitting=true;closeSheet();if(view!=='world')navigate('world');if(!await goOutdoors())return;
+  submitting=true;const vehicleId=mode==='car'?(nearbyVehicleId||list(state.catalog).find(item=>item.category==='vehicle'&&state.profile.inventory.includes(item.id))?.id):null;
+  closeSheet();if(view!=='world')navigate('world');if(!await goOutdoors({keepDriving:mode==='car'}))return;
   if(mode==='walk'&&sameDistrict&&(venueId||returningHome)){
    pendingVenue=undefined;toast(`Making your way to ${returningHome?'your own home':venue.name}.`);
    if(returningHome){if(cleanup?.performAsync)await cleanup.performAsync('enter-home');else await action('enter-home');}else perform('enter-venue',{venueId});
    return;
   }
-  if(await action(returningHome?'return-home':'travel',{district,mode,...(venueId?{venueId}:{})})){if(mode==='car')rememberCarDistrict(state.profile.id,district);pendingVenue=undefined;navigate('world');toast('Your journey has started.');}
+  if(await action(returningHome?'return-home':'travel',{district,mode,leaveVehicle:mode!=='car',...(vehicleId?{vehicleId}:{}),...(venueId?{venueId}:{})})){if(mode==='car')rememberCarDistrict(state.profile.id,district);pendingVenue=undefined;navigate('world');toast('Your journey has started.');}
  };
 }
 function workMarkup(){

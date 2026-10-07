@@ -311,7 +311,9 @@ export class MongoGameStore {
           const venueId=action==='travel'&&payload.venueId!=null?clean(payload.venueId,80):null;
           if(venueId!==null)publicPlace();
           const {mode,cost,seconds}=await this.quoteTravel(p,{district:destination,mode:payload.mode,venueId});
-          const vehicleId=mode==='car'?(ownsVehicle(p,catalog,p.drivingVehicle)?p.drivingVehicle:catalog.find(item=>ownsVehicle(p,catalog,item.id))?.id):null;
+          const requestedVehicle=payload.vehicleId??p.drivingVehicle??(p.vehiclePresence?.district===p.district?p.vehiclePresence.vehicleId:null);
+          if(mode==='car'&&payload.vehicleId!=null)check(ownsVehicle(p,catalog,payload.vehicleId),'Buy this car before choosing it');
+          const vehicleId=mode==='car'?(ownsVehicle(p,catalog,requestedVehicle)?requestedVehicle:catalog.find(item=>ownsVehicle(p,catalog,item.id))?.id):null;
           debit(cost);p.drivingVehicle=null;p.activeTrip={id:uid(),destination,mode,cost,seconds,vehicleId,...(venueId?{venueId}:{}),arrivesAt:timestamp+seconds*1000,returningHome:action==='return-home'};extra.trip=p.activeTrip;p.location={kind:'transit',district:p.district,venue:'journey'};break;
         }
         case 'arrive':{const trip=p.activeTrip;check(trip&&trip.id===payload.tripId,'This journey is no longer active');check(timestamp>=trip.arrivesAt,'Your journey is still in progress',409,'trip_in_progress');if(trip.venueId)check(venueAvailable(trip.venueId,trip.destination),'This destination is no longer available');p.district=trip.destination;p.location={kind:trip.returningHome?'home':trip.venueId?'venue':'public',district:trip.destination,venue:trip.returningHome?'home':trip.venueId||'neighbourhood'};p.drivingVehicle=!trip.returningHome&&!trip.venueId&&trip.mode==='car'&&ownsVehicle(p,catalog,trip.vehicleId)?trip.vehicleId:null;p.activeTrip=null;p.energy=clamp(p.energy-3);break;}

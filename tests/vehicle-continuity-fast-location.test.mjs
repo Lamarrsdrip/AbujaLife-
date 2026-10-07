@@ -8,7 +8,7 @@ function fixture(){
  const playerState={updateOne:async(_filter,update)=>{Object.assign(profile,update.$set||{});for(const key of Object.keys(update.$unset||{}))delete profile[key];return{modifiedCount:1};},findOne:async()=>({...profile,_id:profile.id})};
  const store={clock:()=>1000,fastLocationActionsInstalled:false,profile:async()=>profile,transaction:async fn=>fn({}),collection:name=>{if(name==='player_state')return playerState;throw new Error(`unexpected collection ${name}`);},emitUser:async(_id,event,data)=>events.push({event,data}),action:async(_id,action,payload={})=>{
    if(action==='travel'||action==='return-home'){
-    const mode=payload.mode||'walk',vehicleId=mode==='car'?profile.vehiclePresence?.vehicleId:null;
+    const mode=payload.mode||'walk',vehicleId=mode==='car'?payload.vehicleId||profile.vehiclePresence?.vehicleId:null;
     profile.activeTrip={id:'trip-1',destination:payload.district||payload.destination||'central-area',mode,vehicleId,venueId:payload.venueId,seconds:12,arrivesAt:13000,returningHome:action==='return-home'};
     profile.location={kind:'transit',district:profile.district,venue:'journey'};profile.drivingVehicle=null;return{ok:true,profile};
    }
@@ -16,6 +16,7 @@ function fixture(){
     const trip=profile.activeTrip;profile.district=trip.destination;profile.location={kind:trip.returningHome?'home':trip.venueId?'venue':'public',district:trip.destination,venue:trip.returningHome?'home':trip.venueId||'neighbourhood'};profile.activeTrip=null;profile.drivingVehicle=null;return{ok:true,profile};
    }
    if(action==='toggle-driving'){profile.drivingVehicle=payload.vehicleId||null;return{ok:true,profile};}
+   if(action==='exit-venue'){profile.location={kind:'public',district:profile.district,venue:'neighbourhood'};return{ok:true,profile};}
    return{ok:true,profile};
  }};
  installFastLocationActions(store);return{store,profile,events};
@@ -44,4 +45,14 @@ test('explicit leaveVehicle keeps the personal car parked while resident walks',
  assert.equal(result.profile.activeTrip.mode,'walk');
  assert.equal(result.profile.vehiclePresence.state,'parked');
  assert.equal(result.profile.vehiclePresence.venue,'transcorp-hilton-hub');
+});
+
+test('exiting a venue keeps the arrived car nearby for the next journey',async()=>{
+ const {store,profile}=fixture();
+ const outside=await store.action(profile.id,'exit-venue');
+ assert.equal(outside.profile.vehiclePresence.vehicleId,'bugatti-test');
+ assert.equal(outside.profile.vehiclePresence.venue,'neighbourhood');
+ assert.equal(outside.profile.vehiclePresence.state,'parked');
+ const start=await store.action(profile.id,'travel',{district:'central-area',venueId:'cbn-experience',mode:'car'});
+ assert.equal(start.profile.activeTrip.vehicleId,'bugatti-test');
 });

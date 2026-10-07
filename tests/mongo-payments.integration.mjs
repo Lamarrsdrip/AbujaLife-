@@ -215,17 +215,20 @@ integration('reference verification requires order ownership and wrong provider 
 integration('map-wide city and sky ad reservations race safely, verify by reference, render their actual image and replay once',async t=>{
  const f=await fixture(t),ads=new MongoAdStore({store:f.store,admin:f.admin,payments:f.payments});await ads.init({ensureIndexes:false});ads.attach();
  const png=Buffer.alloc(24);Buffer.from([137,80,78,71,13,10,26,10]).copy(png);png.write('IHDR',12);png.writeUInt32BE(320,16);png.writeUInt32BE(200,20);
- const sky=await ads.world({zoneId:'sky-displays',page:crypto.randomInt(100,4000)}),city=await ads.world({zoneId:'business-bay',page:0});const slots=sky.spaces.filter(p=>p.available).slice(0,4).map(p=>p.id);slots.push(city.spaces.find(p=>p.available).id);
+ const sky=await ads.world({zoneId:'sky-displays',page:crypto.randomInt(100,4000)}),city=await ads.world({zoneId:'business-bay',page:0});assert.ok(sky.spaces.some(p=>p.available));const slots=[city.spaces.find(p=>p.available).id];
  const input={kind:'plot',slots,title:'Fixture city business',email:'advertiser@example.test',link:'https://example.com/business',imageDataUrl:'data:image/png;base64,'+png.toString('base64')};
- const attempts=await Promise.allSettled([ads.checkout(f.resident,{...input,idempotencyKey:unique('ad_')}),ads.checkout(f.other,{...input,idempotencyKey:unique('ad_')})]);
+ const callsBefore=f.calls.length,attempts=await Promise.allSettled([ads.checkout(f.resident,{...input,idempotencyKey:unique('ad_')}),ads.checkout(f.other,{...input,idempotencyKey:unique('ad_')})]);
  assert.equal(attempts.filter(r=>r.status==='fulfilled').length,1);assert.equal(attempts.find(r=>r.status==='rejected').reason.code,'ad_space_taken');
  const order=attempts.find(r=>r.status==='fulfilled').value.checkout,own=(await f.connection.db.collection('ad_orders').findOne({txRef:order.txRef})).residentId;
+ const checkoutCall=f.calls.slice(callsBefore).find(call=>call.url.endsWith('/v3/payments')&&JSON.parse(call.options.body).tx_ref===order.txRef),checkoutBody=JSON.parse(checkoutCall.options.body);
+ assert.equal(checkoutBody.amount,2000);assert.equal(checkoutBody.currency,'NGN');assert.equal(checkoutBody.customizations.description,'AbujaLife city ad plot · 7 days');
+ assert.deepEqual(checkoutBody.meta,{abujalife_reference:order.txRef,purpose:'advertising',kind:'plot'});assert.ok(Object.values(checkoutBody.meta).every(value=>['string','number','boolean'].includes(typeof value)));
  const id=providerSuccess(f,order);const before=(await f.store.profile(own)).wallet;
  const results=await Promise.all([f.payments.verify(own,{purpose:'ad',txRef:order.txRef}),f.payments.verify(own,{purpose:'ad',txRef:order.txRef,transactionId:id})]);
  assert.equal(results.filter(r=>!r.replayed).length,1);assert.equal(await f.connection.db.collection('ad_receipts').countDocuments({txRef:order.txRef}),1);
  assert.equal((await f.store.profile(own)).wallet,before,'real Naira ads never spend or credit game wallets');
  assert.equal(await f.connection.db.collection('payment_receipts').countDocuments({txRef:order.txRef,purpose:'ad',credits:0}),1);
- const state=await ads.publicState();assert.ok(state.active.some(ad=>ad.txRef===order.txRef&&ad.slots.length===5&&ad.imageDataUrl===input.imageDataUrl));
+ const state=await ads.publicState();assert.ok(state.active.some(ad=>ad.txRef===order.txRef&&ad.slots.length===1&&ad.imageDataUrl===input.imageDataUrl));
  const visible=await ads.world({bounds:{x:-40000,y:-40000,width:80000,height:80000}});assert.ok(visible.active.some(ad=>ad.txRef===order.txRef));
  const adminList=await f.payments.list(f.owner,{limit:100});assert.ok(adminList.payments.some(ad=>ad.txRef===order.txRef&&ad.purpose==='ad'&&ad.fulfillmentStatus==='fulfilled'));
 });

@@ -1,0 +1,87 @@
+/* AbujaLife Phone is an in-game handset overlay. The 3D world remains mounted behind it. */
+#phone-root.phone-root{pointer-events:none;isolation:isolate}
+#phone-root.phone-root[hidden]{display:none}
+#phone-root.phone-root .ph-backdrop{
+  pointer-events:auto;
+  display:grid;
+  place-items:center;
+  padding:max(18px,env(safe-area-inset-top)) 12px max(42px,calc(env(safe-area-inset-bottom) + 24px));
+  background:radial-gradient(circle at 50% 44%,rgba(13,29,24,.08),rgba(7,17,13,.42));
+  backdrop-filter:none;
+  -webkit-backdrop-filter:none;
+}
+#phone-root.phone-root .ph-device{
+  width:min(320px,calc(100vw - 28px),calc((100dvh - 104px)*.474));
+  height:auto;
+  aspect-ratio:.474/1;
+  max-height:calc(100dvh - 92px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  padding:7px;
+  border:1px solid #9b9d93;
+  border-radius:46px;
+  background:linear-gradient(103deg,#353a34 0%,#9b9f95 4%,#e1e0d5 7%,#73786f 10%,#242a25 16%,#c7c7ba 87%,#ededdf 91%,#555a51 96%,#2a2f2a 100%);
+  box-shadow:0 30px 72px rgba(0,0,0,.48),0 0 0 2px #20241f,0 0 0 4px #7c8176,inset 0 0 0 1px rgba(255,255,255,.22);
+  transform:translateZ(0);
+  contain:layout paint;
+}
+#phone-root.phone-root .ph-device::before{
+  content:"";
+  position:absolute;
+  inset:3px;
+  border-radius:43px;
+  border:1px solid rgba(255,255,255,.14);
+  pointer-events:none;
+}
+#phone-root.phone-root .ph-screen{
+  height:100%;
+  min-height:0;
+  border:3px solid #101410;
+  border-radius:39px;
+  overflow:hidden;
+  clip-path:inset(0 round 39px);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.05);
+  isolation:isolate;
+}
+#phone-root.phone-root .ph-island{top:11px;box-shadow:inset 0 1px rgba(255,255,255,.035),0 1px 4px rgba(0,0,0,.28)}
+#phone-root.phone-root .ph-statusbar{padding-inline:21px;min-height:48px;flex-basis:48px}
+#phone-root.phone-root .ph-hardware{z-index:-1;box-shadow:inset 1px 0 rgba(255,255,255,.2)}
+#phone-root.phone-root .ph-action-button{left:-5px;top:90px}
+#phone-root.phone-root .ph-volume{left:-5px;top:132px;height:68px}
+#phone-root.phone-root .ph-power{right:-5px;top:154px;height:61px}
+#phone-root.phone-root .ph-device-caption{top:calc(100% + 13px);padding-inline:2px;text-shadow:0 1px 8px rgba(0,0,0,.5)}
+#phone-root.phone-root .ph-device-caption>span{opacity:.76}
+#phone-root.phone-root .ph-device-caption button{min-height:34px;padding:4px 0 4px 12px}
+#phone-root.phone-root .ph-app-content,#phone-root.phone-root .ph-home-content,#phone-root.phone-root .ph-lock-content{min-width:0;min-height:0}
+#phone-root.phone-root .ph-scroll{overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+#phone-root.phone-root .ph-app,#phone-root.phone-root .ph-home,#phone-root.phone-root .ph-locked{overflow:hidden}
+#phone-root.phone-root .ph-app-content>*{max-width:100%}
+#phone-root.phone-root input,#phone-root.phone-root textarea,#phone-root.phone-root select{font-size:16px}
+
+/* The native keyboard reduces only the usable conversation viewport. The virtual hardware remains recognisable. */
+#phone-root.phone-root.phone-keyboard-open .ph-backdrop{
+  align-items:start;
+  padding-top:max(7px,calc(var(--ph-chat-viewport-top,0px) + 7px));
+  padding-bottom:7px;
+}
+#phone-root.phone-root.phone-keyboard-open .ph-device{
+  width:min(320px,calc(100vw - 20px),calc((var(--ph-chat-viewport-height,100dvh) - 18px)*.474));
+  max-height:calc(var(--ph-chat-viewport-height,100dvh) - 14px);
+}
+#phone-root.phone-root.phone-keyboard-open .ph-device-caption{display:none}
+#phone-root.phone-root.phone-keyboard-open .ph-thread-scroll{scroll-padding-bottom:92px}
+#phone-root.phone-root.phone-keyboard-open .ph-composer{position:relative;z-index:6}
+
+@media(max-width:360px){
+  #phone-root.phone-root .ph-backdrop{padding-inline:8px}
+  #phone-root.phone-root .ph-device{width:min(304px,calc(100vw - 18px),calc((100dvh - 88px)*.474));border-radius:43px;padding:6px}
+  #phone-root.phone-root .ph-screen{border-radius:36px;clip-path:inset(0 round 36px)}
+}
+@media(max-height:680px){
+  #phone-root.phone-root .ph-backdrop{padding-top:max(8px,env(safe-area-inset-top));padding-bottom:max(28px,env(safe-area-inset-bottom))}
+  #phone-root.phone-root .ph-device{width:min(292px,calc(100vw - 22px),calc((100dvh - 64px)*.474));max-height:calc(100dvh - 58px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
+  #phone-root.phone-root .ph-device-caption{top:calc(100% + 8px)}
+}
+@media(min-width:900px){
+  #phone-root.phone-root .ph-backdrop{background:radial-gradient(circle at 50% 45%,rgba(13,29,24,.05),rgba(7,17,13,.34))}
+  #phone-root.phone-root .ph-device{width:min(320px,calc((100dvh - 112px)*.474))}
+}
+@media(prefers-reduced-motion:reduce){#phone-root.phone-root .ph-device{transform:none}}

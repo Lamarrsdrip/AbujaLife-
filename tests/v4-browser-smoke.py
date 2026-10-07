@@ -151,6 +151,32 @@ async def clean_world(page,qa):
     await page.set_viewport_size({'width':1280,'height':900})
     return {'model':model,'weather':current['weather'],'movement':game.distance(before,after),'clock':current['clock']}
 
+async def phone_hardware(page,qa):
+    await game.close_sheet(page);await game.close_phone(page);await game.navigate(page,'world')
+    await page.evaluate("window.__phoneSceneBefore=document.querySelector('#world-scene')")
+    measurements=[]
+    try:
+        for width,height,label in [(1280,900,'desktop'),(390,844,'mobile')]:
+            await page.set_viewport_size({'width':width,'height':height})
+            await game.open_phone(page)
+            root=page.locator('#phone-root');device=root.locator('.ph-device')
+            await expect(root).to_be_visible();await expect(device).to_be_visible()
+            await expect(device.locator('.ph-statusbar .ph-network-type')).to_have_text('5G')
+            await expect(device.locator('.ph-island')).to_be_visible()
+            close=root.locator('.ph-device-caption [data-ph-action="close"]')
+            await expect(close).to_be_visible();await expect(close).to_contain_text('Close')
+            box=await device.bounding_box()
+            metrics=await device.evaluate("""el=>{const matches=[];const walk=(rules,source,media='')=>{for(const rule of rules){if(rule.selectorText&&rule.selectorText.includes('ph-device')){try{if(el.matches(rule.selectorText))matches.push({source,media,selector:rule.selectorText,style:rule.style.cssText})}catch{}}else if(rule.cssRules)walk(rule.cssRules,source,rule.conditionText||media)}};for(const sheet of document.styleSheets){try{walk(sheet.cssRules,sheet.href)}catch{}}return {rect:el.getBoundingClientRect().toJSON(),width:getComputedStyle(el).width,height:getComputedStyle(el).height,aspectRatio:getComputedStyle(el).aspectRatio,captionTop:getComputedStyle(el.querySelector('.ph-device-caption')).top,rootClass:el.closest('#phone-root')?.className,matches}}""")
+            assert box and 320<box['width']<=width and box['height']<height,{'viewport':[width,height],'device':box,'computed':metrics}
+            await qa.screenshot(page,'main-phone-pro-frame-'+label)
+            await close.click();await expect(root).to_be_hidden()
+            assert await page.evaluate("window.__phoneSceneBefore===document.querySelector('#world-scene')"),'Opening or closing the phone remounted the world'
+            measurements.append({'viewport':[width,height],'frame':[round(box['width']),round(box['height'])],'singleMountedWorld':True})
+    finally:
+        await game.close_phone(page)
+        await page.set_viewport_size({'width':1280,'height':900})
+    return {'device':'responsive Pro Max-style virtual handset','networkIndicator':'5G','measurements':measurements,'existingPhoneLifecyclePreserved':True}
+
 async def physical(page,qa,activities=('shower','sleep')):
     results=[]
     for activity in activities:
@@ -216,6 +242,67 @@ async def home_studio(page,qa):
     await life(page,'design');await expect(page.locator('[data-home-editor="wall"][data-value="sage"]')).to_have_attribute('aria-pressed','true')
     await expect(page.locator('.home-editor-view img')).to_be_visible(timeout=45000);await qa.screenshot(page,'main-home-studio-surfaces')
     await page.locator('[data-home-editor="close"]').click();return style
+
+async def investment_portfolio(page,fixture,qa):
+    """Exercise the existing investment UI against authoritative server state."""
+    await game.navigate(page,'property')
+    await page.locator('[data-property-tab="investments"]').click()
+    count=page.locator('[data-portfolio-count]')
+    await expect(count).to_have_text('0 properties')
+    for key in ('purchase','resale','rent'):
+        await expect(page.locator(f'[data-portfolio-value="{key}"]')).to_have_text('₦0')
+    initial=await game.state(page)
+    primary_id=initial['profile']['home']['propertyId']
+    assert initial['profile'].get('propertyInvestments')=={},initial['profile'].get('propertyInvestments')
+    prop=next(item for item in initial['properties'] if item['id']=='lugbe-flat')
+    assert prop['id']!=primary_id and initial['profile']['wallet']>=prop['buy'],{'property':prop,'profile':initial['profile']}
+    await page.locator('[data-invest-property="lugbe-flat"]').click()
+    await page.locator('[data-buy-investment="lugbe-flat"]').click()
+    bought=await game.wait_state(page,lambda value:bool(value['profile'].get('propertyInvestments',{}).get('lugbe-flat')))
+    holding=bought['profile']['propertyInvestments']['lugbe-flat']
+    assert initial['profile']['wallet']-bought['profile']['wallet']==prop['buy'],{'before':initial['profile']['wallet'],'after':bought['profile']['wallet'],'property':prop}
+    assert bought['profile']['home']['propertyId']==primary_id and bought['profile']['location']==initial['profile']['location']
+    await expect(page.locator('[data-portfolio-count]')).to_have_text('1 property')
+    await expect(page.locator('[data-portfolio-value="purchase"]')).to_have_text(f"₦{holding['purchasePrice']:,}")
+    await expect(page.locator('[data-portfolio-value="resale"]')).to_have_text(f"₦{holding['resaleValue']:,}")
+    await qa.screenshot(page,'main-investment-owned')
+
+    # The fixture advances only the server clock. Reload lets the normal bootstrap
+    # resynchronize the app's game clock before the rent timer is evaluated.
+    fixture.clock(advance=125000)
+    await reload(page)
+    await game.navigate(page,'property')
+    await page.locator('[data-property-tab="investments"]').click()
+    await page.locator('[data-invest-property="lugbe-flat"]').click()
+    before_collect=await game.state(page)
+    wallet_before_collect=before_collect['profile']['wallet']
+    await expect(page.locator('[data-collect-rent="lugbe-flat"]')).to_be_enabled()
+    await page.locator('[data-collect-rent="lugbe-flat"]').click()
+    collected=await game.wait_state(page,lambda value:value['profile']['wallet']>wallet_before_collect)
+    rent_delta=collected['profile']['wallet']-wallet_before_collect
+    assert rent_delta>=holding['incomePerPeriod'] and rent_delta%holding['incomePerPeriod']==0,{'income':rent_delta,'holding':holding}
+    assert len(collected['profile']['propertyInvestments'])==1
+    await expect(page.locator('[data-portfolio-count]')).to_have_text('1 property')
+    await expect(page.locator('[data-portfolio-value="purchase"]')).to_have_text(f"₦{holding['purchasePrice']:,}")
+    await qa.screenshot(page,'main-investment-rent-collected')
+
+    await page.locator('[data-sell-investment="lugbe-flat"]').click()
+    sold=await game.wait_state(page,lambda value:'lugbe-flat' not in value['profile'].get('propertyInvestments',{}))
+    sale_delta=sold['profile']['wallet']-collected['profile']['wallet']
+    assert sale_delta>=holding['resaleValue'] and (sale_delta-holding['resaleValue'])%holding['incomePerPeriod']==0,{'saleDelta':sale_delta,'holding':holding}
+    await expect(page.locator('[data-portfolio-count]')).to_have_text('0 properties')
+    for key in ('purchase','resale','rent'):
+        await expect(page.locator(f'[data-portfolio-value="{key}"]')).to_have_text('₦0')
+    await page.reload(wait_until='domcontentloaded')
+    persisted=await game.state(page)
+    assert 'lugbe-flat' not in persisted['profile'].get('propertyInvestments',{})
+    assert 'lugbe-flat' not in persisted['profile'].get('ownedProperties',[])
+    await game.navigate(page,'property')
+    await page.locator('[data-property-tab="investments"]').click()
+    await expect(page.locator('[data-portfolio-count]')).to_have_text('0 properties')
+    await page.locator('[data-invest-property="lugbe-flat"]').click()
+    await expect(page.locator('[data-buy-investment="lugbe-flat"]')).to_be_enabled()
+    return {'initialCount':0,'bought':holding['purchasePrice'],'activeCountAfterBuy':1,'rentCollected':rent_delta,'saleProceeds':sale_delta,'activeCountAfterReload':0,'primaryHomeExcluded':True}
 
 async def home_share(owner,guest,qa):
     await life(owner,'share');await expect(owner.locator('[data-ph-action="home-share-capture"]')).to_be_visible()
@@ -424,7 +511,7 @@ async def club(page,venue,activity,kind,fixture,qa):
 
 async def main():
     selected=set(os.environ.get('ABUJALIFE_V4_ONLY','').split(','))-{''}
-    assert selected <= {'physical','work','clubs'},selected
+    assert selected <= {'physical','work','clubs','phone','investments'},selected
     ART.mkdir(parents=True,exist_ok=True);qa=Evidence();fixture=Fixture('2026-10-17T21:00:00Z' if selected=={'clubs'} else '2026-10-04T18:00:00Z');qa.fixture=fixture
     print('ARTIFACTS='+str(ART),flush=True)
     try:
@@ -438,6 +525,8 @@ async def main():
             if selected:
                 if 'physical' in selected:await qa.check('03 physical shower and sleep delay their server effects',lambda:physical(owner,qa))
                 if 'work' in selected:await qa.check('10 work respects WAT weekdays and two completed slots',lambda:work(owner,fixture,qa))
+                if 'phone' in selected:await qa.check('02 premium responsive Pro Max-style phone frame preserves the mounted world',lambda:phone_hardware(owner,qa))
+                if 'investments' in selected:await qa.check('03 authoritative investment portfolio buys, collects rent, sells and persists',lambda:investment_portfolio(owner,fixture,qa))
                 if 'clubs' in selected:
                     fixture.clock('2026-10-17T21:00:00Z');await reload(owner)
                     await game.enter_home(owner);await physical(owner,qa,('sleep',))
@@ -451,7 +540,9 @@ async def main():
                         await qa.check('11 '+venue+' reachable distinct 3D club paid activity and opt-in sound',lambda v=venue,a=activity,k=kind:club(owner,v,a,k,fixture,qa))
             else:
                 await qa.check('02 quiet full 3D night world and responsive movement',lambda:clean_world(owner,qa))
+                await qa.check('02 premium responsive Pro Max-style phone frame preserves the mounted world',lambda:phone_hardware(owner,qa))
                 await qa.check('03 physical shower and sleep delay their server effects',lambda:physical(owner,qa))
+                await qa.check('03 authoritative investment portfolio buys, collects rent, sells and persists',lambda:investment_portfolio(owner,fixture,qa))
                 await qa.check('04 home studio surfaces and reachable divider persist',lambda:home_studio(owner,qa))
                 guest_ok=await qa.check('05 second independently registered connected resident',lambda:register(guest,fixture.url,'Bayo Acceptance','bayo_v4',qa))
                 if guest_ok:

@@ -108,6 +108,9 @@ async def finish_cards(page,name,hair,goal,qa,label):
         headings.append(await form.locator('h1').inner_text())
         names=form.locator('[name="displayName"]')
         if await names.count():await names.fill(name);observed.append('name')
+        presentation_choice=form.locator('[name="presentation"][value="feminine"]')
+        if await presentation_choice.count():
+            await presentation_choice.check();await expect(presentation_choice).to_be_checked();observed.append('presentation')
         hair_choice=form.locator(f'[name="hair"][value="{hair}"]')
         if await hair_choice.count():
             await hair_choice.locator('xpath=..').click();await expect(hair_choice).to_be_checked();observed.append('hair')
@@ -125,7 +128,7 @@ async def finish_cards(page,name,hair,goal,qa,label):
     assert saved['profile']['appearance']['hair']==hair,saved['profile']
     assert saved['profile']['lifeGoal']==goal and saved['profile']['onboardingComplete'],saved['profile']
     assert len(headings)==5 and len(set(headings))==5,headings
-    assert sorted(observed)==['goal','hair','name'],observed
+    assert sorted(observed)==['goal','hair','name','presentation'],observed
     return {'headings':headings,'profileId':saved['profile']['id'],'appearance':saved['profile']['appearance']}
 
 

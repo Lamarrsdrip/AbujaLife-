@@ -21,7 +21,8 @@ test('realtime residents keep a visible fallback until their own WebGL rig is re
   assert.match(polishCss,/world-online-resident\.has-webgl-resident \.walker-body\{visibility:hidden!important\}/);
   assert.doesNotMatch(polish,/has-webgl-resident/);
   assert.doesNotMatch(read('app/phone.js'),/class="ph-put-away"/);
-  assert.match(read('app/phone.js'),/Put away/);
+  assert.match(read('app/phone.js'),/>Close</);
+  assert.match(read('app/phone.js'),/ph-network-type/);
   assert.doesNotMatch(polishCss,/ph-put-away/);
   assert.match(read('app/phone.js'),/AbujaLife Phone/);
   assert.doesNotMatch(polish,/ph-device-caption/);
@@ -54,12 +55,13 @@ test('world asset runtime supports local Meshopt and KTX2 without third-party ho
   assert.doesNotMatch(assets,/https?:\/\//);
 });
 
-test('real mobile devices use the visual viewport instead of squeezing a second handset',()=>{
+test('real mobile devices use the visual viewport while the handset frame keeps one sizing owner',()=>{
   assert.match(polish,/visualViewport/);
   assert.match(polish,/--abj-phone-vh/);
   assert.match(polish,/--abj-phone-vtop/);
   assert.match(polishCss,/@media\(max-width:700px\)[\s\S]*\.phone-root\{top:var\(--abj-phone-vtop/);
-  assert.match(polishCss,/\.phone-root \.ph-device[\s\S]*width:100%!important[\s\S]*height:100%!important/);
+  assert.doesNotMatch(polishCss,/\.ph-device|\.ph-hardware/);
+  assert.match(read('app/phone-hardware-2026.css'),/width:min\(390px/);
   assert.match(polishCss,/phone-keyboard-open \.ph-chat-thread \.ph-composer\{position:relative!important/);
   assert.match(read('app/civic-life.js'),/data-civic-launcher/);
   assert.match(read('app/civic-life.js'),/City Story/);

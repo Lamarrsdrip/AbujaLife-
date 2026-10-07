@@ -90,6 +90,11 @@ _original_enter_home=v4.game.enter_home
 async def reload_like_player(page):
     await page.reload(wait_until='domcontentloaded')
     await v4.expect(page.locator('[data-nav-life]')).to_be_visible()
+    # A first return gate mounts after the navigation shell. Its session key is
+    # the existing owner of whether this tab has already continued past it.
+    already_continued=await page.evaluate("sessionStorage.getItem('abujalife.welcome-back.v1')==='1'")
+    if not already_continued:
+        await v4.expect(page.locator('.abj-welcome-back')).to_be_visible(timeout=5000)
     await dismiss_returning_welcome(page)
     if not await page.locator('#world-scene').count():
         await _original_navigate(page,'world')

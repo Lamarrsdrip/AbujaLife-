@@ -27,7 +27,7 @@ test('map opens at medium overview but retains extreme zoom',()=>{
   assert.match(map,/minZoom:\.22,maxZoom:24/);
 });
 
-test('phone uses the previous full handset kit and native premium Naira receipt',()=>{
+test('phone keeps the existing handset kit and native premium Naira receipt',()=>{
   const phone=read('app/phone.css'),chat=read('app/phone-chat-pro.css'),chatJs=read('app/phone-chat-pro.js'),base=read('app/phone.js');
   assert.doesNotMatch(phone,/2026-10 final phone framing/);
   assert.match(phone,/\.ph-device\{position:relative;width:min\(360px/);

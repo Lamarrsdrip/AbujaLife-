@@ -2,7 +2,7 @@ import { apiFetch } from './api-client.js';
 import { createServerClock } from './jackpot-clock.js';
 
 const money=value=>'₦'+new Intl.NumberFormat('en-NG',{maximumFractionDigits:0}).format(Number(value)||0);
-const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
+const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const requestKey=()=>globalThis.crypto?.randomUUID?.()||`jp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 let opened=false,state=null,busy='',dialog='',pollTimer=null,clockTimer=null,returnHandled=false;
 const serverClock=createServerClock();

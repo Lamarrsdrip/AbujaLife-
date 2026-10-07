@@ -23,6 +23,15 @@ test('playable World can frame the full Abuja landmark city',()=>{
  assert.match(city,/airport-plane-a/);
 });
 
+test('Okrika environmental sponsor remains visible without replacing paid ad inventory',()=>{
+ const city=read('app/world-city.js'),ads=read('docs/ABUJALIFE_ADS.md');
+ assert.match(city,/data-environmental-sponsor="okrika"/);
+ assert.match(city,/>OKRIKA</);
+ assert.match(city,/scene\.environmentalSponsor='okrika'/);
+ assert.match(ads,/dedicated open Abuja Business Park contains 40 visible plots/);
+ assert.match(ads,/ten visible roadside billboard spaces/);
+});
+
 test('outer map surrounding space is dense clickable advertising land',()=>{
  const map=read('app/outside-city-v4.js');
  assert.match(map,/function createAdPlots\(\)/);

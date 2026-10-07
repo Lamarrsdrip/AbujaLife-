@@ -32,7 +32,7 @@ test('API receives only its own secret files and approved provider keys', () => 
   process.env.OKRIKA_WHITE_AI_KEY = 'unrelated-machine-secret';
   try {
     writeJson(path.join(data.shared, 'providers.json'), { RESEND_API_KEY: 'provider-fixture', EMAIL_FROM: 'AbujaLife <hello@abujacity.life>', X_CLIENT_ID: 'x-client-fixture', X_CLIENT_SECRET: 'x-secret-fixture', X_REDIRECT_URI: 'https://api.abujacity.life/api/x/callback', X_TOKEN_ENCRYPTION_KEY: 'x-encryption-fixture', MONGODB_ROOT_PASSWORD: 'must-not-propagate' });
-    const env = apiEnvironment(configuration(data.root));
+    const config = configuration(data.root), env = apiEnvironment(config);
     assert.equal(env.OKRIKA_WHITE_AI_KEY, undefined);
     assert.equal(env.MONGODB_ROOT_PASSWORD, undefined);
     assert.equal(env.RESEND_API_KEY, 'provider-fixture');
@@ -45,6 +45,19 @@ test('API receives only its own secret files and approved provider keys', () => 
     assert.match(env.MONGODB_URI, /abujalife_app:fixture-app-password@127\.0\.0\.1:27017\/abujalife_prod/);
     assert.equal(safeEnvironment().OKRIKA_WHITE_AI_KEY, undefined);
   } finally { if (previous === undefined) delete process.env.OKRIKA_WHITE_AI_KEY; else process.env.OKRIKA_WHITE_AI_KEY = previous; data.cleanup(); }
+});
+
+test('production chat media is pinned to persistent shared storage and never a release .local directory', () => {
+  const data = fixture();
+  try {
+    const config = configuration(data.root), env = apiEnvironment(config);
+    const expected = path.join(data.shared, 'media', 'chat');
+    assert.equal(config.chatMedia, expected);
+    assert.equal(env.CHAT_MEDIA_DIR, expected);
+    assert.equal(path.relative(config.shared, env.CHAT_MEDIA_DIR).startsWith('..'), false);
+    assert.equal(path.relative(config.releases, env.CHAT_MEDIA_DIR).startsWith('..'), true);
+    assert.equal(env.CHAT_MEDIA_DIR.includes(`${path.sep}.local${path.sep}`), false);
+  } finally { data.cleanup(); }
 });
 
 test('Operation locks reject a live owner and reclaim an exited worker', () => {

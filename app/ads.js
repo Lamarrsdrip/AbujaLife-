@@ -3,7 +3,7 @@ import {optimizeAdImage} from './ad-creative.js';
 import { apiFetch } from './api-client.js';
 
 const sheetRoot=document.querySelector('#sheet-root'),appRoot=document.querySelector('#app');
-const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
+const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let adsState=null,paymentEnabled=false,loading=false,worldRefreshTimer;
 const renderedAds=new WeakMap();
 const AD_CHECKOUT_SCHEMA=2;

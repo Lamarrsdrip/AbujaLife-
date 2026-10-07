@@ -158,9 +158,22 @@ function venueIdFor({profile={},venue}={}){return typeof venue==='string'?venue:
 function currentHomeProfile(profile={}){
   if(profile.location?.kind!=='home'||!profile.home?.propertyId)return profile;
   const propertyId=profile.home.propertyId,layout=profile.furnitureLayout||{};
-  const furnitureLayout=Array.isArray(layout)?layout.filter(entry=>!entry?.propertyId||entry.propertyId===propertyId):Object.fromEntries(Object.entries(layout).filter(([,entry])=>!entry?.propertyId||entry.propertyId===propertyId));
+  const entries=Array.isArray(layout)
+    ?layout.map((entry,index)=>[entry?.itemId||String(index),entry])
+    :Object.entries(layout);
+  const currentEntries=entries.filter(([,entry])=>!entry?.propertyId||entry.propertyId===propertyId);
+  const furnitureLayout=Array.isArray(layout)
+    ?currentEntries.map(([,entry])=>entry)
+    :Object.fromEntries(currentEntries);
+  // An owned item that is physically placed in another property is not loose
+  // inventory in this room. Treat it as unavailable for this render only until
+  // the player intentionally stores/moves it; never mutate the authoritative profile.
+  const awayItems=entries
+    .filter(([,entry])=>entry?.propertyId&&entry.propertyId!==propertyId)
+    .map(([itemId,entry])=>entry?.itemId||itemId);
+  const storedFurniture=[...new Set([...(profile.storedFurniture||[]),...awayItems])];
   const purchasedFurnished=profile.home.purchaseFurnishedPropertyId===propertyId;
-  return {...profile,furnitureLayout,home:purchasedFurnished?{...profile.home,furnishingPreset:'lapo-basic'}:profile.home};
+  return {...profile,furnitureLayout,storedFurniture,home:purchasedFurnished?{...profile.home,furnishingPreset:'lapo-basic'}:profile.home};
 }
 
 export function buildInterior(args={}){

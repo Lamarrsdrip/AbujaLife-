@@ -357,7 +357,7 @@ async def main():
     print('ARTIFACTS='+str(ART),flush=True)
     try:
         async with async_playwright() as pw:
-            browser=await pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH','/usr/bin/chromium'),headless=True,args=['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'])
+            browser=await pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH') or (str(Path('/usr/bin/chromium')) if Path('/usr/bin/chromium').exists() else None),headless=True,args=['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'])
             contexts=[await browser.new_context(viewport={'width':1280,'height':900},device_scale_factor=1,service_workers='block') for _ in range(2)]
             owner,guest=[await c.new_page() for c in contexts];qa.watch(owner,'owner');qa.watch(guest,'guest')
             registered=await qa.check('01 genuine registration and five-card origin onboarding',lambda:register(owner,fixture.url,'Ada Acceptance','ada_v4',qa))

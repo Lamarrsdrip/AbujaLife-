@@ -2,9 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 const read=p=>fs.readFileSync(new URL(`../${p}`,import.meta.url),'utf8');
+const citySource=()=>[read('app/world-city.js'),read('app/world-city-base.js')].join('\n');
 
 test('Outside keeps city fabric visible while direct entry stays district-authoritative',()=>{
-  const city=read('app/world-city.js');
+  const city=citySource();
   assert.equal(city.includes("if(spec.id!=='home'&&!venues.some(venue=>venue.id===spec.id))continue;"),false);
   assert.match(city,/const localVenue=venues\.find/);
   assert.match(city,/city-neighbourhood-fabric/);
@@ -61,9 +62,8 @@ test('driving route remains visibly guided',()=>{
   assert.match(sim,/dataset\.driving=String\(driving\)/);
 });
 
-
 test('live WebGL Outside receives the complete city and recognisable landmarks',()=>{
-  const city=read('app/world-city.js'),three=read('app/world-3d-scenes.js');
+  const city=citySource(),three=read('app/world-3d-scenes.js');
   assert.match(city,/const visibleLegacyBuildings=/);
   assert.match(city,/const safeLandmarkBuildings=/);
   assert.match(city,/context-landmark-/);

@@ -21,6 +21,11 @@ test('phone renderer always includes one physical device, clipped screen, intern
   assert.match(css,/env\(safe-area-inset-bottom\)/);
 });
 
+test('caption never steals taps from the handset home indicator while Put away remains clickable',()=>{
+  assert.match(css,/\.ph-device-caption\{[^}]*pointer-events:none/);
+  assert.match(css,/\.ph-device-caption button\{[^}]*pointer-events:auto/);
+});
+
 test('Phone remains a world overlay rather than a full-screen replacement app',()=>{
   assert.match(css,/\.ph-backdrop\{[\s\S]*background:radial-gradient/);
   assert.match(css,/backdrop-filter:none/);

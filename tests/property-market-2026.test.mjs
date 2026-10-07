@@ -44,6 +44,7 @@ test('all expanded properties resolve through the existing authored home rendere
     assert.ok(scene&&Number.isFinite(scene.width)&&scene.width>0,p.id);
     assert.ok(Number.isFinite(scene.height)&&scene.height>0,p.id);
     assert.ok(typeof scene.art==='string'&&scene.art.length>500,p.id);
-    assert.ok(Array.isArray(scene.points),p.id);
+    assert.ok(Array.isArray(scene.interactables)&&scene.interactables.length>0,p.id);
+    assert.ok(scene.interactables.some(point=>point.action==='leave-home'),`${p.id} must remain playable`);
   }
 });

@@ -5,6 +5,8 @@ import fs from 'node:fs';
 import { connectMongo } from '../src/server/mongo/database.mjs';
 import { MongoGameStore } from '../src/server/mongo/gameStore.mjs';
 import { MongoAdminStore } from '../src/server/mongo/adminStore.mjs';
+import {MongoAdStore} from '../src/server/mongo/adStore.mjs';
+import {adSpaceAt,adZoneSpaces} from '../src/shared/advertising.mjs';
 import { MongoPaymentStore } from '../src/server/mongo/paymentStore.mjs';
 
 const configuration = process.env.TEST_MONGODB_CONFIG ? JSON.parse(fs.readFileSync(process.env.TEST_MONGODB_CONFIG, 'utf8')) : {};
@@ -28,7 +30,7 @@ async function fixture(t, { configured = true } = {}) {
   const fetchImpl = async (url, options) => {
     calls.push({ url, options });
     if (url.endsWith('/v3/payments')) return { ok: true, json: async () => ({ status: 'success', data: { link: 'https://checkout.flutterwave.com/v3/hosted/pay/replica-fixture' } }) };
-    const transactionId = url.match(/transactions\/(\d+)\/verify/)?.[1]; return { ok: true, json: async () => ({ status: 'success', data: verified.get(transactionId) || { id: transactionId, status: 'failed' } }) };
+    const reference=new URL(url).searchParams.get('tx_ref');const transactionId = url.match(/transactions\/(\d+)\/verify/)?.[1] || [...verified].find(([,value])=>value.tx_ref===reference)?.[0]; return { ok: true, json: async () => ({ status: 'success', data: verified.get(transactionId) || { id: transactionId, status: 'failed' } }) };
   };
   const payments = new MongoPaymentStore({ store, admin, fetchImpl, configKey: key, publicOrigin: 'https://game.example' }); await payments.init({ ensureIndexes: false });
   if (configured) await payments.configure(owner, { mode: 'test', enabled: true, creditRate: 10, secretKey: SECRET, webhookSecret: SIGNING, activate: true });
@@ -179,4 +181,40 @@ integration('Mongo administrative key reuse racing across two wallets grants one
   assert.equal(results.filter(value => value.status === 'fulfilled').length, 1); assert.equal(results.filter(value => value.status === 'rejected' && value.reason.code === 'idempotency_conflict').length, 1);
   assert.equal((await f.store.profile(f.resident)).wallet + (await f.store.profile(f.other)).wallet, before + 1000);
   assert.equal(await f.connection.db.collection('wallet_operations').countDocuments({ actorId: f.owner, operationKey }), 1);
+});
+
+
+integration('reference-only return and competing background workers fulfill an abandoned purchase exactly once',async t=>{
+ const f=await fixture(t),order=await checkout(f),before=(await f.store.profile(f.resident)).wallet;
+ providerSuccess(f,order);f.advance(120001);
+ const results=await Promise.all([f.payments.reconcilePending({limit:1}),f.payments.reconcilePending({limit:1}),f.payments.verify(f.resident,{txRef:order.txRef})]);
+ assert.equal((await f.store.profile(f.resident)).wallet,before+10000);
+ assert.equal(await f.connection.db.collection('payment_receipts').countDocuments({txRef:order.txRef}),1);
+ assert.equal(await f.connection.db.collection('ledger').countDocuments({residentId:f.resident,type:'verified-payment'}),1);
+ assert.equal((await f.payments.status(f.resident,order.txRef)).payment.fulfillmentStatus,'fulfilled');
+ const replay=await f.payments.verify(f.resident,{txRef:order.txRef});assert.equal(replay.replayed,true);
+});
+
+integration('reference verification requires order ownership and wrong provider facts never produce credits',async t=>{
+ const f=await fixture(t),order=await checkout(f),before=(await f.store.profile(f.resident)).wallet,calls=f.calls.length;
+ await rejectCode(f.payments.verify(f.other,{txRef:order.txRef}),'payment_not_found');assert.equal(f.calls.length,calls);
+ providerSuccess(f,order,undefined,{amount:999});await rejectCode(f.payments.verify(f.resident,{txRef:order.txRef}),'payment_verification_failed');
+ assert.equal((await f.store.profile(f.resident)).wallet,before);assert.equal(await f.connection.db.collection('payment_receipts').countDocuments({txRef:order.txRef}),0);
+});
+
+integration('map-wide city and sky ad reservations race safely, verify by reference, render their actual image and replay once',async t=>{
+ const f=await fixture(t),ads=new MongoAdStore({store:f.store,admin:f.admin,payments:f.payments});await ads.init({ensureIndexes:false});ads.attach();
+ const png=Buffer.alloc(24);Buffer.from([137,80,78,71,13,10,26,10]).copy(png);png.write('IHDR',12);png.writeUInt32BE(320,16);png.writeUInt32BE(200,20);
+ const slots=adZoneSpaces('sky-displays',{page:3}).slice(0,4).map(p=>p.id);slots.push(adSpaceAt(0,0).id);
+ const input={kind:'plot',slots,title:'Fixture city business',email:'advertiser@example.test',link:'https://example.com/business',imageDataUrl:'data:image/png;base64,'+png.toString('base64')};
+ const attempts=await Promise.allSettled([ads.checkout(f.resident,{...input,idempotencyKey:unique('ad_')}),ads.checkout(f.other,{...input,idempotencyKey:unique('ad_')})]);
+ assert.equal(attempts.filter(r=>r.status==='fulfilled').length,1);assert.equal(attempts.find(r=>r.status==='rejected').reason.code,'ad_space_taken');
+ const order=attempts.find(r=>r.status==='fulfilled').value.checkout,own=(await f.connection.db.collection('ad_orders').findOne({txRef:order.txRef})).residentId;
+ const id=providerSuccess(f,order);const before=(await f.store.profile(own)).wallet;
+ const results=await Promise.all([f.payments.verify(own,{purpose:'ad',txRef:order.txRef}),f.payments.verify(own,{purpose:'ad',txRef:order.txRef,transactionId:id})]);
+ assert.equal(results.filter(r=>!r.replayed).length,1);assert.equal(await f.connection.db.collection('ad_receipts').countDocuments({txRef:order.txRef}),1);
+ assert.equal((await f.store.profile(own)).wallet,before,'real Naira ads never spend or credit game wallets');
+ const state=await ads.publicState();assert.ok(state.active.some(ad=>ad.txRef===order.txRef&&ad.slots.length===5&&ad.imageDataUrl===input.imageDataUrl));
+ const visible=await ads.world({bounds:{x:-40000,y:-40000,width:80000,height:80000}});assert.ok(visible.active.some(ad=>ad.txRef===order.txRef));
+ const adminList=await f.payments.list(f.owner,{limit:100});assert.ok(adminList.payments.some(ad=>ad.txRef===order.txRef&&ad.purpose==='ad'&&ad.fulfillmentStatus==='fulfilled'));
 });

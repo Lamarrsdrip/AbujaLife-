@@ -11,6 +11,7 @@ import { vehicleIllustration } from './vehicle-art.js';
 import { createPhone } from './phone.js';
 import { renderWorld, avatarSVG } from './world.js';
 import { rememberCarDistrict } from './world-simulator.js';
+import { createJourneyArrival } from './journey-arrival.js';
 import { playableSceneKey } from './scene-lifecycle.js';
 import { renderMap } from './map.js';
 import { createHomeEditor } from './home-editor.js';
@@ -63,7 +64,19 @@ async function api(path,options={}) {
  return body;
 }
 function toast(message){const el=document.querySelector('#toast');el.textContent=message;el.classList.add('visible');clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.classList.remove('visible'),4000);}
-async function refresh({render=true,startup=true}={}){const epoch=++stateRequestEpoch,next=await api(startup?'/api/entry':'/api/bootstrap');if(epoch!==stateRequestEpoch)return state;state=mergeCoreBootstrap(state,next);serverClockAt=Number(state.serverTime)||Date.now();serverClockObservedAt=performance.now();if(state.profile?.activeTrip)armTripArrival();if(render)renderMain();else{const balance=root.querySelector('.wallet-button');if(balance){balance.querySelector('strong').textContent=`₦${money(state.profile?.wallet)}`;balance.setAttribute('aria-label',`Naira balance, ₦${money(state.profile?.wallet)}. Open wallet`);}cleanup?.updateResidents?.(list(state.nearby));}phone.render();showWorkReminder();void install.refresh();if(startup&&state.profile?.onboardingComplete)hydrateStartup();return state;}
+async function refresh({render=true,startup=true}={}){
+ const epoch=++stateRequestEpoch,next=await api(startup?'/api/entry':'/api/bootstrap');
+ if(epoch!==stateRequestEpoch)return state;
+ const previousLocation=locationKey();state=mergeCoreBootstrap(state,next);
+ serverClockAt=Number(state.serverTime)||Date.now();serverClockObservedAt=performance.now();
+ if(previousLocation!==locationKey())state.nearby=list(next.nearby);
+ // renderMain preserves the mounted scene when its identity is unchanged and
+ // applies profile/furniture updates through its narrow renderer API.
+ if(render||['world','outside'].includes(view))renderMain();
+ else{syncProfileChrome();cleanup?.updateResidents?.(list(state.nearby));}
+ armTripArrival();phone.render();showWorkReminder();void install.refresh();
+ if(startup&&state.profile?.onboardingComplete)hydrateStartup();return state;
+}
 function expireAccount(){stream?.close();phone.close();stateRequestEpoch++;state={authenticated:false};authMode='login';authDraft.password='';authNotice='Your session has expired. Sign in to continue with your saved resident.';renderMain();}
 function hydrateStartup(){
  if(!state.authenticated||!state.entry)return;
@@ -110,14 +123,13 @@ setInterval(()=>void posePublisher.publish(),500);
 setInterval(()=>{if(state.authenticated&&!document.hidden)void api('/api/presence',{method:'POST',body:{heartbeat:true}}).catch(()=>{});},20000);
 setInterval(()=>{if(state.authenticated&&!document.hidden)void refreshNearbyPresence().catch(()=>{});},30000);
 setInterval(()=>{if(state.authenticated&&!document.hidden&&!document.querySelector('[aria-modal="true"]'))refresh({render:false}).catch(()=>{});},60000);
-let tripArrivalTimer=0,tripArrivalInFlight=false,nextArriveAttempt=0;
-function armTripArrival(retry=false){
- clearTimeout(tripArrivalTimer);tripArrivalTimer=0;
- const trip=state.profile?.activeTrip;
- if(!state.authenticated||!trip)return;
- const wait=Number(trip.arrivesAt)-gameNow();
- tripArrivalTimer=setTimeout(()=>{void completeTrip(trip.id);},Math.max(retry?400:0,wait+60));
-}
+const journeyArrival=createJourneyArrival({
+ readTrip:()=>state.profile?.activeTrip,now:gameNow,isBusy:()=>busy,
+ request:payload=>action('arrive',payload,{throwOnError:true}),
+ reconcile:()=>refresh({render:false}),onError:error=>toast(error.message),
+ onComplete:()=>{pendingVenue=undefined;if(state.profile.location?.kind==='home'&&pendingFurnitureItem){const itemId=pendingFurnitureItem;pendingFurnitureItem=undefined;openFurniture(itemId);}toast(currentVenue()?`You’ve arrived at ${currentVenue().name}.`:'You’ve arrived.');}
+});
+function armTripArrival(){journeyArrival.sync();}
 function showCity(){
  view='world';
  if(location.hash!=='#world')history.replaceState({view:'world'},'',`${location.pathname}${location.search}#world`);
@@ -167,15 +179,9 @@ addEventListener('hashchange',()=>{
 addEventListener('popstate',()=>{view=(location.hash.slice(1)==='map'?'outside':location.hash.slice(1))||'world';phone.close();closeSheet();renderMain();});
 addEventListener('keydown',event=>{if(event.key==='Escape')closeSheet();});
 function scheduleRealtimeRefresh(){
- const previousLocation=locationKey(state.profile);
- clearTimeout(refreshTimer);
- refreshTimer=setTimeout(()=>{
-  refresh({render:false}).then(next=>{
-   const locationChanged=previousLocation!==locationKey(next.profile);
-   if(locationChanged&&['world','outside'].includes(view)){renderMain();return;}
-   if(!['world','outside'].includes(view)&&locationChanged&&!document.querySelector('.sheet,#shift-form')&&!root.contains(document.activeElement))renderMain();
-   else renderMain();
-  }).catch(()=>{});
+ clearTimeout(refreshTimer);refreshTimer=setTimeout(()=>{
+  const editing=!['world','outside'].includes(view)&&(root.contains(document.activeElement)||document.querySelector('.sheet,#shift-form'));
+  void refresh({render:!editing}).catch(()=>{});
  },250);
 }
 function connectRealtime(){
@@ -184,12 +190,13 @@ function connectRealtime(){
   let data;try{data=JSON.parse(event.data);}catch{return;}
   if(type==='presence'&&data.resident?.id){const live=data.resident;state.people=list(state.people).map(person=>person.id===live.id?{...person,...live}:person);}
   phone.handleEvent(type,data);
+  if(type==='receipt'&&data.payment)dispatchLivingCity('receipt',{data});
   if(type==='message'&&!data.receipt&&data.senderId!==state.profile?.id&&data.conversationId)api(`/api/conversations/${encodeURIComponent(data.conversationId)}/delivered`,{method:'POST',body:{...(Number.isSafeInteger(data.seq)?{uptoSeq:data.seq}:{}),createdAt:data.createdAt,uptoMessageId:data.id}}).catch(()=>{});
   if(type==='world-pose'){if(data.residentId!==state.profile?.id)cleanup?.updateResidentPose?.(data);dispatchLivingCity('world-pose',{data});return;}
   if(type==='player-emote'||type==='club-spray'){dispatchLivingCity(type,{data});return;}
   if(type==='city-stats'){dispatchLivingCity('stats',{stats:data.stats});return;}
   if(type==='presence'){scheduleNearbyPresenceRefresh();return;}
-  if(type==='ready'){scheduleNearbyPresenceRefresh(0);return;}
+  if(type==='ready'){scheduleNearbyPresenceRefresh(0);scheduleRealtimeRefresh();return;}
   if(type==='location-chat'){const message=data.message||data;chatMessages.push(message);chatMessages=chatMessages.slice(-60);if(chatOpen)renderChat();else if(message.senderId!==state.profile?.id){chatUnread++;updateLocalChatAffordance();}}
   if(['event','profile','message','notification','invitation','receipt','home-visit','home-visit-request','home-visit-ended'].includes(type))scheduleRealtimeRefresh();
  });
@@ -204,7 +211,7 @@ addEventListener('abujalife:resident-action',async event=>{
   if(residentAction==='visit'){await api('/api/home/visits/request',{method:'POST',body:{residentId:resident.id,idempotencyKey:crypto.randomUUID()}});toast('Visit request sent.');return;}
  }catch(error){toast(error.message);}
 });
-async function action(name,payload={}){
+async function action(name,payload={}, {throwOnError=false}={}){
  if(busy)return;busy=true;const previousLocation=locationKey(state.profile);
  try{
   const result=await api('/api/action',{method:'POST',body:{action:name,payload}});
@@ -226,7 +233,7 @@ async function action(name,payload={}){
   void refresh({render:false}).catch(()=>{});
   return result;
  }
- catch(error){if(!(name==='arrive'&&error.code==='trip_in_progress'))toast(error.message);return null;}finally{busy=false;}
+ catch(error){if(throwOnError)throw error;toast(error.message);return null;}finally{busy=false;}
 }
 function syncProfileChrome(){
  const p=state.profile;if(!p)return;
@@ -367,7 +374,7 @@ function openLifeMenu(){
 
 function bindWorld(){
  const p=state.profile,owner=state.homeVisit?.ownerHome,renderProfile=p.location?.kind==='visit'&&owner?{...p,home:owner.home,inventory:owner.inventory,furnitureLayout:owner.furnitureLayout,storedFurniture:owner.storedFurniture,canDecorate:false}:p;
- cleanup=renderWorld(document.querySelector('#world-scene'),{profile:renderProfile,place:place(p.district),people:list(state.nearby),serverNow:gameNow(),weather:state.weather,venues:list(state.venues),venueActions:list(state.venueActions),catalog:list(state.catalog),onInteract:interact,onResident:residentSheet,onFurnitureSelect:itemId=>furnitureCatalogue.showItem(itemId),onDestination:destination=>destination.home?goHome():goToVenue(destination.venueId),onArrive:tripId=>{if(p.activeTrip&&gameNow()>=Number(p.activeTrip.arrivesAt))return completeTrip(tripId||p.activeTrip.id);}});
+ cleanup=renderWorld(document.querySelector('#world-scene'),{profile:renderProfile,place:place(p.district),people:list(state.nearby),atlas:list(state.atlas),serverNow:gameNow(),weather:state.weather,venues:list(state.venues),venueActions:list(state.venueActions),catalog:list(state.catalog),onInteract:interact,onResident:residentSheet,onFurnitureSelect:itemId=>furnitureCatalogue.showItem(itemId),onDestination:destination=>destination.home?goHome():goToVenue(destination.venueId),onArrive:tripId=>{if(p.activeTrip&&gameNow()>=Number(p.activeTrip.arrivesAt))return completeTrip(tripId||p.activeTrip.id);}});
  updateLocalChatAffordance();
  queueMicrotask(()=>{void posePublisher.publish();void refreshNearbyPresence().catch(()=>{});});
  root.querySelector('[data-open-local-chat]')?.addEventListener('click',openLocalChat);
@@ -393,20 +400,7 @@ function bindWorld(){
   root.querySelector('.world-stage')?.append(places);
  }
 }
-async function completeTrip(tripId){
- const trip=state.profile?.activeTrip;
- if(!trip||(tripId&&trip.id!==tripId))return !state.profile?.activeTrip;
- if(performance.now()<nextArriveAttempt)return false;
- if(gameNow()+120<Number(trip.arrivesAt)){armTripArrival();return false;}
- if(tripArrivalInFlight||busy){armTripArrival(true);return false;}
- tripArrivalInFlight=true;nextArriveAttempt=performance.now()+350;
- try{
-  const result=await action('arrive',{tripId:trip.id});
-  if(result){pendingVenue=undefined;if(state.profile.location?.kind==='home'&&pendingFurnitureItem){const itemId=pendingFurnitureItem;pendingFurnitureItem=undefined;openFurniture(itemId);}toast(currentVenue()?`You’ve arrived at ${currentVenue().name}.`:'You’ve arrived.');return true;}
-  if(state.profile?.activeTrip?.id===trip.id)armTripArrival(true);
-  return false;
- }finally{tripArrivalInFlight=false;}
-}
+function completeTrip(tripId){return journeyArrival.complete(tripId||state.profile?.activeTrip?.id);}
 function bindTrip(trip){const update=()=>{const left=Math.max(0,Math.ceil((Number(trip.arrivesAt)-gameNow())/1000));const el=root.querySelector('[data-trip-countdown]'),button=root.querySelector('[data-arrive]');if(el&&button){el.textContent=left?`${left}s to go`:'You’ve arrived';button.disabled=left>0;}if(left===0&&state.profile?.activeTrip?.id===trip.id)void completeTrip(trip.id);};update();const timer=setInterval(update,250),previous=cleanup;cleanup=Object.assign(()=>{clearInterval(timer);previous?.();},previous);root.querySelector('[data-arrive]').onclick=()=>completeTrip(trip.id);}
 async function interact(name,payload={}){
  if(name==='leave-visit'){try{const result=await api('/api/home/visits/leave',{method:'POST',body:{}});await refresh();toast('You stepped outside.');return result;}catch(error){toast(error.message);return false;}}
@@ -715,7 +709,8 @@ async function boot(){
   if(authRecovery.snapshot().kind==='verify-email'&&authRecovery.snapshot().status==='pending'){
    try{await authRecovery.verify();authNotice='Your email address is confirmed.';if(state.authenticated)toast(authNotice);renderMain();}catch{}
   }
-  if(state.authenticated&&new URLSearchParams(location.search).get('payment')==='return')phone.open('paymentcheckout');
+  const paymentParams=new URLSearchParams(location.search),paymentRef=paymentParams.get('payment_ref') || paymentParams.get('tx_ref');
+  if(state.authenticated && /^abjl_[a-f0-9-]+$/.test(paymentRef || ''))void phone.open('paymentcheckout');
  }catch(error){
   if(error.status===401){expireAccount();return;}
   const slow=error.name==='TimeoutError'||error.name==='AbortError';

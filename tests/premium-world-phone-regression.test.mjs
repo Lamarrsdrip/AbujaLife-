@@ -56,12 +56,10 @@ test('world asset runtime supports local Meshopt and KTX2 without third-party ho
 });
 
 test('real mobile devices use the visual viewport while the handset frame keeps one sizing owner',()=>{
-  assert.match(polish,/visualViewport/);
-  assert.match(polish,/--abj-phone-vh/);
-  assert.match(polish,/--abj-phone-vtop/);
-  assert.match(polishCss,/@media\(max-width:700px\)[\s\S]*\.phone-root\{top:var\(--abj-phone-vtop/);
-  assert.doesNotMatch(polishCss,/\.ph-device|\.ph-hardware/);
-  assert.match(read('app/phone-hardware-2026.css'),/width:min\(390px/);
+  assert.doesNotMatch(polish,/syncPhoneViewport|--abj-phone-vh/);
+  assert.doesNotMatch(polishCss,/--abj-phone-vh|--abj-phone-vtop/);
+  assert.match(read('app/phone-viewport.js'),/visualViewport/);
+  assert.match(read('app/phone-hardware-2026.css'),/width:390px/);
   assert.match(polishCss,/phone-keyboard-open \.ph-chat-thread \.ph-composer\{position:relative!important/);
   assert.match(read('app/civic-life.js'),/data-civic-launcher/);
   assert.match(read('app/civic-life.js'),/City Story/);
@@ -70,6 +68,6 @@ test('real mobile devices use the visual viewport while the handset frame keeps 
 
 test('the main Map uses the premium Abuja v4 diorama and includes civic destinations',()=>{
   assert.match(map,/outside-city-v4\.js/);
-  for(const id of ['inec-hq','efcc-hq','federal-high-court-hub','national-assembly-hub','wtc-abuja-hub'])assert.ok(city.includes(`'${id}'`),`${id} missing from premium city`);
+  for(const id of ['inec-hq','efcc-hq','federal-high-court-hub','national-assembly-hub','wtc-abuja-hub'])assert.ok(read('src/shared/city-landmarks.mjs').includes(`'${id}'`),`${id} missing from premium city`);
   assert.match(city,/renderer\.shadowMap\.enabled=true/);
 });

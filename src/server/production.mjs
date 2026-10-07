@@ -55,7 +55,8 @@ export async function createProductionApplication({env=process.env,clock=Date.no
     const x=attachXIntegration(server,{store,admin,database,env,publicWebUrl:config.publicWebUrl,apiPublicUrl:config.apiPublicUrl,corsOrigins:config.corsOrigins,fetchImpl});
     const jackpot=await attachJackpotRuntime(server,{store,admin,payments,database,env,publicWebUrl:config.publicWebUrl,apiPublicUrl:config.apiPublicUrl,corsOrigins:config.corsOrigins,log});
     const civic=await attachCivicRuntime(server,{store,admin,database,publicWebUrl:config.publicWebUrl,apiPublicUrl:config.apiPublicUrl,corsOrigins:config.corsOrigins,log});
-    return{server,store,social,directory,presence,admin,payments,rewards,ads,sessionRuntime,liveActions,x,jackpot,civic,database,config,close:async()=>{jackpot.close();server.closeRealtime();if(server.listening)await new Promise(resolve=>server.close(resolve));await database.close();}};
+    payments.startReconciliation();
+    return{server,store,social,directory,presence,admin,payments,rewards,ads,sessionRuntime,liveActions,x,jackpot,civic,database,config,close:async()=>{await payments.stopReconciliation();jackpot.close();server.closeRealtime();if(server.listening)await new Promise(resolve=>server.close(resolve));await database.close();}};
   }catch(error){await database.close();throw error;}
 }
 export async function startProduction(){

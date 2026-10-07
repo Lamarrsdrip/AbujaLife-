@@ -142,7 +142,7 @@ async function beginSameDistrictHomeTrip(store,residentId,profile,payload={}){
     if(state.activeTrip?.returningHome&&state.activeTrip.destination===profile.home.district){trip=state.activeTrip;replayed=true;return;}
     fail(!state.activeTrip,'Your journey is still in progress',409,'trip_in_progress');
     fail(state.location?.kind!=='home','You are already home',409,'already_home');
-    trip={id:crypto.randomUUID(),destination:profile.home.district,mode,cost:0,seconds,vehicleId,arrivesAt:timestamp+seconds*1000,returningHome:true};
+    trip={id:crypto.randomUUID(),fromLocation:{...profile.location},destination:profile.home.district,mode,cost:0,seconds,vehicleId,arrivesAt:timestamp+seconds*1000,returningHome:true};
     const nextPresence=vehicleId?{vehicleId,state:'transit',district:profile.district,venue:locationVenue(profile),destinationDistrict:profile.home.district,destinationVenue:'home',updatedAt:timestamp}:state.vehiclePresence;
     const update={$set:{activeTrip:trip,drivingVehicle:null,location:{kind:'transit',district:profile.district,venue:'journey'},...(nextPresence?{vehiclePresence:nextPresence}:{})}};
     const changed=await store.collection('player_state').updateOne({_id:state._id,residentId,activeTrip:state.activeTrip??null},update,{session});

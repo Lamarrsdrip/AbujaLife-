@@ -82,7 +82,7 @@ export function createProductionServer({store,social,directory,presence,admin,pa
       if(pathname==='/api/payments/config'&&method==='GET')return json(res,200,await payments.publicConfig());
       // Ad World is intentionally discoverable before sign-in; checkout and
       // ownership still require an authenticated resident below.
-      if(pathname==='/api/ads/world'&&method==='GET')return json(res,200,await ads.world({zoneId:url.searchParams.get('zone'),page:url.searchParams.get('page'),limit:url.searchParams.get('limit'),zoom:url.searchParams.get('zoom')}));
+      if(pathname==='/api/ads/world'&&method==='GET')return json(res,200,await ads.world({zoneId:url.searchParams.get('zone'),page:url.searchParams.get('page'),limit:url.searchParams.get('limit'),zoom:url.searchParams.get('zoom'),bounds:url.searchParams.has('x')?Object.fromEntries(['x','y','width','height'].map(key=>[key,url.searchParams.get(key)])):null}));
       if(pathname==='/api/auth/config'&&method==='GET')return json(res,200,store.auth.configuration());
       if(pathname==='/payments/return'&&method==='GET'){const query=new URLSearchParams({payment:'return',transaction_id:(url.searchParams.get('transaction_id')||'').slice(0,100),tx_ref:(url.searchParams.get('tx_ref')||'').slice(0,160),status:(url.searchParams.get('status')||'').slice(0,40)});res.writeHead(303,{...SECURITY_HEADERS,location:`${publicWebUrl}/?${query}`});res.end();return;}
       if(pathname==='/api/auth/refresh'&&method==='POST'){await readBody(req);const session=await store.refreshSession(token);setSession(res,session.token);for(const[stream,client]of clients)if(client.token===token)stream.end();return json(res,200,{ok:true});}

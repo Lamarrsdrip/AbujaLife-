@@ -1,3 +1,4 @@
+import {renderTripWorld} from './world-trip.js';
 import { canUseFurnitureSurface } from '../src/shared/furniture-metadata.mjs';
 // Original AbujaLife scenery. These are authored social spaces, not geographic maps.
 let serial = 0;
@@ -57,7 +58,7 @@ export function avatarSVG(appearance = {}, {size = 160, fullBody = false} = {}) 
   return `<svg xmlns="http://www.w3.org/2000/svg" class="resident-avatar ${fullBody?'resident-avatar-full':''}" viewBox="${fullBody?'0 0 200 280':'25 22 150 154'}" width="${Number(size)||160}" role="img" aria-label="Resident portrait">${residentArt(appearance)}</svg>`;
 }
 
-import { buildCity, buildJourney, vehicleArt } from './world-city.js';
+import { buildCity, vehicleArt } from './world-city.js';
 import { buildInterior, furnitureGhost, furnitureDimensions } from './world-interiors.js';
 import { VENUES, VENUE_ACTIONS, venuesForDistrict } from '../src/shared/life.mjs';
 import { VEHICLE_CATALOG, vehicleColorHex, vehicleFor } from '../src/shared/vehicles.mjs';
@@ -159,12 +160,13 @@ function makeNavigation(scene,radius=10) {
 
 /** A locally simulated playable world. Online residents only come from the server. */
 export function renderWorld(container,{profile={},place={},people=[],serverNow,weather:reportedWeather,canDecorate=true,catalog=[],onInteract=()=>{},onResident=()=>{},onFurnitureSelect=()=>{},onDestination=()=>{},onArrive}={}) {
+ if(profile.activeTrip)return renderTripWorld(container,{profile,place,people,serverNow,onArrive});
  if(!container)return Object.assign(()=>{},{perform:()=>{},walkTo:()=>{}});
- const id=`abuja-motion-${++serial}`,trip=profile.activeTrip,kind=trip?'transit':profile.location?.kind||'public',atHome=kind==='home'||kind==='visit',interior=atHome||kind==='venue',preview=container.id==='welcome-scene';
+ const id=`abuja-motion-${++serial}`,trip=null,kind=trip?'transit':profile.location?.kind||'public',atHome=kind==='home'||kind==='visit',interior=atHome||kind==='venue',preview=container.id==='welcome-scene';
  const realTimeStart=Number.isFinite(Number(serverNow))?Number(serverNow):Date.now(),localTimeStart=performance.now();
  const now=()=>realTimeStart+(performance.now()-localTimeStart);
  const venue=VENUES.find(v=>v.id===profile.location?.venue),isClub=venue?.kind==='club'||['club','club-cage','magic-city','bear-barn'].includes(venue?.id);
- let scene=trip?buildJourney({profile,place,id}):interior?buildInterior({profile:kind==='visit'?{...profile,location:{...profile.location,kind:'home',venue:'home'}}:profile,venue:kind==='visit'?undefined:venue,id}):buildCity({profile,place,id,venues:venuesForDistrict(profile.district||place.id)});
+ let scene=interior?buildInterior({profile:kind==='visit'?{...profile,location:{...profile.location,kind:'home',venue:'home'}}:profile,venue:kind==='visit'?undefined:venue,id}):buildCity({profile,place,id,venues:venuesForDistrict(profile.district||place.id)});
  scene.obstacles ||= [];scene.interactables ||= [];
  // A guest sees the owner's real floor plan, but every interaction must stay
  // read-only. Keep the door as the authoritative leave action and turn the
@@ -436,8 +438,7 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
   const blocked=inputBlocked();sound.setActive(!blocked&&(!isClub||clubSchedule(currentNow).isOpen));if(blocked&&!preview)dt=0;elapsed+=dt;if(blocked){keyboard.clear();joy.x=joy.y=0;}
   const orbitState=orbit.tick(dt);zoom=orbitState.zoom;if(orbitState.changed)updateViewport();
   const old={...player};moving=false;
-  if(trip){const duration=Math.max(1,Number(trip.seconds)||30)*1000,start=Number(trip.arrivesAt)-duration,progress=clamp((currentNow-start)/duration,0,1);player.x=450+progress*(scene.width-1000);player.y=889+Math.sin(elapsed*.6)*3;angle=0;moving=progress<1;walkPhase+=dt*10;if(progress>=1&&!arrived){arrived=true;Promise.resolve(onArrive?.(trip.id)).then(ok=>{if(ok===false)arrived=false;});}}
-  else if(!blocked&&!furnitureMode&&!activity){let dx=(keyboard.has('d')||keyboard.has('arrowright')?1:0)-(keyboard.has('a')||keyboard.has('arrowleft')?1:0)+joy.x,dy=(keyboard.has('s')||keyboard.has('arrowdown')?1:0)-(keyboard.has('w')||keyboard.has('arrowup')?1:0)+joy.y;
+  if(!blocked&&!furnitureMode&&!activity){let dx=(keyboard.has('d')||keyboard.has('arrowright')?1:0)-(keyboard.has('a')||keyboard.has('arrowleft')?1:0)+joy.x,dy=(keyboard.has('s')||keyboard.has('arrowdown')?1:0)-(keyboard.has('w')||keyboard.has('arrowup')?1:0)+joy.y;
    const inputLength=Math.hypot(dx,dy);if(inputLength>.06){if(path.length)stop();dx/=Math.max(1,inputLength);dy/=Math.max(1,inputLength);const velocity=screenVectorToWorld({x:dx,y:dy},oblique,orientation()),velocityLength=Math.hypot(velocity.x,velocity.y);dx=velocity.x/Math.max(1,velocityLength);dy=velocity.y/Math.max(1,velocityLength);const run=sprinting||keyboard.has('shift')||Math.hypot(joy.x,joy.y)>.82;const speed=driving?(run?455:300):(run?212:127);updatePlayer(dx*speed*dt,dy*speed*dt,dt);}
    else if(path.length){
     // Slow WebGL frames must not stretch a short walk past the time a player
@@ -461,7 +462,6 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
    moving=distance(old,player)>.05;
   }
   if(activity)paintActivity();
-  if(trip){camera.x=player.x;camera.y=player.y-55;}
   else if(!moving){camera=constrainWorldCamera({x:player.x,y:player.y-55},viewport(),scene);}
   else {const targetCam={x:player.x+(driving?Math.cos(angle*Math.PI/180)*100:0),y:player.y-55};const ease=1-Math.exp(-dt*(driving?4.5:6));camera.x+=(targetCam.x-camera.x)*ease;camera.y+=(targetCam.y-camera.y)*ease;camera=constrainWorldCamera(camera,viewport(),scene);}
   groundGroup.setAttribute('transform',worldFloorTransform(camera,viewport()));

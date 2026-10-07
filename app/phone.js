@@ -6,6 +6,7 @@ import { systemResaleValue } from '../src/shared/life.mjs';
 import { createPhoneBrowser, normalizeCheckoutURL } from './phone-browser.js';
 import { createPhoneSocial, createAdvancingServerClock } from './phone-social.js';
 import { renderPhoneHome, bindPhoneHome } from './phone-home.js';
+import { createPhoneViewport } from './phone-viewport.js';
 
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const currency = value => `${Number(value)<0?'-':''}₦${new Intl.NumberFormat('en-NG', { maximumFractionDigits: 0 }).format(Math.abs(Number(value) || 0))}`;
@@ -82,6 +83,7 @@ const conversationTime=(timestamp, now)=>{
 };
 
 export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }) {
+  const viewport=createPhoneViewport(root);
   let opened=false, locked=true, screen='home', history=[], selected=null, busy=false, search='', thread=null, messages=[], typing=null, incoming=null, priorFocus=null, requestSequence=0, groupMembers=new Set();
   const drafts=new Map(), threadDrafts=new Map(), knownResidents=new Map(), vehicleRequests=new Map(), messageOutbox=new Map(), threadScrolls=new Map(),cachedConversations=new Map();
   let inboxCursor=null,inboxLoading=false,inboxSequence=0,inboxError='';
@@ -144,7 +146,7 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
     syncAccount();
     serverNow();
     if(typing && (state().blocked || []).includes(typing.residentId || typing.userId || typing.senderId)){typing=null;clearTimeout(typingTimer);}
-    if(!profile().id){opened=false;document.body.classList.remove('phone-is-open');}
+    if(!profile().id){opened=false;viewport.unlock();}
     for(const r of [...people(),...friends(),...(residentResults || []),...conversations().flatMap(c=>c.members || [])])if(r?.id)knownResidents.set(r.id,r);
     if(!opened) {homePage=homePaging?.getPage() ?? homePage;homePaging?.destroy();homePaging=null;root.innerHTML=''; root.hidden=true;root.classList.remove('phone-chat-open');return; }
     captureInputs();
@@ -156,7 +158,7 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
     const scroll=root.querySelector('.ph-scroll'), scrollTop=scroll?.scrollTop || 0, atBottom=scroll && scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight<64;
     const anchor=screen==='thread' && scroll?[...root.querySelectorAll('[data-message-id]')].find(el=>el.offsetTop+el.offsetHeight>scrollTop):null,anchorOffset=anchor?anchor.offsetTop-scrollTop:null;
     root.hidden=false;
-    root.innerHTML=`<div class="ph-backdrop" data-ph-action="dismiss"><section class="ph-device" role="dialog" aria-modal="true" aria-labelledby="ph-device-name"><span class="ph-hardware ph-action-button" aria-hidden="true"></span><button class="ph-hardware ph-volume" data-ph-action="sound" aria-label="${profile().settings?.soundEnabled===false?'Enable':'Mute'} phone sounds"></button><button class="ph-hardware ph-power" data-ph-action="lock" aria-label="Lock phone"></button><div class="ph-screen ${locked?'ph-locked':screen==='home'?'ph-home':'ph-app'}"><div class="ph-wallpaper"><i></i><i></i><i></i><i></i><i></i><span></span></div><div class="ph-statusbar"><span class="ph-clock">${timeOnly(new Date())}</span><span class="ph-status-icons" aria-label="Mobile signal, 5G, battery">${icon('signal')}<span class="ph-network-type">5G</span><span class="ph-battery" aria-hidden="true"></span></span></div><button class="ph-island ${incoming?'ph-island-active':''}" data-ph-action="${incoming?'incoming':'home'}" aria-label="${incoming?'Open incoming activity':'Go to phone home'}">${incoming?`${icon('messages')}<span>${esc(incoming.name || 'New activity')}</span>`:'<i></i>'}</button>${locked?lockScreen():screen==='home'?homeScreen():appScreen()}<button class="ph-home-indicator" data-ph-action="${locked?'unlock':'home'}" aria-label="${locked?'Unlock phone':'Go to phone home'}"></button></div><div class="ph-device-caption"><span id="ph-device-name">AbujaLife Phone</span><button data-ph-action="close" aria-label="Put your phone away">${icon('close')}<span>Close</span></button></div></section></div>`;
+    root.innerHTML=`<div class="ph-backdrop" data-ph-action="dismiss"><section class="ph-device" role="dialog" aria-modal="true" aria-labelledby="ph-device-name"><span class="ph-hardware ph-action-button" aria-hidden="true"></span><button class="ph-hardware ph-volume" data-ph-action="sound" aria-label="${profile().settings?.soundEnabled===false?'Enable':'Mute'} phone sounds"></button><button class="ph-hardware ph-power" data-ph-action="lock" aria-label="Lock phone"></button><div class="ph-screen ${locked?'ph-locked':screen==='home'?'ph-home':'ph-app'}"><div class="ph-wallpaper"><i></i><i></i><i></i><i></i><i></i><span></span></div><div class="ph-statusbar"><span class="ph-clock">${timeOnly(new Date())}</span><span class="ph-status-icons" aria-label="Wi-Fi connected, battery">${icon('wifi')}<span class="ph-network-type">Wi-Fi</span><span class="ph-battery" aria-hidden="true"></span></span></div><button class="ph-island ${incoming?'ph-island-active':''}" data-ph-action="${incoming?'incoming':'home'}" aria-label="${incoming?'Open incoming activity':'Go to phone home'}">${incoming?`${icon('messages')}<span>${esc(incoming.name || 'New activity')}</span>`:'<i></i>'}</button>${locked?lockScreen():screen==='home'?homeScreen():appScreen()}<button class="ph-home-indicator" data-ph-action="${locked?'unlock':'home'}" aria-label="${locked?'Unlock phone':'Go to phone home'}"></button></div><div class="ph-device-caption"><span id="ph-device-name">AbujaLife Phone</span><button data-ph-action="close" aria-label="Put your phone away">${icon('close')}<span>Close</span></button></div></section></div>`;
     enhanceProductPreviews(root);
     if(!locked && screen==='home')homePaging=bindPhoneHome(root,{page:homePage,onPageChange:page=>{homePage=page;}});
     if(!locked && screen==='browser')browser.afterRender(root);
@@ -286,7 +288,7 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
   function paymentCheckoutScreen() {
     if(!checkout)return empty('wallet','Choose a payment amount first','wallet-topup','Buy game credits');
     const checkoutUrl=checkout.checkoutUrl?normalizeCheckoutURL(checkout.checkoutUrl):null;
-    return `${headline('SECURE HOSTED CHECKOUT','Complete your payment','Finish checkout in the provider’s tab, then verify your payment here.')}<div class="ph-wallet-summary"><span>Payment amount</span><strong>${currency(checkout.amount)}</strong></div>${checkout.mode==='test'?'<p class="ph-social-local">Test checkout · no live payment.</p>':''}${checkoutUrl?`<a class="ph-button wide" href="${esc(checkoutUrl)}" target="_blank" rel="noopener noreferrer">Open checkout ↗</a>`:''}<p class="ph-quiet-note">Reference: ${esc(checkout.txRef)}. Closing checkout does not confirm payment.</p><form class="ph-form ph-wallet-form" data-ph-form="payment-verify">${field('paymentTransactionId','Provider transaction ID',checkout.transactionId || '','text','required inputmode="numeric" pattern="[0-9]+" maxlength="24"')}<button type="submit" class="ph-button wide" ${busy?'disabled':''}>${busy?'Verifying…':'Verify payment'}</button></form>${button('Check payment status','payment-status',busy?'disabled':'','secondary wide')}${walletError?`<p class="ph-wallet-error" role="alert">${esc(walletError)}</p>`:''}<p class="ph-quiet-note">Your receipt shows the transaction ID. Credits are added once, after the provider confirms the amount, currency and reference.</p>`;
+    return `${headline('SECURE HOSTED CHECKOUT','Complete your payment','Finish checkout in the provider’s tab. We’ll confirm your purchase securely.')}<div class="ph-wallet-summary"><span>Payment amount</span><strong>${currency(checkout.amount)}</strong></div>${checkout.mode==='test'?'<p class="ph-social-local">Test checkout · no live payment.</p>':''}${checkoutUrl?`<a class="ph-button wide" href="${esc(checkoutUrl)}" target="_blank" rel="noopener noreferrer">Open checkout ↗</a>`:''}<p class="ph-quiet-note">Reference: ${esc(checkout.txRef)}. Closing checkout does not confirm payment.</p><form class="ph-form ph-wallet-form" data-ph-form="payment-verify">${field('paymentTransactionId','Transaction ID (optional)',checkout.transactionId || '','text','inputmode="numeric" pattern="[0-9]+" maxlength="24"')}<button type="submit" class="ph-button wide" ${busy?'disabled':''}>${busy?'Verifying…':'Verify payment'}</button></form>${button('Check payment status','payment-status',busy?'disabled':'','secondary wide')}${walletError?`<p class="ph-wallet-error" role="alert">${esc(walletError)}</p>`:''}<p class="ph-quiet-note">We verify your saved checkout directly with Flutterwave. Your purchase is delivered once, even if you close the app.</p>`;
   }
   function jobsScreen() {
     const current=entries(state().jobs).find(j=>j.id===profile().job);
@@ -450,10 +452,11 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
     try{const result=await api('/api/payments/config');if(profile().id!==owner)return;paymentConfig=result;
       if(!checkout){try{const saved=JSON.parse(localStorage.getItem(checkoutStorageKey()) || 'null');if(saved?.txRef && typeof saved.txRef==='string'){checkout={...saved,checkoutUrl:saved.checkoutUrl?normalizeCheckoutURL(saved.checkoutUrl):undefined};}}catch{}}
       const params=new URLSearchParams(location.search),ref=params.get('tx_ref') || params.get('payment_ref');
-      if(ref && ref.length<200){checkout=checkout?.txRef===ref?checkout:{txRef:ref};const id=params.get('transaction_id');if(id && /^\d{1,24}$/.test(id)){checkout.transactionId=id;drafts.set('paymentTransactionId',id);}saveCheckout();}
+      if(ref && /^abjl_[a-f0-9-]+$/.test(ref)){checkout=checkout?.txRef===ref?checkout:{txRef:ref};const id=params.get('transaction_id');if(id && /^\d{1,24}$/.test(id)){checkout.transactionId=id;drafts.set('paymentTransactionId',id);}saveCheckout();}
       if(checkout?.txRef){const pending=checkout;try{const status=await api(`/api/payments/status?txRef=${encodeURIComponent(pending.txRef)}`);if(profile().id!==owner)return;if(status.payment?.txRef===pending.txRef){const saved=status.payment;checkout={...pending,...saved,transactionId:saved.transactionId || pending.transactionId,checkoutUrl:saved.checkoutUrl?normalizeCheckoutURL(saved.checkoutUrl):undefined};saveCheckout();}}catch(error){if(profile().id===owner){walletError=error.message || 'The pending payment could not load.';if(error.status===404){checkout=null;saveCheckout();}}}}
     }catch(error){if(profile().id===owner)paymentError=error.message || 'Payment availability could not load.';}
     finally{if(profile().id===owner){paymentLoading=false;render();}}
+    if(profile().id===owner && checkout?.txRef && checkout.status!=='credited')await verifyPayment(checkout.transactionId);
   }
   async function startCheckout(request) {
     if(!paymentConfig?.enabled){walletError='Payments are currently unavailable.';render();return;}
@@ -464,17 +467,18 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
     catch(error){popup?.close();if(profile().id===owner)walletError=error.message || 'Checkout could not start. Your game balance has not changed.';}
     finally{if(profile().id===owner){busy=false;render();}}
   }
+  function clearPaymentReturn(){const url=new URL(location.href);for(const key of ['payment_ref','tx_ref','transaction_id','status'])url.searchParams.delete(key);history.replaceState(history.state,'',url.pathname+url.search+url.hash);}
   async function verifyPayment(transactionId) {
     if(busy || !checkout?.txRef)return;
-    const id=String(transactionId || '').trim(),owner=profile().id;if(!/^\d{1,24}$/.test(id)){toast?.('Enter the provider’s numeric transaction ID.');return;}
-    busy=true;walletError='';checkout.transactionId=id;saveCheckout();render();
-    try{const result=await api('/api/payments/verify',{method:'POST',body:{transactionId:id,txRef:checkout.txRef}});if(profile().id!==owner)return;if(result.payment?.status!=='credited'){walletError=`Payment status: ${result.payment?.status || 'pending'}. Your balance has not been credited yet.`;return;}walletReceipt={kind:'payment',...result.payment,createdAt:result.payment.creditedAt || Date.now()};checkout=null;pendingWallet=null;saveCheckout();refreshInBackground();void loadWallet({quiet:true});navigate('walletreceipt',null,false);}
+    const id=String(transactionId || '').trim(),owner=profile().id;if(id && !/^\d{1,24}$/.test(id)){toast?.('Use the numeric transaction ID, or leave it blank.');return;}
+    busy=true;walletError='';if(id)checkout.transactionId=id;saveCheckout();render();
+    try{const result=await api('/api/payments/verify',{method:'POST',body:{...(id?{transactionId:id}:{}),txRef:checkout.txRef}});if(profile().id!==owner)return;if(result?.profile && result.profile.id===profile().id)Object.assign(profile(),result.profile);if(result.payment?.status!=='credited'){walletError=`Payment status: ${result.payment?.status || 'pending'}. Your balance has not been credited yet.`;return;}walletReceipt={kind:'payment',...result.payment,createdAt:result.payment.creditedAt || Date.now()};clearPaymentReturn();checkout=null;pendingWallet=null;saveCheckout();refreshInBackground();void loadWallet({quiet:true});navigate('walletreceipt',null,false);}
     catch(error){if(profile().id===owner)walletError=error.message || 'Payment could not be verified yet. You can retry safely.';}
     finally{if(profile().id===owner){busy=false;render();}}
   }
   async function checkPaymentStatus() {
     if(busy || !checkout?.txRef)return;const owner=profile().id;busy=true;walletError='';render();
-    try{const result=await api(`/api/payments/status?txRef=${encodeURIComponent(checkout.txRef)}`);if(profile().id!==owner)return;if(result.payment?.status==='credited'){walletReceipt={kind:'payment',...result.payment,createdAt:result.payment.creditedAt || Date.now()};checkout=null;pendingWallet=null;saveCheckout();refreshInBackground();void loadWallet({quiet:true});navigate('walletreceipt',null,false);}else walletError=`Payment is ${result.payment?.status || 'pending'}. Complete checkout, then enter the transaction ID to verify.`;}
+    try{const result=await api(`/api/payments/status?txRef=${encodeURIComponent(checkout.txRef)}`);if(profile().id!==owner)return;if(result.payment?.status==='credited'){walletReceipt={kind:'payment',...result.payment,createdAt:result.payment.creditedAt || Date.now()};clearPaymentReturn();checkout=null;pendingWallet=null;saveCheckout();refreshInBackground();void loadWallet({quiet:true});navigate('walletreceipt',null,false);}else walletError=`Payment is ${result.payment?.status || 'pending'}. Complete checkout, then choose Verify payment. Confirmation also continues on the server.`;}
     catch(error){if(profile().id===owner)walletError=error.message;}
     finally{if(profile().id===owner){busy=false;render();}}
   }
@@ -709,14 +713,15 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
     if(e.key==='Enter' && !e.shiftKey && !e.isComposing && e.target.id==='ph-message'){e.preventDefault();e.target.form?.requestSubmit();}
     if(e.key==='Tab') {const els=[...root.querySelectorAll('button:not([disabled]),input,textarea,select,[tabindex="0"]')].filter(el=>el.getClientRects().length);if(!els.length)return;const first=els[0],last=els.at(-1);if(e.shiftKey && document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey && document.activeElement===last){e.preventDefault();first.focus();}}
   };
-  async function open(app,details={}) {syncAccount();priorFocus=document.activeElement;opened=true;document.body.classList.add('phone-is-open');if(app){locked=false;screen=app;history=[];search='';}render();root.querySelector(locked?'.ph-unlock':screen==='home'?'.ph-app-grid .ph-launcher':'.ph-back')?.focus({preventScroll:true});clockTimer ||= setInterval(()=>{if(opened){const el=root.querySelector('.ph-clock');if(el)el.textContent=timeOnly(new Date());const lockTime=root.querySelector('.ph-lock-time');if(lockTime)lockTime.textContent=timeOnly(new Date());if(['social','socialstatuses','socialstatus'].includes(screen) && Math.floor(serverNow()/1000)%30===0)social.expire();}},1000);if(app==='messages' && details.conversationId)await openThread(details.conversationId);else if(app==='messages')await loadConversations();else if(app==='ride')await loadTravelQuote();else if(app==='wallet')await loadWallet();else if(app==='topup' || app==='paymentcheckout')await loadPayments();else if(['contacts','compose','transfer'].includes(app))await loadResidents();else if(['social','socialstatuses'].includes(app))await social.load();}
-  function close() {captureInputs();saveThreadScroll();opened=false;document.body.classList.remove('phone-is-open');render();if(priorFocus?.isConnected)priorFocus.focus({preventScroll:true});}
+  async function open(app,details={}) {syncAccount();priorFocus=document.activeElement;opened=true;viewport.lock();if(app){locked=false;screen=app;history=[];search='';}render();root.querySelector(locked?'.ph-unlock':screen==='home'?'.ph-app-grid .ph-launcher':'.ph-back')?.focus({preventScroll:true});clockTimer ||= setInterval(()=>{if(opened){const el=root.querySelector('.ph-clock');if(el)el.textContent=timeOnly(new Date());const lockTime=root.querySelector('.ph-lock-time');if(lockTime)lockTime.textContent=timeOnly(new Date());if(['social','socialstatuses','socialstatus'].includes(screen) && Math.floor(serverNow()/1000)%30===0)social.expire();}},1000);if(app==='messages' && details.conversationId)await openThread(details.conversationId);else if(app==='messages')await loadConversations();else if(app==='ride')await loadTravelQuote();else if(app==='wallet')await loadWallet();else if(app==='topup' || app==='paymentcheckout')await loadPayments();else if(['contacts','compose','transfer'].includes(app))await loadResidents();else if(['social','socialstatuses'].includes(app))await social.load();}
+  function close() {captureInputs();saveThreadScroll();opened=false;viewport.unlock();render();if(priorFocus?.isConnected)priorFocus.focus({preventScroll:true});}
   function sound() {if(profile().settings?.soundEnabled===false)return;try {const Context=window.AudioContext || window.webkitAudioContext;if(!Context)return;const ctx=new Context(), osc=ctx.createOscillator(), gain=ctx.createGain();osc.connect(gain);gain.connect(ctx.destination);osc.type='sine';osc.frequency.setValueAtTime(880,ctx.currentTime);osc.frequency.setValueAtTime(1174,ctx.currentTime+.07);gain.gain.setValueAtTime(.025,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(.0001,ctx.currentTime+.18);osc.start();osc.stop(ctx.currentTime+.2);osc.onended=()=>ctx.close();}catch{}}
   function handleEvent(type,data) {
     syncAccount();if(!profile().id)return;
     if(type==='presence'&&data.resident?.id){const live=data.resident;knownResidents.set(live.id,{...knownResidents.get(live.id),...live});if(residentResults)residentResults=residentResults.map(row=>row.id===live.id?{...row,...live}:row);}
     social.handleEvent(type,data);
-    if((type==='profile' || type==='notification' && /transfer/i.test(data.notification?.kind || data.kind || '')) && opened && ['wallet','topup','transfer','transferform','walletreview','walletreceipt'].includes(screen))void loadWallet({quiet:true});
+    if(checkout?.txRef && (type==='profile'||type==='receipt'&&data.payment?.txRef===checkout.txRef))void checkPaymentStatus();
+    if((type==='profile' || type==='notification' && /transfer/i.test(data.notification?.kind || data.kind || '')) && opened && ['wallet','topup','transfer','transferform','walletreview','walletreceipt','paymentcheckout'].includes(screen))void loadWallet({quiet:true});
     if(type==='typing' && screen==='thread' && data.conversationId===thread?.id && (data.residentId || data.userId || data.senderId)!==profile().id && !(state().blocked || []).includes(data.residentId || data.userId || data.senderId)){const who=data.residentId || data.userId || data.senderId;if(data.state==='idle'){if(typing && (typing.residentId || typing.userId || typing.senderId)===who){typing=null;clearTimeout(typingTimer);if(opened)render();}return;}const windowMs=data.state==='recording'?8000:3500;const expires=Number(data.at || data.createdAt || serverNow())+windowMs-serverNow();if(expires>0){typing=data;clearTimeout(typingTimer);typingTimer=setTimeout(()=>{typing=null;if(opened)render();},Math.min(windowMs,expires));if(opened)render();}}
     if(type==='message' || type==='receipt') {
       const m=data.message || data;if((state().blocked || []).includes(m.senderId))return;
@@ -727,31 +732,15 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast }
     if((type==='notification' || type==='invitation') && !(state().muted || []).includes(data.actorId || data.notification?.actorId || data.fromId || data.invitation?.fromId)){const n=data.notification || data.invitation || data;if(type==='notification' && n.link===`conversation:${thread?.id}` && opened && screen==='thread')return;incoming={name:type==='invitation'?'New invitation':n.title || 'New activity',...n};if(type==='invitation' || n.kind!=='message')sound();clearTimeout(bannerTimer);bannerTimer=setTimeout(()=>{incoming=null;if(opened)render();},7000);}
     if(opened && type!=='typing')render();
   }
+  const onPaymentFocus=()=>{if(checkout?.txRef&&!busy)void verifyPayment(checkout.transactionId);};
+  window.addEventListener('focus',onPaymentFocus);
   const onScroll=e=>{
     if(screen!=='thread' || !e.target.classList?.contains('ph-thread-scroll'))return;
     saveThreadScroll();const scroll=e.target;
     if(newMessageCount && scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight<64){newMessageCount=0;void markThreadRead();const indicator=root.querySelector('.ph-new-messages');indicator?.remove();}
   };
-  function syncChatViewport() {
-    const viewport=window.visualViewport;
-    if(!opened || screen!=='thread' || !viewport){
-      root.style.removeProperty('--ph-chat-viewport-height');root.style.removeProperty('--ph-chat-viewport-top');
-      root.style.removeProperty('--ph-chat-device-height');root.classList.remove('phone-keyboard-open');return;
-    }
-    root.style.setProperty('--ph-chat-viewport-height',`${viewport.height}px`);root.style.setProperty('--ph-chat-viewport-top',`${viewport.offsetTop}px`);
-    // Keep the device frame at its normal size. Only the conversation column is
-    // resized when iOS reduces the visual viewport for the native keyboard.
-    const keyboardOpen=Boolean(document.activeElement?.matches?.('#ph-message')) && viewport.height < Math.max(520,window.innerHeight-120);
-    if(keyboardOpen && !root.style.getPropertyValue('--ph-chat-device-height')){
-      const device=root.querySelector('.ph-device');
-      const height=device?.getBoundingClientRect?.().height;
-      if(height)root.style.setProperty('--ph-chat-device-height',`${height}px`);
-    }
-    if(!keyboardOpen)root.style.removeProperty('--ph-chat-device-height');
-    root.classList.toggle('phone-keyboard-open',keyboardOpen);
-  }
-  const onViewport=()=>{syncChatViewport();const input=root.querySelector('#ph-message');if(document.activeElement===input)resizeComposer();};
-  const onFocusIn=event=>{if(event.target?.matches?.('#ph-message')){syncChatViewport();requestAnimationFrame(()=>{const scroll=root.querySelector('.ph-thread-scroll');if(scroll && scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight<96)scroll.scrollTop=scroll.scrollHeight;});}};
-  root.hidden=true;root.classList.add('phone-root');root.addEventListener('click',onClick);root.addEventListener('input',onInput);root.addEventListener('change',onChange);root.addEventListener('submit',onSubmit);root.addEventListener('scroll',onScroll,true);root.addEventListener('focusin',onFocusIn);window.visualViewport?.addEventListener('resize',onViewport);window.visualViewport?.addEventListener('scroll',onViewport);document.addEventListener('keydown',onKey);
-  return {open,close,render,handleEvent,dispose(){close();clearInterval(clockTimer);clearTimeout(typingTimer);clearTimeout(bannerTimer);clearTimeout(residentSearchTimer);root.removeEventListener('click',onClick);root.removeEventListener('input',onInput);root.removeEventListener('change',onChange);root.removeEventListener('submit',onSubmit);root.removeEventListener('scroll',onScroll,true);root.removeEventListener('focusin',onFocusIn);window.visualViewport?.removeEventListener('resize',onViewport);window.visualViewport?.removeEventListener('scroll',onViewport);document.removeEventListener('keydown',onKey);}};
+  function syncChatViewport() { viewport.update(); }
+  const onFocusIn=event=>{if(event.target?.matches?.('#ph-message'))requestAnimationFrame(()=>{resizeComposer();const scroll=root.querySelector('.ph-thread-scroll');if(scroll && scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight<96)scroll.scrollTop=scroll.scrollHeight;});};
+  root.hidden=true;root.classList.add('phone-root');root.addEventListener('click',onClick);root.addEventListener('input',onInput);root.addEventListener('change',onChange);root.addEventListener('submit',onSubmit);root.addEventListener('scroll',onScroll,true);root.addEventListener('focusin',onFocusIn);document.addEventListener('keydown',onKey);
+  return {open,close,render,handleEvent,dispose(){close();clearInterval(clockTimer);clearTimeout(typingTimer);clearTimeout(bannerTimer);clearTimeout(residentSearchTimer);root.removeEventListener('click',onClick);root.removeEventListener('input',onInput);root.removeEventListener('change',onChange);root.removeEventListener('submit',onSubmit);root.removeEventListener('scroll',onScroll,true);root.removeEventListener('focusin',onFocusIn);viewport.dispose();window.removeEventListener('focus',onPaymentFocus);document.removeEventListener('keydown',onKey);}};
 }

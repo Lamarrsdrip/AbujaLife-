@@ -13,13 +13,13 @@ test('production shell loads the physical handset override after every older pho
 });
 
 test('phone renderer always includes one Pro-sized physical device, clipped screen, status hardware and floating close control',()=>{
-  for(const token of ['ph-device','ph-screen','ph-hardware ph-action-button','ph-hardware ph-volume','ph-hardware ph-power','ph-statusbar','ph-network-type','5G','ph-island','ph-home-indicator','ph-device-caption','>Close<'])assert.match(phone,new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
+  for(const token of ['ph-device','ph-screen','ph-hardware ph-action-button','ph-hardware ph-volume','ph-hardware ph-power','ph-statusbar','ph-network-type','Wi-Fi','ph-island','ph-home-indicator','ph-device-caption','>Close<'])assert.match(phone,new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
   assert.match(css,/\.ph-device\{[\s\S]*aspect-ratio:/);
   assert.match(css,/\.ph-screen\{[\s\S]*overflow:hidden/);
   assert.match(css,/\.ph-screen\{[\s\S]*clip-path:/);
-  assert.match(css,/width:min\(390px/);
+  assert.match(css,/width:390px/);
   assert.match(css,/\.ph-device-caption button\{[^}]*border-radius:999px/);
-  assert.match(css,/max-height:calc\(100dvh/);
+  assert.match(css,/--ph-viewport-height/);
   assert.match(css,/env\(safe-area-inset-top\)/);
   assert.match(css,/env\(safe-area-inset-bottom\)/);
 });
@@ -34,15 +34,16 @@ test('Phone remains a world overlay rather than a full-screen replacement app',(
   assert.match(css,/backdrop-filter:none/);
   assert.doesNotMatch(css,/\.ph-backdrop\{[^}]*background:\s*#fff/i);
   assert.match(phone,/root\.hidden=false/);
-  assert.match(phone,/document\.body\.classList\.add\('phone-is-open'\)/);
-  assert.match(phone,/document\.body\.classList\.remove\('phone-is-open'\)/);
+  assert.match(phone,/viewport\.lock\(\)/);
+  assert.match(phone,/viewport\.unlock\(\)/);
   const renderer=phone.slice(phone.indexOf('function render()'),phone.indexOf('function bind',phone.indexOf('function render()')));
   assert.doesNotMatch(renderer,/location\.(?:assign|replace|reload)|history\.(?:pushState|replaceState)|onNavigate\(/);
 });
 
 test('native keyboard changes the usable chat viewport without deleting the virtual handset',()=>{
-  for(const token of ['--ph-chat-viewport-height','--ph-chat-viewport-top','phone-keyboard-open'])assert.ok(phone.includes(token),token);
-  assert.match(css,/phone-keyboard-open \.ph-device/);
+  assert.ok(phone.includes('createPhoneViewport'));
+  assert.ok(css.includes('phone-keyboard-open'));
+  assert.match(css,/scale\(var\(--ph-device-scale/);
   assert.match(css,/phone-keyboard-open \.ph-thread-scroll/);
   assert.match(css,/font-size:16px/);
   assert.doesNotMatch(css,/phone-keyboard-open \.ph-device\s*\{[^}]*display:none/);

@@ -25,6 +25,7 @@ const indexes = Object.freeze({
     [{ residentId: 1, createdAt: -1 }, {}],
   ],
   jackpot_deposit_orders: [
+    [{ status: 1, nextReconcileAt: 1, createdAt: 1 }, {}],
     [{ txRef: 1 }, { unique: true }],
     [{ residentId: 1, operationKey: 1 }, { unique: true }],
     [{ transactionId: 1 }, { unique: true, partialFilterExpression: { transactionId: { $type: 'string' } } }],

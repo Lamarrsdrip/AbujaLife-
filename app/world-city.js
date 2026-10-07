@@ -4,7 +4,7 @@
 // presence as the older hotel, cinema, residences and Tokyo blocks.
 import { buildCity as buildBaseCity } from './world-city-base.js';
 
-export { cityTree, vehicleArt, buildJourney } from './world-city-base.js';
+export { cityTree, vehicleArt } from './world-city-base.js';
 
 import {WORLD_LANDMARK_SIZES} from '../src/shared/world-landmark-sizes.mjs';
 export {WORLD_LANDMARK_SIZES};

@@ -22,7 +22,7 @@ test('Mongo Jackpot verifies deposits, settles once, isolates game wallets and p
   for(let i=0;i<2;i++){const registered=await store.register({username:`jackpot_${unique()}`,password:'Disposable Jackpot acceptance password!'});players.push(registered.residentId);}
   const admin=new MongoAdminStore({store,bootstrapUsername:(await store.profile(players[0])).username});await admin.init({ensureIndexes:false});
   const financeId=(await database.db.collection('admin_roles').findOne({role:'superadmin'})).residentId;
-  const keyFile=process.env.TEST_MONGODB_CONFIG?`${process.env.TEST_MONGODB_CONFIG}.payment-key`:null;
+  const keyFile=process.env.TEST_PAYMENT_KEY_FILE || (process.env.TEST_MONGODB_CONFIG?`${process.env.TEST_MONGODB_CONFIG}.payment-key`:null);
   let key=crypto.randomBytes(32).toString('hex');
   if(keyFile){try{fs.writeFileSync(keyFile,key,{mode:0o600,flag:'wx'});}catch(error){if(error.code!=='EEXIST')throw error;}key=fs.readFileSync(keyFile,'utf8').trim();}
   const verified=new Map();

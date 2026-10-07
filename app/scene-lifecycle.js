@@ -13,6 +13,6 @@ export function playableSceneKey(view, state) {
       district: home.district, roomStyle: home.roomStyle, furnishingPreset: home.furnishingPreset},
     inventory: furnishing.inventory, layout: furnishing.furnitureLayout,
     stored: furnishing.storedFurniture, upgrades: furnishing.homeUpgrades,
-    vehicle: p.vehiclePresence,
+    vehicle: p.vehiclePresence, drivingVehicle: p.drivingVehicle,
   });
 }

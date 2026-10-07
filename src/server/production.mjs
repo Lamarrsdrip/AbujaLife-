@@ -15,6 +15,7 @@ import { createEmailDelivery } from './emailDelivery.mjs';
 import { createProductionServer, productionLog } from './production-http.mjs';
 import { attachLiveActions } from './liveActions.mjs';
 import { installFastLocationActions } from './fastLocationActions.mjs';
+import { installPropertyFurnitureIsolation } from './propertyFurnitureIsolation.mjs';
 import { attachXIntegration } from './xIntegration.mjs';
 import { attachJackpotRuntime } from './jackpotRuntime.mjs';
 import { attachCivicRuntime } from './civicRuntime.mjs';
@@ -38,6 +39,7 @@ export async function createProductionApplication({env=process.env,clock=Date.no
     const auth=new MongoAuthStore({client:database.client,db:database.db,clock,...delivery});
     const store=new MongoGameStore({client:database.client,db:database.db,clock,originRandomInt,production:true,auth});
     installFastLocationActions(store);
+    installPropertyFurnitureIsolation(store);
     const social=new MongoSocialStore(store);await social.init({ensureIndexes:false});social.attachToGame();
     const directory=new MongoDirectoryStore(store,social);
     installMongoReadOptimizer({store,social});

@@ -34,7 +34,9 @@ test('media messages use authenticated private server routes and durable storage
   assert.ok(runtime.includes("'cache-control':'private"));
   assert.ok(media.includes('CHAT_MEDIA_S3_ENDPOINT'));
   assert.ok(media.includes("this.production=env.NODE_ENV==='production'"));
-  assert.ok(media.includes("this.mode=this.s3?'s3':this.production?'disabled':'file'"));
+  assert.ok(media.includes("CHAT_MEDIA_DIR must be an absolute persistent path in production"));
+  assert.ok(media.includes("CHAT_MEDIA_DIR must live outside versioned release directories"));
+  assert.ok(media.includes("this.mode=this.s3?'s3':this.root?'file':'disabled'"));
 });
 
 test('money messages keep the native AbujaLife premium receipt while Chat Pro handles media and realtime',()=>{

@@ -20,7 +20,7 @@ export const AD_PRICING = Object.freeze({
   currency: 'NGN',
   amount: AD_PRICE_NGN,
   durationDays: 7,
-  plotPackSize: 5,
+  plotPackSize: 1,
   billboardCount: 1,
 });
 export const AD_SPACES = ALL_SPACES;
@@ -87,7 +87,7 @@ function normalizeSelection(kind, raw) {
   fail(['plot', 'billboard'].includes(kind), 'Choose ad land or a roadside billboard', 400, 'invalid_ad_kind');
   const slots = [...new Set((Array.isArray(raw) ? raw : []).map(value => clean(value, 80)))];
   const expected = kind === 'plot' ? AD_PRICING.plotPackSize : AD_PRICING.billboardCount;
-  fail(slots.length === expected && slots.every(id => validSlot(kind, id)), kind === 'plot' ? 'Choose exactly 5 available ad plots' : 'Choose one available roadside billboard', 400, 'invalid_ad_space');
+  fail(slots.length === expected && slots.every(id => validSlot(kind, id)), kind === 'plot' ? 'Choose one available ad plot' : 'Choose one available roadside billboard', 400, 'invalid_ad_space');
   return slots.sort();
 }
 
@@ -204,7 +204,7 @@ export class MongoAdStore {
       return { ok:true, checkout:orderView(order), replayed:true };
     }
     try {
-      const data = await this.payments.provider('/v3/payments',config.secrets.secretKey,{method:'POST',body:JSON.stringify({tx_ref:order.txRef,amount:AD_PRICE_NGN,currency:'NGN',redirect_url:`${config.publicOrigin}/?ad_payment_ref=${encodeURIComponent(order.txRef)}`,customer:{email,name:profile.displayName},customizations:{title:'AbujaLife Ads',description:kind==='plot'?'5 AbujaLife ad plots · 7 days':'Roadside billboard · 7 days'},meta:{abujalife_reference:order.txRef,purpose:'advertising',kind,slots}})});
+      const data = await this.payments.provider('/v3/payments',config.secrets.secretKey,{method:'POST',body:JSON.stringify({tx_ref:order.txRef,amount:AD_PRICE_NGN,currency:'NGN',redirect_url:`${config.publicOrigin}/?ad_payment_ref=${encodeURIComponent(order.txRef)}`,customer:{email,name:profile.displayName},customizations:{title:'AbujaLife Ads',description:kind==='plot'?'AbujaLife city ad plot · 7 days':'Roadside billboard · 7 days'},meta:{abujalife_reference:order.txRef,purpose:'advertising',kind}})});
       let checkout; try { checkout = new URL(data.link); } catch { throw new GameError('Flutterwave returned an invalid checkout link',502,'invalid_checkout'); }
       fail(checkout.protocol === 'https:' && (checkout.hostname === 'checkout.flutterwave.com' || checkout.hostname.endsWith('.flutterwave.com')) && !checkout.username && !checkout.password,'Flutterwave returned an untrusted checkout link',502,'invalid_checkout');
       await this.collection('ad_orders').updateOne({_id:order.txRef},[{$set:{checkoutUrl:checkout.href,status:{$cond:[{$eq:['$status','creating']},'pending','$status']}}}]);

@@ -1,4 +1,5 @@
 import { CITY_LANDMARKS } from '../src/shared/city-landmarks.mjs';
+import { WORLD_LANDMARK_SIZES } from '../src/shared/world-landmark-sizes.mjs';
 // Authored Abuja-inspired game blocks. This is a playable set, not a street map.
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const lineForShutter = (x,y,w) => `<path d="M${x} ${y}h${w}" stroke="#b0b8a2" stroke-width="2"/>`;
@@ -57,8 +58,8 @@ const WORLD_LANDMARK_LAYOUT=Object.freeze({
   'millennium-park-hub':[6880,680],'inec-hq':[7900,690]
 });
 const landmarkWorldPoint=place=>{const point=WORLD_LANDMARK_LAYOUT[place.id];return point?{x:point[0],y:point[1]}:{x:3900+(place.lon-7.2642)*15500,y:430+(9.09-place.lat)*18000};};
-export function landmarkExterior(place,x,y){
-  const id=esc(place.id),label=esc(place.short||place.name),b=place.builder,w=place.id==='airport-hub'?430:place.id==='national-stadium-hub'?330:place.id==='jabi-lake-mall'?320:270,h=['wtc','transcorp'].includes(b)?330:['assembly','mosque','church','inec','efcc','court'].includes(b)?240:190,left=x-w/2,top=y-h;
+export function landmarkExterior(place,x,y,size=null){
+  const id=esc(place.id),label=esc(place.short||place.name),b=place.builder,w=size?.[0]||(place.id==='airport-hub'?430:place.id==='national-stadium-hub'?330:place.id==='jabi-lake-mall'?320:270),h=size?.[1]||(['wtc','transcorp'].includes(b)?330:['assembly','mosque','church','inec','efcc','court'].includes(b)?240:190),left=x-w/2,top=y-h;
   let body='';
   if(b==='airport') body=rect(left,top+58,w,112,'#e5e2d1',8)+rect(left+20,top+80,w-40,58,'#73928d',4)+rect(left+w-84,top-8,24,117,'#d7d8ca',8)+ellipse(left+w-72,top-8,20,9,'#59786f')+`<g transform="translate(${left-120} ${y+28})"><g class="airport-plane airport-plane-a"><path d="M0 0L122-10L154 0L122 10Z" fill="#eee9d8"/><path d="M65-4L91-50L112-46L98-1L112 46L91 50L65 4Z" fill="#d6d9ca"/></g></g>`+rect(left-160,y+49,w+350,24,'#606f68',3);
   else if(b==='cityGate') body=`<path d="M${left+42} ${y}Q${left+55} ${top+18} ${x-15} ${top+6}V${y}H${x-55}Z" fill="#e5dfc9"/><path d="M${x+15} ${y}V${top+6}Q${left+w-55} ${top+18} ${left+w-42} ${y}H${x+55}Z" fill="#e5dfc9"/>`+rect(x-62,top+82,124,24,'#557765',4);
@@ -185,11 +186,11 @@ export function buildCity({profile={},place={},id='city',venues=[]}={}) {
  for(const landmark of CITY_LANDMARKS){
   const legacyLocal=['banex','jabi-lake'].includes(landmark.id)&&localVenueIds.has(landmark.id);
   if(legacyLocal)continue;
-  const point=landmarkWorldPoint(landmark),exterior=landmarkExterior(landmark,point.x,point.y),local=localVenueIds.has(landmark.id),venue=venues.find(v=>v.id===landmark.id)||landmark;
+  const point=landmarkWorldPoint(landmark),size=WORLD_LANDMARK_SIZES[landmark.builder]||[390,280],exterior=landmarkExterior(landmark,point.x,point.y+size[1]/2,size),local=localVenueIds.has(landmark.id),venue=venues.find(v=>v.id===landmark.id)||landmark;
   art+=exterior.art;obstacles.push(exterior.obstacle);interactables.push({id:landmark.id,x:exterior.entrance.x,y:exterior.entrance.y,label:venue.name||landmark.name,action:local?'enter-venue':'travel-venue',payload:local?{venueId:landmark.id}:{destinationVenueId:landmark.id,districtId:landmark.districtId},radius:92,icon:'◎'});
  }
 
- const landmarkSizes={airport:[520,220],cityGate:[260,170],stadium:[360,250],magicland:[330,240],wtc:[300,300],cbn:[250,285],assembly:[360,220],eagle:[300,165],mosque:[300,250],church:[270,230],transcorp:[340,240],millennium:[360,250],aso:[320,220],farmCity:[300,205],jabiLake:[430,250],mall:[330,220],conference:[320,225],banex:[320,210],inec:[290,220],efcc:[310,230],court:[310,225]};
+ const landmarkSizes=WORLD_LANDMARK_SIZES;
  const legacyIds=new Set(specs.map(b=>b.id));
  const contextBuildings=neighbourhoodFabric.map((b,i)=>({id:`context-${i}`,x:b.x,y:b.y,w:b.w,h:b.h,name:'',wall:b.c,floors:2,context:true}));
  const landmarkBuildings=CITY_LANDMARKS.filter(landmark=>!legacyIds.has(landmark.id)).map(landmark=>{const point=landmarkWorldPoint(landmark),size=landmarkSizes[landmark.builder]||[290,210];return{id:landmark.id,x:point.x-size[0]/2,y:point.y+size[1]/2,w:size[0],h:size[1],name:landmark.short||landmark.name,wall:'#d8d3c4',floors:landmark.builder==='wtc'?7:landmark.builder==='cbn'?6:landmark.builder==='transcorp'?4:landmark.builder==='inec'||landmark.builder==='efcc'||landmark.builder==='court'?3:2,landmarkBuilder:landmark.builder,frontY:true};});

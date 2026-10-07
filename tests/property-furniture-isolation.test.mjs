@@ -20,6 +20,39 @@ test('property view never leaks old-home placements into a new home',()=>{
   assert.deepEqual(Object.keys(furnitureForProperty(layout,'home-b')).sort(),['bed']);
 });
 
+test('legacy numeric slots are bound to their original property',()=>{
+  const scoped=scopeFurnitureLayout({sofa:2},'home-a');
+  assert.deepEqual(scoped.layout.sofa,{slot:2,propertyId:'home-a'});
+  assert.deepEqual(furnitureForProperty(scoped.layout,'home-b'),{});
+});
+
+test('default owned furniture stays in its first home while stored items can be intentionally moved',async()=>{
+  const profile={id:'resident-default',home:{propertyId:'home-a'},inventory:['sofa','bed','plant','car-corolla'],furnitureLayout:{},storedFurniture:['plant']};
+  const store={
+    async profile(){return structuredClone(profile);},
+    collection(){return{async updateOne(_filter,update){profile.furnitureLayout=structuredClone(update.$set.furnitureLayout);return{matchedCount:1};}};},
+    async action(_id,action,payload){if(action==='move-home')profile.home={propertyId:payload.propertyId};return{profile:structuredClone(profile)};}
+  };
+  installPropertyFurnitureIsolation(store);
+  await store.action(profile.id,'move-home',{propertyId:'home-b'});
+  const moved=await store.profile(profile.id);
+  assert.equal(moved.furnitureLayout.sofa.propertyId,'home-a');
+  assert.equal(moved.furnitureLayout.bed.propertyId,'home-a');
+  assert.equal(moved.furnitureLayout.plant,undefined);
+  assert.equal(moved.furnitureLayout['car-corolla'],undefined);
+  assert.deepEqual(furnitureForProperty(moved.furnitureLayout,'home-b'),{});
+});
+
+test('a concurrent Studio edit wins over legacy furniture migration',async()=>{
+  const stale={home:{propertyId:'home-a'},inventory:['sofa'],furnitureLayout:{sofa:{x:.2,y:.2}},storedFurniture:[]};
+  const edited={...stale,furnitureLayout:{sofa:{x:.6,y:.5,propertyId:'home-a'}}};
+  let reads=0;
+  const store={async profile(){return structuredClone(reads++?edited:stale);},async action(){},collection(){return{async updateOne(filter){assert.deepEqual(filter.furnitureLayout,stale.furnitureLayout);return{matchedCount:0};}};}};
+  installPropertyFurnitureIsolation(store);
+  const profile=await store.profile('resident-edit');
+  assert.deepEqual(profile.furnitureLayout,edited.furnitureLayout);
+});
+
 test('move-home scopes old placements before the actual home transition',async()=>{
   const profile={id:'resident-1',home:{propertyId:'home-a'},furnitureLayout:{sofa:{x:.3,y:.4}},storedFurniture:[]};
   const writes=[],actions=[];

@@ -28,3 +28,15 @@ test('major newer landmark models are no longer miniature beside old hotel/cinem
   assert.deepEqual(WORLD_LANDMARK_SIZES.wtc,[430,420]);
   assert.deepEqual(WORLD_LANDMARK_SIZES.airport,[560,300]);
 });
+
+test('enlarged landmarks keep their collision footprints and entrances aligned with the visible building',()=>{
+  const scene=buildCity({profile:{district:'central-area'},place:{id:'central-area'},venues:[]});
+  for(const building of scene.buildings.filter(item=>item.landmarkBuilder)){
+    const id=building.id.replace(/^context-landmark-/,'');
+    const point=scene.interactables.find(item=>item.id===id);
+    assert.ok(point,`${id} has an entrance`);
+    assert.ok(point.y>building.y,`${id} entrance must sit beyond the building front`);
+    const collision=scene.obstacles.find(item=>Math.abs(item.x-(building.x-7))<1&&Math.abs(item.w-(building.w+14))<1&&Math.abs(item.y-(building.y-building.h-8))<1);
+    assert.ok(collision,`${id} keeps the rendered footprint solid`);
+  }
+});

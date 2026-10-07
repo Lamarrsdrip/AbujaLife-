@@ -35,3 +35,22 @@ test('civic interiors expose the correct fictional public-purpose zones',()=>{
     for(const zone of zones)assert.ok(scene.landmarkZones.includes(zone),`${id} missing ${zone}`);
   }
 });
+
+test('authored landmark furnishing is part of the physical room rather than a decoration over a generic estate office',()=>{
+  const expected={
+    'airport-hub':['service-desk','visitor-seat'],
+    'inec-hq':['registration-desk','visitor-seat'],
+    'international-conference-centre':['conference-stage','conference-seat'],
+    'federal-high-court-hub':['bench','court-bench'],
+    'jabi-lake-mall':['shopfront'],
+  };
+  for(const [id,kinds] of Object.entries(expected)){
+    const scene=buildInterior({profile:{location:{kind:'venue',venue:id}},venue:venueFor(id)});
+    for(const kind of kinds){
+      const fixture=scene.objects.find(item=>item.kind===kind);
+      assert.ok(fixture,`${id} physical ${kind}`);
+      assert.ok(fixture.modelKind,`${id} ${kind} has a native 3D model`);
+    }
+    assert.doesNotMatch(scene.art,/THE PROPERTY STUDIO|FIND YOUR CORNER OF ABUJA/);
+  }
+});

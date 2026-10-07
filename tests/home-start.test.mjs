@@ -15,6 +15,7 @@ import { buildInterior, furniturePlacementPreservesRoutes } from '../app/world-i
 
 const repo=fileURLToPath(new URL('../',import.meta.url));
 const gifts=['bed','sofa','dining-table','fridge'];
+const moveHomeFunds=properties.filter(item=>item.tier>0).reduce((sum,item)=>sum+item.buy,0)+1000000;
 async function fixture(t,branch=1,index=0) {
   const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'abujalife-home-start-'));
   let calls=0,store=new GameStore({dataDir,originRandomInt:()=>calls++%2===0?branch:index});
@@ -120,7 +121,7 @@ test('fresh homes remain walkable with the purchased furniture catalog and saved
 
 test('moving to every listed floor plan preserves the furnishing progression without free props',async t=>{
   for(const branch of [0,1]){
-    const f=await fixture(t,branch);f.store.topup(f.id,{amount:20000000,idempotencyKey:'home_start_move_funds'});
+    const f=await fixture(t,branch);f.store.topup(f.id,{amount:moveHomeFunds,idempotencyKey:'home_start_move_funds'});
     const before=f.store.profile(f.id),inventory=[...before.inventory];
     for(const property of properties.filter(item=>item.tier>0)){
       const moved=f.store.action(f.id,'move-home',{propertyId:property.id,tenure:'own'}).profile;
@@ -163,7 +164,7 @@ test('actual preview onboarding and moving homes retain the same sparse progress
   assert.equal(error.code,'gender_required');
   const chosen=await adapter.request('/api/profile',{appearance:{presentation:'feminine'},onboardingComplete:true});
   assert.equal(chosen.profile.onboardingComplete,true);assert.equal(chosen.profile.appearance.presentation,'feminine');
-  await adapter.request('/api/wallet/topup',{amount:20000000,idempotencyKey:'preview_home_move_funds'});
+  await adapter.request('/api/wallet/topup',{amount:moveHomeFunds,idempotencyKey:'preview_home_move_funds'});
   for(const property of properties.filter(item=>item.tier>0)){
     const moved=await adapter.request('/api/action',{action:'move-home',payload:{propertyId:property.id,tenure:'own'}});
     assert.equal(moved.profile.home.starterVersion,1);assert.equal(moved.profile.home.furnishingPreset,'lapo-basic');assert.deepEqual(moved.profile.inventory,[]);

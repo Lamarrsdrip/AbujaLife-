@@ -86,6 +86,7 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
   return {
     setCameraViewport:updateCamera,
     setFurniturePreview(item,options){return environment?.setFurniturePreview?.(item,options);},
+    updateFurniture(nextLayout){const updated=environment?.updateFurniture?.(nextLayout)||false;if(updated)shadowDirty=true;return updated;},
     setFurnitureHidden(itemId,hidden){environment?.setFurnitureHidden?.(itemId,hidden);shadowDirty=true;},
     pickFurniture(clientX,clientY){if(lost||disposed||!viewWidth)return null;const rect=container.getBoundingClientRect();pickNdc.set((clientX-rect.left)/rect.width*2-1,1-(clientY-rect.top)/rect.height*2);pickRay.setFromCamera(pickNdc,camera);const items=(environment?.furnitureObjects?.()||[]).filter(item=>item.visible);const hit=pickRay.intersectObjects(items,true)[0];if(!hit)return null;for(let object=hit.object;object;object=object.parent)if(object.userData.itemId)return object.userData.itemId;return null;},
     screenToGround(clientX,clientY){if(lost||disposed||!viewWidth)return null;const rect=container.getBoundingClientRect();pickNdc.set((clientX-rect.left)/rect.width*2-1,1-(clientY-rect.top)/rect.height*2);pickRay.setFromCamera(pickNdc,camera);return pickRay.ray.intersectPlane(groundPlane,pickPoint)?{x:pickPoint.x,y:pickPoint.z*DEPTH}:null;},

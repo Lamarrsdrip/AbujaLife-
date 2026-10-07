@@ -51,3 +51,9 @@ test('changed counts and a replacement street render update once and remain resp
  f.replace();f.flush();assert.equal(f.current().host.querySelectorAll('.world-live-stats').length,1);
  const writes=f.stats.writes;for(let i=0;i<20;i++){f.sync();f.flush();}assert.equal(f.stats.writes,writes);
 });
+test('global stats realtime events update counters without replacing the nearby snapshot',()=>{
+ const f=fixture();snapshot(f,2);f.flush();
+ f.events.get('abujalife:living-city')({detail:{type:'stats',stats:{onlineNow:3,visitsToday:7,visitsAllTime:3501}}});f.flush();
+ const button=f.current().host.querySelector('.world-live-stats');
+ assert.match(button.innerHTML,/3 online/);assert.match(button.innerHTML,/2 here/);assert.match(button.innerHTML,/7 visits today/);
+});

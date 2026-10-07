@@ -12,7 +12,7 @@ import { jobs, catalog, properties, appearanceOptions, transportModes, resalePri
 import { GameError } from '../errors.mjs';
 import { MongoAuthStore } from './authStore.mjs';
 import { residentSearchPrefixes } from './directoryStore.mjs';
-const { LIFE_GOALS, GAME_YEAR_MS, GAME_BILL_PERIOD_MS, WALLET_META, INVESTMENT_META, DICE_META, LOAN_META, travelPricing, homeBenefits, investmentView, loanView, loanQuote, venueFor, venueAvailable, venueActionFor, ownsVehicle, applyNeedEffects, furniturePlacement } = life;
+const { LIFE_GOALS, GAME_YEAR_MS, GAME_BILL_PERIOD_MS, WALLET_META, INVESTMENT_META, DICE_META, LOAN_META, travelPricing, homeBenefits, investmentView, normalizeInvestmentRecords, loanView, loanQuote, venueFor, venueAvailable, venueActionFor, ownsVehicle, applyNeedEffects, furniturePlacement } = life;
 export { jobs, catalog, properties, appearanceOptions, GameError, transportModes };
 const uid=()=>crypto.randomUUID(),clean=(value,max=80)=>String(value??'').trim().slice(0,max),clamp=n=>Math.max(0,Math.min(100,Math.round(n)));
 const locations=new Map(ABUJA_ATLAS.map(place=>[place.id,place]));
@@ -62,6 +62,7 @@ export class MongoGameStore {
     const strip=row=>{const {_id,residentId,sequence,...value}=row;return value;};
     const home=strip(entities.homes),{furnitureLayout={},storedFurniture=[],billsPaidAt,rentPaidAt,...homeFields}=home;
     const p={id,username:resident.username,...pick(resident,residentKeys),createdAt:resident.createdAt,origin:entities.origins.origin,appearance:strip(entities.appearances),...strip(entities.needs),...strip(entities.progression),...strip(entities.player_state),home:homeFields,wallet:entities.wallets.balance,inventory:rows.inventory.map(row=>row.itemId),vehicleColors:Object.fromEntries(rows.vehicles.map(row=>[row.itemId,row.color])),ownedProperties:rows.properties.filter(row=>row.owned).map(row=>row.propertyId),propertyInvestments:Object.fromEntries(rows.properties.filter(row=>row.investment).map(row=>[row.propertyId,row.investment])),loans:rows.loans.sort((a,b)=>b.borrowedAt-a.borrowedAt).map(strip),gambleHistory:rounds.map(strip),lastGambleRound:rounds[0]?strip(rounds[0]):null,workDays:{},furnitureLayout,storedFurniture,billsPaidAt,rentPaidAt};
+    p.propertyInvestments=normalizeInvestmentRecords(p,properties);
     stateMetadata.set(p,{walletVersion:entities.wallets.version,initialBalance:p.wallet});return p;
   }
   async save(p,{session=null,persistEconomy=false}={}){

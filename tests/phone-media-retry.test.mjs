@@ -5,7 +5,7 @@ import vm from 'node:vm';
 
 // Execute the actual browser upload handler with transport/DOM boundaries only.
 const source=fs.readFileSync(new URL('../app/phone-chat-pro.js',import.meta.url),'utf8');
-const code=source.slice(source.indexOf('async function sendMedia('),source.indexOf('\nasync function startRecording'));
+const code=source.slice(source.indexOf('async function sendMedia('),source.indexOf('\nfunction supportedVoiceMime'));
 function harness(){
   const requests=[],revoked=[],messages=[],errors=[];
   let pending;

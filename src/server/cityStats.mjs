@@ -35,8 +35,13 @@ export function createCityStats(store, { globalCacheMs = GLOBAL_CACHE_MS, zoneCa
     const bucket = Math.floor(now / VISIT_WINDOW_MS);
     const sessionId = store.auth.hashToken(token);
     const session = await store.collection('sessions').updateOne(
-      { _id: sessionId, residentId, cityVisitBucket: { $ne: bucket } },
-      { $set: { cityVisitBucket: bucket, lastCityVisitAt: now } },
+      { _id: sessionId, residentId, $or: [
+        { lastCityVisitAt: { $lte: now - VISIT_WINDOW_MS } },
+        // Migrate older fixed-bucket sessions without counting them twice in
+        // the current window. New writes use lastCityVisitAt exclusively.
+        { lastCityVisitAt: { $exists: false }, cityVisitBucket: { $ne: bucket } },
+      ] },
+      { $set: { lastCityVisitAt: now }, $unset: { cityVisitBucket: '' } },
     );
     if (session.modifiedCount !== 1) return false;
 
@@ -120,7 +125,12 @@ export function createCityStats(store, { globalCacheMs = GLOBAL_CACHE_MS, zoneCa
     return { ...global, hereNow: local };
   }
 
-  return { recordVisit, globalSnapshot, snapshot };
+  function invalidate() {
+    globalCache = null;
+    zoneCache.clear();
+  }
+
+  return { recordVisit, globalSnapshot, snapshot, invalidate };
 }
 
 export const CITY_STATS_META = Object.freeze({ visitWindowMs: VISIT_WINDOW_MS, hotPlaceLimit: HOT_PLACE_LIMIT });

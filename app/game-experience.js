@@ -2,7 +2,6 @@ import { apiFetch } from './api-client.js';
 import { brandMark } from './brand.js';
 import { renderMap } from './map.js';
 import { avatarSVG } from './world.js';
-import { vehicleIllustration } from './vehicle-art.js';
 
 const appRoot=document.querySelector('#app');
 const sheetRoot=document.querySelector('#sheet-root');
@@ -12,7 +11,7 @@ const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&
 const compact=value=>new Intl.NumberFormat('en',{notation:'compact',maximumFractionDigits:1}).format(Number(value||0));
 const money=value=>`₦${new Intl.NumberFormat('en-NG',{maximumFractionDigits:0}).format(Number(value||0))}`;
 const timeout=ms=>AbortSignal.timeout(ms);
-let snapshot=null,stats=null,initialAuthenticated=false,mapCleanup=null,mapOverlay=null,garageOverlay=null,welcomeOverlay=null,lastSnapshotAt=0;
+let snapshot=null,stats=null,initialAuthenticated=false,mapCleanup=null,mapOverlay=null,welcomeOverlay=null,lastSnapshotAt=0;
 
 function toast(message){if(!toastRoot)return;toastRoot.textContent=message;toastRoot.classList.add('visible');clearTimeout(toast.timer);toast.timer=setTimeout(()=>toastRoot.classList.remove('visible'),3600);}
 async function json(path,options={}){
@@ -97,32 +96,10 @@ function findVehicleItems(){
   return (snapshot?.catalog||[]).filter(item=>item.category==='vehicle'&&inventory.has(item.id));
 }
 function openNativeGarage(){
-  garageOverlay?.remove();garageOverlay=null;
   const life=appRoot?.querySelector('.game-nav [data-nav-life]');life?.click();
   let attempts=0;const open=()=>{const button=sheetRoot?.querySelector('[data-life="garage"]');if(button){button.click();return;}if(attempts++<15)setTimeout(open,40);};open();
 }
-function ensureGarageBay(){
-  const stage=appRoot?.querySelector('.game-content.view-world .world-stage');if(!stage||stage.querySelector('.abj-home-garage-bay'))return;
-  if(snapshot?.profile?.location?.kind!=='home')return;
-  const cars=findVehicleItems(),car=cars[0],paint=car&&(snapshot.profile.vehicleColors?.[car.id]||car.defaultColor);
-  const bay=document.createElement('button');bay.type='button';bay.className='abj-home-garage-bay';bay.setAttribute('aria-label',cars.length?`Open your garage with ${cars.length} vehicles`:'Open your home garage');
-  bay.innerHTML=`<span class="abj-garage-roof"></span><span class="abj-garage-space">${car?`<span class="abj-garage-car">${vehicleIllustration(car,paint)}</span>`:'<span class="abj-garage-empty">+</span>'}</span><span class="abj-garage-label"><small>YOUR GARAGE</small><strong>${cars.length?`${cars.length} ${cars.length===1?'car':'cars'} parked`:'Ready for your first car'}</strong></span>`;
-  bay.onclick=()=>openGarage();stage.append(bay);
-}
-async function openGarage(){
-  try{await readSnapshot({fresh:true});}catch{}
-  garageOverlay?.remove();const cars=findVehicleItems();
-  const overlay=document.createElement('div');overlay.className='abj-garage-overlay';overlay.innerHTML=`<section class="abj-garage-sheet" role="dialog" aria-modal="true" aria-label="Your garage"><header><div><span class="eyebrow">HOME GARAGE</span><h2>Your cars live here.</h2><p>${cars.length?'Parked at your residence and ready when you are.':'Your garage is empty. Find your first car at Abuja Car.'}</p></div><button type="button" data-garage-close aria-label="Close garage">×</button></header><div class="abj-garage-floor">${cars.length?cars.map(item=>{const color=snapshot.profile.vehicleColors?.[item.id]||item.defaultColor,driving=snapshot.profile.drivingVehicle===item.id;return `<article class="abj-garage-slot"><div class="abj-garage-vehicle">${vehicleIllustration(item,color)}</div><div><small>${esc(item.brand||'ABUJA CAR')}</small><strong>${esc(item.model||item.name)}</strong><span>${driving?'Currently driving':'Parked at home'}</span></div><button type="button" data-garage-drive="${esc(item.id)}">${driving?'Park':'Drive'}</button></article>`;}).join(''):`<button type="button" class="abj-empty-garage" data-browse-cars><span>＋</span><strong>Choose your first car</strong><small>Open Abuja Car</small></button>`}</div><footer><button type="button" data-browse-cars>Browse & manage cars</button><small>Your owned cars stay attached to your resident and your home.</small></footer></section>`;
-  document.body.append(overlay);garageOverlay=overlay;overlay.querySelector('[data-garage-close]').onclick=()=>{overlay.remove();garageOverlay=null;};overlay.addEventListener('click',event=>{if(event.target===overlay){overlay.remove();garageOverlay=null;}});overlay.querySelectorAll('[data-browse-cars]').forEach(button=>button.onclick=openNativeGarage);
-  overlay.querySelectorAll('[data-garage-drive]').forEach(button=>button.onclick=async()=>{
-    button.disabled=true;try{
-      const vehicleId=button.dataset.garageDrive,driving=snapshot.profile.drivingVehicle===vehicleId;
-      if(!driving&&snapshot.profile.location?.kind==='home')await gameAction('leave-home');
-      const result=await gameAction('toggle-driving',{vehicleId:driving?null:vehicleId});if(result?.profile){snapshot.profile=result.profile;lastSnapshotAt=Date.now();}
-      toast(driving?'Your car is parked back at home.':'Keys in hand. Your car is ready outside.');overlay.remove();garageOverlay=null;
-    }catch(error){toast(error.message);button.disabled=false;}
-  });
-}
+function removeObsoleteGarageBays(){document.querySelectorAll('.abj-home-garage-bay,.abj-garage-overlay').forEach(bay=>bay.remove());}
 
 async function gameAction(action,payload={}){
   const body={action,payload:{...payload,idempotencyKey:payload.idempotencyKey||crypto.randomUUID()}};
@@ -182,7 +159,7 @@ async function showWelcome(initial){
 }
 
 function refreshEnhancements(){
-  relabelMap();ensurePulse();void enhanceLifeHub();ensureGarageBay();
+  relabelMap();ensurePulse();void enhanceLifeHub();removeObsoleteGarageBays();
 }
 
 // Map is a separate city/navigation surface again. Outside remains part of Play

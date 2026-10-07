@@ -19,6 +19,8 @@ test('production file media requires an explicit absolute persistent directory',
   assert.deepEqual(disabled.configuration().configured,false);
   assert.throws(()=>new ChatMediaStore({env:{NODE_ENV:'production',CHAT_MEDIA_DIR:'.local/chat-media'}}),/absolute persistent path/);
   assert.throws(()=>new ChatMediaStore({env:{NODE_ENV:'production',CHAT_MEDIA_DIR:'C:\\services\\abujalife\\releases\\abc123-def456\\.local\\chat-media'}}),/outside versioned release/);
+  assert.throws(()=>new ChatMediaStore({env:{NODE_ENV:'production',CHAT_MEDIA_DIR:path.join(path.parse(process.cwd()).root,'services','abujalife','releases')}}),/outside versioned release/);
+  if(process.platform!=='win32')assert.throws(()=>new ChatMediaStore({env:{NODE_ENV:'production',CHAT_MEDIA_DIR:'C:\\services\\abujalife\\shared\\media\\chat'}}),/absolute persistent path/,'foreign-platform paths must not become relative runtime writes');
 });
 
 test('production voice media writes, reads, survives a new store instance and deletes from shared storage',async t=>{
@@ -38,4 +40,18 @@ test('failed file storage returns a safe domain error and never pretends the voi
   const f=fixture();t.after(f.cleanup);const notDirectory=path.join(f.root,'blocked');fs.writeFileSync(notDirectory,'file');
   const store=new ChatMediaStore({env:{NODE_ENV:'production',CHAT_MEDIA_DIR:notDirectory}});
   await assert.rejects(store.put({mediaId:id(),kind:'voice',mime:'audio/webm',bytes:voice,durationMs:900}),error=>error.code==='media_storage_failed'&&!/EPERM|EACCES|ENOTDIR/i.test(error.message));
+});
+
+test('an existing file never makes different uploaded bytes appear successfully stored',async t=>{
+  const f=fixture();t.after(f.cleanup);const mediaId=id(),root=path.join(f.root,'shared','media','chat');
+  const store=new ChatMediaStore({env:{NODE_ENV:'production',CHAT_MEDIA_DIR:root}});
+  await store.put({mediaId,kind:'voice',mime:'audio/webm',bytes:voice,durationMs:900});
+  const changed=Buffer.concat([voice,Buffer.from([9])]);
+  await assert.rejects(store.put({mediaId,kind:'voice',mime:'audio/webm',bytes:changed,durationMs:900}),error=>error.code==='media_storage_conflict');
+  assert.deepEqual((await store.read(mediaId)).body,voice);
+});
+
+test('private object-storage network failures return a safe error',async()=>{
+  const store=new ChatMediaStore({env:{NODE_ENV:'production',CHAT_MEDIA_S3_ENDPOINT:'https://storage.example.test',CHAT_MEDIA_S3_BUCKET:'chat-private',CHAT_MEDIA_S3_ACCESS_KEY_ID:'fixture-access-key',CHAT_MEDIA_S3_SECRET_ACCESS_KEY:'fixture-secret'},fetchImpl:async()=>{throw new Error('fixture-secret: network denied');}});
+  await assert.rejects(store.put({mediaId:id(),kind:'voice',mime:'audio/webm',bytes:voice,durationMs:900}),error=>error.code==='media_storage_failed'&&!/fixture-secret|network denied/.test(error.message));
 });

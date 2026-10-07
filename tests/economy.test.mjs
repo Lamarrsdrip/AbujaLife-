@@ -130,6 +130,22 @@ test('property investments accrue uncapped simulated rent and resell durably wit
   f.advance(600000);assert.equal(investmentView(f.store.profile(f.ada),property,f.now),null);
 });
 
+test('legacy malformed, primary-home and unavailable investment rows are ignored before new purchases',async t=>{
+  const f=await fixture(t),property=properties.find(item=>item.id==='lugbe-flat'),profile=f.store.profile(f.ada);
+  f.store.topup(f.ada,{amount:1000000,idempotencyKey:key()});
+  const raw=f.store.get('SELECT profile FROM residents WHERE id=?',f.ada),stored=JSON.parse(raw.profile),now=f.now;
+  stored.propertyInvestments={
+    [property.id]:{propertyId:property.id,boughtAt:now,lastCollectedAt:now,purchasePrice:1,incomePerPeriod:0,resaleValue:1},
+    [profile.home.propertyId]:{propertyId:profile.home.propertyId,boughtAt:now,lastCollectedAt:now,purchasePrice:1,incomePerPeriod:1,resaleValue:1},
+    'removed-property':{propertyId:'removed-property',boughtAt:now,lastCollectedAt:now,purchasePrice:123,incomePerPeriod:4,resaleValue:100},
+  };
+  f.store.run('UPDATE residents SET profile=? WHERE id=?',JSON.stringify(stored),f.ada);
+  assert.deepEqual(f.store.profile(f.ada).propertyInvestments,{});
+  const bought=f.store.action(f.ada,'buy-investment',{propertyId:property.id,idempotencyKey:key()});
+  assert.deepEqual(Object.keys(bought.profile.propertyInvestments),[property.id]);
+  assert.equal(bought.profile.propertyInvestments[property.id].purchasePrice,property.buy);
+});
+
 test('dice stakes exceed the former ceiling but only server outcomes pay and replays remain durable',async t=>{
   const f=await fixture(t),starting=f.store.profile(f.ada).wallet;let nextDie=1;t.mock.method(crypto,'randomInt',()=>nextDie);
   const payload={stake:500,choice:'low',idempotencyKey:key()};

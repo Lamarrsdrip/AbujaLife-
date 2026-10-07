@@ -4,7 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
 import { ABUJA_ATLAS } from '../shared/atlas.mjs';
-import { LIFE_GOALS, GAME_YEAR_MS, GAME_BILL_PERIOD_MS, WALLET_META, INVESTMENT_META, DICE_META, LOAN_META, HOME_UPGRADES, TRANSPORT_MODES, travelPricing, starterHomeSeed, systemResaleValue, homeBenefits, investmentView, loanView, loanQuote, venueFor, venueAvailable, venueActionFor, ownsVehicle, applyNeedEffects, furniturePlacement } from '../shared/life.mjs';
+import { LIFE_GOALS, GAME_YEAR_MS, GAME_BILL_PERIOD_MS, WALLET_META, INVESTMENT_META, DICE_META, LOAN_META, HOME_UPGRADES, TRANSPORT_MODES, travelPricing, starterHomeSeed, systemResaleValue, homeBenefits, investmentView, normalizeInvestmentRecords, loanView, loanQuote, venueFor, venueAvailable, venueActionFor, ownsVehicle, applyNeedEffects, furniturePlacement } from '../shared/life.mjs';
 import { VEHICLE_CATALOG, vehicleColorFor } from '../shared/vehicles.mjs';
 import { ORIGIN_META, createOrigin, originHome } from '../shared/origins.mjs';
 import { abujaTime, jobSchedule, clubSchedule, JOB_SCHEDULES } from '../shared/simulation.mjs';
@@ -63,7 +63,7 @@ export class GameStore {
   all(sql,...args){return this.db.prepare(sql).all(...args);}
   run(sql,...args){return this.db.prepare(sql).run(...args);}
   transaction(fn){this.db.exec('BEGIN IMMEDIATE');try{const value=fn();this.db.exec('COMMIT');return value;}catch(error){this.db.exec('ROLLBACK');throw error;}}
-  profile(id){check(typeof id==='string'&&id.length>0&&id.length<=80,'Choose a valid resident');const row=this.get('SELECT profile FROM residents WHERE id=?',id);check(row,'Resident not found',404);const p=JSON.parse(row.profile);const origin=this.get('SELECT origin FROM resident_origins WHERE resident_id=?',id);if(origin)p.origin=JSON.parse(origin.origin);p.furnitureLayout ||= {};p.storedFurniture ||= [];p.drivingVehicle ??= null;p.onboardingComplete ??= false;p.lifeGoal ||= 'explore';p.ownedProperties ||= [];p.vehicleColors ||= {};p.propertyInvestments ||= {};p.gambleHistory ||= [];p.lastGambleRound ??= null;p.loans ||= [];p.workDays ||= {};p.rentPaidAt ??= p.billsPaidAt??p.createdAt;return p;}
+  profile(id){check(typeof id==='string'&&id.length>0&&id.length<=80,'Choose a valid resident');const row=this.get('SELECT profile FROM residents WHERE id=?',id);check(row,'Resident not found',404);const p=JSON.parse(row.profile);const origin=this.get('SELECT origin FROM resident_origins WHERE resident_id=?',id);if(origin)p.origin=JSON.parse(origin.origin);p.furnitureLayout ||= {};p.storedFurniture ||= [];p.drivingVehicle ??= null;p.onboardingComplete ??= false;p.lifeGoal ||= 'explore';p.ownedProperties ||= [];p.vehicleColors ||= {};p.propertyInvestments=normalizeInvestmentRecords(p,this.propertiesFor(p));p.gambleHistory ||= [];p.lastGambleRound ??= null;p.loans ||= [];p.workDays ||= {};p.rentPaidAt ??= p.billsPaidAt??p.createdAt;return p;}
   save(profile){const origin=this.get('SELECT origin FROM resident_origins WHERE resident_id=?',profile.id);if(origin)profile.origin=JSON.parse(origin.origin);this.run('UPDATE residents SET profile=? WHERE id=?',JSON.stringify(profile),profile.id);return structuredClone(profile);}
   propertiesFor(id){const p=typeof id==='string'?this.profile(id):id;return p?.origin?.residence?[...properties,p.origin.residence]:[...properties];}
   propertyFor(profile,propertyId=profile.home.propertyId){return this.propertiesFor(profile).find(item=>item.id===propertyId);}

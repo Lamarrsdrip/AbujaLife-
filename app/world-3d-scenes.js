@@ -50,6 +50,7 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
   group.name = 'AbujaLife authored 3D environment';
   const geometries = new Map(), materials = new Map(), textures = [];
   const mergedGeometries=new Set(),furnitureGeometries=new WeakMap();
+  let contactShadowMesh=null;
   function batch(parent,options){const result=batchRigidMeshes(T,parent,options);for(const geometry of result)mergedGeometries.add(geometry);return result;}
   let released=false;
   function disposeResources(){
@@ -664,22 +665,26 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     group.add(wall);cutawayWalls.push(wall);return wall;
   }
   function contactShadows(items) {
+    contactShadowMesh?.removeFromParent();contactShadowMesh=null;contactInstances.clear();
     const solid=items.filter(item=>item.w>15&&item.h>15&&!['rug','lake','lawn'].includes(item.kind));
     if(!solid.length)return;
-    const size=64,data=new Uint8Array(size*size*4);
-    for(let y=0;y<size;y++)for(let x=0;x<size;x++){
-      const radius=Math.hypot((x+.5-size/2)/(size/2),(y+.5-size/2)/(size/2)),i=(y*size+x)*4;
-      data[i]=42;data[i+1]=35;data[i+2]=26;data[i+3]=Math.round(70*Math.pow(Math.max(0,1-radius),1.35));
+    let material=materials.get('contact-shadows');
+    if(!material){
+      const size=64,data=new Uint8Array(size*size*4);
+      for(let y=0;y<size;y++)for(let x=0;x<size;x++){
+        const radius=Math.hypot((x+.5-size/2)/(size/2),(y+.5-size/2)/(size/2)),i=(y*size+x)*4;
+        data[i]=42;data[i+1]=35;data[i+2]=26;data[i+3]=Math.round(70*Math.pow(Math.max(0,1-radius),1.35));
+      }
+      const texture=new T.DataTexture(data,size,size,T.RGBAFormat);texture.name='Authored soft contact shadow';texture.colorSpace=T.SRGBColorSpace;
+      texture.magFilter=texture.minFilter=T.LinearFilter;texture.needsUpdate=true;textures.push(texture);
+      material=new T.MeshBasicMaterial({map:texture,transparent:true,depthWrite:false,toneMapped:false});materials.set('contact-shadows',material);
     }
-    const texture=new T.DataTexture(data,size,size,T.RGBAFormat);texture.name='Authored soft contact shadow';texture.colorSpace=T.SRGBColorSpace;
-    texture.magFilter=texture.minFilter=T.LinearFilter;texture.needsUpdate=true;textures.push(texture);
-    const material=new T.MeshBasicMaterial({map:texture,transparent:true,depthWrite:false,toneMapped:false});materials.set('contact-shadows',material);
     // One instanced draw for the whole room, rather than one extra light or
     // shadow pass per chair, table, appliance or bed.
     const geometry=geo('contact-shadow-plane',()=>new T.PlaneGeometry(1,1));
     const shadows=new T.InstancedMesh(geometry,material,solid.length),matrix=new T.Matrix4(),rotation=new T.Quaternion().setFromAxisAngle(new T.Vector3(1,0,0),-Math.PI/2);
     solid.forEach((item,index)=>{matrix.compose(new T.Vector3(item.x+item.w/2,(Number(item.elevation)||0)+(item.elevation?.45:2.6),(item.y+item.h/2)*ds),rotation,new T.Vector3(item.w*1.12,item.h*ds*1.12,1));shadows.setMatrixAt(index,matrix);if(item.itemId)contactInstances.set(item.itemId,{mesh:shadows,index,matrix:matrix.clone()});});
-    shadows.name='Soft furniture contact depth';shadows.renderOrder=1;group.add(shadows);
+    shadows.name='Soft furniture contact depth';shadows.renderOrder=1;group.add(shadows);contactShadowMesh=shadows;
   }
   function interiorSet() {
     const outdoor=layout.venueLayout?.outdoor||['park','jabi-lake'].includes(venue?.id);
@@ -951,6 +956,20 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     setFurnitureHidden(itemId,hidden){const item=furniture.get(itemId);if(item)item.visible=!hidden;
       const shadow=contactInstances.get(itemId);if(shadow){shadow.mesh.setMatrixAt(shadow.index,hidden?new T.Matrix4().makeScale(0,0,0):shadow.matrix);shadow.mesh.instanceMatrix.needsUpdate=true;}},
     furnitureObjects:()=>[...furniture.values()],
+    updateFurniture(nextLayout){
+      if(released||!nextLayout)return false;
+      for(const model of furniture.values()){
+        model.removeFromParent();
+        for(const geometry of furnitureGeometries.get(model)||[]){geometry.dispose();mergedGeometries.delete(geometry);}
+      }
+      furniture.clear();layout=nextLayout;
+      const desired=new Map();
+      for(const item of nextLayout.objects||[])if(item.itemId)desired.set(String(item.itemId),item);
+      for(const item of nextLayout.furniturePlacements||[])if(item.itemId)desired.set(String(item.itemId),{...item,kind:item.itemId});
+      for(const item of desired.values())placeObject(item);
+      if(!layout.venueLayout?.outdoor&&!['park','jabi-lake'].includes(venue?.id))contactShadows([...desired.values()]);
+      return true;
+    },
     updateView,
     playerModel:()=>ownCar?.group,
     update({clock,weather,clubOpen,elapsed=0,player,angle=0,transport,driving,carColor,parked,trafficPositions=[],trip}) {

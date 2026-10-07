@@ -21,6 +21,8 @@ test('withdrawal quote takes exactly ten percent for supported whole-Naira amoun
   assert.equal(JACKPOT_WITHDRAWAL_FEE_BPS, 1000);
   assert.deepEqual(jackpotWithdrawalQuote(50000), { grossAmount: 50000, feeAmount: 5000, netAmount: 45000 });
   assert.deepEqual(jackpotWithdrawalQuote(2000), { grossAmount: 2000, feeAmount: 200, netAmount: 1800 });
+  const large=2637134263838030,quote=jackpotWithdrawalQuote(large);
+  assert.equal(quote.feeAmount,large/10);assert.ok(Number.isSafeInteger(quote.feeAmount));assert.ok(Number.isSafeInteger(quote.netAmount));
   assert.throws(() => jackpotWithdrawalQuote(2001));
 });
 

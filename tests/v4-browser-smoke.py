@@ -110,6 +110,15 @@ async def reload(page):
 
 async def register(page,url,name,username,qa):
     await page.goto(url,wait_until='domcontentloaded');await expect(page.locator('#auth-form')).to_be_visible()
+    welcome=page.locator('#welcome-scene')
+    await expect(welcome).to_have_attribute('data-character-renderer','webgl-3d',timeout=45000)
+    await expect(welcome).to_have_attribute('data-environment-renderer','webgl-3d')
+    quality=await welcome.evaluate('''el=>{const canvas=el.querySelector('canvas.world-character-layer'),r=canvas?.getBoundingClientRect();return {width:canvas?.width,height:canvas?.height,cssWidth:r?.width,cssHeight:r?.height,environmentMeshes:Number(el.dataset.environmentMeshes||0),webgl:!!(canvas&&(canvas.getContext('webgl2')||canvas.getContext('webgl')))}}''')
+    assert quality['webgl'] and quality['environmentMeshes']>0 and quality['width']+1>=quality['cssWidth'] and quality['height']+1>=quality['cssHeight'],quality
+    await qa.screenshot(page,username+'-login-room-desktop')
+    await page.set_viewport_size({'width':390,'height':844})
+    await game.no_overflow(page);await qa.screenshot(page,username+'-login-room-mobile')
+    await page.set_viewport_size({'width':1280,'height':900})
     for field,value in [('displayName',name),('username',username),('password',PASSWORD)]:await page.locator(f'#auth-form [name="{field}"]').fill(value)
     await page.locator('.auth-submit').click();await expect(page.locator('#onboarding-form')).to_be_visible()
     headings=[]
@@ -183,6 +192,9 @@ async def physical(page,qa,activities=('shower','sleep')):
     return results
 
 async def home_studio(page,qa):
+    await expect(page.locator('.abj-home-garage-bay')).to_have_count(0)
+    await life(page,'garage');await expect(page.locator('.garage-cars')).to_be_visible()
+    await game.close_sheet(page)
     await life(page,'design');await expect(page.locator('.home-editor')).to_be_visible()
     await page.locator('[data-home-editor="wall"][data-value="sage"]').click()
     await page.locator('[data-home-editor="floor"][data-value="darkoak"]').click()
@@ -288,32 +300,50 @@ async def work(page,fixture,qa):
     await game.navigate(page,'world');return {'bankClosedSunday':True,'bankMondayHours':'08:00–17:00 WAT','propertyShifts':saved}
 
 async def open_club_destination(page,venue):
-    # Outside is the current playable street, with a Destinations chooser.
-    # Its utility Map is optional; no removed Places navigation is required.
+    # Nightlife venues are searchable 3D map destinations; follow the same
+    # destination card and route chooser that a player uses.
     await game.close_sheet(page);await game.close_phone(page)
-    await page.locator('[data-nav-outside]').click()
-    await game.wait_state(page,lambda s:s['profile']['location']['kind']=='public',60)
-    await expect(page.locator('[data-outside-destinations]')).to_be_visible(timeout=60000)
-    await page.locator('[data-outside-destinations]').click()
-    await page.locator(f'[data-city-venue="{venue}"]').click()
-    await expect(page.locator('#travel-form')).to_be_visible()
+    city_map=page.locator('.abj-restored-map')
+    if await city_map.count()==0:await page.locator('[data-nav-outside]').click()
+    await expect(city_map).to_be_visible(timeout=60000)
+    state=await game.state(page)
+    venue_name=next((item['name'] for item in state.get('venues',[]) if item.get('id')==venue),venue.replace('-',' '))
+    search=city_map.locator('.outside-search input[type="search"]')
+    await search.fill(venue_name)
+    destination=city_map.locator('[data-outside-destination]').filter(has_text=venue_name).first
+    await expect(destination).to_be_visible(timeout=15000)
+    await destination.click()
+    await city_map.locator('[data-outside-action="travel"]').click()
+    route=page.locator('.abj-map-journey')
+    await expect(route).to_be_visible(timeout=15000)
+    walk=route.locator('[data-map-mode="walk"]')
+    mode='walk' if await walk.is_enabled() else 'bus'
+    await route.locator(f'[data-map-mode="{mode}"]').click()
+    await expect(route.locator('[data-map-go]')).to_be_enabled(timeout=15000)
+    departure=await game.state(page)
+    await route.locator('[data-map-go]').click()
+    await expect(city_map).to_have_count(0,timeout=15000)
+    started=await game.wait_state(page,lambda s:bool(s['profile'].get('activeTrip')) or s['profile']['location']['kind']=='venue',30)
+    return {'departure':departure,'started':started,'mode':mode}
 
 async def club(page,venue,activity,kind,fixture,qa):
     print('STEP club: '+venue,flush=True)
-    await open_club_destination(page,venue)
-    departure=await game.state(page);departure_wallet=departure['profile']['wallet']
-    walk=page.locator('#travel-form [name="mode"][value="walk"]')
-    local=await walk.is_enabled();mode='walk' if local else 'taxi'
-    await page.locator(f'#travel-form [name="mode"][value="{mode}"]').check()
-    await expect(page.locator('#travel-form [type="submit"]')).to_be_enabled()
-    await page.locator('#travel-form [type="submit"]').click()
-    travel_cost=0
-    if not local:
-        trip=await game.wait_state(page,lambda s:bool(s['profile'].get('activeTrip')),60)
+    route=await open_club_destination(page,venue)
+    departure_wallet=route['departure']['profile']['wallet'];mode=route['mode'];trip=route['started'];travel_cost=0
+    local=mode=='walk'
+    if local:
+        assert trip['profile']['location']['kind']=='venue' and (trip['profile']['location'].get('venueId') or trip['profile']['location'].get('venue'))==venue,trip['profile']['location']
+    else:
         active_trip=trip['profile']['activeTrip'];travel_cost=active_trip['cost']
         assert active_trip['mode']==mode and active_trip['venueId']==venue,active_trip
         assert trip['profile']['wallet']==departure_wallet-travel_cost
-        await webgl(page);car_before=await game.motion(page);await page.wait_for_timeout(1300);car_after=await game.motion(page)
+        await expect(page.locator('#world-scene')).to_have_attribute('data-scene-kind','transit',timeout=10000)
+        await expect(page.locator('#world-scene')).to_have_class(re.compile(r'\bworld-route-trip\b'))
+        await expect(page.locator('#world-scene .world-route-progress')).to_be_visible()
+        car_before=await game.motion(page)
+        assert car_before['kind']=='transit' and car_before['moving'],car_before
+        await page.wait_for_function('''({x,y})=>{const el=document.querySelector('#world-scene');return el?.dataset.sceneKind==='transit'&&Math.hypot(Number(el.dataset.playerX)-x,Number(el.dataset.playerY)-y)>10}''',arg={'x':car_before['x'],'y':car_before['y']},timeout=5000)
+        car_after=await game.motion(page)
         assert game.distance(car_before,car_after)>10,{'journeyCarBefore':car_before,'journeyCarAfter':car_after}
         bounds=json.loads(await page.locator('#world-scene').get_attribute('data-player-model-bounds'));banner=await page.locator('.trip-banner').bounding_box()
         overlap=max(0,min(bounds['x']+bounds['width'],banner['x']+banner['width'])-max(bounds['x'],banner['x']))*max(0,min(bounds['y']+bounds['height'],banner['y']+banner['height'])-max(bounds['y'],banner['y']))
@@ -332,11 +362,19 @@ async def club(page,venue,activity,kind,fixture,qa):
     assert arrived['profile']['wallet']==departure_wallet-travel_cost
     await webgl(page)
     objects=json.loads(await page.locator('#world-scene').get_attribute('data-environment-objects'));assert kind in objects,objects
+    await expect(page.locator('.abj-home-garage-bay')).to_have_count(0)
+    await expect(page.locator('.club-spray-button')).to_be_visible()
+    await page.locator('.club-spray-button').click();await expect(page.locator('.club-spray-menu')).to_be_visible()
+    await expect(page.locator('.club-spray-menu button').first).to_be_visible()
+    await page.locator('.club-spray-button').click();await expect(page.locator('.club-spray-menu')).to_be_hidden()
     audio=page.locator('.world-sound-toggle');await expect(audio).to_have_attribute('aria-pressed','false')
     await audio.click();await expect(audio).to_have_attribute('aria-pressed','true')
     await qa.screenshot(page,'main-club-'+venue)
     outcomes=[]
-    for attempt in range(2):
+    # Keep the resident's real energy needs viable for the next venue in the
+    # end-to-end journey. Repeat/retry safety is covered by authoritative API
+    # tests; this browser path exercises one genuine paid action per venue.
+    for attempt in range(1):
         await life(page,'activity')
         await expect(page.locator('.club-schedule-note')).to_contain_text('DJ live')
         current=await game.state(page);assert current['clubSchedule']['isOpen'],current['clubSchedule']
@@ -383,7 +421,13 @@ async def main():
                 if 'clubs' in selected:
                     fixture.clock('2026-10-17T21:00:00Z');await reload(owner)
                     await game.enter_home(owner);await physical(owner,qa,('sleep',))
-                    for venue,activity,kind in ([('club','club-dance','dj-booth')] if os.environ.get('ABUJALIFE_V4_ONE_CLUB') else [('club','club-dance','dj-booth'),('bear-barn','bear-barn-relax','pub-bar'),('club-cage','cage-dance','lighting-truss'),('magic-city','magic-city-stage','performance-stage')]):
+                    clubs=[('club','club-dance','dj-booth'),('bear-barn','bear-barn-relax','pub-bar'),('club-cage','cage-dance','lighting-truss'),('magic-city','magic-city-stage','performance-stage')]
+                    if os.environ.get('ABUJALIFE_V4_CLUB'):
+                        clubs=[entry for entry in clubs if entry[0]==os.environ['ABUJALIFE_V4_CLUB']]
+                        assert clubs,'ABUJALIFE_V4_CLUB must name an authored nightlife venue'
+                    elif os.environ.get('ABUJALIFE_V4_ONE_CLUB'):
+                        clubs=clubs[:1]
+                    for venue,activity,kind in clubs:
                         await qa.check('11 '+venue+' reachable distinct 3D club paid activity and opt-in sound',lambda v=venue,a=activity,k=kind:club(owner,v,a,k,fixture,qa))
             else:
                 await qa.check('02 quiet full 3D night world and responsive movement',lambda:clean_world(owner,qa))
@@ -399,7 +443,13 @@ async def main():
                 await qa.check('10 work respects WAT weekdays and two completed slots',lambda:work(owner,fixture,qa))
                 fixture.clock('2026-10-17T21:00:00Z');await reload(owner)
                 await game.enter_home(owner);await physical(owner,qa,('sleep',))
-                for venue,activity,kind in ([('club','club-dance','dj-booth')] if os.environ.get('ABUJALIFE_V4_ONE_CLUB') else [('club','club-dance','dj-booth'),('bear-barn','bear-barn-relax','pub-bar'),('club-cage','cage-dance','lighting-truss'),('magic-city','magic-city-stage','performance-stage')]):
+                clubs=[('club','club-dance','dj-booth'),('bear-barn','bear-barn-relax','pub-bar'),('club-cage','cage-dance','lighting-truss'),('magic-city','magic-city-stage','performance-stage')]
+                if os.environ.get('ABUJALIFE_V4_CLUB'):
+                    clubs=[entry for entry in clubs if entry[0]==os.environ['ABUJALIFE_V4_CLUB']]
+                    assert clubs,'ABUJALIFE_V4_CLUB must name an authored nightlife venue'
+                elif os.environ.get('ABUJALIFE_V4_ONE_CLUB'):
+                    clubs=clubs[:1]
+                for venue,activity,kind in clubs:
                     await qa.check('11 '+venue+' reachable distinct 3D club paid activity and opt-in sound',lambda v=venue,a=activity,k=kind:club(owner,v,a,k,fixture,qa))
             qa.save();await browser.close()
     finally:fixture.close();qa.save()

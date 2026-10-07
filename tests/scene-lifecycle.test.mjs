@@ -10,9 +10,12 @@ test('wallet and delayed realtime refreshes retain the same physical scene',()=>
   assert.equal(playableSceneKey('world',refreshed),key);
   assert.equal(playableSceneKey('world',structuredClone(refreshed)),key);
 });
-test('home placement, real travel, and accepted visits change the physical scene',()=>{
+test('furniture state reconciles in place while real physical transitions change the scene',()=>{
   const original=resident(),key=playableSceneKey('world',original);
-  for(const mutate of [s=>s.profile.furnitureLayout.sofa.x=.6,s=>s.profile.home.propertyId='b',s=>s.profile.activeTrip={id:'trip'},s=>s.profile.location={kind:'venue',venueId:'inec'},s=>s.profile.vehiclePresence={itemId:'car',district:'jabi'},s=>s.profile.drivingVehicle='toyota-corolla']){
+  for(const mutate of [s=>s.profile.furnitureLayout.sofa.x=.6,s=>s.profile.inventory.push('coffee-table'),s=>s.profile.storedFurniture=['coffee-table']]){
+    const state=structuredClone(original);mutate(state);assert.equal(playableSceneKey('world',state),key);
+  }
+  for(const mutate of [s=>s.profile.home.propertyId='b',s=>s.profile.activeTrip={id:'trip'},s=>s.profile.location={kind:'venue',venueId:'inec'},s=>s.profile.vehiclePresence={itemId:'car',district:'jabi'},s=>s.profile.drivingVehicle='toyota-corolla']){
     const state=structuredClone(original);mutate(state);assert.notEqual(playableSceneKey('world',state),key);
   }
   const visit=resident();visit.profile.location={kind:'visit',ownerId:'other'};

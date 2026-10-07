@@ -11,8 +11,10 @@ export function playableSceneKey(view, state) {
     trip: p.activeTrip || null, appearance: p.appearance,
     home: {propertyId: home.propertyId, layoutId: home.layoutId, name: home.name,
       district: home.district, roomStyle: home.roomStyle, furnishingPreset: home.furnishingPreset},
-    inventory: furnishing.inventory, layout: furnishing.furnitureLayout,
-    stored: furnishing.storedFurniture, upgrades: furnishing.homeUpgrades,
+    // Furniture is reconciled into the mounted scene through updateProfile().
+    // Keeping these mutable state bags out of the physical key avoids tearing
+    // down the whole world after a placement, store, or sale.
+    upgrades: furnishing.homeUpgrades,
     vehicle: p.vehiclePresence, drivingVehicle: p.drivingVehicle,
   });
 }

@@ -33,7 +33,9 @@ const publicRoom = row => ({ id: row._id, laneId: row.laneId, name: row.name, st
 
 export function jackpotWithdrawalQuote(grossAmount) {
   fail(Number.isSafeInteger(grossAmount) && grossAmount > 0 && grossAmount % 10 === 0, 'Withdrawal amount must be a positive whole Naira amount ending in 0', 400, 'invalid_withdrawal_amount');
-  const feeAmount = grossAmount * JACKPOT_WITHDRAWAL_FEE_BPS / 10000;
+  // Divide first: multiplying a safe whole-Naira amount by 1,000 can lose
+  // integer precision before the basis-point division takes place.
+  const feeAmount = grossAmount / (10000 / JACKPOT_WITHDRAWAL_FEE_BPS);
   return Object.freeze({ grossAmount, feeAmount, netAmount: grossAmount - feeAmount });
 }
 
@@ -237,16 +239,17 @@ export class JackpotIntegration {
     fail(idempotencyKey(requestKey), 'Use a valid withdrawal request key'); const quote = jackpotWithdrawalQuote(Number(amount));
     bankName = clean(bankName, 80); accountNumber = clean(accountNumber, 20).replace(/\s+/g, ''); accountName = clean(accountName, 100);
     fail(bankName.length >= 2, 'Enter your bank'); fail(/^\d{10,20}$/.test(accountNumber), 'Enter a valid account number'); fail(accountName.length >= 2, 'Enter the account name');
-    const fingerprint = JSON.stringify({ ...quote, bankName: bankName.toLowerCase(), accountNumber, accountName: accountName.toLowerCase() }), withdrawalId = `jwd_${crypto.randomUUID()}`; let row;
+    const fingerprint = hash(JSON.stringify({ ...quote, bankName: bankName.toLowerCase(), accountNumber, accountName: accountName.toLowerCase() })), withdrawalId = `jwd_${crypto.randomUUID()}`; let row;
+    const matches = existing => existing.fingerprint === fingerprint || (typeof existing.fingerprint === 'string' && existing.fingerprint.startsWith('{') && hash(existing.fingerprint) === fingerprint);
     try {
       row = await this.store.transaction(async session => {
-        const existing = await this.collection('jackpot_withdrawals').findOne({ residentId, operationKey: requestKey }, { session }); if (existing) { fail(existing.fingerprint === fingerprint, 'This withdrawal key was already used for another request', 409, 'idempotency_conflict'); return existing; }
+        const existing = await this.collection('jackpot_withdrawals').findOne({ residentId, operationKey: requestKey }, { session }); if (existing) { fail(matches(existing), 'This withdrawal key was already used for another request', 409, 'idempotency_conflict'); if(existing.fingerprint!==fingerprint)await this.collection('jackpot_withdrawals').updateOne({_id:existing._id},{$set:{fingerprint}},{session}); return existing; }
         await this.moveBalance(residentId, { operationKey: `withdrawal-hold:${withdrawalId}`, type: 'withdrawal_requested', deltaAvailable: -quote.grossAmount, deltaPending: quote.grossAmount, metadata: { withdrawalId, ...quote } }, session);
         const now = this.store.clock(), encryptedBank = this.payments.encrypt({ bankName, accountNumber, accountName }, `jackpot-withdrawal:${withdrawalId}`);
         const created = { _id: withdrawalId, residentId, operationKey: requestKey, fingerprint, ...quote, status: 'requested', bankName, bankLast4: accountNumber.slice(-4), accountName, encryptedBank, requestedAt: now, updatedAt: now, paidAt: null, reference: null };
         await this.collection('jackpot_withdrawals').insertOne(created, { session }); return created;
       });
-    } catch (error) { if (error.code !== 11000) throw error; row = await this.collection('jackpot_withdrawals').findOne({ residentId, operationKey: requestKey }); fail(row && row.fingerprint === fingerprint, 'This withdrawal key was already used for another request', 409, 'idempotency_conflict'); }
+    } catch (error) { if (error.code !== 11000) throw error; row = await this.collection('jackpot_withdrawals').findOne({ residentId, operationKey: requestKey }); fail(row && matches(row), 'This withdrawal key was already used for another request', 409, 'idempotency_conflict'); }
     this.log('jackpot_withdrawal_requested', { residentId, withdrawalId: row._id, grossAmount: row.grossAmount, netAmount: row.netAmount }); return { ok: true, withdrawal: { id: row._id, grossAmount: row.grossAmount, feeAmount: row.feeAmount, netAmount: row.netAmount, status: row.status, bankName: row.bankName, bankLast4: row.bankLast4, accountName: row.accountName, requestedAt: row.requestedAt }, state: await this.state(residentId) };
   }
   async adminOverview(adminId) {

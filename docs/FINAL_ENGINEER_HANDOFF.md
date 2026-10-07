@@ -117,3 +117,43 @@ landmark collision scaling/populated moving journeys (21/21 focused checks).
 Backend focused checks 31/31 passed; Mongo production/media/restart/privacy validation
 is being bootstrapped. Phone/voice native browser acceptance is being added by agent.
 Main and production still remain on c223a170; no release gate or deployment claimed.
+
+## Continuation checkpoint — 2026-10-07 08:20 WAT
+
+- User asked to continue exactly from this branch and repeated the login-room
+  quality issue. Keep working on `codex/final-production-completion` and preserve
+  this handoff for a replacement agent.
+- Desktop and 390px mobile Chromium screenshots are at
+  `/Users/libertyelectronics/abujalife-final-evidence/login-readonly-diagnostic/`
+  (`capture-desktop.png`, `capture-mobile.png`). Both show the detailed authored
+  home rendered as WebGL behind the login page; desktop DOM reports premium
+  render quality, 80 environment meshes, PMREM lighting, and no page errors.
+  This directly verifies the user's 3D restoration visually.
+- The login diagnostic's first strict `#auth-form` visible wait timed out even
+  though a follow-up capture showed the complete, visible auth form and room.
+  Its initial wait result is a timing false alarm; preserve the screenshot and
+  don't describe the page as failed to render.
+- Root retry edits had removed the adjacent `supportedVoiceMime`,
+  `sendPresence`, `stopPlayback`, and `releaseTransient` helpers. This caused a
+  real `phone-chat-pro.js` module error. They are restored in the working tree.
+  `tests/phone-media-retry.test.mjs` now extracts only `sendMedia`; 2/2 retry
+  checks pass after fixing that boundary. V4 has also been updated to navigate
+  via the actual current Map → search → destination → route chooser UI, because
+  `[data-nav-outside]` opens the Map and never enters the public street.
+- Integrated `npm run qa` finished 479/480 before the latest fixes. The one
+  failure caught missing full venue names in airport/stadium/conference/Transcorp
+  interior signs. The product signs now use their canonical full names and the
+  focused `tests/world-coherence-regression.test.mjs` passes 6/6.
+- Full V4 runner started 2026-10-07 at 07:19 UTC/Lagos 08:19, evidence directory
+  `/Users/libertyelectronics/abujalife-final-evidence/v4-final/20261007T071903Z-5a13b0`.
+  Current exec session ID is 71907; poll it before starting another browser.
+- Backend uncommitted changes now include the Mongo message schema fix that
+  permits validated image/voice/deleted-media documents while preserving
+  immutable transfer records. The backend agent reported 2/2 focused production
+  Mongo voice/restart/live-SSE and presence/privacy gates after the fix. Recheck
+  against the repository's available Mongo fixture and save final outputs.
+- Still run the final full QA, Windows runtime, production build, infra, WebKit,
+  historical Chromium, V4 (all checks), and native phone voice suite. Re-fetch
+  latest main, push/PR/CI, safe merge, and deploy/smoke are not done. GitHub DNS
+  lookup previously failed in this restricted environment; local work must be
+  committed and the branch/handoff kept recoverable regardless.

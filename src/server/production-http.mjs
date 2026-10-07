@@ -19,7 +19,7 @@ function setSession(res,token){res.setHeader('set-cookie',`abujalife_session=${t
 export function productionLog(event,fields={}){console.log(JSON.stringify({time:new Date().toISOString(),service:'abujalife-api',event,...fields}));}
 
 /** API-only listener. The static game is independently hosted by Hostinger. */
-export function createProductionServer({store,social,directory,presence,admin,payments,rewards,ads,database,corsOrigins,publicWebUrl,trustProxy=false,log=productionLog}){
+export function createProductionServer({store,social,directory,presence,admin,payments,rewards,ads,database,corsOrigins,publicWebUrl,trustProxy=false,log=productionLog,env=process.env,fetchImpl=fetch}){
   fail(store&&social&&directory&&admin&&payments&&rewards&&database,'Production stores are required',500);
   const allowedOrigins=new Set(corsOrigins);fail(allowedOrigins.size>0,'Configure permitted web origins',500);
   const clients=new Map(),byUser=new Map(),byZone=new Map(),lastSeen=new Map(),poses=new Map(),limits=new Map();let closed=false;
@@ -38,6 +38,15 @@ export function createProductionServer({store,social,directory,presence,admin,pa
   const online=id=>byUser.has(id)||Date.now()-(lastSeen.get(id)||0)<45000;
   store.isOnline=online;store.emitUser=sendUser;store.onlineInZone=zone=>[...new Set([...byZone.get(zone)||[]].map(res=>clients.get(res)?.id).filter(Boolean))];
   store.emitZone=(id,event,data)=>safeTask((async()=>{const zone=await reindex(id);for(const res of byZone.get(zone)||[]){const target=clients.get(res)?.id;if(target&&!(await store.blocked(id,target)))writeEvent(res,event,data);}})());
+  let cityStatsTimer;
+  async function emitCityStats(){
+    if(!store.cityStats)return;
+    store.cityStats.invalidate?.();
+    const stats=await store.cityStats.globalSnapshot();
+    for(const res of clients.keys())writeEvent(res,'city-stats',{stats,serverTime:store.clock()});
+  }
+  store.emitCityStats=()=>safeTask(emitCityStats());
+  function scheduleCityStatsBroadcast(){if(!store.cityStats)return;clearTimeout(cityStatsTimer);cityStatsTimer=setTimeout(()=>safeTask(emitCityStats()),120);cityStatsTimer.unref?.();}
   async function broadcastPresence(id,previousZone=null){
     const zone=await reindex(id);
     // Persist the live connection's new zone before notifying peers to fetch
@@ -47,11 +56,12 @@ export function createProductionServer({store,social,directory,presence,admin,pa
     const targets=new Set([...(byZone.get(zone)||[]),...(byZone.get(previousZone)||[])]);
     for(const friend of await store.friendIds(id))for(const res of byUser.get(friend)||[])targets.add(res);
     for(const res of targets){const target=clients.get(res)?.id;if(target&&target!==id&&!(await store.blocked(id,target)))writeEvent(res,'presence',{resident:await store.resident(target,id)});}
+    scheduleCityStatsBroadcast();
   }
   function rateLimit(req,kind,limit=90,principal=''){const forwarded=trustProxy?req.headers['x-forwarded-for']?.split(',').at(-1)?.trim():null;const ip=forwarded&&/^[\da-fA-F:.]+$/.test(forwarded)?forwarded:req.socket.remoteAddress;const key=`${principal||ip}:${kind}`,now=Date.now(),previous=limits.get(key),bucket=previous&&now-previous.at<60000?previous:{at:now,count:0};bucket.count++;limits.set(key,bucket);if(bucket.count>limit)throw new GameError('Please wait before trying again',429,'rate_limited');if(limits.size>5000)for(const[k,v]of limits)if(now-v.at>60000)limits.delete(k);}
   async function publicBootstrap(){const now=store.clock();return{authenticated:false,atlas:ABUJA_ATLAS,councils:AREA_COUNCILS,landmarks:LANDMARKS,atlasMeta:ATLAS_META,jobs:store.publicJobs(),catalog,properties,events:[],transportModes,appearanceOptions,activities,venues:VENUES,venueActions:VENUE_ACTIONS,lifeGoals:LIFE_GOALS,economyMeta:ECONOMY_META,walletMeta:{...WALLET_META,topupMode:'flutterwave',demoTopupEnabled:false},investmentMeta:INVESTMENT_META,diceMeta:DICE_META,vehicleColors:VEHICLE_COLORS,homeUpgrades:HOME_UPGRADES,payments:await payments.publicConfig(),serverTime:now,clock:abujaTime(now),weather:seasonalWeather(now),clubSchedule:clubSchedule(now)};}
   async function bootstrap(id){const publicState=await publicBootstrap();if(!id)return publicState;await social.reconcileVisits(id);const [base,visits,zone,adminState]=await Promise.all([store.bootstrap(id),social.visitState(id),store.zone(id),admin.status(id)]);return{...publicState,...base,nearby:(base.nearby||[]).map(person=>({...person,pose:poses.get(person.id)?.zone===zone?poses.get(person.id).pose:null})),properties:base.properties||properties,workSchedules:Object.fromEntries(Object.keys(store.publicJobs()).map(key=>[key,jobSchedule(key,base.profile,store.clock())])),homeVisit:visits.visit,homeVisitRequests:visits.requests,homeVisitors:visits.visitors,admin:adminState};}
-  const sessionRuntime=createSessionRuntime({store,admin,social,corsOrigins,publicWebUrl,secureCookies:true,log});
+  const sessionRuntime=createSessionRuntime({store,admin,social,directory,corsOrigins,publicWebUrl,secureCookies:true,log,env,fetchImpl});
   const server=http.createServer(async(req,res)=>{
     if(await sessionRuntime.handle(req,res))return;
     const requestId=crypto.randomUUID();res.setHeader('x-request-id',requestId);let pathname='';
@@ -157,6 +167,7 @@ export function createProductionServer({store,social,directory,presence,admin,pa
         const adminSocialDelete=pathname.match(/^\/api\/admin\/social\/posts\/([^/]+)\/delete$/);if(adminSocialDelete&&method==='POST')return json(res,200,(await social.moderateDeletePost(id,adminSocialDelete[1],body)));
         if(pathname==='/api/profile'&&method==='POST'){
           const profile=await store.updateProfile(id,body);
+          if(presence)await presence.refreshProfile(id,profile);
           await social.reconcileVisits(id);await broadcastPresence(id);return json(res,200,{ok:true,profile});
         }
         if(pathname==='/api/wallet'&&method==='GET')return json(res,200,(await store.wallet(id)));
@@ -195,6 +206,6 @@ export function createProductionServer({store,social,directory,presence,admin,pa
   const heartbeat=setInterval(()=>safeTask((async()=>{if(heartbeatRunning||closed)return;heartbeatRunning=true;try{for(const[res,client]of clients){if(!(await store.session(client.token))||await admin.isSuspended(client.id)){res.end();continue;}lastSeen.set(client.id,Date.now());if(presence)await presence.touch(client.id,{connectionId:client.connectionId});res.write(': heartbeat\n\n');}for(const[id,time]of lastSeen)if(Date.now()-time>45000){lastSeen.delete(id);await broadcastPresence(id);}}finally{heartbeatRunning=false;}})()),20000);heartbeat.unref();
   server.requestTimeout=30000;server.headersTimeout=15000;server.keepAliveTimeout=5000;
   server.sessionRuntime=sessionRuntime;server.store=store;server.admin=admin;server.social=social;server.payments=payments;
-  server.closeRealtime=()=>{closed=true;clearInterval(heartbeat);for(const res of clients.keys())res.end();};
+  server.closeRealtime=()=>{closed=true;clearInterval(heartbeat);clearTimeout(cityStatsTimer);for(const res of clients.keys())res.end();};
   server.on('close',server.closeRealtime);return server;
 }

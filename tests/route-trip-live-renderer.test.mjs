@@ -10,7 +10,7 @@ function fixture(t,mode='car'){
   globalThis.cancelAnimationFrame=()=>{};
   globalThis.document={addEventListener(){},removeEventListener(){},hidden:false};
   globalThis.ResizeObserver=undefined;
-  const element=()=>({attributes:{},style:{},setAttribute(name,value){this.attributes[name]=value;},addEventListener(){},removeEventListener(){}});
+  const element=()=>({attributes:{},style:{},setAttribute(name,value){this.attributes[name]=value;},getBoundingClientRect(){return{x:0,y:0,width:44,height:60};},addEventListener(){},removeEventListener(){}});
   const nodes=new Map(['.world-scene','[data-world-player]','.world-player-car','.world-route-progress','.world-motion-status'].map(selector=>[selector,element()]));
   const traffic=[],people=[];
   const container={dataset:{},classList:{add(){},remove(){}},addEventListener(){},removeEventListener(){},getBoundingClientRect:()=>({width:1050,height:650}),querySelector:selector=>nodes.get(selector),querySelectorAll:selector=>selector==='[data-trip-traffic]'?traffic:people,

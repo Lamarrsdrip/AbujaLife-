@@ -51,7 +51,7 @@ export function createServer(options={}) {
     return {...publicBootstrap(),...base,nearby:base.nearby.map(person=>({...person,pose:poses.get(person.id)?.zone===store.zone(id)?poses.get(person.id).pose:null})),properties:store.propertiesFor?.(id)||properties,workSchedules:Object.fromEntries(Object.keys(store.publicJobs()).map(key=>[key,jobSchedule(key,base.profile,store.clock())])),homeVisit:visits.visit,homeVisitRequests:visits.requests,homeVisitors:visits.visitors,admin:admin.status(id)};
   };
   const sessionOrigin=options.publicWebUrl||'http://localhost';
-  const sessionRuntime=createSessionRuntime({store,admin,social,corsOrigins:options.corsOrigins||[sessionOrigin],publicWebUrl:sessionOrigin,secureCookies:false});
+  const sessionRuntime=createSessionRuntime({store,admin,social,directory,corsOrigins:options.corsOrigins||[sessionOrigin],publicWebUrl:sessionOrigin,secureCookies:false,env:options.env||process.env,fetchImpl:options.fetchImpl||fetch});
   const server=http.createServer(async(req,res)=>{
     if(await sessionRuntime.handle(req,res))return;
     try{

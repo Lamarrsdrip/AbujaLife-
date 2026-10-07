@@ -8,14 +8,17 @@ test('Abuja visit day uses WAT rather than server UTC date',()=>{
 });
 
 test('city visit counting deduplicates the same resident session inside a 30 minute window',async()=>{
-  const now=Date.parse('2026-10-05T13:00:00Z');
+  let now=Date.parse('2026-10-05T22:59:59.500Z');
   const session={_id:'hash:token-a',residentId:'resident-a'};
   const settings={_id:'city-traffic'};
   const collections={
     sessions:{
       async updateOne(filter,update){
-        if(session._id!==filter._id||session.residentId!==filter.residentId||session.cityVisitBucket===filter.cityVisitBucket.$ne)return{modifiedCount:0};
-        Object.assign(session,update.$set);return{modifiedCount:1};
+        if(session._id!==filter._id||session.residentId!==filter.residentId)return{modifiedCount:0};
+        const cutoff=filter.$or[0].lastCityVisitAt.$lte,bucket=filter.$or[1].cityVisitBucket.$ne;
+        if(session.lastCityVisitAt!==undefined&&session.lastCityVisitAt>cutoff)return{modifiedCount:0};
+        if(session.lastCityVisitAt===undefined&&session.cityVisitBucket===bucket)return{modifiedCount:0};
+        Object.assign(session,update.$set);delete session.cityVisitBucket;return{modifiedCount:1};
       }
     },
     admin_settings:{
@@ -37,9 +40,14 @@ test('city visit counting deduplicates the same resident session inside a 30 min
   const store={clock:()=>now,auth:{hashToken:token=>`hash:${token}`},collection:name=>collections[name],presence:{zone:async()=> 'district:garki-i'}};
   const stats=createCityStats(store,{globalCacheMs:0,zoneCacheMs:0});
   assert.equal(await stats.recordVisit('token-a','resident-a'),true);
+  assert.equal(Object.hasOwn(session,'cityVisitBucket'),false,'the rolling timestamp is the only active dedupe marker');
+  now+=1000; // Cross the fixed half-hour bucket boundary after only one second.
   assert.equal(await stats.recordVisit('token-a','resident-a'),false);
-  assert.equal(settings.visitsAllTime,1);
+  now+=30*60*1000-1000;
+  assert.equal(await stats.recordVisit('token-a','resident-a'),true);
+  assert.equal(settings.visitsAllTime,2);
   assert.equal(settings.visitDays['2026-10-05'],1);
+  assert.equal(settings.visitDays['2026-10-06'],1);
 });
 
 test('city stats keep online, current-zone, residents and visits as separate truthful metrics',async()=>{
@@ -67,4 +75,22 @@ test('city stats keep online, current-zone, residents and visits as separate tru
   await city.snapshot('resident-a');
   assert.equal(globalQueries,1,'global counts should be cached');
   assert.equal(zoneQueries,1,'zone counts should be cached');
+});
+
+test('online and here aggregate unique visible residents with unexpired leases',async()=>{
+  const now=Date.parse('2026-10-05T13:00:00Z'),pipelines=[];
+  const store={clock:()=>now,presence:{zone:async()=>'home:resident-a'},collection(name){
+    if(name==='presence_sessions')return{aggregate(pipeline){pipelines.push(pipeline);return{toArray:async()=>[{count:2}]};}};
+    if(name==='residents')return{countDocuments:async()=>3};
+    if(name==='admin_settings')return{findOne:async()=>({visitsAllTime:4,visitDays:{'2026-10-05':2}})};
+    throw Error(name);
+  }};
+  await createCityStats(store,{globalCacheMs:0,zoneCacheMs:0}).snapshot('resident-a');
+  const matches=pipelines.filter(pipeline=>pipeline[0].$match);
+  assert.equal(matches.length,3);
+  for(const pipeline of matches){
+    assert.deepEqual(pipeline[0].$match.presenceVisible,{$ne:false});
+    assert.deepEqual(pipeline[0].$match.expiresAt,{$gt:new Date(now)});
+  }
+  assert.equal(matches.filter(pipeline=>pipeline.some(stage=>stage.$group?._id==='$residentId')).length,2);
 });

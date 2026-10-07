@@ -49,13 +49,13 @@ export async function createProductionApplication({env=process.env,clock=Date.no
     const payments=new MongoPaymentStore({store,admin,fetchImpl,configKey:config.configKey,publicOrigin:config.publicWebUrl,log});await payments.init({ensureIndexes:false});
     const rewards=new MongoRewardStore({store,admin,publicWebUrl:config.publicWebUrl});
     const ads=new MongoAdStore({store,admin,payments,log});await ads.init({ensureIndexes:false});ads.attach();
-    const server=createProductionServer({...config,store,social,directory,presence,admin,payments,rewards,ads,database,log});
+    const server=createProductionServer({...config,store,social,directory,presence,admin,payments,rewards,ads,database,log,env,fetchImpl});
     const sessionRuntime=server.sessionRuntime;
     const liveActions=attachLiveActions(server,{store,admin,corsOrigins:config.corsOrigins,publicWebUrl:config.publicWebUrl,trustProxy:config.trustProxy,log});
     const x=attachXIntegration(server,{store,admin,database,env,publicWebUrl:config.publicWebUrl,apiPublicUrl:config.apiPublicUrl,corsOrigins:config.corsOrigins,fetchImpl});
     const jackpot=await attachJackpotRuntime(server,{store,admin,payments,database,env,publicWebUrl:config.publicWebUrl,apiPublicUrl:config.apiPublicUrl,corsOrigins:config.corsOrigins,log});
     const civic=await attachCivicRuntime(server,{store,admin,database,publicWebUrl:config.publicWebUrl,apiPublicUrl:config.apiPublicUrl,corsOrigins:config.corsOrigins,log});
-    return{server,store,social,directory,presence,admin,payments,rewards,ads,sessionRuntime,liveActions,x,jackpot,civic,database,config,close:async()=>{if(server.listening)await new Promise(resolve=>server.close(resolve));jackpot.close();await database.close();}};
+    return{server,store,social,directory,presence,admin,payments,rewards,ads,sessionRuntime,liveActions,x,jackpot,civic,database,config,close:async()=>{jackpot.close();server.closeRealtime();if(server.listening)await new Promise(resolve=>server.close(resolve));await database.close();}};
   }catch(error){await database.close();throw error;}
 }
 export async function startProduction(){

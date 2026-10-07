@@ -52,7 +52,16 @@ test('presence heartbeat is lightweight, accurate and keeps strict expiry',()=>{
   assert.match(app,/heartbeat:true/);
   assert.match(prod,/body\.heartbeat===true/);
   assert.match(stats,/GLOBAL_CACHE_MS = 1000/);
-  assert.match(presence,/leaseMs=45000/);
+ assert.match(presence,/leaseMs=45000/);
+});
+
+test('city counters publish presence changes over the existing realtime stream and refresh on a bounded fallback',()=>{
+  const app=read('app/app.js'),prod=read('src/server/production-http.mjs'),live=read('src/server/liveActions.mjs');
+  assert.match(prod,/scheduleCityStatsBroadcast\(\)/);
+  assert.match(prod,/writeEvent\(res,'city-stats'/);
+  assert.match(live,/store\.emitCityStats\?\.\(\)/);
+  assert.match(app,/type==='city-stats'/);
+  assert.match(app,/setInterval\(\(\)=>\{if\(state\.authenticated&&!document\.hidden\)void refreshNearbyPresence\(\)\.catch\(\(\)=>\{\}\);\},30000\);/);
 });
 
 test('driving route remains visibly guided',()=>{

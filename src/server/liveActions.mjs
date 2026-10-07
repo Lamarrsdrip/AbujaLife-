@@ -8,7 +8,6 @@ const LIVE_PATHS=new Set(['/api/presence/nearby','/api/presence/emote','/api/clu
 const SPRAY_AMOUNTS=new Set([1000,5000,10000,50000]);
 const EMOTES=new Set(['wave','cheer']);
 const originOf=value=>{try{return new URL(value).origin;}catch{return '';}};
-const validIp=value=>typeof value==='string'&&/^[\da-fA-F:.]{2,80}$/.test(value);
 function tokenFor(req){const bearer=/^Bearer ([A-Za-z0-9_-]{32,160})$/.exec(req.headers.authorization||'');if(bearer)return bearer[1];return(req.headers.cookie||'').split(';').map(v=>v.trim()).find(v=>v.startsWith(COOKIE))?.slice(COOKIE.length)||null;}
 function send(res,status,body,extra={}){if(res.writableEnded)return;res.writeHead(status,{...HEADERS,...extra});res.end(JSON.stringify(body));}
 async function body(req,max=32768){let size=0,parts=[];for await(const part of req){size+=part.length;if(size>max)throw Object.assign(new Error('Request body is too large'),{status:413,code:'body_too_large'});parts.push(part);}try{const value=JSON.parse(Buffer.concat(parts).toString()||'{}');if(!value||typeof value!=='object'||Array.isArray(value))throw new Error();return value;}catch{throw Object.assign(new Error('Send valid JSON'),{status:400,code:'invalid_json'});}}
@@ -18,7 +17,6 @@ export function createLiveActions({store,admin,corsOrigins=[],publicWebUrl='',tr
  const allowed=new Set([originOf(publicWebUrl),...corsOrigins.map(originOf)].filter(Boolean));
  const limits=new Map(),cityStats=createCityStats(store);
  function cors(req,res){const origin=req.headers.origin;if(!origin)return true;if(!allowed.has(originOf(origin))){send(res,403,{ok:false,error:'This origin is not permitted',code:'cross_origin'});return false;}res.setHeader('access-control-allow-origin',origin);res.setHeader('access-control-allow-credentials','true');res.setHeader('vary','Origin');return true;}
- function clientKey(req){if(trustProxy){const cf=String(req.headers['cf-connecting-ip']||'').trim();if(validIp(cf))return cf;const forwarded=String(req.headers['x-forwarded-for']||'').split(',').map(value=>value.trim()).find(validIp);if(forwarded)return forwarded;const real=String(req.headers['x-real-ip']||'').trim();if(validIp(real))return real;}return validIp(req.socket.remoteAddress)?req.socket.remoteAddress:'unknown';}
  function rateLimit(key,limit){const now=Date.now(),old=limits.get(key),bucket=old&&now-old.at<60000?old:{at:now,count:0};bucket.count++;limits.set(key,bucket);if(bucket.count>limit)throw Object.assign(new Error('Please wait before trying again'),{status:429,code:'rate_limited'});if(limits.size>100000)for(const[k,v]of limits)if(now-v.at>60000)limits.delete(k);}
  function requireJson(req){if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))throw Object.assign(new Error('Send JSON for this action'),{status:415,code:'invalid_content_type'});if(req.headers.cookie&&!req.headers.authorization){const origin=req.headers.origin;if(!origin||!allowed.has(originOf(origin)))throw Object.assign(new Error('This action must originate from AbujaLife'),{status:403,code:'cross_origin'});}}
  async function requireResident(req){const token=tokenFor(req),id=await store.session(token);if(!id)throw Object.assign(new Error('Sign in to your resident account'),{status:401,code:'authentication_required'});if(await admin.isSuspended(id))throw Object.assign(new Error('This account is suspended'),{status:403,code:'account_suspended'});return{id,token};}
@@ -47,8 +45,8 @@ export function createLiveActions({store,admin,corsOrigins=[],publicWebUrl='',tr
   try{
    if(!cors(req,res))return true;
    if(req.method==='OPTIONS'){res.writeHead(204,{'access-control-allow-origin':req.headers.origin||originOf(publicWebUrl),'access-control-allow-credentials':'true','access-control-allow-methods':'GET, POST, OPTIONS','access-control-allow-headers':'Content-Type, Authorization','access-control-max-age':'600','cache-control':'no-store'});res.end();return true;}
-   const{id}=await requireResident(req);rateLimit(`${clientKey(req)}:${pathname}`,pathname==='/api/presence/nearby'?600:180);
-   if(pathname==='/api/presence/nearby'&&req.method==='GET')return send(res,200,await nearby(id)),true;
+   const{id,token}=await requireResident(req);rateLimit(`resident:${id}:${pathname}`,pathname==='/api/presence/nearby'?600:180);
+   if(pathname==='/api/presence/nearby'&&req.method==='GET'){const recorded=await cityStats.recordVisit(token,id),snapshot=await nearby(id);if(recorded)store.emitCityStats?.();return send(res,200,snapshot),true;}
    if(pathname==='/api/presence/emote'&&req.method==='POST'){requireJson(req);return send(res,200,await emote(id,await body(req))),true;}
    if(pathname==='/api/club/spray'&&req.method==='POST'){requireJson(req);return send(res,200,await spray(id,await body(req))),true;}
    send(res,405,{ok:false,error:'Method is not permitted',code:'method_not_allowed'});return true;
@@ -59,5 +57,6 @@ export function createLiveActions({store,admin,corsOrigins=[],publicWebUrl='',tr
 
 export function attachLiveActions(server,options={}){
  const runtime=createLiveActions(options),listeners=server.listeners('request');if(!listeners.length)throw new Error('Cannot attach live actions before the HTTP request handler exists.');
+ if(options.store)options.store.cityStats=runtime.cityStats;
  server.removeAllListeners('request');server.on('request',(req,res)=>{let pathname='';try{pathname=new URL(req.url,'https://api.abujacity.life').pathname;}catch{}if(LIVE_PATHS.has(pathname)){void runtime.handle(req,res);return;}for(const listener of listeners)listener.call(server,req,res);});return runtime;
 }

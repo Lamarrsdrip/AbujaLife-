@@ -108,9 +108,27 @@ export function homeBenefits(profile, property) {
   }
   return result;
 }
+export function validInvestmentRecord(profile, property, investment = profile?.propertyInvestments?.[property?.id]) {
+  if (!property || property.tier <= 0 || !investment || typeof investment !== 'object' || Array.isArray(investment)) return false;
+  if (investment.propertyId !== property.id || profile?.home?.propertyId === property.id || !profile?.ownedProperties?.includes(property.id)) return false;
+  return Number.isSafeInteger(investment.boughtAt) && investment.boughtAt >= 0
+    && Number.isSafeInteger(investment.lastCollectedAt) && investment.lastCollectedAt >= investment.boughtAt
+    && investment.purchasePrice === property.buy
+    && investment.incomePerPeriod === property.investmentIncome
+    && investment.resaleValue === property.investmentResale;
+}
+
+export function normalizeInvestmentRecords(profile, propertyCatalog) {
+  const byId = new Map((Array.isArray(propertyCatalog) ? propertyCatalog : []).map(property => [property.id, property]));
+  return Object.fromEntries(Object.entries(profile?.propertyInvestments || {}).filter(([id, investment]) => {
+    const property = byId.get(id);
+    return property?.id === id && validInvestmentRecord(profile, property, investment);
+  }));
+}
+
 export function investmentView(profile, property, now = Date.now()) {
   const investment = profile?.propertyInvestments?.[property?.id];
-  if (!investment) return null;
+  if (!validInvestmentRecord(profile, property, investment)) return null;
   const incomePerPeriod = investment.incomePerPeriod;
   const periods = Math.max(0, Math.floor((now - investment.lastCollectedAt) / INVESTMENT_META.periodMs));
   const exactCollectable = BigInt(periods) * BigInt(incomePerPeriod), collectable = Number(exactCollectable);
@@ -120,6 +138,24 @@ export function investmentView(profile, property, now = Date.now()) {
     resaleValue: investment.resaleValue,
     nextIncomeAt: investment.lastCollectedAt + INVESTMENT_META.periodMs,
   };
+}
+
+export function investmentPortfolio(profile, propertyCatalog, now = Date.now()) {
+  const catalog = Array.isArray(propertyCatalog) ? propertyCatalog : [];
+  const records = Object.entries(profile?.propertyInvestments || {}).flatMap(([id]) => {
+    const property = catalog.find(item => item.id === id);
+    const investment = property && investmentView(profile, property, now);
+    return investment ? [{ property, investment }] : [];
+  });
+  const totals = records.reduce((value, row) => {
+    value.purchase += BigInt(row.investment.purchasePrice);
+    value.resale += BigInt(row.investment.resaleValue);
+    value.rent += BigInt(row.investment.collectableExact);
+    return value;
+  }, { purchase: 0n, resale: 0n, rent: 0n });
+  const exact = value => value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : null;
+  return { records, count: records.length, purchaseValue: exact(totals.purchase), resaleValue: exact(totals.resale), unclaimedRent: exact(totals.rent),
+    purchaseValueExact: totals.purchase.toString(), resaleValueExact: totals.resale.toString(), unclaimedRentExact: totals.rent.toString() };
 }
 
 export const LIFE_GOALS = [

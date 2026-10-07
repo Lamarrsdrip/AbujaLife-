@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { properties } from '../src/shared/catalogue.mjs';
 import { ABUJA_ATLAS } from '../src/shared/atlas.mjs';
-import { INVESTMENT_META } from '../src/shared/life.mjs';
+import { INVESTMENT_META, investmentPortfolio, normalizeInvestmentRecords } from '../src/shared/life.mjs';
 import { buildInterior } from '../app/world-interiors.js';
 
 const layouts=new Set(['garki-studio','lugbe-flat','gwarinpa-apartment','jabi-apartment','guzape-terrace','maitama-villa']);
@@ -47,4 +47,19 @@ test('all expanded properties resolve through the existing authored home rendere
     assert.ok(Array.isArray(scene.interactables)&&scene.interactables.length>0,p.id);
     assert.ok(scene.interactables.some(point=>point.action==='leave-home'),`${p.id} must remain playable`);
   }
+});
+
+test('investment portfolio counts only valid active non-primary investment records',()=>{
+  const [first,second,primary]=['lugbe-flat','gwarinpa-apartment','garki-studio'].map(id=>properties.find(item=>item.id===id));
+  const record=(property,boughtAt)=>({propertyId:property.id,boughtAt,lastCollectedAt:boughtAt,purchasePrice:property.buy,incomePerPeriod:property.investmentIncome,resaleValue:property.investmentResale});
+  const profile={home:{propertyId:primary.id},ownedProperties:[first.id,second.id,primary.id,'removed-property'],propertyInvestments:{
+    [first.id]:record(first,1000),[second.id]:record(second,2000),[primary.id]:record(primary,3000),
+    'removed-property':{...record(first,4000),propertyId:'removed-property'},'bad-record':null,
+  }};
+  const portfolio=investmentPortfolio(profile,properties,2000+INVESTMENT_META.periodMs*3);
+  assert.equal(portfolio.count,2);
+  assert.equal(portfolio.purchaseValue,first.buy+second.buy);
+  assert.equal(portfolio.resaleValue,first.investmentResale+second.investmentResale);
+  assert.equal(portfolio.unclaimedRent,(first.investmentIncome+second.investmentIncome)*3);
+  assert.deepEqual(Object.keys(normalizeInvestmentRecords(profile,properties)).sort(),[first.id,second.id].sort());
 });

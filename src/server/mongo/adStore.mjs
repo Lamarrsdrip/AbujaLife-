@@ -2,7 +2,7 @@ import {PLOT_IDS,BILLBOARD_IDS,ALL_SPACES,AD_TIERS,AD_ZONES,dynamicPlotParts,zon
 export {AD_TIERS,AD_ZONES,adZoneSpaces} from '../../shared/advertising.mjs';
 import crypto from 'node:crypto';
 import { GameError } from '../errors.mjs';
-import { verifyFlutterwaveOrder } from '../flutterwaveVerification.mjs';
+import { validFlutterwaveWebhook, verifyFlutterwaveOrder } from '../flutterwaveVerification.mjs';
 
 const AD_PRICE_NGN = 2000;
 const AD_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -242,6 +242,7 @@ export class MongoAdStore {
           fail(!lock || lock.txRef===current.txRef || Number(lock.expiresAt)<=started,'Reserved ad space is no longer available. Contact support with your payment reference.',409,'ad_space_unavailable_after_payment');
           await this.collection('ad_slots').updateOne({_id:slot},{$set:{...slotPosition(slot),kind:current.kind,residentId:current.residentId,txRef:current.txRef,state:'active',expiresAt:nowDate(ends)}},{session,upsert:true});
         }
+        await this.payments.claimProviderReceipt(current,transactionId,'ad',0,session);
         await this.collection('ad_receipts').insertOne({_id:receiptId,provider:'flutterwave',transactionId,txRef:current.txRef,residentId:current.residentId,amount:AD_PRICE_NGN,createdAt:started},{session});
         await this.collection('ad_orders').updateOne({_id:current.txRef,status:{$ne:'active'}},{$set:{status:'active',transactionId,startAt:started,endAt:ends}},{session});
         await this.collection('ad_slots').updateMany({txRef:current.txRef},{$set:{state:'active',expiresAt:nowDate(ends)}},{session});
@@ -253,12 +254,11 @@ export class MongoAdStore {
     return {ok:true,replayed,ad:orderView(activated)};
   }
   async verify(id,{transactionId,txRef}={}) { fail(!await this.admin.isSuspended(id),'This account is suspended',403,'account_suspended'); await this.store.profile(id); return this.activateVerified(await this.verifiedOrder(transactionId,txRef,id),id); }
-  async handleWebhook(rawBody,signature) {
+  async handleWebhook(rawBody,signature,legacyHash) {
     fail(Buffer.isBuffer(rawBody)&&rawBody.length<=65536,'Invalid webhook body'); let body; try{body=JSON.parse(rawBody.toString('utf8'));}catch{throw new GameError('Invalid webhook JSON');}
     if(body.event!=='charge.completed')return{ok:true,ignored:true}; const txRef=clean(body.data?.tx_ref,100),order=await this.collection('ad_orders').findOne({txRef}); if(!order)return{ok:true,ignored:true};
-    fail(typeof signature==='string'&&/^[A-Za-z0-9+/]{43}=$/.test(signature),'Invalid Flutterwave webhook signature',401,'invalid_webhook_signature');
-    const config=await this.payments.config(order.mode);fail(config?.secrets.webhookSecret,'Advert webhook signing is not configured',503,'payments_unavailable'); const supplied=Buffer.from(signature,'base64'),expected=crypto.createHmac('sha256',config.secrets.webhookSecret).update(rawBody).digest();
-    fail(supplied.length===expected.length&&crypto.timingSafeEqual(supplied,expected),'Invalid Flutterwave webhook signature',401,'invalid_webhook_signature');
+    const config=await this.payments.config(order.mode);
+    fail(validFlutterwaveWebhook(rawBody,signature,config?.secrets.webhookSecret,legacyHash),'Invalid Flutterwave webhook signature',401,'invalid_webhook_signature');
     return this.activateVerified(await this.verifiedOrder(body.data?.id,txRef),'flutterwave-webhook');
   }
   attach() {
@@ -269,7 +269,7 @@ export class MongoAdStore {
     this.payments.checkout=async(id,body={})=>body?.purpose==='ad'?this.checkout(id,body):base.checkout(id,body);
     this.payments.verify=async(id,body={})=>(body?.purpose==='ad'||String(body?.txRef||'').startsWith('abjl_ad_'))?this.verify(id,body):base.verify(id,body);
     this.payments.status=async(id,txRef)=>String(txRef||'').startsWith('abjl_ad_')?this.status(id,txRef):base.status(id,txRef);
-    this.payments.handleWebhook=async(raw,signature)=>{const normal=await base.handleWebhook(raw,signature);return normal?.ignored?this.handleWebhook(raw,signature):normal;};
+    this.payments.handleWebhook=async(raw,signature,legacyHash)=>{const normal=await base.handleWebhook(raw,signature,legacyHash);return normal?.ignored?this.handleWebhook(raw,signature,legacyHash):normal;};
     return this.payments;
   }
   async activateVerifiedFromReference(txRef,actor='provider-reconciliation') { return this.activateVerified(await this.verifiedOrder(null,txRef),actor); }

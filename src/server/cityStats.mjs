@@ -34,6 +34,8 @@ export function createCityStats(store, { globalCacheMs = GLOBAL_CACHE_MS, zoneCa
     const now = store.clock();
     const bucket = Math.floor(now / VISIT_WINDOW_MS);
     const sessionId = store.auth.hashToken(token);
+    const record = async databaseSession => {
+    const options=databaseSession?{session:databaseSession}:{};
     const session = await store.collection('sessions').updateOne(
       { _id: sessionId, residentId, $or: [
         { lastCityVisitAt: { $lte: now - VISIT_WINDOW_MS } },
@@ -42,6 +44,7 @@ export function createCityStats(store, { globalCacheMs = GLOBAL_CACHE_MS, zoneCa
         { lastCityVisitAt: { $exists: false }, cityVisitBucket: { $ne: bucket } },
       ] },
       { $set: { lastCityVisitAt: now }, $unset: { cityVisitBucket: '' } },
+      options,
     );
     if (session.modifiedCount !== 1) return false;
 
@@ -53,8 +56,14 @@ export function createCityStats(store, { globalCacheMs = GLOBAL_CACHE_MS, zoneCa
         $setOnInsert: { trackingSince: now },
         $set: { updatedAt: now },
       },
-      { upsert: true },
+      { upsert: true, ...options },
     );
+    return true;
+    };
+    // The dedupe marker and counters commit together. A crash between separate
+    // writes must not consume a visit without incrementing today's total.
+    const recorded=store.transaction?await store.transaction(record):await record(null);
+    if(!recorded)return false;
     globalCache = null;
     return true;
   }
@@ -125,12 +134,22 @@ export function createCityStats(store, { globalCacheMs = GLOBAL_CACHE_MS, zoneCa
     return { ...global, hereNow: local };
   }
 
+  async function zoneCounts(zones) {
+    const keys=[...new Set(zones)];if(!keys.length)return new Map();
+    const rows=await store.collection('presence_sessions').aggregate([
+      {$match:{zone:{$in:keys},presenceVisible:{$ne:false},expiresAt:{$gt:new Date(store.clock())}}},
+      {$group:{_id:{zone:'$zone',residentId:'$residentId'}}},
+      {$group:{_id:'$_id.zone',count:{$sum:1}}},
+    ]).toArray();
+    return new Map(rows.map(row=>[row._id,Number(row.count||0)]));
+  }
+
   function invalidate() {
     globalCache = null;
     zoneCache.clear();
   }
 
-  return { recordVisit, globalSnapshot, snapshot, invalidate };
+  return { recordVisit, globalSnapshot, snapshot, zoneCounts, invalidate };
 }
 
 export const CITY_STATS_META = Object.freeze({ visitWindowMs: VISIT_WINDOW_MS, hotPlaceLimit: HOT_PLACE_LIMIT });

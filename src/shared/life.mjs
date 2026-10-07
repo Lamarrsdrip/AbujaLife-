@@ -249,6 +249,24 @@ export const VENUE_ACTIONS = [
   { id:'inec-info', venueId:'inec-hq', name:'Read the AbujaLife election information', cost:0, duration:14, animation:'watch', effects:{fun:8,mood:4} },
   { id:'efcc-briefing', venueId:'efcc-hq', name:'Visit the fictional integrity briefing', cost:0, duration:15, animation:'watch', effects:{fun:8,mood:4} },
   { id:'court-gallery', venueId:'federal-high-court-hub', name:'Visit the fictional hearing gallery', cost:0, duration:16, animation:'watch', effects:{fun:8,mood:4} },
+  { id:'central-park-walk',venueId:'central-park-abuja',name:'Walk the garden paths',cost:0,duration:16,animation:'walk',effects:{stress:-18,fun:14,mood:6} },
+  { id:'central-park-play',venueId:'central-park-abuja',name:'Spend time at the playground',cost:600,duration:18,animation:'play',effects:{fun:28,social:12,energy:-8} },
+  { id:'central-park-meet',venueId:'central-park-abuja',name:'Meet friends on the lawn',cost:0,duration:16,animation:'social',effects:{social:26,fun:12} },
+  ...['sahad-cbd','ceddi-plaza'].flatMap(venueId=>[
+    {id:`${venueId}-browse`,venueId,name:'Browse the retail court',cost:0,duration:16,animation:'shop',effects:{fun:14,social:8}},
+    {id:`${venueId}-food`,venueId,name:'Meet over a meal',cost:2000,duration:16,animation:'eat',effects:{hunger:32,social:16,fun:10}},
+  ]),
+  ...['sahad-area-11','grand-square-abuja'].flatMap(venueId=>[
+    {id:`${venueId}-browse`,venueId,name:'Browse daily essentials',cost:0,duration:15,animation:'shop',effects:{fun:10,social:8}},
+    {id:`${venueId}-meal`,venueId,name:'Take a meal break',cost:1200,duration:16,animation:'eat',effects:{hunger:34,fun:8}},
+  ]),
+  {id:'sahad-area-11-arcade',venueId:'sahad-area-11',name:'Play in the arcade',cost:900,duration:17,animation:'play',effects:{fun:28,social:12,stress:-10}},
+  {id:'ceddi-genesis-screening',venueId:'ceddi-genesis-cinema',name:'Watch the game screening',cost:1800,duration:20,animation:'watch',effects:{fun:32,social:10,stress:-16}},
+  {id:'ceddi-genesis-meet',venueId:'ceddi-genesis-cinema',name:'Meet friends in the foyer',cost:0,duration:16,animation:'social',effects:{social:22,fun:10}},
+  ...['thought-pyramid-abuja','nike-gallery-abuja'].flatMap(venueId=>[
+    {id:`${venueId}-exhibition`,venueId,name:'Explore the art exhibition',cost:0,duration:18,animation:'watch',effects:{fun:24,stress:-18,mood:10}},
+    {id:`${venueId}-workshop`,venueId,name:'Join a creative workshop',cost:800,duration:20,animation:'play',effects:{fun:26,social:20,mood:8}},
+  ]),
 ];
 
 const venue = (id, name, category, description) => ({
@@ -303,6 +321,14 @@ export const VENUES = [
   realVenue('inec-hq','INEC Headquarters','inec','Civic & elections','The AbujaLife election registration destination used by the fictional City Story system.',['maitama']),
   realVenue('efcc-hq','EFCC Headquarters','efcc','Civic storyline','A fictional integrity-story destination used only by AbujaLife civic gameplay.',['jabi']),
   realVenue('federal-high-court-hub','Federal High Court Abuja','court','Civic storyline','A fictional hearing destination used only by AbujaLife civic gameplay.',['central-area']),
+  realVenue('central-park-abuja','Central Park Abuja','park','Outdoors & play','An authored recreation garden with walks, playground time and public meetups.',['central-area']),
+  realVenue('sahad-cbd','Sahad Stores CBD','mall','Shopping & social','An authored retail court, meal stop and shared social space.',['central-area']),
+  realVenue('sahad-area-11','Sahad Stores Area 11','grocery','Shopping & arcade','Browse essentials, eat and play in the game arcade.',['garki-i']),
+  realVenue('grand-square-abuja','Grand Square Abuja','grocery','Shopping & food','An authored supermarket with daily essentials and a meal break.',['central-area']),
+  realVenue('ceddi-plaza','Ceddi Plaza','mall','Shopping & social','An authored city-centre shopping court and food stop.',['central-area']),
+  realVenue('ceddi-genesis-cinema','Genesis Cinema · Ceddi Plaza','cinema','Cinema & friends','An authored game screening room and social foyer.',['central-area']),
+  realVenue('thought-pyramid-abuja','Thought Pyramid Art Centre','gallery','Art & culture','Original AbujaLife art displays and a creative workshop inspired by the Wuse art destination.',['wuse-ii-a08']),
+  realVenue('nike-gallery-abuja','Nike Art Gallery Abuja','gallery','Art & culture','An original game exhibition inspired by Nigerian art and textile culture.',['lugbe']),
 ];
 
 export const NIGHTCLUB_IDS = VENUES.filter(place => place.kind === 'club').map(place => place.id);

@@ -129,7 +129,7 @@ export function createSessionRuntime({store,admin,social=null,directory=null,cor
   try{
    if(!cors(req,res))return true;
    if(chat){await chatPro.handle(req,res,url);return true;}
-   if(entry){const{id}=await residentFromRequest(req);send(res,200,await state(id));return true;}
+   if(entry){const{id,token}=await residentFromRequest(req),snapshot=await state(id);if(id&&store.cityStats&&await store.cityStats.recordVisit(token,id))store.emitCityStats?.();send(res,200,snapshot);return true;}
    requireJson(req);const payload=await readBody(req);
    if(url.pathname==='/api/auth/logout'){
     const{token}=await residentFromRequest(req);if(token)await store.logout(token);

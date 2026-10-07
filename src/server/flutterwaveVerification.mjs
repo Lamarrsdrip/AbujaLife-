@@ -1,4 +1,18 @@
 import { GameError } from './errors.mjs';
+import crypto from 'node:crypto';
+
+// v3 sends the configured secret in verif-hash; v4 signs the raw body.
+// A supplied modern signature must validate; never downgrade a bad signature.
+export function validFlutterwaveWebhook(rawBody,signature,secret,legacyHash){
+ if(!Buffer.isBuffer(rawBody)||rawBody.length>65536||typeof secret!=='string'||secret.length<16)return false;
+ if(signature!==undefined){
+  if(typeof signature!=='string'||!/^[A-Za-z0-9+/]{43}=$/.test(signature))return false;
+  const expected=crypto.createHmac('sha256',secret).update(rawBody).digest(),supplied=Buffer.from(signature,'base64');
+  return supplied.length===expected.length&&crypto.timingSafeEqual(supplied,expected);
+ }
+ if(typeof legacyHash!=='string'||legacyHash.length>500)return false;
+ return crypto.timingSafeEqual(crypto.createHash('sha256').update(secret).digest(),crypto.createHash('sha256').update(legacyHash).digest());
+}
 
 export const isTransactionId = value => /^\d{1,24}$/.test(String(value ?? ''));
 export const isPaymentReference = value => typeof value === 'string' && /^abjl_[A-Za-z0-9_-]{1,90}$/.test(value);

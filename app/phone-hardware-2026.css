@@ -71,3 +71,5 @@ body.phone-is-open{position:fixed;top:var(--ph-page-scroll,0px);left:0;right:0;w
 #phone-root.phone-root.phone-keyboard-open .ph-thread-scroll{scroll-padding-bottom:92px}
 #phone-root.phone-root .ph-composer{position:relative;z-index:6;flex-shrink:0}
 @media(min-width:900px){#phone-root.phone-root .ph-backdrop{background:radial-gradient(circle at 50% 45%,rgba(13,29,24,.05),rgba(7,17,13,.34))}}
+
+.ph-bank-card>strong,.ph-wallet-summary>strong,.ph-money-review-amount>strong,.ph-review-card>strong,.ph-wallet-receipt h2,.ph-wallet-widget>strong{white-space:nowrap;word-break:normal;overflow-wrap:normal;font-variant-numeric:tabular-nums;max-width:100%;min-width:0}

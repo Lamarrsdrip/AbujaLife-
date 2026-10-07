@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { GameError } from './errors.mjs';
-import { verifyFlutterwaveOrder } from './flutterwaveVerification.mjs';
+import { validFlutterwaveWebhook, verifyFlutterwaveOrder } from './flutterwaveVerification.mjs';
 
 export const JACKPOT_ENTRY_AMOUNT = 2000;
 export const JACKPOT_CAPACITY = 50;
@@ -210,7 +210,7 @@ export class JackpotIntegration {
     try {
       const profile = await this.store.profile(residentId), data = await this.payments.provider('/v3/payments', config.secrets.secretKey, { method: 'POST', body: JSON.stringify({ tx_ref: txRef, amount, currency: 'NGN', redirect_url: `${config.publicOrigin}/?jackpot=return&jackpot_payment_ref=${encodeURIComponent(txRef)}`, customer: { email, name: profile.displayName }, customizations: { title: 'AbujaLife Community Jackpot', description: `Add ₦${amount.toLocaleString('en-NG')} to Jackpot Balance` }, meta: { abujalife_reference: txRef, abujalife_product: 'community_jackpot' } }) });
       fail(trustedCheckout(data.link), 'Flutterwave returned an untrusted checkout link', 502, 'invalid_checkout');
-      await this.collection('jackpot_deposit_orders').updateOne({ _id: txRef, status: 'creating' }, { $set: { status: 'pending', checkoutUrl: data.link } }); row = await this.collection('jackpot_deposit_orders').findOne({ _id: txRef });
+      await this.collection('jackpot_deposit_orders').updateOne({ _id: txRef }, [{ $set: { checkoutUrl: data.link, status: { $cond: [{ $eq: ['$status', 'creating'] }, 'pending', '$status'] } } }]); row = await this.collection('jackpot_deposit_orders').findOne({ _id: txRef });
       return { ok: true, checkout: orderView(row), replayed: false };
     } catch (error) { await this.collection('jackpot_deposit_orders').updateOne({ _id: txRef, status: 'creating' }, { $set: { status: 'checkout_failed' } }); throw error; }
   }
@@ -230,6 +230,7 @@ export class JackpotIntegration {
         if (current.status === 'credited') { fail(current.transactionId===transactionId,'This deposit was credited by another transaction',409,'payment_duplicate'); return { replayed: true, payment: orderView(current) }; }
         const receiptId = `flutterwave:${transactionId}`, prior = await this.collection('jackpot_deposit_receipts').findOne({ _id: receiptId }, { session }); fail(!prior, 'This provider transaction has already been credited', 409, 'payment_duplicate');
         await this.moveBalance(current.residentId, { operationKey: `deposit:${transactionId}`, type: 'deposit', deltaAvailable: current.amount, metadata: { provider: 'flutterwave', transactionId, txRef: current.txRef } }, session);
+        await this.payments.claimProviderReceipt(current,transactionId,'jackpot',0,session);
         await this.collection('jackpot_deposit_receipts').insertOne({ _id: receiptId, provider: 'flutterwave', transactionId, txRef: current.txRef, residentId: current.residentId, amount: current.amount, createdAt: this.store.clock() }, { session });
         await this.collection('jackpot_deposit_orders').updateOne({ _id: current._id, status: { $ne: 'credited' } }, { $set: { status: 'credited', transactionId, creditedAt: this.store.clock() } }, { session });
         await this.admin.record(actor, 'credit-jackpot-deposit', current.residentId, { txRef: current.txRef, transactionId, amount: current.amount, mode: current.mode }, { session });
@@ -285,12 +286,13 @@ export class JackpotIntegration {
     });
   }
   async handleWebhook(req, res) {
-    const raw = await rawBody(req), signature = req.headers['flutterwave-signature'];
-    const base = await this.payments.handleWebhook(raw, signature); let body = {}; try { body = JSON.parse(raw.toString('utf8')); } catch { return json(res, 200, base); }
+    this.rateLimit(req.socket.remoteAddress,'webhook',120);
+    const raw = await rawBody(req), signature = req.headers['flutterwave-signature'], legacyHash=req.headers['verif-hash'];
+    const base = await this.payments.handleWebhook(raw, signature, legacyHash); let body = {}; try { body = JSON.parse(raw.toString('utf8')); } catch { return json(res, 200, base); }
     const txRef = clean(body.data?.tx_ref, 100); if (body.event !== 'charge.completed' || !txRef.startsWith('abjl_jp_')) return json(res, 200, base);
     const order = await this.collection('jackpot_deposit_orders').findOne({ txRef }); if (!order) return json(res, 200, { ok: true, ignored: true });
-    const config=await this.payments.config(order.mode),expected=crypto.createHmac('sha256',config?.secrets.webhookSecret || '').update(raw).digest(),supplied=Buffer.from(signature || '', 'base64');
-    fail(config?.secrets.webhookSecret && supplied.length===expected.length && crypto.timingSafeEqual(supplied,expected),'Webhook signing mode does not match the deposit',401,'invalid_webhook_signature');
+    const config=await this.payments.config(order.mode);
+    fail(validFlutterwaveWebhook(raw,signature,config?.secrets.webhookSecret,legacyHash),'Webhook signing mode does not match the deposit',401,'invalid_webhook_signature');
     const result = await this.creditDeposit(await this.verifiedDeposit(body.data?.id, txRef), 'flutterwave-webhook'); return json(res, 200, { ok: true, jackpot: true, ...result });
   }
   async handle(req, res) {

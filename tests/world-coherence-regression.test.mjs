@@ -15,7 +15,7 @@ test('playable Abuja landmarks use spaced world blocks while the geographic map 
   for(let i=0;i<points.length;i++)for(let j=i+1;j<points.length;j++){
     assert.ok(Math.hypot(points[i].x-points[j].x,points[i].y-points[j].y)>500,`${ids[i]} and ${ids[j]} must not be jam-packed together`);
   }
-  assert.equal(scene.width,8500);
+  assert.ok(scene.width>8500,'new destinations extend the established free-roam quarter');
 });
 
 test('landmark interiors route by real activity instead of falling through to the restaurant room',()=>{

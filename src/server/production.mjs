@@ -1,3 +1,4 @@
+import {installActivityDiscovery} from './activityDiscovery.mjs';
 import { pathToFileURL } from 'node:url';
 import '../shared/abuja-landmarks-2026.mjs';
 import { connectMongo } from './mongo/database.mjs';
@@ -55,6 +56,7 @@ export async function createProductionApplication({env=process.env,clock=Date.no
     const x=attachXIntegration(server,{store,admin,database,env,publicWebUrl:config.publicWebUrl,apiPublicUrl:config.apiPublicUrl,corsOrigins:config.corsOrigins,fetchImpl});
     const jackpot=await attachJackpotRuntime(server,{store,admin,payments,database,env,publicWebUrl:config.publicWebUrl,apiPublicUrl:config.apiPublicUrl,corsOrigins:config.corsOrigins,log});
     const civic=await attachCivicRuntime(server,{store,admin,database,publicWebUrl:config.publicWebUrl,apiPublicUrl:config.apiPublicUrl,corsOrigins:config.corsOrigins,log});
+    installActivityDiscovery(store,{log});
     payments.startReconciliation();
     return{server,store,social,directory,presence,admin,payments,rewards,ads,sessionRuntime,liveActions,x,jackpot,civic,database,config,close:async()=>{await payments.stopReconciliation();jackpot.close();server.closeRealtime();if(server.listening)await new Promise(resolve=>server.close(resolve));await database.close();}};
   }catch(error){await database.close();throw error;}

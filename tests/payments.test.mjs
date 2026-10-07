@@ -7,6 +7,17 @@ import path from 'node:path';
 import { GameStore } from '../src/server/gameStore.mjs';
 import { AdminStore } from '../src/server/adminStore.mjs';
 import { PaymentStore } from '../src/server/paymentStore.mjs';
+import {validFlutterwaveWebhook} from '../src/server/flutterwaveVerification.mjs';
+
+test('v3 secret hash and v4 raw body signature validate explicitly without bad-signature fallback',()=>{
+ const raw=Buffer.from('{"event":"charge.completed"}'),secret='test_webhook_secret_at_least16',signature=crypto.createHmac('sha256',secret).update(raw).digest('base64');
+ assert.equal(validFlutterwaveWebhook(raw,signature,secret),true);
+ assert.equal(validFlutterwaveWebhook(raw,undefined,secret,secret),true);
+ assert.equal(validFlutterwaveWebhook(raw,undefined,secret,'wrong'),false);
+ assert.equal(validFlutterwaveWebhook(raw,'wrong',secret,secret),false);
+ assert.equal(validFlutterwaveWebhook(raw,signature,secret+'wrong'),false);
+ assert.equal(validFlutterwaveWebhook(Buffer.concat([raw,Buffer.from(' ')]),signature,secret),false);
+});
 
 // Explicit provider fixture: these tests do not contact Flutterwave or claim a
 // live merchant configuration. The production verifier still parses the exact

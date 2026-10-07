@@ -46,7 +46,7 @@ export function createLiveActions({store,admin,corsOrigins=[],publicWebUrl='',tr
    if(!cors(req,res))return true;
    if(req.method==='OPTIONS'){res.writeHead(204,{'access-control-allow-origin':req.headers.origin||originOf(publicWebUrl),'access-control-allow-credentials':'true','access-control-allow-methods':'GET, POST, OPTIONS','access-control-allow-headers':'Content-Type, Authorization','access-control-max-age':'600','cache-control':'no-store'});res.end();return true;}
    const{id,token}=await requireResident(req);rateLimit(`resident:${id}:${pathname}`,pathname==='/api/presence/nearby'?600:180);
-   if(pathname==='/api/presence/nearby'&&req.method==='GET'){const recorded=await cityStats.recordVisit(token,id),snapshot=await nearby(id);if(recorded)store.emitCityStats?.();return send(res,200,snapshot),true;}
+   if(pathname==='/api/presence/nearby'&&req.method==='GET')return send(res,200,await nearby(id)),true;
    if(pathname==='/api/presence/emote'&&req.method==='POST'){requireJson(req);return send(res,200,await emote(id,await body(req))),true;}
    if(pathname==='/api/club/spray'&&req.method==='POST'){requireJson(req);return send(res,200,await spray(id,await body(req))),true;}
    send(res,405,{ok:false,error:'Method is not permitted',code:'method_not_allowed'});return true;

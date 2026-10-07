@@ -32,6 +32,7 @@ const LANDMARK_TEMPLATE=Object.freeze({
   inec:'estate-office',
   efcc:'estate-office',
   court:'estate-office',
+  grocery:'grocery',cinema:'cinema',gallery:'estate-office',
 });
 
 const PURPOSE=Object.freeze({
@@ -80,6 +81,7 @@ const LANDMARK_ZONES=Object.freeze({
   inec:['registration-desk','voter-information','queue-zone','city-story-desk'],
   efcc:['integrity-gallery','fictional-briefing-room','public-information','interview-lobby'],
   court:['bench','public-gallery','counsel-area','registry-desk'],
+  grocery:['retail-aisles','meal-counter','social-corner'],cinema:['screen','auditorium','foyer'],gallery:['exhibition','textile-displays','creative-workshop'],
 });
 
 function replaceAllSafe(value,from,to){return from&&to?String(value).split(from).join(to):value;}

@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { GameError } from '../errors.mjs';
-import { isProviderPath, isTransactionId, verifyFlutterwaveOrder } from '../flutterwaveVerification.mjs';
+import { isProviderPath, isTransactionId, validFlutterwaveWebhook, verifyFlutterwaveOrder } from '../flutterwaveVerification.mjs';
 
 const PROVIDER_ORIGIN = 'https://api.flutterwave.com';
 const fail = (condition, message, status = 400, code = 'invalid_payment') => { if (!condition) throw new GameError(message, status, code); };
@@ -30,7 +30,7 @@ export const MONGO_PAYMENT_VALIDATORS = Object.freeze({
   payment_config: schema(['_id', 'mode', 'enabled', 'creditRate', 'publicOrigin', 'secrets', 'updatedAt'], { mode: { enum: ['test', 'live'] }, enabled: { bsonType: 'bool' }, creditRate: positive, publicOrigin: string, secrets: string, updatedAt: whole }),
   payment_preferences: schema(['_id', 'value'], { value: { enum: ['test', 'live'] } }),
   payment_orders: schema(['_id', 'txRef', 'residentId', 'operationKey', 'fingerprint', 'amount', 'credits', 'mode', 'status', 'encryptedSecret', 'createdAt'], { txRef: string, residentId: string, operationKey: string, fingerprint: string, amount: positive, credits: positive, mode: { enum: ['test', 'live'] }, status: { enum: ['creating', 'pending', 'checkout_failed', 'credited'] }, checkoutUrl: { bsonType: ['string', 'null'] }, transactionId: string, encryptedSecret: string, createdAt: whole, creditedAt: { anyOf: [whole, { bsonType: 'null' }] } }),
-  payment_receipts: schema(['_id', 'provider', 'transactionId', 'txRef', 'residentId', 'amount', 'credits', 'createdAt'], { provider: { enum: ['flutterwave'] }, transactionId: string, txRef: string, residentId: string, amount: positive, credits: positive, createdAt: whole })
+  payment_receipts: schema(['_id', 'provider', 'transactionId', 'txRef', 'residentId', 'amount', 'credits', 'createdAt'], { provider: { enum: ['flutterwave'] }, transactionId: string, txRef: string, residentId: string, amount: positive, credits: whole, purpose:{enum:['game-credits','ad','jackpot']}, createdAt: whole })
 });
 export async function ensureMongoPaymentSchema(db) {
   for (const [name, validator] of Object.entries(MONGO_PAYMENT_VALIDATORS)) {
@@ -82,7 +82,7 @@ export class MongoPaymentStore {
       let config; try { config = await this.config(mode); } catch { modes[mode] = { configured: false, readiness: 'Server encryption key does not match stored credentials' }; continue; }
       modes[mode] = { configured: Boolean(config?.secrets.secretKey), enabled: Boolean(config?.enabled), creditRate: config?.creditRate || 1, publicOrigin: config?.publicOrigin || this.origin, secretKey: mask(config?.secrets.secretKey), webhookSecret: mask(config?.secrets.webhookSecret), updatedAt: config?.updatedAt || null };
     }
-    return { ok: true, provider: 'Flutterwave', activeMode: await this.activeMode(), encryptionReady: Boolean(this.key), modes, webhook: { header: 'flutterwave-signature', algorithm: 'HMAC-SHA256', encoding: 'base64', verification: 'Every webhook payment is verified through the Flutterwave transaction API before credit' }, liveVerified: false };
+    return { ok: true, provider: 'Flutterwave', activeMode: await this.activeMode(), encryptionReady: Boolean(this.key), modes, webhook: { header: 'flutterwave-signature', legacyHeader: 'verif-hash (v3)', algorithm: 'HMAC-SHA256', encoding: 'base64', verification: 'Every webhook payment is verified through the Flutterwave transaction API before credit' }, liveVerified: false };
   }
   async configure(id, body) {
     await this.admin.requirePermission(id, 'payments'); fail(body && typeof body === 'object' && !Array.isArray(body), 'Use payment configuration');
@@ -175,7 +175,7 @@ export class MongoPaymentStore {
         fail(current.status !== 'credited', 'This checkout was already credited using another transaction', 409, 'payment_duplicate');
         const prior = await this.collection('payment_receipts').findOne({ _id: 'flutterwave:' + transactionId }, { session }); fail(!prior, 'This provider transaction has already been credited', 409, 'payment_duplicate');
         fail(Number.isSafeInteger(profile.wallet) && profile.wallet >= 0 && Number.isSafeInteger(current.credits) && current.credits > 0 && BigInt(profile.wallet) + BigInt(current.credits) <= BigInt(Number.MAX_SAFE_INTEGER), 'This credit would exceed the safe numeric wallet range', 409, 'wallet_limit');
-        await this.collection('payment_receipts').insertOne({ _id: 'flutterwave:' + transactionId, provider: 'flutterwave', transactionId, txRef: current.txRef, residentId: profile.id, amount: current.amount, credits: current.credits, createdAt: timestamp }, { session });
+        await this.claimProviderReceipt(current,transactionId,'game-credits',current.credits,session);
         profile.wallet += current.credits;
         await this.collection('payment_orders').updateOne({ _id: current.txRef, status: { $ne: 'credited' } }, { $set: { status: 'credited', transactionId, creditedAt: timestamp } }, { session });
         await this.admin.record(actor, 'credit-verified-payment', profile.id, { txRef: current.txRef, transactionId, mode: current.mode, amount: current.amount, credits: current.credits }, { session });
@@ -190,6 +190,16 @@ export class MongoPaymentStore {
   }
   async verify(id, { transactionId, txRef } = {}) {
     fail(!await this.admin.isSuspended(id), 'This account is suspended', 403, 'account_suspended'); await this.store.profile(id); return this.creditVerified(await this.verifiedOrder(transactionId, txRef, id), id);
+  }
+  async claimProviderReceipt(order,transactionId,purpose,credits,session){
+    // One existing financial receipt index owns provider identity across all
+    // products. Product receipts still describe their own slot/account result.
+    // Check legacy receipts too: they predate this cross-product constraint.
+    for(const name of ['ad_receipts','jackpot_deposit_receipts']){
+      const prior=await this.collection(name).findOne({provider:'flutterwave',transactionId},{session});
+      fail(!prior||prior.txRef===order.txRef,'This provider transaction already fulfilled another product',409,'payment_duplicate');
+    }
+    await this.collection('payment_receipts').insertOne({_id:'flutterwave:'+transactionId,provider:'flutterwave',transactionId,txRef:order.txRef,residentId:order.residentId,amount:order.amount,credits,purpose,createdAt:this.clock()},{session});
   }
   async recordVerification(collection, txRef, facts) {
     const checkedAt = this.clock();
@@ -232,12 +242,12 @@ export class MongoPaymentStore {
     this.reconciliationTimer = setInterval(check, 60000); this.reconciliationTimer.unref?.(); void check();
   }
   async stopReconciliation() { this.reconciliationStopping=true;clearInterval(this.reconciliationTimer); this.reconciliationTimer = null; await this.reconciliationRun; }
-  async handleWebhook(rawBody, signature) {
-    fail(Buffer.isBuffer(rawBody) && rawBody.length <= 65536, 'Invalid webhook body'); fail(typeof signature === 'string' && /^[A-Za-z0-9+/]{43}=$/.test(signature), 'Invalid Flutterwave webhook signature', 401, 'invalid_webhook_signature');
-    const supplied = Buffer.from(signature, 'base64'), matched = [];
+  async handleWebhook(rawBody, signature, legacyHash) {
+    fail(Buffer.isBuffer(rawBody) && rawBody.length <= 65536, 'Invalid webhook body');
+    const matched = [];
     for (const mode of ['test', 'live']) {
       let config; try { config = await this.config(mode); } catch { continue; }
-      if (config?.secrets.webhookSecret) { const expected = crypto.createHmac('sha256', config.secrets.webhookSecret).update(rawBody).digest(); if (supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected)) matched.push(mode); }
+      if(validFlutterwaveWebhook(rawBody,signature,config?.secrets.webhookSecret,legacyHash))matched.push(mode);
     }
     fail(matched.length, 'Invalid Flutterwave webhook signature', 401, 'invalid_webhook_signature'); let body;
     try { body = JSON.parse(rawBody.toString('utf8')); } catch { throw new GameError('Invalid webhook JSON'); }

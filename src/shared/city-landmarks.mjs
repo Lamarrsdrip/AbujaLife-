@@ -19,7 +19,17 @@ export const CITY_LANDMARKS = Object.freeze([
   {id:'banex',name:'Banex Tech Market',short:'Banex',lat:9.0790,lon:7.4590,districtId:'wuse-ii-a08',builder:'banex',priority:87,interior:'banex',blurb:'Tech shopping, repairs and Abuja hustle.'},
   {id:'inec-hq',name:'INEC Headquarters',short:'INEC HQ',lat:9.0830,lon:7.4970,districtId:'maitama',builder:'inec',priority:97,interior:'inec',blurb:'Candidate registration and AbujaLife election civic play.'},
   {id:'efcc-hq',name:'EFCC Headquarters',short:'EFCC HQ',lat:9.0149,lon:7.4081,districtId:'jabi',builder:'efcc',priority:97,interior:'efcc',blurb:'Fictional integrity investigations and financial-transparency storylines.'},
-  {id:'federal-high-court-hub',name:'Federal High Court Abuja',short:'Federal High Court',lat:9.0552,lon:7.5003,districtId:'central-area',builder:'court',priority:95,interior:'court',blurb:'Fictional civic hearings and due-process storylines.'}
+  {id:'federal-high-court-hub',name:'Federal High Court Abuja',short:'Federal High Court',lat:9.0552,lon:7.5003,districtId:'central-area',builder:'court',priority:95,interior:'court',blurb:'Fictional civic hearings and due-process storylines.'},
+  // Game geography is deliberately stylised. These anchors place each added
+  // destination in its district; they are not turn-by-turn real-world directions.
+  {id:'central-park-abuja',name:'Central Park Abuja',short:'Central Park',lat:9.0600,lon:7.4840,districtId:'central-area',builder:'millennium',priority:90,interior:'park',blurb:'Garden walks, a game playground and outdoor meetups.'},
+  {id:'sahad-cbd',name:'Sahad Stores CBD',short:'Sahad CBD',lat:9.0475,lon:7.4910,districtId:'central-area',builder:'mall',priority:87,interior:'mall',blurb:'Browse the retail court, meet friends and stop for food.'},
+  {id:'sahad-area-11',name:'Sahad Stores Area 11',short:'Sahad Area 11',lat:9.0360,lon:7.4900,districtId:'garki-i',builder:'grocery',priority:86,interior:'grocery',blurb:'Daily essentials, a meal stop and the game arcade.'},
+  {id:'grand-square-abuja',name:'Grand Square Abuja',short:'Grand Square',lat:9.0460,lon:7.4845,districtId:'central-area',builder:'grocery',priority:86,interior:'grocery',blurb:'Browse groceries, take a bakery break and meet in the café.'},
+  {id:'ceddi-plaza',name:'Ceddi Plaza',short:'Ceddi Plaza',lat:9.0520,lon:7.4870,districtId:'central-area',builder:'mall',priority:90,interior:'mall',blurb:'Shopping, food and a social stop in the city centre.'},
+  {id:'ceddi-genesis-cinema',name:'Genesis Cinema · Ceddi Plaza',short:'Genesis Cinema',lat:9.0524,lon:7.4874,districtId:'central-area',builder:'cinema',priority:89,interior:'cinema',blurb:'Catch a game screening and meet friends in the foyer.'},
+  {id:'thought-pyramid-abuja',name:'Thought Pyramid Art Centre',short:'Thought Pyramid',lat:9.0763,lon:7.4606,districtId:'wuse-ii-a08',builder:'gallery',priority:88,interior:'gallery',blurb:'Explore an original game art exhibition and join a creative workshop.'},
+  {id:'nike-gallery-abuja',name:'Nike Art Gallery Abuja',short:'Nike Art Gallery',lat:9.0030,lon:7.3900,districtId:'lugbe',builder:'gallery',priority:88,interior:'gallery',blurb:'Discover Nigerian textiles, original game art and a creative workshop.'}
 ]);
 
 export const CITY_LANDMARK_IDS = Object.freeze(CITY_LANDMARKS.map(place=>place.id));

@@ -1,5 +1,5 @@
 import { CITY_LANDMARKS } from '../src/shared/city-landmarks.mjs';
-import { WORLD_LANDMARK_SIZES } from '../src/shared/world-landmark-sizes.mjs';
+import { WORLD_LANDMARK_SIZES, WORLD_LANDMARK_FACADES } from '../src/shared/world-landmark-sizes.mjs';
 // Authored Abuja-inspired game blocks. This is a playable set, not a street map.
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const lineForShutter = (x,y,w) => `<path d="M${x} ${y}h${w}" stroke="#b0b8a2" stroke-width="2"/>`;
@@ -55,7 +55,10 @@ const WORLD_LANDMARK_LAYOUT=Object.freeze({
   'wtc-abuja-hub':[4040,1510],'cbn-experience':[4820,1510],'national-christian-centre-hub':[5600,1510],
   'international-conference-centre':[6380,1510],'eagle-square-hub':[7160,1510],'aso-rock-view':[7980,1510],
   'national-mosque-hub':[4060,680],'national-assembly-hub':[5000,680],'transcorp-hilton-hub':[5940,690],
-  'millennium-park-hub':[6880,680],'inec-hq':[7900,690]
+  'millennium-park-hub':[6880,680],'inec-hq':[7900,690],
+  'central-park-abuja':[8880,680],'thought-pyramid-abuja':[9720,680],'nike-gallery-abuja':[10560,680],
+  'sahad-cbd':[8880,1510],'grand-square-abuja':[9720,1510],'ceddi-plaza':[10560,1510],
+  'sahad-area-11':[8880,2190],'ceddi-genesis-cinema':[9720,2190]
 });
 const landmarkWorldPoint=place=>{const point=WORLD_LANDMARK_LAYOUT[place.id];return point?{x:point[0],y:point[1]}:{x:3900+(place.lon-7.2642)*15500,y:430+(9.09-place.lat)*18000};};
 export function landmarkExterior(place,x,y,size=null){
@@ -81,11 +84,13 @@ export function landmarkExterior(place,x,y,size=null){
   else if(b==='farmCity') body=rect(left,top+50,w,h-50,'#d7b889',7)+rect(left+18,top+76,w-36,84,'#718b76',4)+rect(x-68,top+6,136,51,'#906f50',5);
   else if(b==='banex') body=rect(left,top+43,w,h-43,'#d2cbb5',4)+Array.from({length:4},(_,i)=>rect(left+19+i*58,top+78,47,86,i%2?'#6c8985':'#9d8665',3)).join('');
   else body=rect(left,top+46,w,h-46,'#ded8c4',6)+rect(left+24,top+72,w-48,h-98,'#71908a',3)+rect(x-58,top+5,116,49,'#748776',5);
+  const facade=WORLD_LANDMARK_FACADES[b];
+  if(facade)body=building({id:place.id,x:left,y,w,h,name:place.short||place.name,tag:place.blurb||'ABUJA',kind:facade,floors:['transcorp','wtc'].includes(b)?4:2});
   return {art:`<g class="city-landmark city-landmark-${id}" data-world-target="${id}">${body}<rect x="${left-8}" y="${y+8}" width="${w+16}" height="42" rx="9" fill="#f1ead2"/><text x="${x}" y="${y+35}" text-anchor="middle" fill="#466655" font-size="${label.length>20?13:16}" font-weight="700">${label}</text></g>`,obstacle:{x:left-7,y:top-8,w:w+14,h:h+18},entrance:{x,y:y+84}};
 }
 
 export function buildCity({profile={},place={},id='city',venues=[]}={}) {
- const width=8500,height=4190,interactables=[],obstacles=[];
+ const width=11200,height=4190,interactables=[],obstacles=[];
  const definitions=`<defs><pattern id="${id}-paving" width="66" height="46" patternUnits="userSpaceOnUse"><path d="M0 0H66V46H0Z" fill="none" stroke="#a9b098" stroke-opacity=".26"/></pattern><pattern id="${id}-asphalt" width="17" height="17" patternUnits="userSpaceOnUse"><circle cx="3" cy="4" r=".8" fill="#e6dfbb" opacity=".2"/></pattern></defs>`;
  let art=definitions+rect(0,0,width,height,'#b4c59a')+rect(70,75,3400,3980,'#c9ceb2',70)+rect(80,80,3380,3960,`url(#${id}-paving)`,60);
  // Wide boulevards give both cars and residents a continuous navigable route.
@@ -169,7 +174,7 @@ export function buildCity({profile={},place={},id='city',venues=[]}={}) {
  art+=rect(3540,0,width-3540,height,'#b4c59a')+rect(3600,92,width-3690,2420,'#c8cdb1',60)+rect(3590,2380,width-3650,236,'#718378')+`<path d="M3590 2498H${width}" stroke="#e8e0b7" stroke-width="4" stroke-dasharray="52 48"/>`;
  // Abuja's landmark half needs enough surrounding city fabric to feel inhabited when the camera zooms out.
  // These are intentionally non-interactive context blocks; named destinations below stay canonical.
- for(const avenueX of [3740,4440,5140,5840,6540,7240,7940]){
+ for(const avenueX of [3740,4440,5140,5840,6540,7240,7940,8540,9380,10220,11000]){
   art+=rect(avenueX,0,96,height,'#74867a')+`<path d="M${avenueX+48} 0V${height}" stroke="#e8e0b7" stroke-width="3" stroke-dasharray="46 44"/>`;
  }
  const landmarkPoints=CITY_LANDMARKS.map(landmarkWorldPoint),contextPalette=['#ddd6c3','#d2d0bf','#c9c8b6','#e4dcc6','#c7cfbf','#d7ccb6'];
@@ -194,7 +199,7 @@ export function buildCity({profile={},place={},id='city',venues=[]}={}) {
  const landmarkSizes=WORLD_LANDMARK_SIZES;
  const legacyIds=new Set(specs.map(b=>b.id));
  const contextBuildings=neighbourhoodFabric.map((b,i)=>({id:`context-${i}`,x:b.x,y:b.y,w:b.w,h:b.h,name:'',wall:b.c,floors:2,context:true}));
- const landmarkBuildings=CITY_LANDMARKS.filter(landmark=>!legacyIds.has(landmark.id)).map(landmark=>{const point=landmarkWorldPoint(landmark),size=landmarkSizes[landmark.builder]||[290,210];return{id:landmark.id,x:point.x-size[0]/2,y:point.y+size[1]/2,w:size[0],h:size[1],name:landmark.short||landmark.name,wall:'#d8d3c4',floors:landmark.builder==='wtc'?7:landmark.builder==='cbn'?6:landmark.builder==='transcorp'?4:landmark.builder==='inec'||landmark.builder==='efcc'||landmark.builder==='court'?3:2,landmarkBuilder:landmark.builder,frontY:true};});
+ const landmarkBuildings=CITY_LANDMARKS.filter(landmark=>!legacyIds.has(landmark.id)).map(landmark=>{const point=landmarkWorldPoint(landmark),size=landmarkSizes[landmark.builder]||[290,210];return{id:landmark.id,x:point.x-size[0]/2,y:point.y+size[1]/2,w:size[0],h:size[1],name:landmark.short||landmark.name,kind:WORLD_LANDMARK_FACADES[landmark.builder],wall:'#d8d3c4',floors:landmark.builder==='wtc'?7:landmark.builder==='cbn'?6:landmark.builder==='transcorp'?4:landmark.builder==='inec'||landmark.builder==='efcc'||landmark.builder==='court'?3:2,landmarkBuilder:landmark.builder,frontY:true};});
  const visibleLegacyBuildings=specs.map(spec=>spec.id==='home'||localVenueIds.has(spec.id)?spec:{...spec,id:`context-spec-${spec.id}`,name:'',context:true});
  const safeLandmarkBuildings=landmarkBuildings.map(b=>localVenueIds.has(b.id)?b:{...b,id:`context-landmark-${b.id}`,name:'',context:true});
  const visibleBuildings=[...visibleLegacyBuildings,...contextBuildings,...safeLandmarkBuildings];

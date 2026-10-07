@@ -1,3 +1,4 @@
+import {installActivityDiscovery} from './activityDiscovery.mjs';
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -30,6 +31,7 @@ export function createServer(options={}) {
   const admin=options.admin||new AdminStore({store,bootstrapUsername:options.adminUsername}),social=options.social||new SocialStore(store),directory=new ResidentDirectory(store);
   const payments=options.payments||new PaymentStore({store,admin,fetchImpl:options.paymentFetch||fetch,configKey:options.configKey,publicOrigin:options.publicOrigin});
   const rewards=options.rewards||new RewardStore({store,admin,publicWebUrl:options.publicOrigin||'https://abujacity.life'});
+  installActivityDiscovery(store);
   social.authorizeModeration=id=>admin.requirePermission(id,'moderation');
   let closed=false;
   const writeEvent=(res,event,data)=>{if(!res.writableEnded)res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);};
@@ -56,7 +58,7 @@ export function createServer(options={}) {
     if(await sessionRuntime.handle(req,res))return;
     try{
       const url=new URL(req.url,'http://localhost'),pathname=url.pathname,method=req.method||'GET';
-      if(pathname==='/api/payments/webhook'&&method==='POST')return json(res,200,await payments.handleWebhook(await readRawBody(req),req.headers['flutterwave-signature']));
+      if(pathname==='/api/payments/webhook'&&method==='POST')return json(res,200,await payments.handleWebhook(await readRawBody(req),req.headers['flutterwave-signature'],req.headers['verif-hash']));
       if(method==='POST')writeAllowed(req);
       const token=tokenFor(req),id=store.session(token);
       if(id&&admin.isSuspended(id))throw new GameError('This account is suspended. Contact the game administrator.',403,'account_suspended');

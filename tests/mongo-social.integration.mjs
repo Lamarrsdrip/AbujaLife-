@@ -35,7 +35,7 @@ integration('Mongo nearby shares real street, venue and consented home motion wi
   await f.presence.touch(guest,{connectionId:'guest-stream',pose:{x:390,y:750,angle:.5,moving:true}});
   assert.equal(fixtureNearby(await f.presence.nearby(host))[0].pose.x,390);
   for(let i=0;i<3;i++){f.advance(20000);await f.presence.touch(host,{connectionId:'host-stream'});await f.presence.touch(guest,{connectionId:'guest-stream'});}
-  assert.equal((await f.presence.nearby(host))[0].pose.x,390,'A live stationary connection must renew its existing same-zone pose beyond 45 seconds');
+  assert.equal(fixtureNearby(await f.presence.nearby(host)).find(person=>person.id===guest).pose.x,390,'A live stationary connection must renew its existing same-zone pose beyond 45 seconds');
   await outside(f,guest,district==='jabi'?'garki':'jabi');
   assert.equal((await f.presence.nearby(host)).some(p=>p.id===guest),false,'An old street lease must not survive cross-district travel');
   await outside(f,guest,district);await f.presence.touch(guest,{connectionId:'guest-stream'});

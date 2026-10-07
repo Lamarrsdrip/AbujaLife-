@@ -3,6 +3,7 @@
 import { HOME_ITEM_MODELS } from '../src/shared/home-items.mjs';
 import { vehicleFor } from '../src/shared/vehicles.mjs';
 import { createWorldMaterialLibrary } from './world-materials.js';
+import { WORLD_LANDMARK_FACADES } from '../src/shared/world-landmark-sizes.mjs';
 
 // Combine rigid, opaque pieces with identical materials. Vertex normals, UVs,
 // triangles and joints are preserved; moving parts and transparent surfaces stay separate.
@@ -798,6 +799,12 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     }
     floor(group,1820,0,254,layout.height,'road',0);
     for(let y=0;y<layout.height;y+=100)box(group,1947,1,(y+25)*ds,4,1,51*ds,'#d4cbb2',false,false);
+    // These avenues already belong to the authored free-roam layout. Render
+    // them in WebGL too, so the expanded quarter has connected walkable streets.
+    for(const x of[3740,4440,5140,5840,6540,7240,7940,8540,9380,10220,11000]){
+      if(x>=layout.width)continue;floor(group,x,0,96,layout.height,'road',0);
+      for(let y=0;y<layout.height;y+=160)box(group,x+48,1,(y+38)*ds,3,1,48*ds,'#ddd5b8',false,false);
+    }
     const renderLandmarkBuilding=(parent,b)=>{
       const w=Math.max(120,b.w||260),d=Math.max(100,(b.h||210)*ds),builder=b.landmarkBuilder,plaster=surfaces.material('plaster','#ded8c8'),glassLandmark=mat('#76979a',.38,.08),greenLandmark=mat('#6f9368'),stone=mat('#b9b19f');
       const slab=(x,y,z,bw,bh,bd,color=plaster)=>box(parent,x,y,z,bw,bh,bd,color,true);
@@ -825,10 +832,12 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     };
     const buildings=layout.buildings||(layout.obstacles||[]).filter(o=>o.w>200&&o.h>180).map(o=>({...o,y:o.y+o.h,frontY:true,floors:2,name:''}));
     for(const b of buildings) {
-      const p=new T.Group(),bottom=b.frontY===false?b.y:b.y-b.h,height=b.id==='hotel'?250:b.id==='home'?145:b.floors>1?140:103;
+      const p=new T.Group(),bottom=b.frontY===false?b.y:b.y-b.h,height=b.id==='hotel'||b.landmarkBuilder==='transcorp'?250:b.landmarkBuilder==='wtc'?292:b.id==='home'?145:b.floors>1?140:103;
       p.position.set(b.x+b.w/2,0,(bottom+b.h/2)*ds);group.add(p);
       p.name=`Authored building: ${b.id||b.name||'residence'}`;
-      if(b.landmarkBuilder){renderLandmarkBuilding(p,b);continue;}
+      // Comparable hotels, retail, civic and faith buildings use the original
+      // detailed façade owner. Keep CBN/EFCC and outdoor monuments unchanged.
+      if(b.landmarkBuilder&&!WORLD_LANDMARK_FACADES[b.landmarkBuilder]){renderLandmarkBuilding(p,b);continue;}
       box(p,0,height/2,0,b.w,height,b.h*ds,surfaces.material('plaster',affluent?'#e5decc':b.wall||'#d6d1bc'));
       const facadeTrim=mat(affluent?'#d8d1bd':'#c9c5b0');
       // Plinth, cornice and intermediate floor bands continue around the building;
@@ -887,8 +896,8 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
         }
         batch(p);
       }
-      if(b.id==='mosque') {const dome=ball(p,0,height+11,0,b.w*.3,70,b.h*ds*.3,'#749180');const minaret=cylinder(p,b.w*.36,height*.85,-b.h*.2*ds,19,height*1.7,'#dcd1b6',17);cylinder(p,b.w*.36,height*1.73,-b.h*.2*ds,27,21,'#729180',15);}
-      if(b.id==='church'){box(p,0,height+34,b.h*.12*ds,7,72,7,'#796c52');box(p,0,height+51,b.h*.12*ds,47,7,7,'#796c52');}
+      if(b.id==='mosque'||b.landmarkBuilder==='mosque') {ball(p,0,height+11,0,b.w*.3,70,b.h*ds*.3,'#749180');cylinder(p,b.w*.36,height*.85,-b.h*.2*ds,19,height*1.7,'#dcd1b6',17);cylinder(p,b.w*.36,height*1.73,-b.h*.2*ds,27,21,'#729180',15);}
+      if(b.id==='church'||b.landmarkBuilder==='church'){box(p,0,height+34,b.h*.12*ds,7,72,7,'#796c52');box(p,0,height+51,b.h*.12*ds,47,7,7,'#796c52');}
       if(affluent&&b.id==='home') {
         for(const x of [-b.w*.42,b.w*.42]){box(p,x,20,b.h*ds*.56,b.w*.23,40,15,'#e3dbc5');box(p,x,43,b.h*ds*.56,b.w*.25,6,19,'#87967a');}
         for(const x of [-b.w*.43,b.w*.43]){const planter=new T.Group();planter.position.set(x,0,b.h*ds*.63);plant(planter,35,30);p.add(planter);}

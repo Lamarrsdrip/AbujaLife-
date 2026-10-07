@@ -291,8 +291,21 @@ async def work(page,fixture,qa):
         await page.locator('[data-start-shift]').click()
         if (await game.state(page))['profile']['location']['kind']=='public' and await page.locator('[data-start-shift]').count():await page.locator('[data-start-shift]').click()
         await expect(page.locator('#shift-form')).to_be_visible();reading_started=time.monotonic();before=(await game.state(page))['profile']['wallet']
-        for task,answer in {'needs':'budget','listing':'verify','viewing':'total'}.items():await page.locator(f'#shift-form [name="{task}"][value="{answer}"]').check()
+        answers={'needs':'budget','listing':'verify','viewing':'total'}
+        for task,answer in answers.items():
+            choice=page.locator(f'#shift-form [name="{task}"][value="{answer}"]')
+            await choice.check();await expect(choice).to_be_checked()
         await page.wait_for_timeout(max(0,1700-(time.monotonic()-reading_started)*1000))
+        # Live profile refreshes can replace the challenge form while a
+        # disposable clock fixture is advanced. Verify the real form payload
+        # immediately before submission so a stale radio cannot silently
+        # turn this into an incomplete-shift browser validation error.
+        form=page.locator('#shift-form')
+        for task,answer in answers.items():
+            choice=form.locator(f'[name="{task}"][value="{answer}"]')
+            if not await choice.is_checked():await choice.check()
+        submitted=await form.evaluate('el=>Object.fromEntries(new FormData(el))')
+        assert submitted==answers,{'expectedAnswers':answers,'formAnswers':submitted}
         await page.locator('#shift-form button').click();s=await game.wait_state(page,lambda s:s['profile']['wallet']>before)
         assert s['profile']['wallet']-before==9800;saved.append(s['profile']['workDays']['2026-10-12'])
         await expect(page.locator('[data-start-shift]')).to_be_disabled()

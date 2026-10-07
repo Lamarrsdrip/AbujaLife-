@@ -4,7 +4,10 @@ import fs from 'node:fs';
 import { VENUE_ACTIONS, travelPricing } from '../src/shared/life.mjs';
 
 const app=fs.readFileSync(new URL('../app/app.js',import.meta.url),'utf8');
-const interiors=fs.readFileSync(new URL('../app/world-interiors.js',import.meta.url),'utf8');
+const interiors=[
+  fs.readFileSync(new URL('../app/world-interiors.js',import.meta.url),'utf8'),
+  fs.readFileSync(new URL('../app/world-interiors-base.js',import.meta.url),'utf8'),
+].join('\n');
 const world3d=fs.readFileSync(new URL('../app/world-3d.js',import.meta.url),'utf8');
 const character=fs.readFileSync(new URL('../app/world-character.js',import.meta.url),'utf8');
 

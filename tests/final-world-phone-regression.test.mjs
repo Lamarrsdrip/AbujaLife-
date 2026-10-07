@@ -12,7 +12,7 @@ test('Outside keeps city fabric visible while direct entry stays district-author
 });
 
 test('house exposes Go Out and deduplicates authored versus saved furniture',()=>{
-  const app=read('app/app.js'),interiors=read('app/world-interiors.js');
+  const app=read('app/app.js'),interiors=[read('app/world-interiors.js'),read('app/world-interiors-base.js')].join('\n');
   assert.match(app,/world-go-out-shortcut/);
   assert.match(app,/>Go Out</);
   assert.match(interiors,/entryByItem=new Map/);

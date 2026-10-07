@@ -4,6 +4,7 @@ AbujaLife advertising is separate from the virtual Abuja Naira economy.
 
 - Price: ₦2,000 NGN per placement.
 - Duration: 7 days.
+- Inventory: the dedicated open Abuja Business Park contains 40 visible plots, while scalable outside-city zones add additional map-wide inventory.
 - City display advertising: each purchase reserves exactly one available ad plot. Residents choose the exact available plot they want before checkout.
 - Roadside advertising: ten visible roadside billboard spaces are available; each purchase reserves one board.
 - Creative: PNG, JPEG or WebP uploaded by the resident and compressed client-side before submission.

@@ -58,7 +58,7 @@ jobs:
       - name: Current V4 full-client browser acceptance
         env:
           ABUJALIFE_V4_ARTIFACTS: ${{ runner.temp }}/abujalife-v4
-        run: python tests/v4-browser-smoke.py
+        run: python tests/v4-browser-smoke-runner.py
       - name: Retain player-facing browser evidence
         if: always()
         uses: actions/upload-artifact@v4

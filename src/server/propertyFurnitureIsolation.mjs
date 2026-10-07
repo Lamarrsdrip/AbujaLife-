@@ -1,7 +1,9 @@
 import { GameError } from './errors.mjs';
+import { catalog } from '../shared/catalogue.mjs';
 
 const object=value=>value&&typeof value==='object'&&!Array.isArray(value);
 const safeItemId=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,100}$/.test(value);
+const furnitureIds=new Set(catalog.filter(item=>item.category==='furniture').map(item=>item.id));
 
 export function scopeFurnitureLayout(layout,currentPropertyId){
   if(!currentPropertyId)return{layout:layout||{},changed:false};
@@ -18,6 +20,7 @@ export function scopeFurnitureLayout(layout,currentPropertyId){
   for(const [itemId,value] of Object.entries(layout)){
     if(!safeItemId(itemId)){next[itemId]=value;continue;}
     if(object(value)&&!value.propertyId){next[itemId]={...value,propertyId:currentPropertyId};changed=true;}
+    else if(Number.isFinite(value)){next[itemId]={slot:value,propertyId:currentPropertyId};changed=true;}
     else next[itemId]=value;
   }
   return{layout:next,changed};
@@ -37,9 +40,34 @@ export function installPropertyFurnitureIsolation(store){
   store.profile=async(residentId,options={})=>{
     const profile=await baseProfile(residentId,options),propertyId=profile?.home?.propertyId;
     const scoped=scopeFurnitureLayout(profile?.furnitureLayout,propertyId);
+    // Default placements are physical furniture too. Anchor owned pieces that
+    // have never been moved in Studio before a change of home, while explicitly
+    // stored items remain loose inventory available for intentional placement.
+    if(propertyId){
+      const entries=Array.isArray(scoped.layout)?scoped.layout:Object.entries(scoped.layout||{}).map(([itemId,value])=>({itemId,...value}));
+      const placedIds=new Set(entries.map(entry=>entry?.itemId||entry?.id));
+      const storedIds=new Set(profile.storedFurniture||[]);
+      for(const item of profile.inventory||[]){
+        const itemId=typeof item==='string'?item:item?.itemId||item?.id;
+        if(!furnitureIds.has(itemId)||storedIds.has(itemId)||placedIds.has(itemId))continue;
+        const entry={itemId,propertyId};
+        if(Array.isArray(scoped.layout))scoped.layout.push(entry);
+        else scoped.layout[itemId]={propertyId};
+        placedIds.add(itemId);scoped.changed=true;
+      }
+    }
     if(scoped.changed){
       const dbOptions=options?.session?{session:options.session}:{};
-      await store.collection('homes').updateOne({residentId},{$set:{furnitureLayout:scoped.layout}},dbOptions);
+      const previous=profile.furnitureLayout;
+      const filter={residentId,propertyId};
+      // Mongo profiles normalise absent legacy layouts to an empty object.
+      // Permit that first migration without matching a newer, nonempty layout.
+      if(object(previous)&&Object.keys(previous).length===0)filter.$or=[{furnitureLayout:previous},{furnitureLayout:{$exists:false}}];
+      else filter.furnitureLayout=previous===undefined?{$exists:false}:previous;
+      const result=await store.collection('homes').updateOne(filter,{$set:{furnitureLayout:scoped.layout}},dbOptions);
+      // A concurrent move or Studio edit wins over this lazy migration. Re-read
+      // its authoritative profile instead of overwriting the newer coordinates.
+      if(result?.matchedCount===0)return baseProfile(residentId,options);
       profile.furnitureLayout=scoped.layout;
       profile.legacyFurnitureScopedToProperty=propertyId;
     }

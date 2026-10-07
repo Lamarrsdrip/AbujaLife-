@@ -65,7 +65,7 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
   const water = [], movingCars = [], nightBeams=[], clubLights=[];
   const ds = depthScale;
   const isClub=venue?.kind==='club'||['club','club-cage','magic-city','bear-barn'].includes(venue?.id);
-  const indoor = kind === 'home' || kind === 'visit' || (kind === 'venue' && !['park', 'jabi-lake'].includes(venue?.id));
+  const indoor = kind === 'home' || kind === 'visit' || (kind === 'venue' && !layout.venueLayout?.outdoor && !['park', 'jabi-lake'].includes(venue?.id));
   const mat = (color, roughness = .76, metalness = 0, extra = {}) => {
     const key = JSON.stringify([color, roughness, metalness, extra]);
     if (!materials.has(key)) materials.set(key, new T.MeshStandardMaterial({color, roughness, metalness, ...extra}));
@@ -397,6 +397,32 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
       case 'car': {
         const car=carModel('#d5d8d2','sedan');p.add(car.group);car.group.scale.set(w/210,.95,h/90);break;
       }
+      case 'departures-board': {
+        box(p,0,116,0,w,78,10,'#243f49',true);
+        sign(p,'DEPARTURES · GATES',w*.88,34,0,120,6);
+        for(const side of[-1,1])box(p,side*w*.4,42,0,8,84,8,metal);break;
+      }
+      case 'gallery-panel': {
+        box(p,0,93,0,w*.86,155,14,wood,true);
+        box(p,0,93,9,w*.73,135,4,mat('#82998a'));
+        sign(p,source.name||'ABUJA GALLERY',w*.72,30,0,91,12);break;
+      }
+      case 'sports-goal': {
+        for(const side of[-1,1])box(p,0,48,side*h*.43,7,96,7,cream);
+        box(p,0,96,0,7,7,h*.91,cream);
+        for(let row=1;row<5;row++)box(p,-w*.35,row*18,0,2,2,h*.9,linen);
+        for(let col=-3;col<=3;col++)box(p,-w*.35,48,col*h*.13,2,92,2,linen);break;
+      }
+      case 'amusement-wheel': {
+        const radius=w*.36,paint=mat('#b97568'),wheel=mesh(p,geo(`amusement-wheel-${w}`,()=>new T.TorusGeometry(radius,6,8,32)),paint,0,radius+30,0);
+        for(const side of[-1,1])box(p,side*w*.19,69,0,12,138,16,metal);
+        for(let index=0;index<10;index++){const angle=index*Math.PI*2/10,cx=Math.cos(angle)*radius,cy=radius+30+Math.sin(angle)*radius;
+          const spoke=box(p,cx*.5,radius+30+(cy-radius-30)*.5,0,radius,4,4,metal);spoke.rotation.z=angle;
+          box(p,cx,cy-11,0,33,28,36,mat(['#d0a457','#789a93','#98788b'][index%3]),true);
+          box(p,cx,cy+6,0,35,4,39,cream);
+        }
+        wheel.name='Magicland observation wheel';break;
+      }
       case 'tree':tree(p,w*.9);break;
       case 'rug':box(p,0,1,0,w,2,h,surfaces.material('rug',source.color||'#b9a78e'));box(p,0,2,0,w-12,1,h-12,surfaces.material('rug',source.color||'#c5b394'));for(const z of[-h*.45,h*.45])box(p,0,2.8,z,w*.92,.7,2,linen,false,false);break;
       default:box(p,0,28,0,w,55,h,'#a9997d',true);break;
@@ -586,7 +612,7 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     p.name='Original Abuja bike ride';batch(p);return {group:p,wheels};
   }
   function createFurnitureModel(item) {
-    const type=item.kind||item.itemId||'fixture';
+    const type=item.modelKind||item.kind||item.itemId||'fixture';
     const transposed=item.rotation%180===90&&!['plant','floor-lamp','portable-ac','power-inverter','art-piece'].includes(type);
     const model=objectModel(type,transposed?item.h:item.w,transposed?item.w:item.h,item),p=new T.Group();p.add(model);
     if(item.rotation)model.rotation.y=-item.rotation*Math.PI/180;
@@ -656,7 +682,7 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     shadows.name='Soft furniture contact depth';shadows.renderOrder=1;group.add(shadows);
   }
   function interiorSet() {
-    const outdoor=['park','jabi-lake'].includes(venue?.id);
+    const outdoor=layout.venueLayout?.outdoor||['park','jabi-lake'].includes(venue?.id);
     if(!outdoor){
       box(group,layout.width/2,-18,layout.height*ds/2,layout.width+6,24,layout.height*ds+6,'#8f785c',true,false);
       box(group,layout.width/2,-5,layout.height*ds/2,layout.width+10,4,layout.height*ds+10,'#cfb999',false,false);

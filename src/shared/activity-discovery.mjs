@@ -1,6 +1,7 @@
 import {VENUES,VENUE_ACTIONS,venueAvailable} from './life.mjs';
 import {CITY_LANDMARKS} from './city-landmarks.mjs';
 import {jobSchedule,clubSchedule,abujaTime} from './simulation.mjs';
+import {vehicleFor} from './vehicles.mjs';
 
 const MINUTE=60000,HOUR=60*MINUTE;
 const categoryFor=venue=>venue.kind==='club'?'nightlife':/gym|fitness/i.test(venue.category||venue.name)?'fitness':/food|dining/i.test(venue.category||'')?'food':/shopping|cars|homes|tech/i.test(venue.category||'')?'explore':'social';
@@ -14,6 +15,7 @@ export const ACTIVITY_REGISTRY=Object.freeze([
  ...VENUE_ACTIONS.map(activity=>({id:`activity:${activity.id}`,category:'activity',feature:activity.id,headline:activity.name,cta:'Try it here',cost:activity.cost,venueId:activity.venueId,action:{kind:'activity',activityId:activity.id},cooldown:3*HOUR})),
  {id:'feature:phone',category:'feature',feature:'phone',headline:'Your city fits in your pocket',description:'Messages, friends and plans are on your phone.',cta:'Open Phone',action:{kind:'phone'},cooldown:24*HOUR},
  {id:'feature:visits',category:'social',feature:'visits',headline:'Make room for your people',description:'Invite a friend over or request a home visit.',cta:'See visits',action:{kind:'visits'},cooldown:24*HOUR},
+ {id:'feature:drive',category:'travel',feature:'driving',headline:'Take your car out',description:'Choose somewhere in Abuja and plan a drive.',cta:'Choose a destination',action:{kind:'destinations'},cooldown:24*HOUR},
  {id:'feature:story',category:'story',feature:'story',headline:'The city has a story',description:'See the current city cycle and your role in it.',cta:'City Story',action:{kind:'story'},cooldown:24*HOUR},
  {id:'feature:jackpot',category:'jackpot',feature:'jackpot',headline:'See today’s Jackpot',description:'Optional paid play. Prizes are never guaranteed.',cta:'See eligibility & rooms',action:{kind:'jackpot'},cooldown:48*HOUR},
 ]);
@@ -28,6 +30,14 @@ export function activityCandidates({profile,now,stats={},jackpotEligible=false})
   if(activity.need){if(loc.kind!=='home'||profile[activity.need]>45||profile.wallet<activity.cost)return [];weight+=5+(45-profile[activity.need])/10;description='A little care makes the next move easier.';}
   else if(activity.id==='career:shift'){if(!profile.job)return [];const schedule=jobSchedule(profile.job,profile,now);if(!schedule.canStart)return [];description=`${schedule.currentSlot} shift · Abuja time`;weight+=6;}
   else if(activity.id==='career:discover'){if(profile.job||history.features?.career)return [];weight+=hour<17?2:0;}
+  else if(activity.id==='feature:drive'){
+   const vehicle=vehicleFor(profile.drivingVehicle||profile.vehiclePresence?.vehicleId)||(profile.inventory||[]).map(vehicleFor).find(Boolean);
+   if(!vehicle||loc.kind==='visit')return [];
+   const parked=profile.vehiclePresence;
+   const currentVenue=loc.kind==='home'?'home':loc.kind==='venue'?loc.venue:'neighbourhood';
+   if(parked?.state==='parked'&&(parked.district!==profile.district||parked.venue!==currentVenue))return [];
+   description=`Take your ${vehicle.model||vehicle.name} through the city. Choose a route first.`;weight*=hour>=6&&hour<22?1.5:.6;
+  }
   else if(activity.action.kind==='activity'){const a=VENUE_ACTIONS.find(a=>a.id===activity.action.activityId);if(loc.kind!=='venue'||loc.venue!==a.venueId||profile.wallet<a.cost||a.effects.energy<0&&profile.energy< -a.effects.energy)return [];if(VENUES.find(v=>v.id===a.venueId)?.kind==='club'&&!clubSchedule(now).isOpen)return [];}
   else if(activity.action.kind==='travel'){
    if(loc.kind==='visit'||loc.venue===activity.venueId)return [];
@@ -58,3 +68,4 @@ export function discoveryCompletedFeatures(action,payload={},profile={}){
  if(action==='take-job')keys.push('career');if(action==='complete-shift')keys.push('work');
  return keys.filter(Boolean);
 }
+export const activitiesForFeature=feature=>ACTIVITY_REGISTRY.filter(activity=>activity.feature===feature);

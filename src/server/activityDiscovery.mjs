@@ -1,4 +1,4 @@
-import {discoveryActivity,discoveryCompletedFeatures} from '../shared/activity-discovery.mjs';
+import {discoveryActivity,discoveryCompletedFeatures,activitiesForFeature} from '../shared/activity-discovery.mjs';
 import {GameError} from './errors.mjs';
 
 // Discovery is part of existing resident progression. It never grants money,
@@ -23,7 +23,7 @@ export function installActivityDiscovery(store,{log=()=>{}}={}){
  async function complete(id,name,payload,result){
   const features=discoveryCompletedFeatures(name,payload,result?.profile);
   if(features.length&&!result?.replayed){try{const now=store.clock(),values=Object.fromEntries(features.map(feature=>[`features.${feature}`,now]));
-   for(const feature of features){const activity=discoveryActivity(feature.includes(':')?feature:`need:${feature}`)||discoveryActivity(`activity:${feature}`);if(activity)values[`entries.${activity.id}.completedAt`]=now;}
+   for(const feature of features)for(const activity of activitiesForFeature(feature))values[`entries.${activity.id}.completedAt`]=now;
    await record(id,values);if(result?.profile)result.profile.discovery=(await store.profile(id)).discovery;
    log('activity_discovery',{residentId:id,features,event:'completed'});
   }catch(error){log('activity_discovery_failure',{code:error.code||'storage_error'});}}
@@ -36,7 +36,7 @@ export function installActivityDiscovery(store,{log=()=>{}}={}){
   // SQLite's game owner intentionally has a synchronous action contract.
   // Preserve it for local gameplay and existing consumers.
   const features=discoveryCompletedFeatures(name,payload,result?.profile);
-  if(features.length&&!result?.replayed){try{const now=store.clock();const values=Object.fromEntries(features.map(feature=>['features.'+feature,now]));for(const feature of features){const activity=discoveryActivity(feature.includes(':')?feature:`need:${feature}`)||discoveryActivity(`activity:${feature}`);if(activity)values[`entries.${activity.id}.completedAt`]=now;}recordLocal(id,values);if(result?.profile)result.profile.discovery=store.profile(id).discovery;log('activity_discovery',{residentId:id,features,event:'completed'});}catch(error){log('activity_discovery_failure',{code:error.code||'storage_error'});}}
+  if(features.length&&!result?.replayed){try{const now=store.clock();const values=Object.fromEntries(features.map(feature=>['features.'+feature,now]));for(const feature of features)for(const activity of activitiesForFeature(feature))values[`entries.${activity.id}.completedAt`]=now;recordLocal(id,values);if(result?.profile)result.profile.discovery=store.profile(id).discovery;log('activity_discovery',{residentId:id,features,event:'completed'});}catch(error){log('activity_discovery_failure',{code:error.code||'storage_error'});}}
   return result;
  };
 }

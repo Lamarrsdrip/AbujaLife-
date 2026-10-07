@@ -98,14 +98,22 @@ async function refreshNearbyPresence({fallback=true}={}){
  nearbyRefreshPromise=(async()=>{try{const result=await api('/api/presence/nearby');if(state.profile?.id!==owner)return null;state.nearby=result.nearby||[];if(result.stats)state.cityStats=result.stats;cleanup?.updateResidents?.(list(state.nearby));updateLocalChatAffordance();dispatchLivingCity('snapshot',{nearby:state.nearby,stats:result.stats,serverTime:result.serverTime});return result;}catch(error){if(fallback&&[404,405,501].includes(error.status)){scheduleRealtimeRefresh();return null;}throw error;}finally{nearbyRefreshPromise=null;}})();return nearbyRefreshPromise;
 }
 function scheduleNearbyPresenceRefresh(delay=80){clearTimeout(nearbyRefreshTimer);nearbyRefreshTimer=setTimeout(()=>void refreshNearbyPresence().catch(()=>{}),delay);}
-const phone=createPhone({root:document.querySelector('#phone-root'),getState:()=>state,api,onUpdate:refresh,onNavigate:navigate,toast,onDiscover:()=>{const owner=state.profile?.id;if(owner&&!state.profile.discovery?.features?.phone)void api('/api/action',{method:'POST',body:{action:'discovery-event',payload:{activityId:'feature:phone',event:'discovered'}}}).then(result=>{if(result.discovery&&state.profile?.id===owner)state.profile.discovery=result.discovery;}).catch(()=>{});}});
+const featureDiscoveryRequests=new Map();
+function discoverFeature(feature){
+ const owner=state.profile?.id,key=`${owner}:${feature}`;
+ if(!owner||state.profile.discovery?.features?.[feature]||featureDiscoveryRequests.has(key))return;
+ const request=api('/api/action',{method:'POST',body:{action:'discovery-event',payload:{activityId:`feature:${feature}`,event:'discovered'}}}).then(result=>{if(result.discovery&&state.profile?.id===owner)state.profile.discovery=result.discovery;}).catch(()=>{}).finally(()=>featureDiscoveryRequests.delete(key));
+ featureDiscoveryRequests.set(key,request);
+}
+const phone=createPhone({root:document.querySelector('#phone-root'),getState:()=>state,api,onUpdate:refresh,onNavigate:navigate,toast,onDiscover:()=>discoverFeature('phone')});
 const install=createInstallController({shouldShow:()=>!!(state.authenticated&&state.profile?.onboardingComplete)&&!phone.isOpen?.()&&!document.querySelector('#sheet-root .sheet'),localProgress:()=>!!state.preview,onAvailabilityChange:available=>document.querySelectorAll('[data-install-app]').forEach(button=>button.hidden=!available)});
 const furnitureCatalogue=createFurnitureCatalogue({getState:()=>state,mutate:action,onSelect:beginFurniturePlacement,getFurnitureState:()=>cleanup?.getFurnitureState?.(),toast,enhancePreviews:scope=>enhanceProductPreviews(scope,{appearance:state.profile?.appearance}),onUse:itemId=>{
  furnitureCatalogue.close();const use={'bed':'sleep','king-bed':'sleep','sofa':'relax','premium-sofa':'relax','lounge-chair':'relax','accent-chair':'relax','tv':'relax','game-console':'relax','kitchen-unit':'eat','wardrobe':'wardrobe'}[itemId];
  if(use==='wardrobe')navigate('profile');else if(use)interact(use);
 }});
 const homeEditor=createHomeEditor({getState:()=>state,api,onUpdate:refresh,onArrange:()=>openFurniture(),toast});
-const lifePanels=createLifePanels({getState:()=>state,api,onUpdate:refresh,openSheet,closeSheet,sheetRoot,toast,travelSheet});
+const lifePanels=createLifePanels({getState:()=>state,api,onUpdate:refresh,openSheet,closeSheet,sheetRoot,toast,travelSheet,onDiscover:()=>discoverFeature('visits')});
+addEventListener('abj:civic-ready',()=>discoverFeature('story'));
 function originCard(p){if(!p.origin)return '';const nepo=p.origin.id==='nepo';return `<div class="origin-card ${nepo?'nepo':'lapo'}"><span>${nepo?'✦':'↗'}</span><div><strong>${nepo?'Nepo Baby':'Lapo Baby'}</strong><small>${nepo?'A family head start. Make your own story.':'Self-made, small small. Build your own Abuja story.'}<br>${esc(place(p.origin.residence?.district)?.name||p.origin.residence?.districtName||'Abuja')} · Started with ₦${money(p.origin.startingBalance)}</small></div></div>`;}
 let lastDiscoveryInput=performance.now();
 addEventListener('pointerdown',()=>{lastDiscoveryInput=performance.now();}, {passive:true});
@@ -121,6 +129,7 @@ const activityDirector=createActivityDirector({
   else if(suggestion.kind==='page')navigate(suggestion.page);
   else if(suggestion.kind==='phone')phone.open();
   else if(suggestion.kind==='visits')lifePanels.openVisits();
+  else if(suggestion.kind==='destinations')openCityPlaces();
   else if(suggestion.kind==='story')dispatchEvent(new CustomEvent('abj:open-civic-life'));
   else if(suggestion.kind==='jackpot')dispatchEvent(new CustomEvent('abj:open-jackpot'));
  }

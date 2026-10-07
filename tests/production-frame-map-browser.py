@@ -13,14 +13,39 @@ async def geometry(page):
  return await page.evaluate('''()=>{
  const rect=selector=>document.querySelector(selector)?.getBoundingClientRect().toJSON();
  return {device:rect('.ph-device'),screen:rect('.ph-screen'),caption:rect('.ph-device-caption'),viewport:{height:visualViewport.height,width:visualViewport.width,top:visualViewport.offsetTop},body:getComputedStyle(document.body).position};}''')
+async def empty_sky_point(page):
+ # Tap an unobstructed point on the actual world canvas, away from rendered
+ # building/landmark labels. The stage canvas paints the surrounding sky-blue
+ # ad area too, so this exercises the same hit-test as a player tap.
+ return await page.evaluate('''()=>{
+  const canvas=document.querySelector('.outside-stage canvas');
+  if(!canvas)throw new Error('outside world canvas is missing');
+  const r=canvas.getBoundingClientRect();
+  for(const [fx,fy] of [[.06,.42],[.94,.42],[.08,.72],[.92,.72],[.5,.08],[.5,.92]]){
+   const x=r.left+r.width*fx,y=r.top+r.height*fy;
+   if(x<0||y<0||x>=innerWidth||y>=innerHeight)continue;
+   if(document.elementFromPoint(x,y)===canvas)return{x,y,fx,fy};
+  }
+  throw new Error('no unobstructed sky/canvas point is available for an advertising tap');
+ }''')
 async def run(report,certificate_spki):
  async with async_playwright() as p:
   browser=await p.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH'),headless=True,args=['--no-sandbox','--no-proxy-server','--use-angle=swiftshader','--enable-unsafe-swiftshader',f'--ignore-certificate-errors-spki-list={certificate_spki}',f'--host-resolver-rules=MAP abujacity.life 127.0.0.1:{base.TLS_PORT}, MAP api.abujacity.life 127.0.0.1:{base.TLS_PORT}'])
   try:
    for label,width,height,mobile in [('mobile',393,852,True),('laptop',1440,900,False)]:
     context=await browser.new_context(viewport={'width':width,'height':height},is_mobile=mobile,has_touch=mobile)
-    page=await context.new_page();errors=[];page.on('pageerror',lambda error:errors.append(str(error)))
-    await base.register(page,'Frame '+label,'frame_'+uuid.uuid4().hex[:10],'feminine')
+    page=await context.new_page();errors=[];network=[]
+    report.setdefault('diagnostics',{})[label]={'errors':errors,'network':network}
+    page.on('pageerror',lambda error:errors.append(str(error)))
+    page.on('requestfailed',lambda request:network.append({'url':request.url,'failure':request.failure}))
+    page.on('response',lambda response:network.append({'url':response.url,'status':response.status}) if '/api/' in response.url and response.status>=400 else None)
+    page.on('console',lambda message:errors.append(message.text) if message.type=='error' else None)
+    try:
+     await base.register(page,'Frame '+label,'frame_'+uuid.uuid4().hex[:10],'feminine')
+    except Exception:
+     report['diagnostics'][label]['auth'] = await page.evaluate('''()=>{const e=document.querySelector('#auth-form [type=submit]');if(!e)return null;const r=e.getBoundingClientRect(),s=getComputedStyle(e),x=r.left+r.width/2,y=r.top+r.height/2;return{rect:r.toJSON(),disabled:e.disabled,opacity:s.opacity,transform:s.transform,animation:s.animationName,transition:s.transition,hit:document.elementFromPoint(x,y)?.outerHTML?.slice(0,500),html:e.outerHTML,form:document.querySelector('#auth-form')?.getBoundingClientRect().toJSON()}}''')
+     await page.screenshot(path=str(base.ARTIFACTS/f'{label}-auth-failed.png'),timeout=90000)
+     raise
     await expect(page.locator('#world-scene.world-playable')).to_be_visible(timeout=30000)
     await page.locator('.wallet-button').click();await expect(page.locator('.ph-device')).to_be_visible()
     g=await geometry(page)
@@ -55,7 +80,8 @@ async def run(report,certificate_spki):
     await page.locator('.game-nav [data-nav-outside]').click()
     await expect(page.locator('.abj-restored-map canvas')).to_be_visible()
     await page.locator('[data-outside-action="ads"]').click()
-    await page.locator('.outside-stage').click(position={'x':width*.4,'y':height*.45})
+    sky=await empty_sky_point(page)
+    await page.mouse.click(sky['x'],sky['y'])
     await expect(page.locator('.outside-selection')).to_be_visible()
     await expect(page.locator('[data-outside-action="advertise"]')).to_be_visible()
     await page.locator('[data-outside-action="advertise"]').click()
@@ -63,7 +89,7 @@ async def run(report,certificate_spki):
     assert await page.locator('[data-ad-note]').inner_text(), 'selection guidance missing'
     await page.screenshot(path=str(base.ARTIFACTS/f'{label}-ad-selection.png'),timeout=90000)
     assert not errors,errors
-    report['checks'].append({'name':label+' phone, focus/scroll lock, fixed dock, map ad tap and studio','passed':True,'geometry':g})
+    report['checks'].append({'name':label+' phone, focus/scroll lock, fixed dock, sky-blue map ad tap and studio','passed':True,'geometry':g,'adTap':sky})
     await context.close()
   finally: await browser.close()
 base.run_browser=run

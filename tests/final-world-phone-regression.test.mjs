@@ -59,7 +59,7 @@ test('city counters publish presence changes over the existing realtime stream a
   const app=read('app/app.js'),prod=read('src/server/production-http.mjs'),live=read('src/server/liveActions.mjs');
   assert.match(prod,/scheduleCityStatsBroadcast\(\)/);
   assert.match(prod,/writeEvent\(res,'city-stats'/);
-  assert.match(live,/store\.emitCityStats\?\.\(\)/);
+  assert.match(read('src/server/sessionRuntime.mjs'),/store\.emitCityStats\?\.\(\)/);
   assert.match(app,/type==='city-stats'/);
   assert.match(app,/setInterval\(\(\)=>\{if\(state\.authenticated&&!document\.hidden\)void refreshNearbyPresence\(\)\.catch\(\(\)=>\{\}\);\},30000\);/);
 });

@@ -31,6 +31,13 @@ test('social weighting uses aggregated public venues without accessing private h
  const active=activityCandidates({...context,stats:{hotPlaces:[{venueId:'jabi-lake',district:'jabi',online:3},{zone:'home:secret',online:9}]}}).find(a=>a.id===base.id);
  assert.ok(active.weight>base.weight);assert.match(active.description,/3 visible residents/);assert.ok(!JSON.stringify(active).includes('secret'));
 });
+test('driving discovery names only a real owned car available at this location',()=>{
+ const owned={...profile,inventory:['bugatti-chiron'],vehiclePresence:{vehicleId:'bugatti-chiron',state:'parked',district:profile.district,venue:'home'}};
+ const idea=activityCandidates({profile:owned,now}).find(a=>a.id==='feature:drive');
+ assert.match(idea.description,/Chiron/);assert.equal(idea.action.kind,'destinations');
+ assert.ok(!activityCandidates({profile,now}).some(a=>a.id==='feature:drive'));
+ assert.ok(!activityCandidates({profile:{...owned,vehiclePresence:{...owned.vehiclePresence,venue:'restaurant'}},now}).some(a=>a.id==='feature:drive'));
+});
 test('progression persists dismissals, authentic completions and cross-tab shown cooldown without granting money',async t=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'abuja-discovery-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
  let store=new GameStore({dataDir:dir,clock:()=>now,originRandomInt:()=>1});installActivityDiscovery(store);const id=(await store.register({username:'discovery_qa',password:'Discovery fixture password'})).residentId,before=store.profile(id).wallet;

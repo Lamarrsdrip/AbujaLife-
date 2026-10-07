@@ -1,8 +1,11 @@
-# Active production gameplay and revenue pass — 2026-10-07
+# Production gameplay and revenue pass — 2026-10-07
 
 Branch: `codex/final-engineer-integration`. Starting main/production:
 `b6fe532a257d7cf19a70ae77be541fc3ba4d2d28`.
-This is an INCOMPLETE engineering checkpoint. Never deploy it as a finished pass.
+At this checkpoint source, build, unit, Mongo, production-API and disposable Docker
+checks pass. Main integration, VPS deployment, and post-deployment phone/laptop
+browser confirmation remain pending. Do not call production verification complete
+until those finish.
 All user requests in this thread remain in scope, including map-wide advertising,
 phone Wi-Fi and production mobile/laptop verification. Earlier main/Codex history
 was already reconciled; preserve its furniture, vehicle, chat, portfolio, presence,
@@ -35,7 +38,7 @@ login, landmark, nightlife and voice work. Fetch main again before merging.
 - Evidence lives outside Git in `/Users/libertyelectronics/abujalife-final-evidence`.
   Private local Mongo URI/key files must never be committed or printed.
 
-## Current implementations awaiting final verification
+## Integrated implementations
 
 - Physical phone sizing via one all-input VisualViewport owner, whole-device
   proportional scaling, scroll lock and Wi-Fi hardware indicator.
@@ -57,51 +60,64 @@ login, landmark, nightlife and voice work. Fetch main again before merging.
 - Map inventory covers city and blue surrounds; existing district IDs preserved;
   new broader zones cannot sell duplicate surfaces. Existing paid campaigns
   render as image planes through a narrow updateAds API on the mounted map.
-  Viewport-bounded paid-campaign streaming is being wired/tested.
+  Viewport-bounded paid-campaign streaming is bounded and tested. The world canvas
+  and surrounding sky-blue area use the same ad selection path.
+- Eight new destinations reuse the existing authored façade system, reachable
+  entrances and venue activities. City width is 11,200. CBN and EFCC stay on their
+  existing render paths.
+- Living City uses the existing activity registry and resident progression. Server
+  claims suppress cross-tab duplicates; account ownership and quiet-state checks
+  prevent late cards. Driving prompts require an available owned vehicle; Jackpot
+  discovery remains behind the existing eligibility signal.
+- Okrika and AbujaLife continue to share the existing Flutterwave account/API
+  configuration. No key rotation, dashboard change or Okrika source change was
+  made. Each app's configured public origin is used for its return URL; AbujaLife
+  ignores foreign Okrika references. Unit and Mongo tests cover this isolation.
 
-## Tests actually completed this pass
+## Tests completed on this branch before main integration
 
 - 12 existing authenticated Mongo payment tests passed before later changes.
 - 26 focused baseline unit tests passed (payments, ads, phone).
 - 12 new unit tests passed (arrival state/recovery, image optimisation, viewport).
-- 8 map/ad inventory tests passed (coverage, overlap rejection, paid placement,
-  expiry, existing ads contracts). Full npm QA now passes: 505 tests, zero failures. Windows runtime: 5 tests pass.
-- Production build passes. Infra checks running. Expanded Mongo: reference-only
-  callback and background-worker race pass; paid city/sky ad reservation/fulfillment
-  passes its transactional assertions; admin list assertion being verified.
+- Full `npm run qa`: 516 tests, zero failures. Windows runtime suite: 5 passed.
+- Production build passes (72 public files).
+- Full `npm run qa:infra` passes: isolated Mongo/API containers, serialized Mongo
+  integration files, production API acceptance, encrypted backup, tamper rejection,
+  restore and restart persistence.
+- Production API acceptance: all 13 checks pass. Mongo acceptance covers visit
+  deduplication, unique online residents, exact-zone counts, hidden/expired presence,
+  realtime expiry, payment replay and city/sky ad reservation races.
+- Payment unit and Mongo tests verify provider amount/currency/reference/status,
+  callback/webhook cooperation, concurrent exactly-once fulfillment, global
+  cross-product transaction receipt uniqueness and foreign Okrika reference
+  isolation. No live payment was initiated by these tests.
 - Removed obsolete generic route corridor/highway; shared-city and actual-renderer
-  fallback motion/once-only arrival: 7 tests pass. Removed competing polish
-  VisualViewport listener/CSS owner. Actual browser acceptance is next.
+  fallback motion/once-only arrival tests pass. Removed competing VisualViewport
+  listener/CSS owner.
+- Python Playwright is unavailable in this shell, so the updated automated frame/map
+  test could not be rerun here. An earlier run passed the mobile shell and stopped
+  on a laptop click point overlapping a landmark label; the test now selects an
+  unobstructed canvas point. The production build was checked at 393×852 and
+  1440×900 in that prior run; keyboard geometry is simulated and is not physical
+  iPhone hardware testing.
 - Local authenticated replica set at 127.0.0.1:27089 (`abujaqa`), isolated local
   `abujalife_prod` DB. Config under evidence/mongo-local-pass. Running mongod must
   remain available for further Mongo/browser QA. TEST_PAYMENT_KEY_FILE selects
   evidence/mongo-local-pass/payment-key; do not mix random config encryption keys.
 
-## Required next work — do not omit
+## Remaining finalization work — do not omit
 
-1. Finish and verify map viewport streaming/index/slot coordinate writes and
-   expiry, selection, business links, transactional checkout; real mobile/laptop.
-2. Replace obsolete trip static/fake renderer tests with real shared-city motion
-   tests; browser-test camera/turns/arrival, repeated travel and car continuity.
-3. Strengthen actual Mongo payment/ad/Jackpot callback, concurrency, reconciliation,
-   late reservation, invalid provider facts and ledger tests; investigate production
-   webhook delivery; all revenue states/admin handling. Never charge a live test.
-4. Full phone keyboard/WebKit geometry, currency layout and fixed dock playthrough.
-5. Living City registry/director and durable progression history are implemented.
-   Old unpersisted work reminder is consolidated. Complete actual-browser and
-   Mongo concurrency/quiet-state verification, feature-completion coverage and
-   existing eligibility controls before enabling paid Jackpot discovery.
-6. Audit today's visits against actual production data and defined Lagos-day,
-   session dedupe; verify unique online/here expiry and multi-tab behavior.
-7. Complete earlier broad tasks/regressions: furniture immediate move/store/sell,
-   home isolation, compact live chat/privacy, portfolio buy/rent/sell totals,
-   physical garage/no floating card, exact landmarks, nightlife, voice retry,
-   stable login, multiplayer visits and all affected mutation/reconnect behavior.
-8. Run npm run qa, Windows runtime tests, build, qa:infra, relevant Mongo tests,
-   Chromium/WebKit journeys, V4 current-client acceptance and actual player flows.
-9. Fetch main again, reconcile valid newer work, rerun affected checks, commit and
-   push safely to main only after completion, canonical Windows VPS deployment,
-   verify release identity/health/assets and play production phone AND laptop.
+1. Fetch main immediately before integration; the post-verification fetch confirmed
+   it remains `b6fe532a257d7cf19a70ae77be541fc3ba4d2d28`, the parent of this branch.
+   Preserve all Codex-only commits.
+2. Push the verified descendant to main, run the canonical Windows VPS updater,
+   and verify release identity, API health and served assets.
+3. Play the deployed production app on phone-sized and laptop viewports. Verify the
+   phone shell/dock, map and blue-space ad selection, city navigation and journey
+   completion without charging a live payment. Public TLS/DNS and physical iPhone
+   keyboard behavior are separate from isolated test evidence.
+4. Recheck main and deployment health after any correction. Do not use real checkout
+   as a QA fixture.
 
 ## Production deployment context
 
@@ -114,10 +130,9 @@ main integration, deployment and provider-confirmed pending-payment reconciliati
 
 ## Further checkpoint — shared account, discovery, map and world
 
-- Shared Okrika Flutterwave account/API must stay intact. No credentials rotated,
+- Shared Okrika Flutterwave account/API stays intact. No credentials rotated,
   no account dashboard webhook changed, no Okrika source changed. Okrika's existing
   handler only looks up its own references and ignores AbujaLife references.
-  User was asked Okrika's site/current webhook address; reply still pending.
   AbujaLife callback plus bounded server reconciliation can verify abandoned
   orders independently of a shared dashboard webhook. Do not claim provider
   delivery configuration or historical webhook root cause proven.
@@ -130,13 +145,9 @@ main integration, deployment and provider-confirmed pending-payment reconciliati
 - Latest payment + discovery test run: 22 passed, no skips. Actual v3 hash,
   callback replay, server verification, background reconcile and paid city/blue
   reservation/fulfillment are included.
-- Latest full QA initially had two failures from discovery wrapper accidentally
-  making synchronous SQLite actions asynchronous; wrapper corrected. Focused
-  HTTP/v4/discovery tests pass. Rerun full QA on final changes.
-- Docker Desktop now works. qa:infra completed with 51/52 Mongo tests passing,
-  one nearby fixture assertion accidentally selected another concurrently tested
-  resident. Assertion now selects its own guest consistently; must rerun infra.
-  Backup/restore stages did NOT run after that failure. Never report infra passed.
+- Latest full QA: 516 passed, 0 failed. Docker infrastructure and all Mongo/API
+  integration tests pass, including backup/restore after the previous fixture race
+  was fixed by isolated resident IDs and serialized integration files.
 - Production read-only stats audit: 18,004 residents, 9 unique visible online,
   13 visible connections, 207 tracked visits today, 181 sessions whose latest
   visit is today. Repeat visits can explain the difference; exact today's visits
@@ -148,8 +159,9 @@ main integration, deployment and provider-confirmed pending-payment reconciliati
 - Phone mobile Chromium: whole frame fits keyboard-shaped VisualViewport,
   scroll locked, Wi-Fi shown. This is a simulation, not physical native keyboard.
   Map ad button/close overlap found and competing CSS removed; mobile tap/studio
-  flow passed. Laptop screenshot hit font timeout; rerun with longer artifact
-  timeout. WebKit still required.
+  flow passed. Laptop ad tap test was corrected to avoid real landmark labels; run
+  production browser confirmation after deployment. WebKit/physical iPhone remain
+  unverified here.
 - New world request: older detailed façade owner reused for equivalent newer
   hotels, offices, shops, cinemas and faith buildings. CBN/EFCC and outdoor
   monument models preserved. Registry adds eight destinations: Central Park,
@@ -157,13 +169,13 @@ main integration, deployment and provider-confirmed pending-payment reconciliati
   Gallery. Each has existing API activities and a reachable interior. Free-roam
   width 8,500 -> 11,200; appended streets/entrances/footprints. New landmark
   navigation derives from canonical city-landmarks instead of duplicate list.
-  These latest world changes still need renderer/browser/QA verification.
+  Unit, build and Mongo checks pass; live production browser review remains.
 - Source references for destination identity/purpose (game anchors are stylised):
   https://sahadstores.com/ ; https://grandsquareng.com/ ;
   https://genesiscinemas.com/ceddi-plaza-abuja/ ;
   https://www.linkedin.com/company/central-park-abuja ;
   https://www.linkedin.com/company/nikeartgalleryabuja ;
   https://www.lifeinmycityartsfestival.org/assets/pdf/2024/regional_exhibition_schedule.pdf
-- No main merge or deployment of this checkpoint yet. Branch must be kept pushed
-  for continuation. Complete all earlier requests, final QA and production mobile
-  AND laptop play before pushing final main and canonical Windows redeploy.
+- No main merge or deployment of this checkpoint yet. The integration branch is
+  pushed for continuation; final main push, canonical Windows redeploy and
+  production mobile/laptop verification remain.

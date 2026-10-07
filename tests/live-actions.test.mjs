@@ -32,15 +32,15 @@ test('nearby endpoint remains a live gameplay action, not an auth/startup route'
  assert.equal(res.status,200);assert.equal(body.nearby.length,1);assert.equal(body.nearby[0].id,f.nearbyResident.id);assert.deepEqual(body.stats,{onlineNow:5,totalPlayers:800,visitsToday:9,visitsAllTime:1200,trackingSince:f.traffic.trackingSince,hereNow:2});assert.equal(body.serverTime,NOW);
 });
 
-test('real nearby polling records a session visit once in its existing visit window',async()=>{
+test('nearby refresh never adds a city visit or rewrites its entry dedupe marker',async()=>{
  const f=fixture();let recordedAt=null;
  const collection=f.store.collection.bind(f.store);
  f.store.auth={hashToken:token=>`hash:${token}`};
  f.store.collection=name=>name==='sessions'?{async updateOne(filter,update){if(recordedAt!==null&&recordedAt>filter.$or[0].lastCityVisitAt.$lte)return{modifiedCount:0};recordedAt=update.$set.lastCityVisitAt;return{modifiedCount:1};}}:name==='admin_settings'?{findOne:async()=>f.traffic,async updateOne(filter,update){f.traffic.visitsAllTime+=update.$inc.visitsAllTime;f.traffic.visitDays['2026-10-03']+=update.$inc['visitDays.2026-10-03'];}}:collection(name);
  const runtime=createLiveActions({store:f.store,admin:f.admin});
  const first=await call(runtime,'GET','/api/presence/nearby'),again=await call(runtime,'GET','/api/presence/nearby');
- assert.equal(first.res.status,200);assert.equal(first.body.stats.visitsToday,10);assert.equal(again.body.stats.visitsToday,10);assert.equal(f.traffic.visitsAllTime,1201);
- assert.equal(f.realtime.statsBroadcasts,1,'a newly recorded visit updates every connected city counter once');
+ assert.equal(first.res.status,200);assert.equal(first.body.stats.visitsToday,9);assert.equal(again.body.stats.visitsToday,9);assert.equal(f.traffic.visitsAllTime,1200);
+ assert.equal(recordedAt,null);assert.equal(f.realtime.statsBroadcasts,0,'only real entry owns visit recording');
 });
 
 test('authenticated nearby polling does not pool distinct residents on one mobile-network IP',async()=>{

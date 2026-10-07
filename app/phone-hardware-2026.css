@@ -47,9 +47,9 @@
 #phone-root.phone-root .ph-action-button{left:-5px;top:90px}
 #phone-root.phone-root .ph-volume{left:-5px;top:132px;height:68px}
 #phone-root.phone-root .ph-power{right:-5px;top:154px;height:61px}
-#phone-root.phone-root .ph-device-caption{top:calc(100% + 13px);z-index:4;pointer-events:auto;padding-inline:2px;text-shadow:0 1px 8px rgba(0,0,0,.5)}
+#phone-root.phone-root .ph-device-caption{top:calc(100% + 13px);z-index:4;pointer-events:none;padding-inline:2px;text-shadow:0 1px 8px rgba(0,0,0,.5)}
 #phone-root.phone-root .ph-device-caption>span{opacity:.76}
-#phone-root.phone-root .ph-device-caption button{min-height:34px;padding:4px 0 4px 12px}
+#phone-root.phone-root .ph-device-caption button{pointer-events:auto;min-height:34px;padding:4px 0 4px 12px}
 #phone-root.phone-root .ph-app-content,#phone-root.phone-root .ph-home-content,#phone-root.phone-root .ph-lock-content{min-width:0;min-height:0}
 #phone-root.phone-root .ph-scroll{overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 #phone-root.phone-root .ph-app,#phone-root.phone-root .ph-home,#phone-root.phone-root .ph-locked{overflow:hidden}

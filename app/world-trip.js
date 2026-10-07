@@ -47,7 +47,7 @@ export function renderTripWorld(container,{profile={},place={},serverNow,onArriv
   const turn=((Number(sample.angle||0)-angle+540)%360)-180;angle+=turn*(dt?1-Math.exp(-11*dt):1);
   player.setAttribute('transform',`translate(${visual.x.toFixed(2)} ${visual.y.toFixed(2)})`);car.setAttribute('transform',`rotate(${angle.toFixed(2)})`);
   if(progressPath)progressPath.style.strokeDashoffset=String(pathLength*(1-rawProgress));
-  container.dataset.routeProgress=rawProgress.toFixed(4);container.dataset.playerX=visual.x.toFixed(2);container.dataset.playerY=visual.y.toFixed(2);container.dataset.vehicleAngle=angle.toFixed(2);
+  container.dataset.routeProgress=rawProgress.toFixed(4);container.dataset.playerX=visual.x.toFixed(2);container.dataset.playerY=visual.y.toFixed(2);container.dataset.cameraX=(camera?.x||visual.x).toFixed(2);container.dataset.cameraY=(camera?.y||visual.y).toFixed(2);container.dataset.moving='true';container.dataset.driving=String(trip.mode!=='walk');container.dataset.vehicleAngle=angle.toFixed(2);const model=player.getBoundingClientRect();container.dataset.playerModelBounds=JSON.stringify({x:model.x,y:model.y,width:model.width,height:model.height});
   paintViewport(false);
   const remaining=Math.max(0,Math.ceil((Number(trip.arrivesAt)-now())/1000));if(remaining>0&&remaining%3===0)status.textContent=`${remaining}s · driving to ${label}`;
   if(rawProgress>=1&&!arriving){arriving=true;status.textContent=`Arriving at ${label}…`;Promise.resolve(onArrive?.(trip.id)).then(ok=>{if(ok===false){arriving=false;if(!disposed)raf=requestAnimationFrame(tick);}}).catch(()=>{arriving=false;if(!disposed)raf=requestAnimationFrame(tick);});return;}

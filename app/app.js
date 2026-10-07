@@ -10,6 +10,7 @@ import { enhanceProductPreviews } from './product-3d.js';
 import { vehicleIllustration } from './vehicle-art.js';
 import { createPhone } from './phone.js';
 import { renderWorld, avatarSVG } from './world.js';
+import { rememberCarDistrict } from './world-simulator.js';
 import { renderMap } from './map.js';
 import { createHomeEditor } from './home-editor.js';
 import { createFurnitureCatalogue } from './furniture-catalogue.js';
@@ -319,14 +320,16 @@ function renderMain(){
 function worldMarkup(){const p=state.profile,visiting=p.location?.kind==='visit',visit=state.homeVisit,visitors=list(state.homeVisitors);const needs=[['Energy','energy','⚡'],['Food','hunger','⌁'],['Fun','fun','◌'],['Toilet','bladder','◒'],['Clean','hygiene','✦'],['Social','social','♧']];const visitName=visiting?visit?.owner?.displayName:'your home';const visitorNames=visitors.map(row=>row.guest?.displayName).filter(Boolean);return `<section class="world-stage playable-stage" aria-label="Your playable location"><div id="world-scene"></div><div class="play-hud" aria-label="Your current life needs"><button class="play-needs" data-open-needs aria-label="Open your life needs">${needs.map(([label,key,icon])=>{const value=Number(p[key]??(key==='bladder'?86:0));return `<span><small><i aria-hidden="true">${icon}</i>${label}</small><i class="need-track"><b style="width:${Math.max(0,Math.min(100,value))}%"></b></i></span>`;}).join('')}</button></div><div class="play-guide"><span class="eyebrow">LIVE CAMERA</span><p>Drag to orbit your space · pinch to zoom · tap the floor to move.</p></div>${visiting||visitorNames.length?`<aside class="play-visit-card" aria-live="polite"><span class="eyebrow">${visiting?'HOME VISIT':'YOUR HOME'}</span><strong>${visiting?`At ${esc(visitName||'your host')}’s home`:`${visitorNames.length} ${visitorNames.length===1?'visitor':'visitors'} in your home`}</strong><small>${visiting?'Walk around, see each other and say hello.':esc(visitorNames.join(' · ')||'Your visitors are here.')}</small><div><button type="button" class="secondary" data-open-local-chat>Talk nearby</button>${visiting?'<button type="button" class="text-button" data-life-leave>Leave</button>':'<button type="button" class="text-button" data-open-visits>Visit details</button>'}</div></aside>`:''}${state.profile.activeTrip?tripMarkup(state.profile.activeTrip):''}</section>`;}
 function tripMarkup(trip){const venue=list(state.venues).find(v=>v.id===trip.venueId),mode=TRANSPORT_MODES.find(m=>m.id===trip.mode);return `<div class="trip-banner" role="status"><span class="trip-route-icon">${icon('arrow')}</span><div><strong>${esc(venue?.name||place(trip.destination)?.name||trip.destination)}</strong><span class="trip-mode">${esc(mode?.name||'Journey')} · ₦${money(trip.cost)}</span><span data-trip-countdown>On the way</span></div><button class="primary" data-arrive disabled>Arrive</button></div>`;}
 function openNeeds(){const p=state.profile;openSheet(`<span class="eyebrow">YOUR DAY · ${playTime()}</span><h2 id="sheet-title">A little care goes a long way.</h2><div class="daily-needs">${[['Energy','energy'],['Food','hunger'],['Fun','fun'],['Toilet','bladder'],['Cleanliness','hygiene'],['Social','social'],['Stress','stress']].map(([label,key])=>{const value=Number(p[key]??(key==='bladder'?86:0));return `<div><label>${label}<span>${Math.round(value)}%</span></label><progress max="100" value="${value}" aria-label="${label}"></progress></div>`;}).join('')}</div><p class="muted">Rest at home, get something to eat, freshen up, or spend time in the city. Find a rhythm that works for you.</p>`);}
-function homeDoor(){const p=state.profile;closeSheet();if(view!=='world')navigate('world');if(p.location?.kind==='visit'){perform('leave-visit');return;}if(p.location?.kind==='home'){perform('leave-home');return;}if(currentVenue()){perform('exit-venue');return;}if(p.district===p.home.district){perform('enter-home');return;}travelSheet(p.home.district,true);}
+function homeDoor(){const p=state.profile;closeSheet();if(view!=='world')navigate('world');if(p.location?.kind==='visit'){perform('leave-visit');return;}if(p.location?.kind==='home'){perform('leave-home');return;}if(currentVenue()){perform('exit-venue');return;}if(p.district===p.home.district){if(p.drivingVehicle){void interact('toggle-driving',{vehicleId:null}).then(ok=>{if(ok)perform('enter-home');});return;}perform('enter-home');return;}if(p.drivingVehicle){travelSheet(p.home.district,true,null,'car');return;}travelSheet(p.home.district,true);}
 async function goHome(){
  if(quickHomeNavigating||state.profile.activeTrip)return;
  if(state.profile.location?.kind==='home'){if(view!=='world')navigate('world');return;}
  quickHomeNavigating=true;closeSheet();if(view!=='world')navigate('world');root.querySelector('[data-quick-home]')?.setAttribute('disabled','');
  try{
-  if(!await goOutdoors())return;
+  const takeCar=!!state.profile.drivingVehicle&&state.profile.district!==state.profile.home?.district;
+  if(!await goOutdoors({keepVehicle:takeCar}))return;
   const p=state.profile;
+  if(takeCar){travelSheet(p.home.district,true,null,'car');return;}
   travelSheet(p.home.district,true);return;
  }finally{quickHomeNavigating=false;const button=root.querySelector('[data-quick-home]');if(button)button.disabled=state.profile.location?.kind==='home'&&view==='world'||!!state.profile.activeTrip;}
 }
@@ -360,6 +363,11 @@ function bindWorld(){
   sprint.before(row);row.append(home,sprint);
  }
  if(p.activeTrip)bindTrip(p.activeTrip);
+ if(p.location?.kind==='public'){
+  const places=document.createElement('button');places.type='button';places.className='world-catalogue-button';places.dataset.outsideDestinations='';
+  places.innerHTML=`${icon('map')}<span>Destinations</span>`;places.onclick=openCityPlaces;
+  root.querySelector('.world-stage')?.append(places);
+ }
 }
 async function completeTrip(tripId){
  const trip=state.profile?.activeTrip;
@@ -388,7 +396,7 @@ async function interact(name,payload={}){
  if(name==='play-dice'||name==='dice'){openDice();return;}
  if(name==='venue-menu'||name==='venue-actions'){openVenueMenu(currentVenue());return;}
  if(name==='venue-action'){const activity=list(state.venueActions).find(a=>a.id===payload.activityId);if(!payload.activityId){openVenueMenu(currentVenue());return;}if(await action(name,payload))toast(`${activity?.name||'Activity'} complete.`);return;}
- if(name==='toggle-driving'){const result=await action(name,payload);if(result)toast(state.profile.drivingVehicle?'You’re in your car. Use the controls to drive.':'You’re back on foot.');return result;}
+ if(name==='toggle-driving'){const result=await action(name,payload);if(result){rememberCarDistrict(state.profile.id,state.profile.district);toast(state.profile.drivingVehicle?'You’re in your car. Use the controls to drive.':'You’re back on foot.');}return result;}
  if(name==='place-furniture'){const result=await action(name,payload);if(result)toast('Placed. Tap your piece whenever you want to change it.');return result;}
  if(name==='dealership'||name==='garage'){openGarage();return;}
  if(name==='banex-market'){openBanexMarket();return;}
@@ -401,10 +409,11 @@ async function interact(name,payload={}){
  openSheet(`<span class="eyebrow">${info[0]}</span><h2 id="sheet-title">${info[1]}</h2><p class="muted">${info[2]}</p><div class="detail-line"><span>Virtual cost</span><strong>${costLabel}</strong></div><button class="primary full" id="confirm-interaction">${info[1]}${icon('arrow')}</button>`);
  document.querySelector('#confirm-interaction').onclick=()=>{closeSheet();const complete=async()=>{if(await action(name))toast('A little better than before.');};if(cleanup?.animateActivity)cleanup.animateActivity(name==='relax'?'rest':name,({sleep:18,shower:16,relax:16,eat:15,exercise:18})[name]||15,complete);else complete();};
 }
-async function goOutdoors(){
+async function goOutdoors(options={}){
+ const keepVehicle=options.keepVehicle===true;
  if(state.profile.activeTrip)return false;
  if(state.profile.location?.kind==='visit'){const result=await(cleanup?.performAsync?cleanup.performAsync('leave-visit'):interact('leave-visit'));return Boolean(result)&&state.profile.location.kind!=='visit';}
- if(state.profile.drivingVehicle){if(!await action('toggle-driving',{vehicleId:null}))return false;}
+ if(state.profile.drivingVehicle&&!keepVehicle){if(!await action('toggle-driving',{vehicleId:null}))return false;if(state.profile?.id)rememberCarDistrict(state.profile.id,state.profile.district);}
  if(state.profile.location?.kind==='home')return Boolean(await (cleanup?.performAsync?cleanup.performAsync('leave-home'):action('leave-home')));
  if(currentVenue())return Boolean(await (cleanup?.performAsync?cleanup.performAsync('exit-venue'):action('exit-venue')));
  return true;
@@ -420,7 +429,10 @@ addEventListener('abj:open-map-venue',event=>{
  const venueId=String(event.detail?.venueId||'');if(!venueId)return;
  const venue=list(state.venues).find(place=>place.id===venueId);
  if(!venue){toast('That Abuja destination is not available.');return;}
- goToVenue(venueId);
+ // The restored city map owns this handoff and focuses the exact landmark.
+ // A second travel sheet used to open underneath that map, so confirming the
+ // card could send the player to the district instead of the venue.
+ closeSheet();
 });
 
 function openCityPlaces(){
@@ -509,17 +521,15 @@ function manageOwnedItem(itemId){
 function outsideMarkup(){return worldMarkup();}
 function bindOutside(){
  bindWorld();
- const button=document.createElement('button');button.type='button';button.className='world-catalogue-button';button.dataset.outsideDestinations='';button.innerHTML=`${icon('map')}<span>Destinations</span>`;button.onclick=openCityPlaces;
- root.querySelector('#world-scene')?.append(button);
 }
 function mapMarkup(){return `<div class="page-heading map-page-heading"><span class="eyebrow">ABUJA & THE WIDER FCT</span><h1>See the city. Choose your next chapter.</h1><p>Use this optional district guide, or explore the live 3D city from Outside.</p></div><section class="map-stage" id="map-root" aria-label="Abuja map"></section>`;}
 function bindMap(){cleanup=renderMap(document.querySelector('#map-root'),{atlas:state.atlas,venues:list(state.venues),profile:state.profile,onSelect:()=>{},onTravel:(id,venueId)=>travelSheet(typeof id==='string'?id:id.id,false,venueId||null)});}
-function travelSheet(district,returningHome=false,venueId=null){
+function travelSheet(district,returningHome=false,venueId=null,preferMode=null){
  const destination=place(district);if(!destination)return;
  if(state.profile.activeTrip){toast('Finish this journey before choosing another destination.');return;}
  const venue=list(state.venues).find(v=>v.id===venueId),sameDistrict=district===state.profile.district;
  const ownsCar=list(state.catalog).some(item=>item.category==='vehicle'&&state.profile.inventory.includes(item.id));
- const modes=TRANSPORT_MODES.filter(mode=>mode.id!=='car'||ownsCar),defaultMode=sameDistrict?'walk':'bus';
+ const modes=TRANSPORT_MODES.filter(mode=>mode.id!=='car'||ownsCar),defaultMode=preferMode&&modes.some(mode=>mode.id===preferMode)?preferMode:sameDistrict?'walk':'bus';
  openSheet(`<span class="eyebrow">${returningHome?'BACK TO YOUR OWN HOME':'GETTING AROUND'}</span><h2 id="sheet-title">${esc(returningHome?state.profile.home.name:venue?.name||destination.name)}</h2><p class="muted">${esc(destination.name)} · Choose your ride.</p><form id="travel-form"><fieldset class="travel-mode-options"><legend>How are you going?</legend>${modes.map(mode=>`<label class="travel-mode-option"><input type="radio" name="mode" value="${esc(mode.id)}" ${mode.id===defaultMode?'checked':''} ${mode.id==='walk'&&!sameDistrict?'disabled':''}><span><strong>${esc(mode.name)}</strong><small>${mode.id==='walk'&&!sameDistrict?'Available within your current neighbourhood':esc(mode.description)}</small></span></label>`).join('')}</fieldset><div class="detail-line travel-quote" id="travel-quote" aria-live="polite">Checking your fare…</div><p class="travel-fare-note" id="travel-fare-note">Game Naira · compressed journey times.</p><button class="primary full" type="submit" disabled>Start journey${icon('arrow')}</button></form>`);
  const form=sheetRoot.querySelector('#travel-form');let quoteSequence=0,quote=null,submitting=false;
  const getQuote=async()=>{
@@ -551,7 +561,7 @@ function travelSheet(district,returningHome=false,venueId=null){
    if(returningHome){if(cleanup?.performAsync)await cleanup.performAsync('enter-home');else await action('enter-home');}else perform('enter-venue',{venueId});
    return;
   }
-  if(await action(returningHome?'return-home':'travel',{district,mode,...(venueId?{venueId}:{})})){pendingVenue=undefined;navigate('world');toast('Your journey has started.');}
+  if(await action(returningHome?'return-home':'travel',{district,mode,...(venueId?{venueId}:{})})){if(mode==='car')rememberCarDistrict(state.profile.id,district);pendingVenue=undefined;navigate('world');toast('Your journey has started.');}
  };
 }
 function workMarkup(){

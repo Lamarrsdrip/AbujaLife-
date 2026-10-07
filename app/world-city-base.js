@@ -122,9 +122,10 @@ export function buildCity({profile={},place={},id='city',venues=[]}={}) {
   art+=building(spec);
   obstacles.push({x:spec.x-4,y:spec.y-spec.h-8,w:spec.w+31,h:spec.h+18});
   const isHome=spec.id==='home',canHome=profile.home?.district===profile.district||!profile.district;
-  // Abuja should still look like a city when a venue belongs to another district.
-  // Only the authoritative local venue (or the resident's own home) is directly enterable.
-  if(isHome||localVenue)interactables.push({id:spec.id,x:spec.x+spec.w/2,y:spec.y+58,label:isHome?(canHome?'Your front door':'View homes'):(localVenue?.name||spec.name),action:isHome?(canHome?'enter-home':'estate-office'):'enter-venue',payload:isHome?{}:{venueId:spec.id},radius:78,icon:isHome?'⌂':({restaurant:'♨',gym:'↗',hotel:'✦',cinema:'▷',dealership:'↔','estate-office':'⌂','furniture-store':'▱',grocery:'✿'}[spec.id])});
+  // A venue listed for another district stays on the skyline, but its door starts
+  // the real cross-neighbourhood journey instead of pretending the player can walk in.
+  const remote=localVenue?.districts&&!localVenue.districts.includes(profile.district);
+  if(isHome||localVenue)interactables.push({id:spec.id,x:spec.x+spec.w/2,y:spec.y+58,label:isHome?(canHome?'Your front door':'View homes'):(localVenue?.name||spec.name),action:isHome?(canHome?'enter-home':'estate-office'):remote?'travel-venue':'enter-venue',payload:isHome?{}:remote?{destinationVenueId:spec.id,districtId:localVenue.districts[0]}:{venueId:spec.id},radius:78,icon:isHome?'⌂':({restaurant:'♨',gym:'↗',hotel:'✦',cinema:'▷',dealership:'↔','estate-office':'⌂','furniture-store':'▱',grocery:'✿'}[spec.id])});
  }
  const neighbourhoodFabric=[
   {x:40,y:1188,w:330,h:145,c:'#d9d1be'},{x:430,y:1200,w:285,h:132,c:'#c9cfbf'},{x:820,y:1192,w:310,h:150,c:'#e0d7c2'},

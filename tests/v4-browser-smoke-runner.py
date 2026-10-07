@@ -112,13 +112,26 @@ async def open_phone_like_player(page,app=None):
 
 
 async def enter_home_when_scene_is_ready(page):
-    """Wait for the home interaction layer, not only the saved location transition."""
+    """Wait until the authored home interaction layer stays mounted.
+
+    Returning home rebuilds the world. A sleep control can appear for one frame
+    and then vanish while the scene remounts. Require the same target to still
+    be inside the current #world-scene after the paint settles.
+    """
     await dismiss_returning_welcome(page)
     result=await _original_enter_home(page)
     await dismiss_returning_welcome(page)
     await v4.expect(page.locator('#world-scene')).to_be_visible()
-    await page.wait_for_function("""()=>[...document.querySelectorAll('[data-world-target]')]
-        .some(node=>String(node.dataset.worldTarget||'').toLowerCase().includes('sleep'))""",timeout=30000)
+    await page.wait_for_function("""()=>{
+        const scene=document.querySelector('#world-scene');
+        if(!scene)return false;
+        const sleep=[...scene.querySelectorAll('[data-world-target]')]
+            .find(node=>String(node.dataset.worldTarget||'').toLowerCase().includes('sleep'));
+        if(!sleep){window.__abjSleepReady=0;return false;}
+        const stamp=performance.now();
+        if(!window.__abjSleepReady||window.__abjSleepNode!==sleep){window.__abjSleepReady=stamp;window.__abjSleepNode=sleep;return false;}
+        return stamp-window.__abjSleepReady>=400;
+    }""",timeout=30000)
     return result
 
 

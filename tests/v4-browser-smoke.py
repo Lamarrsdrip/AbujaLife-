@@ -187,8 +187,15 @@ async def physical(page,qa,activities=('shower','sleep')):
         key='hygiene' if activity=='shower' else 'energy';assert during[key]==before[key],(before[key],during[key])
         await qa.screenshot(page,'main-physical-'+activity)
         await page.wait_for_function('(activity)=>document.querySelector("#world-scene")?.dataset.activity!==activity',arg=activity,timeout=25000)
-        after=await game.wait_state(page,lambda s:s['profile'][key]>before[key],20)
-        results.append({'activity':activity,'before':before[key],'after':after['profile'][key],'effectsDelayed':True})
+        await expect(page.locator('#toast')).to_contain_text('A little better than before',timeout=20000)
+        after=await game.state(page);value=after['profile'][key]
+        actions=[r for r in qa.requests if r['body'].get('action')==activity]
+        assert len(actions)==count+1,{'activity':activity,'beforeRequests':count,'afterRequests':len(actions)}
+        assert value>=before[key],{'activity':activity,'before':before[key],'after':value}
+        # A need can already be at its 100-point cap. The action still
+        # completes and applies its other benefits; it simply cannot raise a
+        # capped meter any further.
+        results.append({'activity':activity,'before':before[key],'after':value,'atCap':value==100,'effectsDelayed':True})
     return results
 
 async def home_studio(page,qa):

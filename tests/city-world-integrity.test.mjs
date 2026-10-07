@@ -6,6 +6,11 @@ import fs from 'node:fs';
 
 const byId=new Map(VENUES.map(v=>[v.id,v]));
 const legacyInteriors=new Set(['banex','jabi-lake']);
+const worldCitySource=()=>[
+  fs.readFileSync(new URL('../app/world-city.js',import.meta.url),'utf8'),
+  fs.readFileSync(new URL('../app/world-city-base.js',import.meta.url),'utf8'),
+].join('\n');
+
 test('every Abuja map landmark resolves to a playable venue and a destination-specific interior path',()=>{
   assert.equal(CITY_LANDMARKS.length,21);
   const interiors=fs.readFileSync(new URL('../app/world-interiors.js',import.meta.url),'utf8');
@@ -29,7 +34,7 @@ test('full-city free roam exposes landmarks and map keeps outer ad space',()=>{
     const ids=new Set(venuesForDistrict(landmark.districtId).map(v=>v.id));
     assert.ok(ids.has(landmark.id),`${landmark.id} missing from its authoritative district`);
   }
-  const world=fs.readFileSync(new URL('../app/world-city.js',import.meta.url),'utf8');
+  const world=worldCitySource();
   assert.match(world,/CITY_LANDMARKS/);assert.match(world,/airport-plane/);assert.match(world,/width=8500/);assert.match(world,/travel-venue/);
   const map=fs.readFileSync(new URL('../app/outside-city-v4.js',import.meta.url),'utf8');
   assert.match(map,/CITY_LANDMARKS/);assert.match(map,/Advertising plot/);assert.match(map,/minZoom:\.22,maxZoom:24/);

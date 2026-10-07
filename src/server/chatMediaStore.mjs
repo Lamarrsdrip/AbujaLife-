@@ -82,7 +82,8 @@ export class ChatMediaStore{
       const signed=signedHeaders(this.s3,'PUT',key,bytes,mime),response=await this.fetch(signed.url,{method:'PUT',headers:signed.headers,body:bytes,signal:AbortSignal.timeout(20000)});
       if(!response.ok)throw new GameError('Photo or voice note could not be stored. Try again.',502,'media_storage_failed');
     }else{
-      try{await fs.mkdir(this.root,{recursive:true});await fs.writeFile(path.join(this.root,safeId(mediaId)),bytes,{flag:'wx'});}catch(error){if(error.code!=='EEXIST')throw new GameError('Photo or voice note could not be stored. Try again.',503,'media_storage_failed');}
+      try{await fs.mkdir(this.root,{recursive:true});}catch{throw new GameError('Photo or voice note could not be stored. Try again.',503,'media_storage_failed');}
+      try{await fs.writeFile(path.join(this.root,safeId(mediaId)),bytes,{flag:'wx'});}catch(error){if(error.code!=='EEXIST')throw new GameError('Photo or voice note could not be stored. Try again.',503,'media_storage_failed');}
     }
     return{id:mediaId,...meta};
   }

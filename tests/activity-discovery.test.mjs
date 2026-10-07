@@ -39,10 +39,11 @@ test('driving discovery names only a real owned car available at this location',
  assert.ok(!activityCandidates({profile:{...owned,vehiclePresence:{...owned.vehiclePresence,venue:'restaurant'}},now}).some(a=>a.id==='feature:drive'));
 });
 test('progression persists dismissals, authentic completions and cross-tab shown cooldown without granting money',async t=>{
- const dir=fs.mkdtempSync(path.join(os.tmpdir(),'abuja-discovery-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
- let store=new GameStore({dataDir:dir,clock:()=>now,originRandomInt:()=>1});installActivityDiscovery(store);const id=(await store.register({username:'discovery_qa',password:'Discovery fixture password'})).residentId,before=store.profile(id).wallet;
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'abuja-discovery-'));let store;
+ t.after(()=>{store?.close();fs.rmSync(dir,{recursive:true,force:true});});
+ store=new GameStore({dataDir:dir,clock:()=>now,originRandomInt:()=>1});installActivityDiscovery(store);const id=(await store.register({username:'discovery_qa',password:'Discovery fixture password'})).residentId,before=store.profile(id).wallet;
  await store.action(id,'discovery-event',{activityId:'need:sleep',event:'shown'});const suppressed=await store.action(id,'discovery-event',{activityId:'venue:jabi-lake',event:'shown'});assert.equal(suppressed.suppressed,true);
  await store.action(id,'discovery-event',{activityId:'need:sleep',event:'dismissed'});await store.action(id,'sleep');assert.equal(store.profile(id).discovery.features.sleep,now);assert.equal(store.profile(id).wallet,before);
  await assert.rejects(store.action(id,'discovery-event',{activityId:'invented',event:'shown'}),{code:'invalid_discovery'});
- store.close();store=new GameStore({dataDir:dir,clock:()=>now});t.after(()=>store.close());assert.equal(store.profile(id).discovery.features.sleep,now);
+ store.close();store=new GameStore({dataDir:dir,clock:()=>now});assert.equal(store.profile(id).discovery.features.sleep,now);
 });

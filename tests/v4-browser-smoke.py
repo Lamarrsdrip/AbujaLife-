@@ -161,7 +161,7 @@ async def phone_hardware(page,qa):
             await game.open_phone(page)
             root=page.locator('#phone-root');device=root.locator('.ph-device')
             await expect(root).to_be_visible();await expect(device).to_be_visible()
-            await expect(device.locator('.ph-statusbar .ph-network-type')).to_have_text('5G')
+            await expect(device.locator('.ph-statusbar .ph-network-type')).to_have_text('Wi-Fi')
             await expect(device.locator('.ph-island')).to_be_visible()
             close=root.locator('.ph-device-caption [data-ph-action="close"]')
             await expect(close).to_be_visible();await expect(close).to_contain_text('Close')
@@ -175,7 +175,7 @@ async def phone_hardware(page,qa):
     finally:
         await game.close_phone(page)
         await page.set_viewport_size({'width':1280,'height':900})
-    return {'device':'responsive Pro Max-style virtual handset','networkIndicator':'5G','measurements':measurements,'existingPhoneLifecyclePreserved':True}
+    return {'device':'responsive Pro Max-style virtual handset','networkIndicator':'Wi-Fi','measurements':measurements,'existingPhoneLifecyclePreserved':True}
 
 async def physical(page,qa,activities=('shower','sleep')):
     results=[]
@@ -446,7 +446,9 @@ async def club(page,venue,activity,kind,fixture,qa):
         assert trip['profile']['wallet']==departure_wallet-travel_cost
         await expect(page.locator('#world-scene')).to_have_attribute('data-scene-kind','transit',timeout=10000)
         await expect(page.locator('#world-scene')).to_have_class(re.compile(r'\bworld-route-trip\b'))
-        await expect(page.locator('#world-scene .world-route-progress')).to_be_visible()
+        progress=page.locator('.trip-banner .world-route-progress')
+        await expect(progress).to_be_visible()
+        await expect(progress).to_have_attribute('aria-valuenow',re.compile(r'^(?:0|[1-9][0-9]?|100)$'))
         car_before=await game.motion(page)
         assert car_before['kind']=='transit' and car_before['moving'],car_before
         await page.wait_for_function('''({x,y})=>{const el=document.querySelector('#world-scene');return el?.dataset.sceneKind==='transit'&&Math.hypot(Number(el.dataset.playerX)-x,Number(el.dataset.playerY)-y)>10}''',arg={'x':car_before['x'],'y':car_before['y']},timeout=5000)

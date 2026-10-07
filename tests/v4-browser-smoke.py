@@ -145,9 +145,11 @@ async def clean_world(page,qa):
 async def physical(page,qa,activities=('shower','sleep')):
     results=[]
     for activity in activities:
-        markers=page.locator('[data-world-target]');labels=await markers.evaluate_all('nodes=>nodes.map(n=>({id:n.dataset.worldTarget,label:n.getAttribute("aria-label")}))')
-        point=next((p for p in labels if activity in p['id'].lower()),None);assert point,labels
-        await page.get_by_role('button',name=point['label'],exact=True).press('Enter')
+        # Resolve the current accessible target when interacting, rather than
+        # retaining a one-shot snapshot from the outgoing travel scene.
+        target=page.locator(f'button[data-world-target*="{activity}" i]').first
+        await expect(target).to_be_attached(timeout=30000)
+        await target.press('Enter')
         await expect(page.locator('#confirm-interaction')).to_be_visible(timeout=60000)
         before=(await game.state(page))['profile'];count=len([r for r in qa.requests if r['body'].get('action')==activity])
         await page.locator('#confirm-interaction').click()

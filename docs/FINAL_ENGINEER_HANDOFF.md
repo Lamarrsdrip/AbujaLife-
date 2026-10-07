@@ -92,3 +92,28 @@ SHA/media/health/public smoke and remaining limitations. **No success report whi
 - Syntax checks passed for app/app.js, app/world-city-base.js, app/world-simulator.js; git diff --check passed.
 - Correction to the earlier stale-assumption note: physical club interactions DO use native approach/activity animation before server dispatch. Direct backend venue-action requests apply their effect immediately. Acceptance should verify the actual charge, effect, acknowledgement, and single request rather than require the home-sleep-specific progress presentation.
 - V4 club helper updated to actual Outside/Destinations UI and transport radio cards. It selects local walking or cross-district taxi, verifies travel fare and moving journey, checks distinct interiors/music and current schedule copy, performs two real activities with single request/exact debit/effects/completion toast, and exits to the same district street. Arrival already opens the requested room; no repeated destination selection is necessary. Python AST syntax and diff whitespace checks passed. Browser execution of these updated helpers is still pending; full V4 has not passed.
+
+## Latest root checkpoint — login quality steering
+
+The user additionally requested restoration of the clear, detailed login-home 3D
+shown in their photos. Actual cause identified: `world-simulator.js` explicitly
+skipped renderer creation for `welcome-scene`, so login showed flat SVG, while
+Realm CSS replaced serif heading with oversized bold sans text. Root restored
+welcome WebGL mounting, centered its camera, and added `login-home-2026.css` loaded
+last with clear large room framing and serif heading. Actual rendered screenshots
+still need verification. Root scene key now also includes `drivingVehicle`.
+
+Mac browser diagnostics: installed Playwright 1.63.0; old Chromium headless shell
+SwiftShader stalled, although registration returned 201 with no page errors. Native
+full Chromium rerun log `v4-native-work.log` is active; main() now selects native GPU
+on Darwin and retains SwiftShader on Linux. Do NOT label these stalled runs passes.
+CUA repeatedly reports browser unavailable although the ambient app tab is visible.
+New physical() resolves the current button locator rather than one-shot marker list;
+the product render guard is the underlying duplicate-remount fix and must be tested.
+
+Committed recovered/fixed work: 35aa209 travel/nightlife/vehicle + scene guard;
+9e861c1 V4 current nightlife contracts; 2ccaf9c real authored interiors/furniture/
+landmark collision scaling/populated moving journeys (21/21 focused checks).
+Backend focused checks 31/31 passed; Mongo production/media/restart/privacy validation
+is being bootstrapped. Phone/voice native browser acceptance is being added by agent.
+Main and production still remain on c223a170; no release gate or deployment claimed.

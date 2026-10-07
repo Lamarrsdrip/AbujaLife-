@@ -192,6 +192,7 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
  const keyboard=new Set(),joy={x:0,y:0,pointer:null},listeners=[];
  let viewWidth=1050,viewHeight=650,zoom=clampWorldZoom(saved?.zoom ?? 1),frameCount=0;
  const orbit=createWorldOrbit({yaw:saved?.cameraYaw,elevation:saved?.cameraElevation,zoom});
+ if(preview)camera={x:scene.width/2,y:scene.height/2};
  const orientation=()=>orbit.getState();
  const viewport=()=>({width:viewWidth,height:viewHeight,oblique,...orientation()});
  const usablePose=p=>p&&Number.isFinite(p.x)&&Number.isFinite(p.y)&&p.x>=0&&p.y>=0&&p.x<=scene.width&&p.y<=scene.height;
@@ -216,7 +217,7 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
  {const button=document.createElement('button');button.className='world-sound-toggle';button.type='button';button.textContent=isClub?'Music off':'Ambience off';button.setAttribute('aria-pressed','false');button.setAttribute('aria-label',isClub?'Toggle original synthesized club music':'Toggle original Abuja city ambience');button.disabled=profile.settings?.soundEnabled===false;button.title=button.disabled?'Enable sound in Settings first':isClub?'Original club beats · tap to listen':'Original Abuja ambience · tap to listen';button.onclick=()=>sound.toggle();container.append(button);}
  let characterRenderer=null;
  const mountCharacterRenderer=()=>{
-  if(disposed||characterRenderer||preview)return;
+  if(disposed||characterRenderer)return;
   characterRenderer=createCharacterRenderer(container,{appearance:profile.appearance,pedestrians:scene.pedestrians,neighbours,scene,profile,kind,venue,place});
   if(container.dataset.environmentRenderer==='webgl-3d'){oblique=true;updateViewport();}
   armLoop();
@@ -308,7 +309,7 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
  const updateViewport=()=>{
   const box=container.getBoundingClientRect(),view=worldViewport({pixelWidth:box.width,pixelHeight:box.height,sceneWidth:scene.width,sceneHeight:scene.height,interior,transit:!!trip,zoom,oblique,...orientation()});
   viewWidth=view.width;viewHeight=view.height;camera=constrainWorldCamera(camera,view,scene);
-  if(oblique){const screen=worldToScreen(player,{left:0,top:0,width:1,height:1},camera,view);if(screen.x<.15||screen.x>.85||screen.y<.12||screen.y>.88)camera=constrainWorldCamera({x:player.x,y:player.y-55},view,scene);}
+  if(oblique&&!preview){const screen=worldToScreen(player,{left:0,top:0,width:1,height:1},camera,view);if(screen.x<.15||screen.x>.85||screen.y<.12||screen.y>.88)camera=constrainWorldCamera({x:player.x,y:player.y-55},view,scene);}
   container.dataset.cameraZoom=zoom.toFixed(3);container.dataset.cameraYaw=orientation().yaw.toFixed(5);container.dataset.cameraElevation=orientation().elevation.toFixed(5);
   container.dataset.cameraViewWidth=viewWidth.toFixed(2);container.dataset.cameraViewHeight=viewHeight.toFixed(2);
   const target=orientation().targetZoom;container.querySelector('[data-world-control="zoom-out"]').disabled=target<=WORLD_ZOOM.min+.001;container.querySelector('[data-world-control="zoom-in"]').disabled=target>=WORLD_ZOOM.max-.001;
@@ -491,7 +492,7 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
   playerNode.append(prop);say(activity.label);armActivityClock();return true;
  }
  syncPlayback();
- if(!preview)requestAnimationFrame(mountCharacterRenderer);
+ requestAnimationFrame(mountCharacterRenderer);
  const cleanup=()=>{if(disposed)return;stop();disposed=true;remember(true);cancelAnimationFrame(raf);raf=0;clearTimeout(idleTimer);idleTimer=0;clearTimeout(activityTimer);activityTimer=0;activity=null;touch.dispose();overlayObserver?.disconnect();visibilityObserver?.disconnect();characterRenderer?.dispose();sound?.dispose();observer?.disconnect();listeners.forEach(remove=>remove());container.classList.remove('world-playable');};
  cleanup.updateResidents=next=>{knownResidents=(Array.isArray(next)?next:[]).filter(p=>p.id!==profile.id&&p.online);const present=new Set(knownResidents.map(p=>String(p.id)));for(const id of [...residentPoses.keys()])if(!present.has(id)){residentPoses.delete(id);residentTargets.delete(id);residentUpdatedAt.delete(id);}for(const person of knownResidents){const id=String(person.id);if(usablePose(person.pose)){if(!residentPoses.has(id))residentPoses.set(id,{...person.pose});residentTargets.set(id,{...person.pose});residentUpdatedAt.set(id,now());}else if(Object.hasOwn(person,'pose')){residentPoses.delete(id);residentTargets.delete(id);residentUpdatedAt.delete(id);}}neighbours=knownResidents.filter(p=>usablePose(residentPoses.get(String(p.id)))).slice(0,50);container.querySelector('.world-online').innerHTML=neighbours.map(residentMarkup).join('');characterRenderer?.setResidents?.(neighbours);};
  cleanup.updateResidentPose=data=>{const id=String(data?.residentId||''),pose=data?.pose;if(!usablePose(pose))return false;const current=residentPoses.get(id),last=residentUpdatedAt.get(id)||0,gap=current?Math.hypot(pose.x-current.x,pose.y-current.y):Infinity;if(!current||gap>720||now()-last>10000)residentPoses.set(id,{...pose});residentTargets.set(id,{...pose});residentUpdatedAt.set(id,now());if(!neighbours.some(p=>String(p.id)===id)&&knownResidents.some(p=>String(p.id)===id))cleanup.updateResidents(knownResidents.map(p=>String(p.id)===id?{...p,pose}:p));return true;};

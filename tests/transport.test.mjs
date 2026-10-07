@@ -27,7 +27,7 @@ test('paid transport charges authoritative fares while a resident-owned car is f
     const district=f.store.profile(f.id).district,before=f.store.profile(f.id).wallet;
     const quote=f.store.quoteTravel(f.id,{district,mode,venueId:'restaurant'});
     assert.equal(quote.cost,fare);assert.ok(quote.seconds>=4);assert.equal(quote.venueId,'restaurant');
-    const result=f.store.action(f.id,'travel',{district,mode,venueId:'restaurant',cost:999999,seconds:0,arrivesAt:0,vehicleId:'forged'});
+    const result=f.store.action(f.id,'travel',{district,mode,venueId:'restaurant',cost:999999,seconds:0,arrivesAt:0});
     assert.equal(result.trip.cost,fare);assert.equal(result.trip.seconds,quote.seconds);
     assert.equal(result.profile.wallet,before-fare);assert.equal(result.profile.location.kind,'transit');
     if(mode==='car')assert.equal(result.trip.vehicleId,'used-hatchback');
@@ -54,6 +54,24 @@ test('walking stays free and targeted rides require leaving the current interior
   assert.throws(()=>f.store.action(f.id,'travel',{district,mode:'bike',venueId:'restaurant'}),/Head out/);
   f.store.action(f.id,'exit-venue');f.store.action(f.id,'enter-home');
   assert.equal(f.store.profile(f.id).location.kind,'home');assert.equal(f.store.profile(f.id).wallet,before);
+});
+
+test('an explicitly selected owned car remains the journey vehicle with multiple cars',async t=>{
+  const f=await fixture(t);
+  f.store.topup(f.id,{amount:1000000,idempotencyKey:'multiple_owned_cars'});
+  f.store.action(f.id,'purchase',{itemId:'used-hatchback'});
+  f.store.action(f.id,'purchase',{itemId:'compact-car'});
+  f.store.action(f.id,'leave-home');
+  const district=f.store.profile(f.id).district,before=f.store.profile(f.id).wallet;
+  const result=f.store.action(f.id,'travel',{district,mode:'car',venueId:'restaurant',vehicleId:'compact-car'});
+  assert.equal(result.trip.vehicleId,'compact-car');
+  assert.equal(result.profile.wallet,before);
+  f.advance(result.trip.seconds*1000);
+  f.store.action(f.id,'arrive',{tripId:result.trip.id});
+  f.store.action(f.id,'exit-venue');
+  assert.throws(()=>f.store.action(f.id,'travel',{district,mode:'car',venueId:'restaurant',vehicleId:'unowned-car'}),/Buy this car/);
+  assert.equal(f.store.profile(f.id).activeTrip,null);
+  assert.equal(f.store.profile(f.id).wallet,before);
 });
 
 test('venue availability, walk range, vehicle ownership and affordability cannot be forged',async t=>{

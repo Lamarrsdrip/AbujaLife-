@@ -166,7 +166,7 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
   });
  }
  scene.pedestrians ||= [];scene.traffic ||= [];
- const ownVehicle=typeof profile.drivingVehicle==='string'?profile.drivingVehicle:vehicleIds.find(v=>profile.inventory?.includes(v));
+ const ownVehicle=trip?.vehicleId||profile.drivingVehicle||(profile.vehiclePresence?profile.vehiclePresence.district===profile.district&&profile.vehiclePresence.state!=='transit'?profile.vehiclePresence.vehicleId:null:vehicleIds.find(v=>profile.inventory?.includes(v)));
  const driving=!!profile.drivingVehicle&&!interior&&!trip,transport=trip?trip.mode!=='walk':driving;
  const key=[profile.id||'preview',profile.createdAt||0,profile.district||place.id||'garki',kind,atHome?profile.home?.propertyId:venue?.id||'',trip?.id||''].join(':');
  const persistentScene=container.id==='world-scene'&&typeof profile.id==='string'&&profile.id.length>0&&!trip;

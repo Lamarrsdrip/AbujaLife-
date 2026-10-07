@@ -10,7 +10,7 @@ function fail(condition, message, status = 400, code = 'invalid_action') {
 
 const ownedVehicle=(profile,vehicleId)=>Boolean(vehicleId&&profile?.inventory?.includes(vehicleId)&&Object.hasOwn(profile?.vehicleColors||{},vehicleId));
 const locationVenue=profile=>profile?.location?.kind==='home'?'home':profile?.location?.venue||'neighbourhood';
-const vehicleIsWithResident=(profile,presence=profile?.vehiclePresence)=>Boolean(presence?.state==='parked'&&ownedVehicle(profile,presence.vehicleId)&&presence.district===profile?.district&&presence.venue===locationVenue(profile));
+const vehicleIsWithResident=(profile,presence=profile?.vehiclePresence)=>Boolean(['parked','driving'].includes(presence?.state)&&ownedVehicle(profile,presence.vehicleId)&&presence.district===profile?.district&&presence.venue===locationVenue(profile));
 const cleanPresence=(profile,presence=profile?.vehiclePresence)=>ownedVehicle(profile,presence?.vehicleId)?presence:null;
 const secondsForLocalRoute=(profile,mode)=>{const route=routeForJourney({fromDistrict:profile.district,fromVenue:profile.location?.kind==='venue'?profile.location.venue:null,toDistrict:profile.home?.district||profile.district,returningHome:true,homeDistrict:profile.home?.district||profile.district});const speed=mode==='car'?175:70;return Math.max(mode==='car'?6:9,Math.min(24,Math.round(Math.max(1,route?.distance||1)/speed)));};
 
@@ -128,10 +128,13 @@ async function writeVehiclePresence(store,residentId,presence,{emit=true}={}){
 }
 
 async function beginSameDistrictHomeTrip(store,residentId,profile,payload={}){
-  const timestamp=store.clock(),presence=cleanPresence(profile),keepCar=vehicleIsWithResident(profile,presence)&&payload.leaveVehicle!==true;
-  const requested=payload.mode||'walk',mode=keepCar&&(requested==='walk'||requested==='car')?'car':requested==='car'&&!keepCar?'walk':requested;
+  const timestamp=store.clock(),presence=cleanPresence(profile),requested=payload.mode||'walk';
+  if(requested==='car'&&payload.vehicleId!=null)fail(ownedVehicle(profile,payload.vehicleId),'Buy this car before choosing it');
+  const selectedVehicle=payload.vehicleId||profile.drivingVehicle||presence?.vehicleId;
+  const keepCar=(vehicleIsWithResident(profile,presence)||requested==='car'&&ownedVehicle(profile,selectedVehicle))&&payload.leaveVehicle!==true;
+  const mode=keepCar&&(requested==='walk'||requested==='car')?'car':requested==='car'&&!keepCar?'walk':requested;
   fail(mode==='walk'||mode==='car','Choose walking or your nearby car for this short trip');
-  const seconds=secondsForLocalRoute(profile,mode),vehicleId=mode==='car'?presence.vehicleId:null;
+  const seconds=secondsForLocalRoute(profile,mode),vehicleId=mode==='car'?selectedVehicle:null;
   let trip,replayed=false;
   await store.transaction(async session=>{
     const state=await store.collection('player_state').findOne({residentId},{session,projection:{district:1,location:1,activeTrip:1,vehiclePresence:1}});
@@ -177,13 +180,16 @@ export function installFastLocationActions(store) {
       const profile=await store.profile(residentId);
       return result&&typeof result==='object'?{...result,profile,purchasedHomeFurnished:profile.purchasedHomeFurnished||null}:result;
     }
-    if(action==='travel'||action==='return-home'||action==='arrive'||action==='toggle-driving'){
-      const before=await store.profile(residentId),presence=cleanPresence(before);
+    if(action==='travel'||action==='return-home'||action==='arrive'||action==='toggle-driving'||action==='exit-venue'){
+      const before=await store.profile(residentId),presence=cleanPresence(before),carWithResident=vehicleIsWithResident(before,presence);
       if(action==='return-home'&&before.location?.kind!=='home'&&before.home?.district===before.district){
         return beginSameDistrictHomeTrip(store,residentId,before,payload);
       }
       let adjusted=payload;
-      if((action==='travel'||action==='return-home')&&vehicleIsWithResident(before,presence)&&payload.leaveVehicle!==true&&(payload.mode==null||payload.mode==='walk'))adjusted={...payload,mode:'car'};
+      if((action==='travel'||action==='return-home')&&carWithResident&&payload.leaveVehicle!==true){
+        if(payload.mode==null||payload.mode==='walk')adjusted={...payload,mode:'car',vehicleId:presence.vehicleId};
+        else if(payload.mode==='car'&&payload.vehicleId==null)adjusted={...payload,vehicleId:presence.vehicleId};
+      }
       const previousTrip=before.activeTrip;
       const result=await originalAction(residentId,action,adjusted);
       let after=result?.profile||await store.profile(residentId),nextPresence=null,shouldWrite=false;
@@ -191,6 +197,8 @@ export function installFastLocationActions(store) {
         nextPresence={vehicleId:after.activeTrip.vehicleId,state:'transit',district:before.district,venue:locationVenue(before),destinationDistrict:after.activeTrip.destination,destinationVenue:after.activeTrip.returningHome?'home':after.activeTrip.venueId||'neighbourhood',updatedAt:store.clock()};shouldWrite=true;
       }else if(action==='arrive'&&previousTrip?.mode==='car'&&ownedVehicle(after,previousTrip.vehicleId)){
         nextPresence={vehicleId:previousTrip.vehicleId,state:'parked',district:after.district,venue:locationVenue(after),updatedAt:store.clock()};shouldWrite=true;
+      }else if(action==='exit-venue'&&carWithResident){
+        nextPresence={...presence,state:'parked',venue:'neighbourhood',updatedAt:store.clock()};shouldWrite=true;
       }else if(action==='toggle-driving'){
         const vehicleId=after.drivingVehicle||before.drivingVehicle||presence?.vehicleId;
         if(ownedVehicle(after,vehicleId)){

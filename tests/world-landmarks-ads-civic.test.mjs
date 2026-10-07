@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const read=path=>fs.readFileSync(new URL(`../${path}`,import.meta.url),'utf8');
+const citySource=()=>[read('app/world-city.js'),read('app/world-city-base.js')].join('\n');
 
 test('City Story and INEC experience is actually loaded into the phone',()=>{
  const index=read('app/index.html'),civic=read('app/civic-life.js');
@@ -13,7 +14,7 @@ test('City Story and INEC experience is actually loaded into the phone',()=>{
 });
 
 test('playable World can frame the full Abuja landmark city',()=>{
- const camera=read('app/world-camera.js'),sim=read('app/world-simulator.js'),city=read('app/world-city.js');
+ const camera=read('app/world-camera.js'),sim=read('app/world-simulator.js'),city=citySource();
  assert.match(camera,/min: \.06, max: 10/);
  assert.match(sim,/scene\.width\/2,y:scene\.height\/2/);
  assert.match(sim,/atOne\.baseWidth\/Math\.max\(scene\.width\*1\.32/);

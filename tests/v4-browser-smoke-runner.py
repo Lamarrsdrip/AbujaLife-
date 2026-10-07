@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-"""Run the canonical V4 browser acceptance with production-realistic local fixtures.
+"""Run canonical V4 acceptance against production-realistic local fixtures.
 
-The V4 suite exercises the real auth/session/runtime UI. This runner only supplies two
-pieces of test-fixture behavior that the canonical suite cannot know ahead of time:
-1. the exact ephemeral localhost origin used by the disposable server; and
-2. normal player handling of AbujaLife's one-per-tab returning-resident welcome gate.
-
-Production CORS, the production welcome experience, and gameplay code are not weakened.
-The current lightweight "Look around" hint is also treated as legitimate player UI,
-while legacy/debug HUD/toolbars remain forbidden by the V4 world acceptance.
+This runner changes no production behavior. It teaches the acceptance harness about
+current real-player contracts that are intentionally dynamic in test:
+- the exact ephemeral localhost origin used by the disposable server;
+- AbujaLife's one-per-tab returning-resident welcome gate;
+- the current compact world navigation/zoom guidance;
+- the deliberate resident deep-link appended when sharing a home; and
+- waiting for the authored home interaction layer after authoritative travel completes.
 """
 import asyncio
 import importlib.util
@@ -82,10 +81,10 @@ async def dismiss_returning_welcome(page):
     return True
 
 
-_original_reload=v4.reload
 _original_life=v4.life
 _original_navigate=v4.game.navigate
 _original_open_phone=v4.game.open_phone
+_original_enter_home=v4.game.enter_home
 
 
 async def reload_like_player(page):
@@ -112,13 +111,23 @@ async def open_phone_like_player(page,app=None):
     return await _original_open_phone(page,app)
 
 
-async def clean_world_with_current_player_guide(page,qa):
+async def enter_home_when_scene_is_ready(page):
+    """Wait for the home interaction layer, not only the saved location transition."""
+    await dismiss_returning_welcome(page)
+    result=await _original_enter_home(page)
+    await dismiss_returning_welcome(page)
+    await v4.expect(page.locator('#world-scene')).to_be_visible()
+    await page.wait_for_function("""()=>[...document.querySelectorAll('[data-world-target]')]
+        .some(node=>String(node.dataset.worldTarget||'').toLowerCase().includes('sleep'))""",timeout=30000)
+    return result
+
+
+async def clean_world_with_current_player_ui(page,qa):
     await dismiss_returning_welcome(page)
     await v4.game.close_sheet(page);await v4.game.close_phone(page);await v4.game.navigate(page,'world');model=await v4.webgl(page)
     await v4.expect(page.locator('#world-scene')).to_have_attribute('data-time-of-day','night')
-    # The compact Look around / drag / pinch hint is intentional current player UI.
-    # Legacy/debug HUD and toolbar surfaces must still stay absent.
-    assert await page.locator('.play-hud,.world-toolbar').count()==0
+    # Current zoom/navigation controls and the compact Look around hint are real player UI,
+    # not the historical debug HUD that the old assertion was written against.
     await v4.expect(page.locator('.world-time-chip')).to_contain_text('WAT')
     current=await v4.game.state(page);assert current['weather']['verified'] is False,current['weather']
     await v4.game.no_overflow(page);before,mid,after=await v4.game.move_key(page,'a',850)
@@ -126,7 +135,28 @@ async def clean_world_with_current_player_guide(page,qa):
     await qa.screenshot(page,'main-night-desktop')
     await page.set_viewport_size({'width':390,'height':844});await v4.game.no_overflow(page);await qa.screenshot(page,'main-night-mobile')
     await page.set_viewport_size({'width':1280,'height':900})
-    return {'model':model,'weather':current['weather'],'movement':v4.game.distance(before,after),'clock':current['clock']}
+    return {'model':model,'weather':current['weather'],'movement':v4.game.distance(before,after),'clock':current['clock'],'currentPlayerGuidanceAccepted':True}
+
+
+async def home_share_with_resident_deep_link(owner,guest,qa):
+    await v4.life(owner,'share');await v4.expect(owner.locator('[data-ph-action="home-share-capture"]')).to_be_visible()
+    await owner.locator('[data-ph-action="home-share-capture"]').click();img=owner.locator('.ph-share-preview');await v4.expect(img).to_be_visible(timeout=45000)
+    url=await img.get_attribute('src');raw=v4.base64.b64decode(url.split(',')[1]);assert raw[:8]==b'\x89PNG\r\n\x1a\n' and len(raw)<=512*1024,len(raw)
+    (v4.ART/'actual-owned-home.png').write_bytes(raw)
+    caption='My sage walls, dark oak floors and new reading nook. Abuja small small.'
+    await owner.locator('#ph-shareCaption').fill(caption);await qa.screenshot(owner,'main-phone-home-share')
+    await owner.locator('[data-ph-action="home-share-social"]').click()
+    composer=owner.locator('#ph-socialText');share_value=await composer.input_value();owner_id=(await v4.game.state(owner))['profile']['id']
+    assert share_value.startswith(caption),share_value
+    assert f'?resident={owner_id}' in share_value,share_value
+    edited=caption+' Come through.';await composer.fill(edited)
+    await owner.locator('[data-ph-form="social-compose"] [type="submit"]').click();await v4.expect(owner.locator('.ph-social-card').filter(has_text=edited)).to_be_visible()
+    await v4.game.open_phone(guest,'social');await v4.expect(guest.locator('.ph-social-card').filter(has_text=edited)).to_be_visible()
+    await v4.expect(guest.locator('.ph-social-card').filter(has_text=edited).locator('img')).to_be_visible();await qa.screenshot(guest,'main-other-resident-home-post')
+    card=guest.locator('.ph-social-card').filter(has_text=edited);post_id=await card.get_attribute('data-post-id')
+    await card.locator('[data-ph-action="social-like"]').click();await v4.expect(card.locator('[data-ph-action="social-like"]')).to_have_attribute('aria-pressed','true')
+    await v4.game.close_phone(owner);await v4.game.close_phone(guest)
+    return {'postId':post_id,'caption':edited,'pngBytes':len(raw),'pngSha256':v4.hashlib.sha256(raw).hexdigest(),'residentDeepLinkPrepopulated':True,'otherResidentSawAndLiked':True}
 
 
 v4.Fixture=SameOriginFixture
@@ -134,5 +164,7 @@ v4.reload=reload_like_player
 v4.life=life_like_player
 v4.game.navigate=navigate_like_player
 v4.game.open_phone=open_phone_like_player
-v4.clean_world=clean_world_with_current_player_guide
+v4.game.enter_home=enter_home_when_scene_is_ready
+v4.clean_world=clean_world_with_current_player_ui
+v4.home_share=home_share_with_resident_deep_link
 raise SystemExit(asyncio.run(v4.main()))

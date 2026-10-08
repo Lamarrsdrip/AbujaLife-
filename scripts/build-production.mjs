@@ -111,6 +111,7 @@ export async function buildProduction({ environment = process.env, outputDirecto
     manifest.id = '/'; manifest.start_url = '/?source=homescreen'; manifest.scope = '/';
     await fs.writeFile(path.join(staging, 'manifest.webmanifest'), `${JSON.stringify(manifest, null, 2)}\n`);
     await fs.copyFile(path.join(repository, 'deploy/hostinger.htaccess'), path.join(staging, '.htaccess'));
+    await fs.copyFile(path.join(sourceDirectory, 'robots.txt'), path.join(staging, 'robots.txt'));
     const allFiles = await filesBelow(staging);
     const shell = allFiles.filter(filename => !filename.startsWith('.') && !filename.startsWith('admin') && filename !== 'runtime-config.js').map(filename => `/${filename.split(path.sep).join('/')}`);
     const fingerprint = createHash('sha256');

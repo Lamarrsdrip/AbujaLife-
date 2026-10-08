@@ -79,6 +79,10 @@ abujacity.life {
 www.abujacity.life {
     redir https://abujacity.life{uri} 308
 }
+
+http://www.abujacity.life {
+    redir https://abujacity.life{uri} 308
+}
 $end
 "@
 

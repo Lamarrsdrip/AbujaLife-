@@ -65,7 +65,7 @@ test('Hostinger build contains connected bundles and public assets, and worker b
     vm.runInNewContext(await fs.readFile(path.join(target, 'runtime-config.js'), 'utf8'), runtime);
     assert.deepEqual(Object.keys(runtime.ABUJA_PUBLIC_CONFIG).sort(), ['API_PUBLIC_URL', 'PUBLIC_WEB_URL']);
     assert.equal(runtime.ABUJA_PUBLIC_CONFIG.API_PUBLIC_URL, 'https://api.abujacity.life');
-    for(const asset of ['favicon.ico','icons/abujalife-city-gate-180-v3.png','icons/abujalife-city-gate-512-v3.png','social/abujalife-city-gate-v3.png'])assert.deepEqual(await fs.readFile(path.join(target,asset)),await fs.readFile(path.join('app',asset)),'Production must preserve the actual branding export: '+asset);
+    for(const asset of ['favicon.ico','icons/abujalife-city-gate-180-v3.png','icons/abujalife-city-gate-512-v3.png','social/abujalife-city-gate-v3.png','social/abujalife-x-card-20261008.jpg','robots.txt'])assert.deepEqual(await fs.readFile(path.join(target,asset)),await fs.readFile(path.join('app',asset)),'Production must preserve the actual branding export: '+asset);
     const manifest = JSON.parse(await fs.readFile(path.join(target, 'manifest.webmanifest'), 'utf8'));
     assert.equal(manifest.scope, '/'); assert.equal(manifest.id, '/');
     const handlers = {};

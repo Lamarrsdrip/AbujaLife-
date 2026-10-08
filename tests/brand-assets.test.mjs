@@ -48,7 +48,7 @@ test('checked-in branding exports decode completely at their declared icon and p
 test('all social and install entry points use the current versioned artwork',()=>{
   const html=fs.readFileSync('app/index.html','utf8');
   assert.match(html,/twitter:card" content="summary_large_image"/);
-  for(const type of ['og:image','og:image:secure_url','twitter:image'])assert.ok(html.includes(`${type}" content="https://abujacity.life/social/abujalife-city-gate-v3.png"`));
+  for(const type of ['og:image','og:image:secure_url','twitter:image'])assert.ok(html.includes(`${type}" content="https://abujacity.life/social/abujalife-x-card-20261008.jpg"`));
   assert.match(html,/og:image:width" content="1200"/);assert.match(html,/og:image:height" content="630"/);
   assert.match(html,/apple-touch-icon[^>]+abujalife-city-gate-180-v3\.png/);
   assert.match(html,/shortcut icon[^>]+favicon\.ico\?v=abuja-brand-v3/);

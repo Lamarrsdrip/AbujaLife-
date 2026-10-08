@@ -45,8 +45,20 @@ async def load(p):
     await p.wait_for_timeout(300)
     if await p.locator('[data-welcome-continue]').is_visible():
         await p.locator('[data-welcome-continue]').click()
+async def settled_viewport(p):
+    # WebKit can report set_viewport_size before its visualViewport resize and
+    # the game's scheduled CSS-variable measurement have reached the new size.
+    await p.wait_for_function('''size=>{
+      const viewport=window.visualViewport,style=getComputedStyle(document.documentElement);
+      const height=viewport?.height||innerHeight,width=viewport?.width||innerWidth,top=viewport?.offsetTop||0;
+      return innerWidth===size.width&&innerHeight===size.height&&Math.abs(width-size.width)<=1&&Math.abs(height-size.height)<=1
+        &&Math.abs(parseFloat(style.getPropertyValue('--game-viewport-height'))-height)<=1
+        &&Math.abs(parseFloat(style.getPropertyValue('--game-viewport-top'))-top)<=1;
+    }''',arg=p.viewport_size,timeout=10000,polling='raf')
+    await p.evaluate('()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
 async def layout(p,label):
     await expect(p.locator('.game-nav')).to_be_visible()
+    await settled_viewport(p)
     await p.wait_for_timeout(100)
     d=await p.evaluate('''()=>{
       const box=s=>{const e=document.querySelector(s),r=e.getBoundingClientRect();return{x:r.x,y:r.y,w:r.width,h:r.height,bottom:r.bottom,right:r.right};};
@@ -155,7 +167,7 @@ async def main():
                                 await enter(c,p,venue,district);await layout(p,engine+'-'+venue)
                             await p.locator('.game-nav [data-phone]').click()
                             await expect(p.locator('#phone-root')).to_be_visible();stage(engine+'-phone-open')
-                            await p.set_viewport_size({'width':390,'height':420});await p.wait_for_timeout(150)
+                            await p.set_viewport_size({'width':390,'height':420});await settled_viewport(p);await p.wait_for_timeout(150)
                             await expect(p.get_by_role('button',name='Put your phone away')).to_be_visible()
                             phone=await p.locator('#phone-root').bounding_box()
                             viewport=await p.evaluate('()=>({w:innerWidth,h:innerHeight,scrollW:document.documentElement.scrollWidth,scrollH:document.documentElement.scrollHeight})')

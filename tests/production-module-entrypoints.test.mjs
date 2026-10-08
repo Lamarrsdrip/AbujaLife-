@@ -7,10 +7,17 @@ import { productionEntryPoints } from '../scripts/build-production.mjs';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 
-test('every module script declared by production HTML has a production entrypoint',async()=>{
-  const html=await fs.readFile(path.join(root,'app/index.html'),'utf8');
-  const declared=[...html.matchAll(/<script\b[^>]*\btype=["']module["'][^>]*\bsrc=["']\/([^"']+)["'][^>]*>/gi)].map(match=>match[1]);
-  assert.ok(declared.length>0,'index.html should declare production modules');
+test('every script declared by production HTML is external and has a production entrypoint',async()=>{
   const bundled=new Set(Object.values(productionEntryPoints).map(value=>value.replace(/^app\//,'')));
-  for(const filename of declared)assert.ok(bundled.has(filename),`${filename} is declared by index.html but missing from the production bundle entrypoints`);
+  for(const page of ['index.html','admin.html']){
+    const html=await fs.readFile(path.join(root,'app',page),'utf8');
+    const scripts=[...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)];
+    assert.ok(scripts.length>0,`${page} should declare production scripts`);
+    for(const [,attributes,body] of scripts){
+      const filename=/\bsrc=["']\/([^"']+)["']/i.exec(attributes)?.[1];
+      assert.ok(filename,`${page} has an inline script blocked by production CSP`);
+      assert.equal(body.trim(),'','Scripts must load from our origin rather than embed executable content');
+      assert.ok(bundled.has(filename),`${filename} is declared by ${page} but missing from the production bundle entrypoints`);
+    }
+  }
 });

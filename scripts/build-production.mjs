@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const publicAssetExtensions = new Set(['.css', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.avif', '.ico', '.woff', '.woff2', '.ttf', '.otf', '.eot', '.mp3', '.wav', '.ogg', '.glb', '.gltf', '.bin']);
 export const productionEntryPoints = Object.freeze({
+  'checkout-window': 'app/checkout-window.js',
   app: 'app/app.js',
   admin: 'app/admin.js',
   'phone-chat-pro': 'app/phone-chat-pro.js',

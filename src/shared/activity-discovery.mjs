@@ -7,7 +7,16 @@ const MINUTE=60000,HOUR=60*MINUTE;
 const categoryFor=venue=>venue.kind==='club'?'nightlife':/gym|fitness/i.test(venue.category||venue.name)?'fitness':/food|dining/i.test(venue.category||'')?'food':/shopping|cars|homes|tech/i.test(venue.category||'')?'explore':'social';
 const landmarkById=new Map(CITY_LANDMARKS.map(place=>[place.id,place]));
 const needs=[['sleep','energy','Time to recharge','Get some sleep',0],['eat','hunger','A meal would help','Eat at home',1200],['shower','hygiene','Freshen up before heading out','Take a shower',0],['relax','fun','Take a moment for yourself','Relax',0]];
+// Optional follow-ons use recorded actions, not fictional friend messages or
+// claims about real traffic/match schedules. They share existing rate limits.
+const opportunityChains=[
+ {id:'chain:match-food',category:'story',feature:'match-food',headline:'Make an evening of it',description:'Screening finished? There is food and conversation at Farm City.',cta:'Plan a meal',venueId:'farm-city',after:['ceddi-genesis-screening'],action:{kind:'travel',venueId:'farm-city'},cooldown:24*HOUR},
+ {id:'chain:lake-food',category:'story',feature:'lake-food',headline:'A little more of your Abuja day',description:'After the lake, settle over a meal at Courtyard Kitchen.',cta:'Choose a route',venueId:'restaurant',after:['lake-walk','lake-picnic','jabi-lake-view'],action:{kind:'travel',venueId:'restaurant'},cooldown:24*HOUR},
+ {id:'chain:friday-night',category:'nightlife',feature:'friday-night',headline:'Keep the evening going',description:'You have eaten. If you feel like music, Tokyo is open tonight.',cta:'Plan the next stop',venueId:'club',after:['farmcity-meal','jollof-chicken','suya-plate'],night:true,action:{kind:'travel',venueId:'club'},cooldown:24*HOUR},
+ {id:'chain:earned-home',category:'story',feature:'earned-home',headline:'Your work, your next move',description:'A shift done. Explore homes or save for a place that suits you.',cta:'Explore homes',after:['work'],goal:'home',action:{kind:'page',page:'property'},cooldown:48*HOUR},
+];
 export const ACTIVITY_REGISTRY=Object.freeze([
+ ...opportunityChains,
  ...needs.map(([action,need,headline,cta,cost])=>({id:`need:${action}`,category:'needs',feature:action,headline,cta,action:{kind:'home',action},need,cost,cooldown:2*HOUR})),
  {id:'career:shift',category:'career',feature:'work',headline:'Your shift is ready',cta:'Go to work',action:{kind:'work'},cooldown:HOUR},
  {id:'career:discover',category:'career',feature:'career',headline:'Find your rhythm in Abuja',cta:'Explore jobs',action:{kind:'page',page:'work'},cooldown:24*HOUR},
@@ -27,6 +36,13 @@ export function activityCandidates({profile,now,stats={},jackpotEligible=false})
   const previous=history.entries?.[activity.id];if(now-Math.max(previous?.shownAt||0,previous?.dismissedAt||0,previous?.completedAt||0)<activity.cooldown)return [];
   if(now-(history.categories?.[activity.category]||0)<(activity.category==='jackpot'?48*HOUR:20*MINUTE))return [];
   let weight=history.features?.[activity.feature]?1:2.8,description=activity.description||'';
+  if(activity.after){
+   if(!activity.after.some(feature=>Number(history.features?.[feature])>0&&now-Number(history.features[feature])<6*HOUR))return [];
+   if(activity.goal&&profile.lifeGoal!==activity.goal)return [];
+   if(activity.night&&(!clubSchedule(now).isOpen||profile.energy<30))return [];
+   if(activity.action.kind==='travel'&&(profile.energy<15||profile.wallet<1500))return [];
+   weight+=4;
+  }
   if(activity.need){if(loc.kind!=='home'||profile[activity.need]>45||profile.wallet<activity.cost)return [];weight+=5+(45-profile[activity.need])/10;description='A little care makes the next move easier.';}
   else if(activity.id==='career:shift'){if(!profile.job)return [];const schedule=jobSchedule(profile.job,profile,now);if(!schedule.canStart)return [];description=`${schedule.currentSlot} shift · Abuja time`;weight+=6;}
   else if(activity.id==='career:discover'){if(profile.job||history.features?.career)return [];weight+=hour<17?2:0;}

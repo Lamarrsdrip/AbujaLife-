@@ -70,9 +70,10 @@ addEventListener('pointerdown', beginPress, { passive: true });
 addEventListener('pointerup', endPress, { passive: true });
 addEventListener('pointercancel', event => pressTarget(event)?.classList.remove('realm-pressing'), { passive: true });
 addEventListener('hashchange', decorate);
+addEventListener('abujalife:scene-ready', decorate);
 
 const observer = new MutationObserver(() => queueMicrotask(decorate));
-if (app) observer.observe(app, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'hidden', 'aria-current'] });
+if (app) observer.observe(app, { childList: true });
 if (sheetRoot) observer.observe(sheetRoot, { childList: true, subtree: true });
 
 decorate();

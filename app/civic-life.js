@@ -1,3 +1,4 @@
+import {showGameToast as toast} from './game-toast.js';
 import { apiFetch } from './api-client.js';
 
 const phoneRoot=document.querySelector('#phone-root');
@@ -8,8 +9,7 @@ const ago=value=>{const ms=Date.now()-Number(value||0),m=Math.max(0,Math.floor(m
 const ballotIcon='<svg class="ph-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v5H6zM4 8h16v13H4z"/><path d="m9 5 2 2 4-4M8 13h8M8 17h5"/></svg>';
 let overlay=null,state=null,busy=false;
 
-function toast(message){if(!toastRoot)return;toastRoot.textContent=message;toastRoot.classList.add('visible');clearTimeout(toast.timer);toast.timer=setTimeout(()=>toastRoot.classList.remove('visible'),3600);}
-async function api(path,options={}){const opts={...options,headers:{...options.headers}};if(opts.body&&typeof opts.body!=='string'){opts.headers['content-type']='application/json';opts.body=JSON.stringify(opts.body);}const response=await apiFetch(path,{...opts,signal:opts.signal||AbortSignal.timeout(12000)});let body={};try{body=await response.json();}catch{}if(!response.ok||body.ok===false){const error=new Error(body.error||'Please try again.');error.status=response.status;error.code=body.code;throw error;}return body;}
+async function api(path,options={}){const opts={...options,headers:{...options.headers}};if(opts.body&&typeof opts.body!=='string'){opts.headers['content-type']='application/json';opts.body=JSON.stringify(opts.body);}const response=await apiFetch(path,{...opts,signal:opts.signal,timeoutMs:12000});let body={};try{body=await response.json();}catch{}if(!response.ok||body.ok===false){const error=new Error(body.error||'Please try again.');error.status=response.status;error.code=body.code;throw error;}return body;}
 const party=id=>state?.parties?.find(p=>p.id===id);
 const actionReason=action=>action.phase&&action.phase!==state?.cycle?.phase?.id?`Available during ${action.phase}`:action.venueId&&!atVenue(action.venueId)?'Travel there first':action.requiresPublic&&state?.resident?.location?.kind!=='public'?'Head outside first':action.requiresCase&&state?.candidate?.enforcement==='none'?'No active case':null;
 const atVenue=id=>state?.resident?.location?.kind==='venue'&&(state.resident.location.venue===id||state.resident.location.venueId===id);

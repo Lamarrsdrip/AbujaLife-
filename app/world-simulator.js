@@ -324,6 +324,7 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
  };
  const toWorld=e=>screenToWorld({x:e.clientX,y:e.clientY},svg.getBoundingClientRect(),camera,viewport());
  const updateViewport=()=>{
+  if(disposed)return;
   const box=container.getBoundingClientRect(),view=worldViewport({pixelWidth:box.width,pixelHeight:box.height,sceneWidth:scene.width,sceneHeight:scene.height,interior,transit:!!trip,zoom,oblique,...orientation()});
   viewWidth=view.width;viewHeight=view.height;camera=constrainWorldCamera(camera,view,scene);
   if(oblique&&!preview){const screen=worldToScreen(player,{left:0,top:0,width:1,height:1},camera,view);if(screen.x<.15||screen.x>.85||screen.y<.12||screen.y>.88)camera=constrainWorldCamera({x:player.x,y:player.y-55},view,scene);}
@@ -537,6 +538,19 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
  };
  cleanup.updateResidents=next=>{knownResidents=(Array.isArray(next)?next:[]).filter(p=>p.id!==profile.id&&p.online);const present=new Set(knownResidents.map(p=>String(p.id)));for(const id of [...residentPoses.keys()])if(!present.has(id)){residentPoses.delete(id);residentTargets.delete(id);residentUpdatedAt.delete(id);}for(const person of knownResidents){const id=String(person.id);if(usablePose(person.pose)){if(!residentPoses.has(id))residentPoses.set(id,{...person.pose});residentTargets.set(id,{...person.pose});residentUpdatedAt.set(id,now());}else if(Object.hasOwn(person,'pose')){residentPoses.delete(id);residentTargets.delete(id);residentUpdatedAt.delete(id);}}neighbours=knownResidents.filter(p=>usablePose(residentPoses.get(String(p.id)))).slice(0,50);container.querySelector('.world-online').innerHTML=neighbours.map(residentMarkup).join('');characterRenderer?.setResidents?.(neighbours);};
  cleanup.updateResidentPose=data=>{const id=String(data?.residentId||''),pose=data?.pose;if(!usablePose(pose))return false;const current=residentPoses.get(id),last=residentUpdatedAt.get(id)||0,gap=current?Math.hypot(pose.x-current.x,pose.y-current.y):Infinity;if(!current||gap>720||now()-last>10000)residentPoses.set(id,{...pose});residentTargets.set(id,{...pose});residentUpdatedAt.set(id,now());if(!neighbours.some(p=>String(p.id)===id)&&knownResidents.some(p=>String(p.id)===id))cleanup.updateResidents(knownResidents.map(p=>String(p.id)===id?{...p,pose}:p));return true;};
+ cleanup.performDirect=(action,payload={},metadata)=>{
+  if(preview||trip||activity||furnitureMode||disposed)return false;
+  if(action==='venue-action'){
+   const task=VENUE_ACTIONS.find(a=>a.id===payload.activityId&&a.venueId===venue?.id);
+   if(!task)return false;
+   stop();animateActivity(task.animation,task.duration,()=>dispatch(action,payload),task.name);return true;
+  }
+  if(['sleep','eat','shower','relax'].includes(action)&&kind==='home'&&metadata){
+   stop();animateActivity(metadata.animation,metadata.duration,()=>dispatch(action,payload),metadata.name);return true;
+  }
+  if(['dealership','estate-office','banex-market','furniture-store','play-dice'].includes(action)&&kind==='venue'){stop();dispatch(action,payload);return true;}
+  return false;
+ };
  cleanup.walkTo=moveTo;cleanup.perform=perform;cleanup.performAsync=(action,payload={})=>new Promise(resolve=>{if(!perform(action,payload,resolve))resolve(false);});cleanup.setFurnitureMode=setFurnitureMode;cleanup.cancelNavigation=stop;cleanup.focus=()=>container.focus({preventScroll:true});cleanup.getFurnitureState=()=>({placed:[...container.querySelectorAll('[data-furniture-item],[data-home-item]')].map(n=>n.dataset.furnitureItem||n.dataset.homeItem).filter((id,i,a)=>a.indexOf(id)===i),stored:scene.storedFurniture||[],placements:scene.furniturePlacements||[]});cleanup.getMotionState=()=>({...player,angle,cameraX:camera.x,cameraY:camera.y,zoom,viewWidth,viewHeight,moving,driving,activity:activity?.name||null,pathLength:path.length,nearby:nearby?.id,travelDistance,scene:kind});cleanup.animateAction=animateActivity;cleanup.animateActivity=animateActivity;cleanup.setZoom=setZoom;cleanup.resetZoom=resetZoom;cleanup.getCameraState=()=>({x:camera.x,y:camera.y,...orientation(),zoom,width:viewWidth,height:viewHeight,oblique,minZoom:WORLD_ZOOM.min,maxZoom:WORLD_ZOOM.max});cleanup.worldToScreen=point=>worldToScreen(point,svg.getBoundingClientRect(),camera,viewport());
  return cleanup;
 }

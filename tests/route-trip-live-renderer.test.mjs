@@ -22,6 +22,8 @@ test('actual journey renderer keeps moving its camera along the authoritative ro
  const f=fixture(t),before=f.cleanup.getCameraState();for(let time=0;time<=12000;time+=100)f.tick(time);
  const after=f.cleanup.getCameraState(),motion=f.cleanup.getMotionState();
  assert.ok(Math.hypot(after.x-before.x,after.y-before.y)>120);
+ assert.equal(Number(f.container.dataset.cameraX),Number(after.x.toFixed(2)));
+ assert.equal(Number(f.container.dataset.cameraY),Number(after.y.toFixed(2)));
  assert.ok(Math.hypot(after.x-motion.x,after.y-motion.y)<250);
  assert.ok(motion.routeNodeIds.length>2);assert.ok(motion.routeProgress>.19&&motion.routeProgress<.21);
 });

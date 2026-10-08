@@ -1,4 +1,4 @@
-import {PLOT_IDS,BILLBOARD_IDS,ALL_SPACES,AD_TIERS,AD_ZONES,dynamicPlotParts,zoneFor,adZoneSpaces,adSpaceFromId,adZonePageCount} from '../../shared/advertising.mjs';
+import {PLOT_IDS,BILLBOARD_IDS,ALL_SPACES,AD_TIERS,AD_ZONES,dynamicPlotParts,zoneFor,adZoneSpaces,adSpaceFromId,adZonePageCount,MAP_AD_INVENTORY,COMPATIBILITY_MAP_AD_INVENTORY,adPlacementMetadata} from '../../shared/advertising.mjs';
 export {AD_TIERS,AD_ZONES,adZoneSpaces} from '../../shared/advertising.mjs';
 import crypto from 'node:crypto';
 import { GameError } from '../errors.mjs';
@@ -12,8 +12,8 @@ const MAX_CREATIVE_BYTES = 48 * 1024;
 const fail = (condition, message, status = 400, code = 'invalid_ad') => { if (!condition) throw new GameError(message, status, code); };
 const clean = (value, max = 200) => typeof value === 'string' ? value.trim().slice(0, max) : '';
 const requestKey = value => typeof value === 'string' && /^[A-Za-z0-9_-]{8,100}$/.test(value);
-const slotPosition=id=>{const space=adSpaceFromId(id);return space?.zoneId?{mapX:space.x,mapY:space.y}:{};};
-const validSlot = (kind,id) => adSpaceFromId(id)?.kind===kind;
+const slotPosition=id=>{const space=adSpaceFromId(id);return space?{mapX:space.x,mapY:space.y}:{};};
+const validSlot = (kind,id) => {const space=adSpaceFromId(id);return space?.kind===kind&&space.eligible!==false;};
 const nowDate = value => new Date(Number(value));
 
 export const AD_PRICING = Object.freeze({
@@ -138,18 +138,30 @@ export class MongoAdStore {
     const zones=AD_ZONES.map(zone=>({id:zone.id,name:zone.name,subtitle:zone.subtitle,region:zone.region,tier:zone.tier,bounds:{x:zone.x,y:zone.y,width:zone.width,height:zone.height}}));
     if(bounds&&['x','y','width','height'].every(key=>Number.isFinite(Number(bounds[key])))){
       const x=Number(bounds.x),y=Number(bounds.y),width=Math.min(80000,Math.max(1,Number(bounds.width))),height=Math.min(80000,Math.max(1,Number(bounds.height)));
-      const locks=await this.collection('ad_slots').find({mapX:{$gte:x-120,$lte:x+width},mapY:{$gte:y-100,$lte:y+height},state:'active',expiresAt:{$gt:nowDate(this.clock())}}).limit(180).toArray();
+      // Original named slots may retain their old coordinates in Mongo. Include
+      // this bounded compatibility set without rewriting paid orders or locks;
+      // the renderer culls using the current shared, safe placement geometry.
+      const locks=await this.collection('ad_slots').find({$or:[{mapX:{$gte:x-560,$lte:x+width},mapY:{$gte:y-560,$lte:y+height}},{_id:{$in:[...ALL_SPACES.map(s=>s.id),...COMPATIBILITY_MAP_AD_INVENTORY.map(s=>s.id)]}}],state:'active',expiresAt:{$gt:nowDate(this.clock())}}).limit(180).toArray();
       const active=await this.collection('ad_orders').find({txRef:{$in:[...new Set(locks.map(lock=>lock.txRef))]},status:'active',endAt:{$gt:this.clock()}},{projection:{txRef:1,kind:1,slots:1,title:1,link:1,imageDataUrl:1,startAt:1,endAt:1}}).limit(180).toArray();
       return {ok:true,zones,spaces:[],active,nextPage:null,serverTime:this.clock()};
     }
-    const selected=zoneId?zoneFor(zoneId):null;
-    const generated=selected?adZoneSpaces(selected.id,{page,limit}):AD_ZONES.slice(0,4).flatMap(zone=>adZoneSpaces(zone.id,{page:0,limit:12}));
-    const safeLimit=Math.min(180,Math.max(12,Math.floor(Number(limit)||96))),nextPage=selected&&Number(page||0)+1<adZonePageCount(selected.id,safeLimit)?Number(page||0)+1:null;
+    const selected=zoneId?zoneFor(zoneId):null,authored=zoneId==='map-parcels';
+    const size=Math.min(180,Math.max(12,Math.floor(Number(limit)||96)));
+    const plotInventory=authored?[...MAP_AD_INVENTORY,...COMPATIBILITY_MAP_AD_INVENTORY]:[];
+    const generated=authored?plotInventory.slice(Math.max(0,Number(page)||0)*size,(Math.max(0,Number(page)||0)+1)*size):selected?adZoneSpaces(selected.id,{page,limit}):AD_ZONES.slice(0,4).flatMap(zone=>adZoneSpaces(zone.id,{page:0,limit:12}));
+    const safeLimit=Math.min(180,Math.max(12,Math.floor(Number(limit)||96))),nextPage=(authored?Number(page||0)+1<Math.ceil(plotInventory.length/safeLimit):selected&&Number(page||0)+1<adZonePageCount(selected.id,safeLimit))?Number(page||0)+1:null;
     const ids=generated.map(space=>space.id),locks=await this.collection('ad_slots').find({_id:{$in:ids},expiresAt:{$gt:nowDate(this.clock())}}).toArray();
     const orders=await this.collection('ad_orders').find({txRef:{$in:locks.map(lock=>lock.txRef)},status:'active',endAt:{$gt:this.clock()}},{projection:{txRef:1,title:1,link:1,endAt:1,...(zoom>=2?{imageDataUrl:1}:{})}}).toArray();
     const byRef=new Map(orders.map(order=>[order.txRef,order]));const lockById=new Map(locks.map(lock=>[lock._id,lock]));
-    const spaces=generated.map(space=>{const lock=lockById.get(space.id),order=lock&&byRef.get(lock.txRef);return {...space,available:!lock,...(order?{ad:{title:order.title,link:order.link,endAt:order.endAt,...(zoom>=2?{imageDataUrl:order.imageDataUrl}: {})}}:{})};});
-    return {ok:true,zones,spaces,nextPage,serverTime:this.clock(),activeCampaigns:await this.collection('ad_orders').countDocuments({status:'active',endAt:{$gt:this.clock()}})};
+    const spaces=generated.map(space=>{const lock=lockById.get(space.id),order=lock&&byRef.get(lock.txRef);return {...space,available:space.eligible!==false&&!lock,...(lock?{campaignRef:lock.txRef,ownerId:lock.residentId,expiresAt:lock.expiresAt}:{}),...(order?{ad:{txRef:order.txRef,title:order.title,link:order.link,endAt:order.endAt,...(zoom>=2?{imageDataUrl:order.imageDataUrl}: {})}}:{})};});
+    return {ok:true,zones,spaces,nextPage,serverTime:this.clock(),inventory:{authoredPlots:MAP_AD_INVENTORY.length,compatibilityPlots:COMPATIBILITY_MAP_AD_INVENTORY.length,total:MAP_AD_INVENTORY.length+COMPATIBILITY_MAP_AD_INVENTORY.length+BILLBOARD_IDS.length,version:2},activeCampaigns:await this.collection('ad_orders').countDocuments({status:'active',endAt:{$gt:this.clock()}})};
+  }
+  async inventory(id){
+    await this.admin.requirePermission(id,'payments');await this.purgeExpiredSlots();
+    const authored=[...MAP_AD_INVENTORY,...COMPATIBILITY_MAP_AD_INVENTORY,...BILLBOARD_IDS.map(adSpaceFromId).filter(p=>p?.eligible)],ids=authored.map(p=>p.id),locks=await this.collection('ad_slots').find({_id:{$in:ids},expiresAt:{$gt:nowDate(this.clock())}}).toArray();
+    const orders=await this.collection('ad_orders').find({txRef:{$in:locks.map(l=>l.txRef)}},{projection:{txRef:1,residentId:1,title:1,status:1,startAt:1,endAt:1}}).toArray();
+    const byId=new Map(locks.map(l=>[l._id,l])),byRef=new Map(orders.map(o=>[o.txRef,o]));
+    return {ok:true,summary:{total:ids.length,occupied:locks.filter(l=>l.state==='active').length,reserved:locks.filter(l=>l.state==='reserved').length,available:ids.length-locks.length},plots:authored.map(p=>{const lock=byId.get(p.id);return {...p,available:!lock,campaign:lock?byRef.get(lock.txRef)||null:null};}),serverTime:this.clock()};
   }
   async mine(id,{status=null}={}) {
     const filter={residentId:id};if(['pending','active','expired'].includes(status))filter.status=status;
@@ -170,8 +182,8 @@ export class MongoAdStore {
       pricing:AD_PRICING,
       tiers:AD_TIERS,
       zones:AD_ZONES.map(zone=>({id:zone.id,name:zone.name,subtitle:zone.subtitle,region:zone.region,tier:zone.tier,bounds:{x:zone.x,y:zone.y,width:zone.width,height:zone.height}})),
-      activeCampaigns:await this.collection('ad_orders').countDocuments({status:'active',endAt:{ $gt:now }}),
-      spaces:ALL_SPACES.map(space => { const lock=lockMap.get(space.id),order=lock&&activeByRef.get(lock.txRef); return { ...space, available:!lock, ...(order?{ad:{title:order.title,link:order.link,imageDataUrl:order.imageDataUrl,endAt:order.endAt}}:{}) }; }),
+      inventory:{authoredPlots:MAP_AD_INVENTORY.length,compatibilityPlots:COMPATIBILITY_MAP_AD_INVENTORY.length,total:MAP_AD_INVENTORY.length+COMPATIBILITY_MAP_AD_INVENTORY.length+BILLBOARD_IDS.length,version:2},activeCampaigns:await this.collection('ad_orders').countDocuments({status:'active',endAt:{ $gt:now }}),
+      spaces:ALL_SPACES.map(space => { const lock=lockMap.get(space.id),order=lock&&activeByRef.get(lock.txRef); return { ...adPlacementMetadata(space), available:adPlacementMetadata(space).eligible!==false&&!lock, ...(order?{ad:{title:order.title,link:order.link,imageDataUrl:order.imageDataUrl,endAt:order.endAt}}:{}) }; }),
       active:active.map(row => ({ txRef:row.txRef,kind:row.kind,slots:row.slots,title:row.title,link:row.link,imageDataUrl:row.imageDataUrl,startAt:row.startAt,endAt:row.endAt })),
     };
   }

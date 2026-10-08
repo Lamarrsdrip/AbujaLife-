@@ -1,3 +1,4 @@
+import {showGameToast as toast} from './game-toast.js';
 import { apiFetch } from './api-client.js';
 import { brandMark } from './brand.js';
 import { renderMap } from './map.js';
@@ -10,12 +11,11 @@ const WELCOME_KEY='abujalife.welcome-back.v1';
 const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const compact=value=>new Intl.NumberFormat('en',{notation:'compact',maximumFractionDigits:1}).format(Number(value||0));
 const money=value=>`₦${new Intl.NumberFormat('en-NG',{maximumFractionDigits:0}).format(Number(value||0))}`;
-const timeout=ms=>AbortSignal.timeout(ms);
+
 let snapshot=null,stats=null,initialAuthenticated=false,mapCleanup=null,mapOverlay=null,welcomeOverlay=null,lastSnapshotAt=0;
 
-function toast(message){if(!toastRoot)return;toastRoot.textContent=message;toastRoot.classList.add('visible');clearTimeout(toast.timer);toast.timer=setTimeout(()=>toastRoot.classList.remove('visible'),3600);}
 async function json(path,options={}){
-  const response=await apiFetch(path,{...options,signal:options.signal||timeout(8000)});
+  const response=await apiFetch(path,{...options,signal:options.signal,timeoutMs:options.timeoutMs||8000});
   let body={};try{body=await response.json();}catch{}
   if(!response.ok||body.ok===false){const error=new Error(body.error||'Please try again.');error.status=response.status;error.code=body.code;throw error;}
   return body;
@@ -103,7 +103,7 @@ function removeObsoleteGarageBays(){document.querySelectorAll('.abj-home-garage-
 
 async function gameAction(action,payload={}){
   const body={action,payload:{...payload,idempotencyKey:payload.idempotencyKey||crypto.randomUUID()}};
-  return json('/api/action',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body),signal:timeout(12000)});
+  return json('/api/action',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body),timeoutMs:12000});
 }
 async function ensurePublicLocation(){
   const p=snapshot?.profile;if(!p)return;

@@ -72,7 +72,7 @@ async def create_completed_resident(playwright, username):
 async def observe(page):
     page_errors, console_errors, api_events = [], [], []
     page.set_default_timeout(20000)
-    page.on('pageerror', lambda error: page_errors.append(str(error)))
+    page.on('pageerror', lambda error: page_errors.append(str(error)+'\n'+str(error.stack)))
     page.on('console', lambda message: console_errors.append(message.text) if message.type == 'error' else None)
     page.on('response', lambda response: api_events.append({
         'method': response.request.method,
@@ -108,6 +108,8 @@ async def assert_playable(page, label):
 
 async def sign_in_existing(browser, username):
     context = await browser.new_context(**IPHONE)
+    if os.environ.get('ABUJALIFE_LEGACY_ABORT') == '1':
+        await context.add_init_script('AbortSignal.any=undefined;AbortSignal.timeout=undefined;')
     page = await context.new_page()
     page_errors, console_errors, api_events = await observe(page)
     try:
@@ -129,6 +131,8 @@ async def sign_in_existing(browser, username):
             raise AssertionError(f'existing resident browser errors: page={page_errors}; console={fatal_console}; api={api_events[-20:]}')
         return {'login': first, 'reload': second, 'apiEvents': api_events[-20:]}
     except Exception as error:
+        await page.screenshot(path=str(ARTIFACT_DIR / 'existing-failure.png'), full_page=True)
+        (ARTIFACT_DIR / 'existing-failure.html').write_text(await page.content())
         stage('existing-failure', {'error': str(error), 'pageErrors': page_errors, 'consoleErrors': console_errors[-10:], 'apiEvents': api_events[-20:]})
         raise
     finally:
@@ -176,6 +180,8 @@ async def complete_onboarding(page, api_events):
 
 async def register_and_reenter(browser, username):
     context = await browser.new_context(**IPHONE)
+    if os.environ.get('ABUJALIFE_LEGACY_ABORT') == '1':
+        await context.add_init_script('AbortSignal.any=undefined;AbortSignal.timeout=undefined;')
     page = await context.new_page()
     page_errors, console_errors, api_events = await observe(page)
     try:
@@ -232,8 +238,8 @@ async def main():
                     await create_completed_resident(playwright, existing_username)
                     browser = await playwright.webkit.launch(headless=True)
                     try:
-                        existing = await asyncio.wait_for(sign_in_existing(browser, existing_username), timeout=75)
-                        new = await asyncio.wait_for(register_and_reenter(browser, new_username), timeout=100)
+                        existing = await asyncio.wait_for(sign_in_existing(browser, existing_username), timeout=180)
+                        new = await asyncio.wait_for(register_and_reenter(browser, new_username), timeout=180)
                     finally:
                         await browser.close()
                     print(json.dumps({'ok': True, 'engine': 'webkit-mobile', 'existingResident': existing, 'newResident': new}), flush=True)

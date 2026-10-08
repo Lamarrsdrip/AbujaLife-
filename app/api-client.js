@@ -20,20 +20,52 @@ export function apiURL(path) {
 // once. Share only an in-flight GET; never cache a settled response.
 const inFlightGets = new Map();
 
+// AbortSignal.any/timeout are unavailable in older Safari and embedded
+// browsers. Own one cancellable deadline per request and release its listener
+// and timer after settlement. Never retry a money-changing request here.
+export function boundedFetch(input, options = {}, fetchImpl = globalThis.fetch) {
+  const {timeoutMs = 15000, signal: caller, ...rest} = options;
+  const controller = new AbortController();
+  const abort = () => controller.abort(caller.reason);
+  if (caller?.aborted) abort();
+  else caller?.addEventListener('abort', abort, {once:true});
+  const timer = setTimeout(() => controller.abort(new DOMException('The request timed out.', 'TimeoutError')), Math.min(30000, Math.max(1, Number(timeoutMs) || 15000)));
+  let released=false;
+  const release = () => { if(released)return;released=true;clearTimeout(timer);caller?.removeEventListener('abort',abort);controller.signal.removeEventListener('abort',release); };
+  controller.signal.addEventListener('abort',release,{once:true});
+  const track = response => {
+    if(!response.body){release();return response;}
+    // Keep the deadline through JSON/media download, not just receipt of HTTP
+    // headers. Cloned GET consumers share the same completed network body.
+    for(const method of ['json','text','blob','arrayBuffer','formData'])if(typeof response[method]==='function'){
+      const consume=response[method].bind(response);
+      response[method]=(...args)=>consume(...args).finally(release);
+    }
+    const clone=response.clone.bind(response);response.clone=()=>track(clone());
+    return response;
+  };
+  try { return Promise.resolve(fetchImpl(input, {...rest, signal:controller.signal})).then(track,error=>{release();throw error;}); }
+  catch (error) { release(); return Promise.reject(error); }
+}
+
 export function apiFetch(path, options = {}) {
-  const deadline=AbortSignal.timeout(15000);
-  const signal=options.signal?AbortSignal.any([options.signal,deadline]):deadline;
   const method=String(options.method||'GET').toUpperCase();
   const url=apiURL(path);
-  const init={...options,signal,credentials:'include',cache:'no-store'};
+  const init={...options,credentials:'include',cache:'no-store'};
 
-  if(method!=='GET'||options.body!==undefined||Object.keys(options.headers||{}).length){
-    return globalThis.fetch(url,init);
+  if(method!=='GET'||options.body!==undefined||Object.keys(options.headers||{}).length||options.signal){
+    return boundedFetch(url,init);
   }
 
   let pending=inFlightGets.get(url);
   if(!pending){
-    pending=globalThis.fetch(url,init).finally(()=>inFlightGets.delete(url));
+    // Finish the bounded network body before cloning it for consumers. Safari
+    // can report an aborted in-flight tee as an uncaught error during reload.
+    // Completed bytes remain cloneable; only concurrent requests are shared.
+    pending=boundedFetch(url,init).then(async response=>{
+      if(response.body)await response.clone().arrayBuffer();
+      return response;
+    }).finally(()=>inFlightGets.delete(url));
     inFlightGets.set(url,pending);
   }
   return pending.then(response=>response.clone());

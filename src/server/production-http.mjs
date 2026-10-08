@@ -143,6 +143,7 @@ export function createProductionServer({store,social,directory,presence,admin,pa
         if(pathname==='/api/rewards/activity/start'&&method==='POST')return json(res,200,await rewards.startActivity(id,body));
         if(pathname==='/api/rewards/activity/complete'&&method==='POST')return json(res,200,await rewards.completeActivity(id,body));
         if(pathname==='/api/rewards/campaigns'&&method==='GET')return json(res,200,await rewards.campaigns(id));
+        if(pathname==='/api/admin/ads/inventory'&&method==='GET')return json(res,200,await ads.inventory(id));
         if(pathname==='/api/ads/mine'&&method==='GET')return json(res,200,await ads.mine(id,{status:url.searchParams.get('status')}));
         if(pathname==='/api/payments/checkout'&&method==='POST')return json(res,200,await (await payments.checkout(id,body)));
         if(pathname==='/api/payments/verify'&&method==='POST')return json(res,200,await (await payments.verify(id,body)));

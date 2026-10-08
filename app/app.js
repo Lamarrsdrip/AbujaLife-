@@ -1,3 +1,5 @@
+import {showGameToast as toast,clearGameToasts} from './game-toast.js';
+import {createLocationTray} from './location-tray.js';
 import {createActivityDirector} from './activity-director.js';
 import { apiFetch, createApiEventSource } from './api-client.js';
 import { createWorldPresencePublisher } from './world-presence.js';
@@ -60,11 +62,10 @@ async function api(path,options={}) {
  if(path==='/api/wallet/transfer'&&opts.body&&typeof opts.body==='object'&&!opts.body.idempotencyKey)opts.body.idempotencyKey=crypto.randomUUID();
  if(opts.body!==undefined&&typeof opts.body!=='string')opts.body=JSON.stringify(opts.body);
  if(opts.body!==undefined)opts.headers['content-type']='application/json';
- const response=await apiFetch(path,{...opts,signal:opts.signal||AbortSignal.timeout(path.startsWith('/api/bootstrap')?8000:15000)}),body=await response.json();
+ const response=await apiFetch(path,{...opts,signal:opts.signal,timeoutMs:opts.timeoutMs||(path.startsWith('/api/bootstrap')?8000:15000)}),body=await response.json();
  if(!response.ok||body.ok===false){const error=new Error(body.error||'Please try again.');error.status=response.status;error.code=body.code;throw error;}
  return body;
 }
-function toast(message){const el=document.querySelector('#toast');el.textContent=message;el.classList.add('visible');clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.classList.remove('visible'),4000);}
 async function refresh({render=true,startup=true}={}){
  const epoch=++stateRequestEpoch,next=await api(startup?'/api/entry':'/api/bootstrap');
  if(epoch!==stateRequestEpoch)return state;
@@ -78,7 +79,7 @@ async function refresh({render=true,startup=true}={}){
  armTripArrival();phone.render();activityDirector.check();void install.refresh();
  if(startup&&state.profile?.onboardingComplete)hydrateStartup();return state;
 }
-function expireAccount(){stream?.close();phone.close();stateRequestEpoch++;state={authenticated:false};authMode='login';authDraft.password='';authNotice='Your session has expired. Sign in to continue with your saved resident.';renderMain();}
+function expireAccount(){clearGameToasts();stream?.close();phone.close();stateRequestEpoch++;state={authenticated:false};authMode='login';authDraft.password='';authNotice='Your session has expired. Sign in to continue with your saved resident.';renderMain();}
 function hydrateStartup(){
  if(!state.authenticated||!state.entry)return;
  const epoch=stateRequestEpoch,owner=state.profile.id;
@@ -117,14 +118,15 @@ addEventListener('abj:civic-ready',()=>discoverFeature('story'));
 function originCard(p){if(!p.origin)return '';const nepo=p.origin.id==='nepo';return `<div class="origin-card ${nepo?'nepo':'lapo'}"><span>${nepo?'✦':'↗'}</span><div><strong>${nepo?'Nepo Baby':'Lapo Baby'}</strong><small>${nepo?'A family head start. Make your own story.':'Self-made, small small. Build your own Abuja story.'}<br>${esc(place(p.origin.residence?.district)?.name||p.origin.residence?.districtName||'Abuja')} · Started with ₦${money(p.origin.startingBalance)}</small></div></div>`;}
 let lastDiscoveryInput=performance.now();
 addEventListener('pointerdown',()=>{lastDiscoveryInput=performance.now();}, {passive:true});
+const locationTray=createLocationTray({read:()=>state,host:()=>['world','outside'].includes(view)?root.querySelector('.hud-context-slot'):null,run:item=>performDirect(item.action,item.payload||{},item),more:()=>openVenueMenu(currentVenue())});
 const activityDirector=createActivityDirector({
- read:()=>({profile:state.authenticated?state.profile:null,jackpotEligible:state.jackpot?.eligible===true}),now:gameNow,
- quiet:()=>view==='world'&&state.authenticated&&state.profile?.onboardingComplete&&!busy&&!state.activeChallenge&&!state.profile?.activeTrip&&!cleanup?.getMotionState?.().moving&&!cleanup?.getMotionState?.().driving&&!document.hidden&&!document.querySelector('[aria-modal="true"]')&&document.querySelector('#phone-root')?.hidden&&performance.now()-lastDiscoveryInput>20000,
+ read:()=>({profile:state.authenticated?state.profile:null,weather:state.weather,jackpotEligible:state.jackpot?.eligible===true}),now:gameNow,
+ quiet:()=>!locationTray.isExpanded()&&!document.body.classList.contains('hud-toast-active')&&!cleanup?.getMotionState?.().activity&&!root.querySelector('.world-resident-actions,.world-live-popover,.world-furniture-toolbar:not([hidden]),.play-visit-card')&&view==='world'&&state.authenticated&&state.profile?.onboardingComplete&&!busy&&!state.activeChallenge&&!state.profile?.activeTrip&&!cleanup?.getMotionState?.().moving&&!cleanup?.getMotionState?.().driving&&!document.hidden&&!document.querySelector('[aria-modal="true"]')&&document.querySelector('#phone-root')?.hidden&&performance.now()-lastDiscoveryInput>20000,
  record:async payload=>{const owner=state.profile?.id,result=await api('/api/action',{method:'POST',body:{action:'discovery-event',payload}});if(state.profile?.id===owner&&result.discovery)state.profile.discovery=result.discovery;return result;},
- host:()=>root.querySelector('.world-stage'),
+ host:()=>root.querySelector('.hud-context-slot'),
  run:suggestion=>{if(suggestion.kind==='travel')travelSheet(suggestion.districtId,false,suggestion.venueId);
   else if(suggestion.kind==='home')perform(suggestion.action);
-  else if(suggestion.kind==='activity')perform('venue-action',{activityId:suggestion.activityId});
+  else if(suggestion.kind==='activity')performDirect('venue-action',{activityId:suggestion.activityId});
   else if(suggestion.kind==='work')navigate('work',{jobId:state.profile.job});
   else if(suggestion.kind==='page')navigate(suggestion.page);
   else if(suggestion.kind==='phone')phone.open();
@@ -135,7 +137,7 @@ const activityDirector=createActivityDirector({
  }
 });
 const posePublisher=createWorldPresencePublisher({read:()=>{
- if(!state.authenticated||!['world','outside'].includes(view)||document.hidden)return null;
+ if(!state.authenticated||view!=='world'||state.profile?.activeTrip||document.hidden)return null;
  const motion=cleanup?.getMotionState?.();if(!motion)return null;
  return{key:`${state.profile.id}:${locationKey()}`,pose:{x:motion.x,y:motion.y,angle:motion.angle||0,moving:motion.moving&&!document.querySelector('[aria-modal="true"]'),driving:motion.driving,...(motion.activity?{activity:motion.activity}:{})}};
 },send:pose=>api('/api/presence',{method:'POST',body:{pose}})});
@@ -263,6 +265,7 @@ function syncProfileChrome(){
 function currentVenue(){return list(state.venues).find(v=>v.id===(state.profile?.location?.venueId||state.profile?.location?.venue));}
 function venueActions(venue){const all=list(state.venueActions);return all.filter(a=>a.venueId===venue?.id||(venue?.activities||venue?.actions||[]).includes(a.id));}
 function playTime(){return abujaTime(gameNow()).label;}
+function performDirect(name,payload={},metadata){if(cleanup?.performDirect)return cleanup.performDirect(name,payload,metadata);return interact(name,payload);}
 function perform(name,payload={}){if(cleanup?.perform)return cleanup.perform(name,payload);return interact(name,payload);}
 let previousFocus,sheetCleanup;
 function openSheet(content,{wide=false}={}){
@@ -341,12 +344,12 @@ function renderMain(){
   const owner=state.profile?.location?.kind==='visit'?state.homeVisit?.ownerHome:null;
   const renderProfile=owner?{...state.profile,home:owner.home,inventory:owner.inventory,furnitureLayout:owner.furnitureLayout,storedFurniture:owner.storedFurniture,canDecorate:false}:state.profile;
   cleanup?.updateProfile?.(renderProfile);
-  cleanup?.updateResidents?.(list(state.nearby));return;
+  cleanup?.updateResidents?.(list(state.nearby));locationTray.sync();return;
  }
  if(nextSceneKey!==renderedSceneKey){document.querySelector('.location-chat-panel')?.remove();chatOpen=false;chatUnread=0;}
  renderedSceneKey=nextSceneKey;
  const epoch=++viewEpoch;
- cleanup?.();cleanup=undefined;const recovery=authRecovery.snapshot();if(recovery.kind&&!['complete','idle'].includes(recovery.status)){renderAuthRecovery();return;}if(!state.authenticated){renderAuth();return;}
+ cleanup?.();cleanup=undefined;locationTray.sync();const recovery=authRecovery.snapshot();if(recovery.kind&&!['complete','idle'].includes(recovery.status)){renderAuthRecovery();return;}if(!state.authenticated){renderAuth();return;}
  if(!state.profile?.onboardingComplete){phone.close();renderOnboarding();return;}
  if(!['world','outside','map','work','market','property','profile'].includes(view))view='world';
  if(view==='outside'&&state.profile.location?.kind!=='public')view='world';
@@ -354,7 +357,7 @@ function renderMain(){
  root.querySelectorAll('[data-view]').forEach(b=>b.onclick=e=>{e.preventDefault();navigate(b.dataset.view);});root.querySelectorAll('[data-phone]').forEach(b=>b.onclick=()=>{furnitureCatalogue.close({restoreFocus:false});phone.open(b.dataset.phone==='home'?undefined:b.dataset.phone);});
  root.querySelector('[data-nav-outside]').onclick=()=>navigate('outside');root.querySelectorAll('[data-open-needs]').forEach(b=>b.onclick=openNeeds);root.querySelector('[data-nav-life]').onclick=openLifeMenu;
  const binder=({world:bindWorld,outside:bindOutside,map:bindMap,work:bindWork,market:bindMarket,property:bindProperties,profile:bindProfile})[view];
- if(view==='world'||view==='outside')requestAnimationFrame(()=>{if(epoch===viewEpoch)binder();});
+ if(view==='world'||view==='outside')requestAnimationFrame(()=>{if(epoch===viewEpoch){binder();dispatchEvent(new Event('abujalife:scene-ready'));}});
  else binder();
  enhanceProductPreviews(root,{appearance:state.profile?.appearance});
  void install.refresh();
@@ -413,6 +416,7 @@ function bindWorld(){
   home.disabled=!!p.activeTrip||quickHomeNavigating;home.innerHTML=atHome?`${icon('arrow')}<span>Go Out</span>`:`${icon('world')}<span>Home</span>`;home.onclick=atHome?()=>navigate('outside'):goHome;
   sprint.before(row);row.append(home,sprint);
  }
+ const context=document.createElement('div');context.className='hud-context-slot';root.querySelector('.world-stage')?.append(context);locationTray.sync();
  if(p.activeTrip)bindTrip(p.activeTrip);
  if(p.location?.kind==='public'){
   const places=document.createElement('button');places.type='button';places.className='world-catalogue-button';places.dataset.outsideDestinations='';
@@ -486,7 +490,7 @@ function openVenueMenu(venue){
  if(venue.id==='games-lounge'){openDice();return;}if(venue.id==='dealership'){openGarage();return;}if(venue.id==='banex'){openBanexMarket();return;}if(venue.id==='furniture-store'){openMarketplace();return;}if(venue.id==='estate-office'){navigate('property');return;}
  const activities=venueActions(venue),closed=venue.kind==='club'&&!state.clubSchedule?.isOpen;
  openSheet(`<span class="eyebrow">${esc(venue.category||'YOUR DESTINATION')}</span><h2 id="sheet-title">${esc(venue.name)}</h2><p class="muted">${esc(venue.description||'Take your time and enjoy the city.')}</p>${venue.kind==='club'?`<p class="club-schedule-note">${esc(state.clubSchedule?.openingHours||'Wed, Fri & Sat · 20:00–02:00')} Abuja time. ${closed?'House lights are up; explore the room and come back when the night starts.':'DJ live · dance floor active · lights moving.'}</p>`:''}<div class="venue-menu">${activities.map(activity=>`<article class="venue-menu-item"><div><strong>${esc(activity.name||activity.title)}</strong><small>${esc(effectLabel(activity))}</small><span>${activity.cost?`₦${money(activity.cost)}`:'Free'} · ${activity.duration||5}s activity</span></div><button class="primary" data-venue-activity="${esc(activity.id)}" ${closed||state.profile.wallet<(activity.cost||0)?'disabled':''}>${activity.cost?'Choose':'Start'}</button></article>`).join('')||'<p class="muted">Explore the room, then walk to the exit when you are ready.</p>'}</div><p class="economy-note">Virtual game prices. Activities change your resident’s needs.</p>`);
- sheetRoot.querySelectorAll('[data-venue-activity]').forEach(button=>button.onclick=()=>{const activityId=button.dataset.venueActivity;closeSheet();perform('venue-action',{activityId});});
+ sheetRoot.querySelectorAll('[data-venue-activity]').forEach(button=>button.onclick=()=>{const activityId=button.dataset.venueActivity;closeSheet();performDirect('venue-action',{activityId});});
 }
 function openMarketplace(){openSheet(`<span class="eyebrow">GOOD FINDS. YOUR STYLE.</span><h2 id="sheet-title">Okrika Marketplace</h2><p class="muted">A fresh look or a finishing touch for home. Make it yours.</p><div class="market-departments"><button data-department="clothing">${icon('profile')}<strong>Clothes & style</strong><span>Find your next look</span>${icon('arrow')}</button><button data-department="furniture">${icon('world')}<strong>Room & living</strong><span>Pieces for your place</span>${icon('arrow')}</button><button data-department="all">${icon('sun')}<strong>Browse everything</strong><span>A little of everything</span>${icon('arrow')}</button></div>`);sheetRoot.querySelectorAll('[data-department]').forEach(b=>b.onclick=()=>{if(b.dataset.department==='furniture'){openFurniture();return;}marketFilter=b.dataset.department;navigate('market');});}
 function diceFace(value){return `<span class="die-face" aria-label="Die ${value||'rolling'}">${[1,2,3,4,5,6,7,8,9].map(position=>`<i class="${({1:[5],2:[1,9],3:[1,5,9],4:[1,3,7,9],5:[1,3,5,7,9],6:[1,3,4,6,7,9]})[value||5].includes(position)?'pip':''}"></i>`).join('')}</span>`;}
@@ -684,7 +688,7 @@ async function openAccountSecurity(){
   form.onsubmit=async e=>{e.preventDefault();const submit=form.querySelector('[type=submit]'),error=form.querySelector('[role=alert]'),notice=form.querySelector('[role=status]');submit.disabled=true;error.textContent='';notice.textContent='';try{const email=form.elements.email.value.trim(),changing=email.toLowerCase()!==String(account.email||'').toLowerCase();await api('/api/auth/email/request',{method:'POST',body:changing?{email,password:form.elements.password.value}:{}});form.elements.password.value='';notice.textContent='Check your inbox and spam folder for the confirmation link. Your current email remains in place until you confirm a new address.';}catch(failure){error.textContent=failure.message;}finally{submit.disabled=false;}};
  }catch(failure){if(sheet.isConnected){sheet.innerHTML=`<button type="button" class="sheet-close" aria-label="Close account settings">${icon('close')}</button><h2 id="sheet-title">Account &amp; security</h2><p class="form-error" role="alert">${esc(failure.message)}</p><button class="secondary" type="button" data-account-retry>Try again</button>`;sheet.querySelector('.sheet-close').onclick=closeSheet;sheet.querySelector('[data-account-retry]').onclick=openAccountSecurity;}}
 }
-function bindProfile(){root.querySelector('[data-account-security]')?.addEventListener('click',openAccountSecurity);const form=root.querySelector('#profile-form');cleanup=mountAvatarPreview(root.querySelector('.profile-portrait'),state.profile.appearance||{});form.querySelectorAll('[data-appearance]').forEach(s=>s.onchange=()=>{const appearance={...state.profile.appearance,...Object.fromEntries(new FormData(form))},preview=root.querySelector('.profile-portrait');preview.querySelector('svg')?.remove();preview.insertAdjacentHTML('afterbegin',avatarSVG(appearance,{size:280,fullBody:true}));cleanup?.update?.(appearance);});form.onsubmit=async e=>{e.preventDefault();const {displayName,lifeGoal,...appearance}=Object.fromEntries(new FormData(form));try{await api('/api/profile',{method:'POST',body:{displayName,lifeGoal,appearance:{...state.profile.appearance,...appearance}}});await refresh();toast('Looking like yourself.');}catch(error){toast(error.message);}};root.querySelector('[data-logout]').onclick=async()=>{await api('/api/auth/logout',{method:'POST',body:{}});stream?.close();phone.close();state=await api('/api/entry');authMode='login';authNotice='';view='world';if(location.hash)history.replaceState({},'',`${location.pathname}${location.search}`);renderMain();};}
+function bindProfile(){root.querySelector('[data-account-security]')?.addEventListener('click',openAccountSecurity);const form=root.querySelector('#profile-form');cleanup=mountAvatarPreview(root.querySelector('.profile-portrait'),state.profile.appearance||{});form.querySelectorAll('[data-appearance]').forEach(s=>s.onchange=()=>{const appearance={...state.profile.appearance,...Object.fromEntries(new FormData(form))},preview=root.querySelector('.profile-portrait');preview.querySelector('svg')?.remove();preview.insertAdjacentHTML('afterbegin',avatarSVG(appearance,{size:280,fullBody:true}));cleanup?.update?.(appearance);});form.onsubmit=async e=>{e.preventDefault();const {displayName,lifeGoal,...appearance}=Object.fromEntries(new FormData(form));try{await api('/api/profile',{method:'POST',body:{displayName,lifeGoal,appearance:{...state.profile.appearance,...appearance}}});await refresh();toast('Looking like yourself.');}catch(error){toast(error.message);}};root.querySelector('[data-logout]').onclick=async()=>{clearGameToasts();await api('/api/auth/logout',{method:'POST',body:{}});stream?.close();phone.close();state=await api('/api/entry');authMode='login';authNotice='';view='world';if(location.hash)history.replaceState({},'',`${location.pathname}${location.search}`);renderMain();};}
 function residentSheet(resident){
  if(typeof resident==='string')resident=list(state.people).find(p=>p.id===resident);if(!resident)return;
  openSheet(`<div class="resident-sheet-portrait">${avatarSVG(resident.appearance,{size:115})}</div><span class="eyebrow">${resident.online?'ONLINE NOW':'RESIDENT'}</span><h2 id="sheet-title">${esc(resident.displayName)}</h2><p class="muted">@${esc(resident.username)}</p><div class="button-pair"><button class="secondary" id="request-friend">Add friend</button><button class="primary" id="message-resident">Message</button></div>`);
@@ -722,7 +726,7 @@ function renderChat(){const el=document.querySelector('#local-messages');if(!el)
 async function boot(){
  root.innerHTML=`<div class="loading-state" role="status" aria-busy="true"><span class="wordmark">${brandMark()}</span><p>Opening your city…</p></div>`;
  // Optional account features never hold the city behind a second request.
- void api('/api/auth/config',{signal:AbortSignal.timeout(5000)}).then(config=>{authConfig=config;}).catch(()=>{});
+ void api('/api/auth/config',{timeoutMs:5000}).then(config=>{authConfig=config;}).catch(()=>{});
  try{
   await refresh({render:false,startup:true});
   renderMain();connectRealtime();hydrateStartup();

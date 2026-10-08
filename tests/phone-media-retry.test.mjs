@@ -12,7 +12,7 @@ function harness(){
   const c=vm.createContext({currentConversationId:'conversation-a',activeReply:{conversationId:'conversation-a',message:{id:'original-reply'}},imageDraft:null,voiceDraft:null,
     uuid:()=>`intent-${requests.length}`,selectedCaption:()=>'',URLSearchParams,AbortSignal,
     URL:{revokeObjectURL:url=>revoked.push(url)},apiURL:p=>p,
-    nativeFetch:(url,options)=>{requests.push({url,options});return new Promise((resolve,reject)=>{pending={resolve,reject};});},
+    chatFetch:(url,options)=>{requests.push({url,options});return new Promise((resolve,reject)=>{pending={resolve,reject};});},
     stopPlayback(){},renderComposerExtras(){},cachePayload:body=>messages.push(body),clearReply(){c.activeReply=null;},currentComposer:()=>null,scheduleEnhance(){},setTimeout(){},refreshThreadMeta:async()=>{},toast:text=>errors.push(text),
   });
   vm.runInContext(code,c);

@@ -55,6 +55,14 @@ jobs:
           ABUJALIFE_QA_ARTIFACTS: ${{ runner.temp }}/abujalife-browser
           ABUJALIFE_QA_CLOCK_HOUR_WAT: '18'
         run: npm run qa:browser
+      - name: Full-height HUD and independent multiplayer activities
+        env:
+          ABUJALIFE_HUD_ARTIFACTS: ${{ runner.temp }}/abujalife-hud
+        run: python tests/game-hud-browser.py
+      - name: Mobile and desktop advertising fit, zoom and tap regression
+        env:
+          ABUJALIFE_AD_ARTIFACTS: ${{ runner.temp }}/abujalife-ads
+        run: python tests/map-ad-browser.py
       - name: Current V4 full-client browser acceptance
         env:
           ABUJALIFE_V4_ARTIFACTS: ${{ runner.temp }}/abujalife-v4
@@ -69,6 +77,8 @@ jobs:
           path: |
             ${{ runner.temp }}/abujalife-webkit
             ${{ runner.temp }}/abujalife-browser
+            ${{ runner.temp }}/abujalife-hud
+            ${{ runner.temp }}/abujalife-ads
             ${{ runner.temp }}/abujalife-v4
 
   windows:

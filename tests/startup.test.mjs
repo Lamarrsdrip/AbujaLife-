@@ -26,7 +26,7 @@ test('a stalled optional account configuration cannot hold a ready city on the l
   await Promise.race([f.start(),new Promise((_,reject)=>setTimeout(()=>reject(new Error('Optional configuration blocked startup')),100))]);
   assert.deepEqual(f.calls.filter(value=>typeof value==='string'),['render','realtime']);
   assert.equal(f.calls[0].path,'/api/auth/config');
-  assert.ok(f.calls[0].options.signal instanceof AbortSignal);
+  assert.equal(f.calls[0].options.timeoutMs,5000);
 });
 
 test('an expired startup session opens sign-in instead of a reconnect loop',async()=>{

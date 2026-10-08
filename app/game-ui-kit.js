@@ -51,7 +51,7 @@ async function refresh() {
   if (loading || document.hidden || !appRoot?.querySelector('.game-shell.is-playing')) return;
   loading = true;
   try {
-    const response = await apiFetch('/api/bootstrap', { signal:AbortSignal.timeout(8000) });
+    const response = await apiFetch('/api/bootstrap', { timeoutMs:8000 });
     if (!response.ok) return;
     const payload = await response.json();
     if (payload?.authenticated && payload.profile) render(payload.profile);

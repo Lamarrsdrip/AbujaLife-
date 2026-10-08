@@ -6,7 +6,8 @@ import { connectMongo } from '../src/server/mongo/database.mjs';
 import { MongoGameStore } from '../src/server/mongo/gameStore.mjs';
 import { MongoAdminStore } from '../src/server/mongo/adminStore.mjs';
 import {MongoAdStore} from '../src/server/mongo/adStore.mjs';
-import {adSpaceAt,adZoneSpaces} from '../src/shared/advertising.mjs';
+import {adSpaceAt,adZoneSpaces,adSpaceFromId,MAP_AD_INVENTORY,COMPATIBILITY_MAP_AD_INVENTORY,BILLBOARD_IDS} from '../src/shared/advertising.mjs';
+import {mapAdPlacements} from '../app/map-ad-displays.js';
 import { MongoPaymentStore } from '../src/server/mongo/paymentStore.mjs';
 
 const configuration = process.env.TEST_MONGODB_CONFIG ? JSON.parse(fs.readFileSync(process.env.TEST_MONGODB_CONFIG, 'utf8')) : {};
@@ -215,7 +216,7 @@ integration('reference verification requires order ownership and wrong provider 
 integration('map-wide city and sky ad reservations race safely, verify by reference, render their actual image and replay once',async t=>{
  const f=await fixture(t),ads=new MongoAdStore({store:f.store,admin:f.admin,payments:f.payments});await ads.init({ensureIndexes:false});ads.attach();
  const png=Buffer.alloc(24);Buffer.from([137,80,78,71,13,10,26,10]).copy(png);png.write('IHDR',12);png.writeUInt32BE(320,16);png.writeUInt32BE(200,20);
- const sky=await ads.world({zoneId:'sky-displays',page:crypto.randomInt(100,4000)}),city=await ads.world({zoneId:'business-bay',page:0});assert.ok(sky.spaces.some(p=>p.available));const slots=[city.spaces.find(p=>p.available).id];
+ const sky=await ads.world({zoneId:'sky-displays',page:100}),city=await ads.world({zoneId:'map-parcels',page:0});assert.ok(sky.spaces.some(p=>p.available));const slots=[city.spaces.find(p=>p.available).id];
  const input={kind:'plot',slots,title:'Fixture city business',email:'advertiser@example.test',link:'https://example.com/business',imageDataUrl:'data:image/png;base64,'+png.toString('base64')};
  const callsBefore=f.calls.length,attempts=await Promise.allSettled([ads.checkout(f.resident,{...input,idempotencyKey:unique('ad_')}),ads.checkout(f.other,{...input,idempotencyKey:unique('ad_')})]);
  assert.equal(attempts.filter(r=>r.status==='fulfilled').length,1);assert.equal(attempts.find(r=>r.status==='rejected').reason.code,'ad_space_taken');
@@ -231,8 +232,35 @@ integration('map-wide city and sky ad reservations race safely, verify by refere
  const state=await ads.publicState();assert.ok(state.active.some(ad=>ad.txRef===order.txRef&&ad.slots.length===1&&ad.imageDataUrl===input.imageDataUrl));
  const visible=await ads.world({bounds:{x:-40000,y:-40000,width:80000,height:80000}});assert.ok(visible.active.some(ad=>ad.txRef===order.txRef));
  const adminList=await f.payments.list(f.owner,{limit:100});assert.ok(adminList.payments.some(ad=>ad.txRef===order.txRef&&ad.purpose==='ad'&&ad.fulfillmentStatus==='fulfilled'));
+ const inventorySize=MAP_AD_INVENTORY.length+COMPATIBILITY_MAP_AD_INVENTORY.length+BILLBOARD_IDS.length;
+ const inventory=await ads.inventory(f.owner);assert.equal(inventory.summary.total,inventorySize);assert.equal(inventory.summary.occupied,1);assert.equal(inventory.summary.available,inventorySize-1);
+ const assigned=inventory.plots.find(p=>p.id===slots[0]);assert.equal(assigned.campaign.txRef,order.txRef);assert.equal(assigned.campaign.residentId,own);assert.equal(assigned.available,false);assert.equal(assigned.width,city.spaces.find(p=>p.id===slots[0]).width);
+ await assert.rejects(ads.inventory(f.other),error=>error.status===403);
+ const protectedSpace=(await ads.world({zoneId:'capital-brand-coast',limit:180})).spaces.find(p=>!p.eligible);assert.ok(protectedSpace);const gatewayCalls=f.calls.length;
+ await rejectCode(ads.checkout(f.resident,{...input,slots:[protectedSpace.id],idempotencyKey:unique('protected_')}),'invalid_ad_space');assert.equal(f.calls.length,gatewayCalls);
+ f.advance(7*24*60*60*1000+1);const expired=await ads.inventory(f.owner);assert.equal(expired.summary.occupied,0);assert.equal(expired.summary.available,inventorySize);
+
 });
 
+
+integration('historical five-slot checkouts retain their IDs, safe displays and single receipt after deployment',async t=>{
+ const f=await fixture(t),ads=new MongoAdStore({store:f.store,admin:f.admin,payments:f.payments});await ads.init({ensureIndexes:false});ads.attach();
+ const png=Buffer.alloc(24);Buffer.from([137,80,78,71,13,10,26,10]).copy(png);png.write('IHDR',12);png.writeUInt32BE(320,16);png.writeUInt32BE(200,20);
+ for(const slots of [['plot-10','plot-11','plot-14','plot-23','plot-26'],[32,33,38,39,44].map(c=>`ad:city-frontage:80:${c}`)]){
+  const order=(await ads.checkout(f.resident,{kind:'plot',slots:[slots[0]],title:'Historical campaign fixture',email:'advertiser@example.test',link:'https://example.com/business',imageDataUrl:'data:image/png;base64,'+png.toString('base64'),idempotencyKey:unique('historic_')})).checkout;
+  // Emulate a checkout stored by the previous five-slot release in this
+  // disposable database; production campaign rows are never rewritten.
+  await f.connection.db.collection('ad_orders').updateOne({_id:order.txRef},{$set:{slots}});
+  const first=await f.connection.db.collection('ad_slots').findOne({_id:slots[0]});
+  await f.connection.db.collection('ad_slots').insertMany(slots.slice(1).map(id=>({...first,_id:id,mapX:-99999,mapY:-99999})));
+  providerSuccess(f,order);const paid=await f.payments.verify(f.resident,{purpose:'ad',txRef:order.txRef});assert.deepEqual(paid.ad.slots,slots);
+  const replay=await f.payments.verify(f.resident,{purpose:'ad',txRef:order.txRef});assert.equal(replay.replayed,true);assert.equal(await f.connection.db.collection('ad_receipts').countDocuments({txRef:order.txRef}),1);
+  // Already-active old releases also have stale spatial index coordinates.
+  await f.connection.db.collection('ad_slots').updateMany({txRef:order.txRef},{$set:{mapX:-99999,mapY:-99999}});
+  const p=adSpaceFromId(slots[0]),view=await ads.world({bounds:{x:p.x,y:p.y,width:p.width,height:p.height}}),campaign=view.active.find(a=>a.txRef===order.txRef);assert.ok(campaign);assert.equal(mapAdPlacements([campaign],f.store.clock()).length,5);
+  const inventory=await ads.inventory(f.owner);for(const id of slots){const parcel=inventory.plots.find(p=>p.id===id);assert.ok(parcel);assert.equal(parcel.available,false);assert.equal(parcel.campaign.txRef,order.txRef);}
+ }
+});
 
 integration('one verified provider transaction cannot fulfill both a game-credit order and an ad campaign',async t=>{
  const f=await fixture(t),ads=new MongoAdStore({store:f.store,admin:f.admin,payments:f.payments});await ads.init({ensureIndexes:false});ads.attach();

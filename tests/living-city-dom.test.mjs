@@ -55,5 +55,5 @@ test('global stats realtime events update counters without replacing the nearby 
  const f=fixture();snapshot(f,2);f.flush();
  f.events.get('abujalife:living-city')({detail:{type:'stats',stats:{onlineNow:3,visitsToday:7,visitsAllTime:3501}}});f.flush();
  const button=f.current().host.querySelector('.world-live-stats');
- assert.match(button.innerHTML,/3 online/);assert.match(button.innerHTML,/2 here/);assert.match(button.innerHTML,/7 visits today/);
+ assert.match(button.innerHTML,/3 online/);assert.match(button.innerHTML,/2 here/);assert.match(button.innerHTML.replace(/<[^>]*>/g,''),/7 visits today/);
 });

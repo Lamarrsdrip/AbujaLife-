@@ -1,3 +1,4 @@
+import {MAP_AD_PARCELS,MAP_ROADSIDE_PARCELS,MAP_AD_COMPATIBILITY_PARCELS,mapLandConflict,boxesOverlap} from './map-ad-land.mjs';
 export const PLOT_IDS = Object.freeze(Array.from({ length: 40 }, (_, index) => `plot-${String(index + 1).padStart(2, '0')}`));
 export const BILLBOARD_IDS = Object.freeze(Array.from({ length: 10 }, (_, index) => `billboard-${String(index + 1).padStart(2, '0')}`));
 export const ALL_SPACES = Object.freeze([
@@ -29,6 +30,21 @@ export const zoneFor = id => AD_ZONES.find(zone=>zone.id===id) || null;
 const contains=(zone,x,y)=>x>=zone.x&&y>=zone.y&&x<zone.x+zone.width&&y<zone.y+zone.height;
 const overlaps=(a,b)=>a.x<b.x+b.width&&a.x+a.width>b.x&&a.y<b.y+b.height&&a.y+a.height>b.y;
 const boundsFor=(zone,row,column)=>({x:zone.x+column*120+18,y:zone.y+row*100+18,width:96,height:70});
+const rawIdAt=(x,y)=>{const zone=AD_ZONES.slice(2).find(z=>contains(z,x,y))||zoneFor('city-frontage');return dynamicPlot(zone,Math.floor((y-zone.y)/100),Math.floor((x-zone.x)/120));};
+export const MAP_AD_INVENTORY=Object.freeze(MAP_AD_PARCELS.map(parcel=>Object.freeze({...parcel,id:rawIdAt(parcel.x+parcel.width/2,parcel.y+parcel.height/2),kind:'plot',zoneId:dynamicPlotParts(rawIdAt(parcel.x+parcel.width/2,parcel.y+parcel.height/2))[1],available:true,eligible:true,tier:parcel.format==='ground-billboard'?'featured':'standard'})));
+const parcelById=new Map(MAP_AD_INVENTORY.map(p=>[p.id,p]));
+// These three cells were part of an earlier five-slot checkout. The other two
+// cells (:80:39 and :80:44) already own safe authored parcels and stay unchanged.
+const compatibilityIds=[...PLOT_IDS,'ad:city-frontage:80:32','ad:city-frontage:80:33','ad:city-frontage:80:38'];
+export const COMPATIBILITY_MAP_AD_INVENTORY=Object.freeze(compatibilityIds.map((id,index)=>Object.freeze({...MAP_AD_COMPATIBILITY_PARCELS[index],id,kind:'plot',zoneId:dynamicPlotParts(id)?.[1]||null,name:index<PLOT_IDS.length?`Business Park display ${String(index+1).padStart(2,'0')}`:`City display ${id.split(':').slice(-2).join('/')}`,available:true,eligible:true,tier:'standard',compatibility:true})));
+const compatibilityById=new Map(COMPATIBILITY_MAP_AD_INVENTORY.map(p=>[p.id,p]));
+export function adPlacementMetadata(space){
+ const parcel=compatibilityById.get(space.id)||parcelById.get(space.id);if(parcel)return {...space,...parcel};
+ const legacy=space.zoneId?null:space.kind==='billboard'?{x:-1200+space.roadIndex*250,y:375,width:96,height:70}:{x:-4480+space.column*560,y:-3040+space.row*160,width:96,height:70};
+ const box=space.kind==='billboard'?(MAP_ROADSIDE_PARCELS[space.roadIndex]||legacy):legacy||space,conflict=mapLandConflict(box)||([...MAP_AD_INVENTORY,...COMPATIBILITY_MAP_AD_INVENTORY].some(p=>boxesOverlap(box,p))||space.kind!=='billboard'&&MAP_ROADSIDE_PARCELS.some(p=>boxesOverlap(box,p)))&&'Reserved advertising parcel';
+ return {...space,...box,...(space.kind==='billboard'?{name:`Roadside billboard ${space.roadIndex+1}`}:{}) ,format:space.kind==='billboard'?'roadside-billboard':'map-billboard',orientation:0,active:true,eligible:!conflict,available:!conflict,...(conflict?{unavailableReason:conflict}:{})};
+}
+
 // Existing district inventory keeps its coordinates and IDs. The broader city
 // and surrounds fill the gaps; they must not sell a second copy of those cells.
 const allowed=(zone,box)=>zone.id==='sky-displays'?!overlaps(box,zoneFor('city-frontage')):zone.id==='city-frontage'?!AD_ZONES.slice(2).some(other=>overlaps(box,other)):true;
@@ -38,18 +54,19 @@ export function adZoneSpaces(zoneId,{page=0,limit=96}={}) {
   const safePage=Math.max(0,Math.floor(Number(page)||0)),safeLimit=Math.min(180,Math.max(12,Math.floor(Number(limit)||96)));
   const cols=Math.max(1,Math.floor(zone.width/120)),rows=Math.max(1,Math.floor(zone.height/100));
   const start=safePage*safeLimit,end=Math.min(rows*cols,start+safeLimit),spaces=[];
-  for(let index=start;index<end;index++) { const row=Math.floor(index/cols),column=index%cols,box=boundsFor(zone,row,column);if(!allowed(zone,box))continue; const tier=(row+column)%17===0?'landmark':(row+column)%7===0?'premium':zone.tier; spaces.push({id:dynamicPlot(zone,row,column),kind:'plot',zoneId:zone.id,zone:zone.name,tier,row,column,...box,available:true}); }
+  for(let index=start;index<end;index++) { const row=Math.floor(index/cols),column=index%cols,box=boundsFor(zone,row,column);if(!allowed(zone,box)&&!parcelById.has(dynamicPlot(zone,row,column)))continue; const tier=(row+column)%17===0?'landmark':(row+column)%7===0?'premium':zone.tier; spaces.push(adPlacementMetadata({id:dynamicPlot(zone,row,column),kind:'plot',zoneId:zone.id,zone:zone.name,tier,row,column,...box,available:true})); }
   return spaces;
 }
 export function adSpaceFromId(id){
- const legacy=ALL_SPACES.find(space=>space.id===id);if(legacy)return {...legacy};
+ const legacy=ALL_SPACES.find(space=>space.id===id);if(legacy)return adPlacementMetadata({...legacy});
  const parts=dynamicPlotParts(id),zone=parts&&zoneFor(parts[1]);if(!zone)return null;
  const row=Number(parts[2]),column=Number(parts[3]),cols=Math.floor(zone.width/120),rows=Math.floor(zone.height/100);
  if(!Number.isSafeInteger(row)||!Number.isSafeInteger(column)||row<0||column<0||row>=rows||column>=cols)return null;
- return adZoneSpaces(zone.id,{page:Math.floor((row*cols+column)/96),limit:96}).find(space=>space.id===id)||null;
+ const box=boundsFor(zone,row,column);if(!allowed(zone,box)&&!parcelById.has(id))return null;const tier=(row+column)%17===0?'landmark':(row+column)%7===0?'premium':zone.tier;return adPlacementMetadata({id:dynamicPlot(zone,row,column),kind:'plot',zoneId:zone.id,zone:zone.name,tier,row,column,...box,available:true});
 }
 export function adSpaceAt(x,y,zoneId='city-frontage'){
  if(!Number.isFinite(x)||!Number.isFinite(y))return null;
+ const parcel=[...MAP_AD_INVENTORY,...COMPATIBILITY_MAP_AD_INVENTORY].find(p=>contains(p,x,y));if(parcel)return adSpaceFromId(parcel.id);
  if(zoneId==='city-frontage'){const district=AD_ZONES.slice(2).find(zone=>contains(zone,x,y));if(district)zoneId=district.id;}
  let zone=zoneFor(zoneId);if(!zone||x<zone.x||y<zone.y||x>=zone.x+zone.width||y>=zone.y+zone.height){if(zoneId==='city-frontage')return adSpaceAt(x,y,'sky-displays');return null;}
  const row=Math.floor((y-zone.y)/100),column=Math.floor((x-zone.x)/120),space=adSpaceFromId(dynamicPlot(zone,row,column));if(space)return space;

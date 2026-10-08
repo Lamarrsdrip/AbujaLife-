@@ -261,6 +261,8 @@ export const VENUE_ACTIONS = [
     {id:`${venueId}-meal`,venueId,name:'Take a meal break',cost:1200,duration:16,animation:'eat',effects:{hunger:34,fun:8}},
   ]),
   {id:'sahad-area-11-arcade',venueId:'sahad-area-11',name:'Play in the arcade',cost:900,duration:17,animation:'play',effects:{fun:28,social:12,stress:-10}},
+  {id:'ceddi-genesis-film',venueId:'ceddi-genesis-cinema',name:'Watch a movie',cost:3800,duration:18,animation:'watch',effects:{fun:42,stress:-15,social:8,hunger:-6}},
+  {id:'ceddi-genesis-popcorn',venueId:'ceddi-genesis-cinema',name:'Buy popcorn',cost:1200,duration:14,animation:'eat',effects:{hunger:18,fun:8}},
   {id:'ceddi-genesis-screening',venueId:'ceddi-genesis-cinema',name:'Watch the game screening',cost:1800,duration:20,animation:'watch',effects:{fun:32,social:10,stress:-16}},
   {id:'ceddi-genesis-meet',venueId:'ceddi-genesis-cinema',name:'Meet friends in the foyer',cost:0,duration:16,animation:'social',effects:{social:22,fun:10}},
   ...['thought-pyramid-abuja','nike-gallery-abuja'].flatMap(venueId=>[

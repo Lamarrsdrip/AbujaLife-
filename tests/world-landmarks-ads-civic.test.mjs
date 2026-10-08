@@ -28,15 +28,16 @@ test('Okrika environmental sponsor remains visible without replacing paid ad inv
  assert.match(city,/data-environmental-sponsor="okrika"/);
  assert.match(city,/>OKRIKA</);
  assert.match(city,/scene\.environmentalSponsor='okrika'/);
- assert.match(ads,/dedicated open Abuja Business Park contains 40 visible plots/);
+ assert.match(ads,/154 authored map parcels, 43 compatibility parcels and ten safely positioned roadside boards/);
  assert.match(ads,/ten visible roadside billboard spaces/);
 });
 
-test('outer map surrounding space is dense clickable advertising land',()=>{
+test('outer map preserves exploration and uses protected shared advertising inventory',()=>{
  const map=read('app/outside-city-v4.js');
  assert.match(map,/function createAdPlots\(\)/);
  assert.match(map,/width:10400,depth:7600/);
  assert.match(map,/best<720/);
  assert.match(map,/pinchBase\.zoom\*d\/pinchBase\.distance,\.22,24/);
- assert.match(map,/plot\.w\|\|318/);
+ assert.match(map,/MAP_AD_INVENTORY/);
+ assert.doesNotMatch(map,/basePlot\(plot,false\)/);
 });

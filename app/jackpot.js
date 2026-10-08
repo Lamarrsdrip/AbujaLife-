@@ -1,3 +1,4 @@
+import {showGameToast as toast} from './game-toast.js';
 import { apiFetch } from './api-client.js';
 import { createServerClock } from './jackpot-clock.js';
 
@@ -23,7 +24,6 @@ async function api(path,{body,...options}={}){
   const result=await response.json().catch(()=>({}));
   if(!response.ok||result.ok===false){const error=new Error(result.error||'Please try again.');error.status=response.status;error.code=result.code;throw error;}return result;
 }
-function toast(message){let node=document.querySelector('#jackpot-toast');if(!node){node=document.createElement('div');node.id='jackpot-toast';document.body.append(node);}node.textContent=message;node.classList.add('visible');clearTimeout(toast.timer);toast.timer=setTimeout(()=>node.classList.remove('visible'),3200);}
 function secondsUntil(timestamp){return serverClock.secondsUntil(timestamp);}
 function timerText(room){const seconds=secondsUntil(room.status==='open'?room.closesAt:room.drawsAt);if(seconds===null)return'--:--';const m=Math.floor(seconds/60),s=seconds%60;return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;}
 function ticketFor(roomId){return state?.tickets?.find(ticket=>ticket.roomId===roomId);}

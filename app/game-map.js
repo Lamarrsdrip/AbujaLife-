@@ -4,7 +4,7 @@ import { renderOutside } from './outside-city-v4.js';
 import { TRANSPORT_MODES } from '../src/shared/life.mjs';
 
 const appRoot=document.querySelector('#app');
-const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[char]));
+const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const money=value=>`₦${new Intl.NumberFormat('en-NG',{maximumFractionDigits:0}).format(Number(value||0))}`;
 let overlay=null,cleanup=null,snapshot=null,busy=false;
 async function json(path,options={}){const response=await apiFetch(path,{...options,signal:options.signal,timeoutMs:10000});let body={};try{body=await response.json();}catch{}if(!response.ok||body.ok===false){const error=new Error(body.error||'Please try again.');error.status=response.status;error.code=body.code;throw error;}return body;}

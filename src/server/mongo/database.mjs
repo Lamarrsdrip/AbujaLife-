@@ -85,6 +85,7 @@ export const MONGO_VALIDATORS = Object.freeze({
 export const MONGO_INDEXES = Object.freeze({
   residents: [[{ id: 1 }, { unique: true }], [{ username: 1 }, { unique: true }], [{ email: 1 }, { unique: true, partialFilterExpression: { email: { $type: 'string' } } }], [{ displayName: 1, _id: 1 }, {}]],
   ...Object.fromEntries(['appearances', 'needs', 'progression', 'player_state', 'homes', 'origins', 'wallets'].map(name => [name, [[{ residentId: 1 }, { unique: true }]]])),
+  homes: [[{residentId:1},{unique:true}],[{tenure:1,nextTenancyCheckAt:1,residentId:1},{name:'tenancy_check_due'}]],
   ledger: [[{ residentId: 1, sequence: 1 }, { unique: true }], [{ residentId: 1, createdAt: -1, _id: -1 }, {}], [{ residentId: 1, operationId: 1 }, { unique: true }], [{ operationId: 1 }, {}]],
   wallet_transfers: [[{ senderId: 1, operationKey: 1 }, { unique: true }], [{ senderId: 1, createdAt: -1, id: -1 }, {}], [{ recipientId: 1, createdAt: -1, id: -1 }, {}], [{ conversationId: 1, createdAt: -1, id: -1 }, {}]],
   messages: [[{ transferId: 1 }, { unique: true, partialFilterExpression: { transferId: { $type: 'string' } } }]],

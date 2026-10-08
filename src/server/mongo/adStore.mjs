@@ -1,6 +1,7 @@
 import {PLOT_IDS,BILLBOARD_IDS,ALL_SPACES,AD_TIERS,AD_ZONES,dynamicPlotParts,zoneFor,adZoneSpaces,adSpaceFromId,adZonePageCount,MAP_AD_INVENTORY,COMPATIBILITY_MAP_AD_INVENTORY,adPlacementMetadata} from '../../shared/advertising.mjs';
 export {AD_TIERS,AD_ZONES,adZoneSpaces} from '../../shared/advertising.mjs';
 import crypto from 'node:crypto';
+import {isIP} from 'node:net';
 import { GameError } from '../errors.mjs';
 import { validFlutterwaveWebhook, verifyFlutterwaveOrder } from '../flutterwaveVerification.mjs';
 
@@ -31,14 +32,28 @@ export const AD_SPACES = ALL_SPACES;
 
 const activeSpaceView = row => ({id:row._id,kind:row.kind,zoneId:dynamicPlotParts(row._id)?.[1]||null,available:false,ownerId:row.residentId,expiresAt:row.expiresAt instanceof Date?row.expiresAt.getTime():row.expiresAt,ad:row.order?{title:row.order.title,link:row.order.link,endAt:row.order.endAt}:undefined});
 
+const privateIpv4Address = hostname => {
+  if(isIP(hostname)!==4)return false;
+  const octets=hostname.split('.').map(Number);
+  return octets[0]===0||octets[0]===10||octets[0]===127||(octets[0]===169&&octets[1]===254)||(octets[0]===172&&octets[1]>=16&&octets[1]<=31)||(octets[0]===192&&octets[1]===168);
+};
+const privateIpv6Address = hostname => {
+  if(isIP(hostname)!==6)return false;
+  if(hostname==='::'||hostname==='::1'||/^(?:fc|fd|fe8|fe9|fea|feb)/.test(hostname))return true;
+  // URL canonicalizes dotted IPv4-mapped addresses to hexadecimal hextets.
+  // Check their embedded IPv4 destination instead of letting ::ffff bypass
+  // loopback/private network protection. Ordinary fc/fd domain names stay valid.
+  const mapped=/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(hostname);
+  if(!mapped)return false;
+  const high=parseInt(mapped[1],16),low=parseInt(mapped[2],16);
+  return privateIpv4Address(`${high>>>8}.${high&255}.${low>>>8}.${low&255}`);
+};
+
 export function normalizeAdLink(value) {
   let url;
   try { url = new URL(String(value || '').trim()); } catch { throw new GameError('Add a valid website or X link', 400, 'invalid_ad_link'); }
-  const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
-  const ipv4 = hostname.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
-  const privateIpv4 = ipv4 && (() => { const octets = ipv4.slice(1).map(Number); return octets.some(value => value > 255) || octets[0] === 0 || octets[0] === 10 || octets[0] === 127 || (octets[0] === 169 && octets[1] === 254) || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) || (octets[0] === 192 && octets[1] === 168); })();
-  const privateIpv6 = hostname === '::1' || hostname.startsWith('fc') || hostname.startsWith('fd') || hostname.startsWith('fe8') || hostname.startsWith('fe9') || hostname.startsWith('fea') || hostname.startsWith('feb');
-  fail(url.protocol === 'https:' && hostname && !url.username && !url.password && url.href.length <= 500 && hostname !== 'localhost' && !hostname.endsWith('.localhost') && !hostname.endsWith('.local') && !hostname.endsWith('.internal') && !privateIpv4 && !privateIpv6, 'Ads must link to a secure public HTTPS website or X page', 400, 'invalid_ad_link');
+  const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
+  fail(url.protocol === 'https:' && hostname && !url.username && !url.password && url.href.length <= 500 && hostname !== 'localhost' && !hostname.endsWith('.localhost') && !hostname.endsWith('.local') && !hostname.endsWith('.internal') && !privateIpv4Address(hostname) && !privateIpv6Address(hostname), 'Ads must link to a secure public HTTPS website or X page', 400, 'invalid_ad_link');
   return url.href;
 }
 
@@ -91,8 +106,9 @@ function normalizeSelection(kind, raw) {
   return slots.sort();
 }
 
-const orderView = row => ({
-  purpose: 'ad', txRef: row.txRef, status: row.status, amount: row.amount, currency: 'NGN', mode: row.mode,
+const campaignStatus = (row, now) => row.status === 'active' && Number(row.endAt) <= now ? 'expired' : row.status;
+const orderView = (row, now = -Infinity) => ({
+  purpose: 'ad', txRef: row.txRef, status: campaignStatus(row, now), amount: row.amount, currency: 'NGN', mode: row.mode,
   checkoutUrl: row.checkoutUrl || null, transactionId: row.transactionId || row.providerTransactionId || null, providerStatus:row.providerStatus||null,verifiedAt:row.verifiedAt||null,checkedAt:row.checkedAt||null,fulfillmentStatus:row.status==='active'?'fulfilled':row.verifiedAt?(row.lastError?'failed':'confirming'):'pending',failureReason:row.lastError||null, kind: row.kind, slots: row.slots,
   title: row.title, link: row.link, createdAt: row.createdAt, startAt: row.startAt || null, endAt: row.endAt || null,
 });
@@ -110,7 +126,7 @@ export const MONGO_AD_VALIDATORS = Object.freeze({
 });
 
 export const MONGO_AD_INDEXES = Object.freeze({
-  ad_orders: [[{ txRef:1 },{ unique:true }],[{ residentId:1,operationKey:1 },{ unique:true }],[{ transactionId:1 },{ unique:true,partialFilterExpression:{ transactionId:{ $type:'string' } } }],[{ status:1,endAt:1 },{}],[{ status:1,nextReconcileAt:1,createdAt:1 },{}],[{ residentId:1,createdAt:-1 },{}]],
+  ad_orders: [[{ txRef:1 },{ unique:true }],[{ residentId:1,operationKey:1 },{ unique:true }],[{ transactionId:1 },{ unique:true,partialFilterExpression:{ transactionId:{ $type:'string' } } }],[{ status:1,endAt:1 },{}],[{ status:1,nextReconcileAt:1,createdAt:1 },{}],[{ mode:1,status:1,verifiedAt:1 },{}],[{ residentId:1,createdAt:-1 },{}]],
   ad_slots: [[{ expiresAt:1 },{ expireAfterSeconds:0 }],[{ txRef:1 },{}],[{ state:1,mapX:1,mapY:1,expiresAt:1 },{}]],
   ad_receipts: [[{ provider:1,transactionId:1 },{ unique:true }],[{ txRef:1 },{ unique:true }]]
 });
@@ -161,12 +177,40 @@ export class MongoAdStore {
     const authored=[...MAP_AD_INVENTORY,...COMPATIBILITY_MAP_AD_INVENTORY,...BILLBOARD_IDS.map(adSpaceFromId).filter(p=>p?.eligible)],ids=authored.map(p=>p.id),locks=await this.collection('ad_slots').find({_id:{$in:ids},expiresAt:{$gt:nowDate(this.clock())}}).toArray();
     const orders=await this.collection('ad_orders').find({txRef:{$in:locks.map(l=>l.txRef)}},{projection:{txRef:1,residentId:1,title:1,status:1,startAt:1,endAt:1}}).toArray();
     const byId=new Map(locks.map(l=>[l._id,l])),byRef=new Map(orders.map(o=>[o.txRef,o]));
-    return {ok:true,summary:{total:ids.length,occupied:locks.filter(l=>l.state==='active').length,reserved:locks.filter(l=>l.state==='reserved').length,available:ids.length-locks.length},plots:authored.map(p=>{const lock=byId.get(p.id);return {...p,available:!lock,campaign:lock?byRef.get(lock.txRef)||null:null};}),serverTime:this.clock()};
+    return {ok:true,summary:{total:ids.length,occupied:locks.filter(l=>l.state==='active').length,reserved:locks.filter(l=>l.state==='reserved').length,available:ids.length-locks.length},plots:authored.map(p=>{const lock=byId.get(p.id),order=lock&&byRef.get(lock.txRef);return {...p,available:!lock,campaign:order?{...order,status:campaignStatus(order,this.clock())}:null};}),revenue:await this.revenue(),serverTime:this.clock()};
+  }
+  async revenue(){
+    // Aggregate immutable product receipts, including receipts predating the
+    // shared payment ledger. Only saved order mode classifies test/live funds;
+    // checkout amounts and Game Naira balances are never advertising revenue.
+    // Each streaming aggregate returns at most two mode groups, without loading
+    // campaigns or image bodies into application memory. txRef lookups are unique.
+    const [fulfilled,unfulfilled]=await Promise.all([
+      this.collection('ad_receipts').aggregate([
+        {$match:{provider:'flutterwave'}},
+        {$lookup:{from:'ad_orders',localField:'txRef',foreignField:'txRef',as:'campaign'}},
+        {$unwind:'$campaign'},{$match:{'campaign.mode':{$in:['live','test']}}},
+        {$group:{_id:'$campaign.mode',amount:{$sum:'$amount'},payments:{$sum:1}}}
+      ]).toArray(),
+      this.collection('ad_orders').aggregate([
+        {$match:{mode:{$in:['live','test']},status:{$in:['creating','pending','checkout_failed']},verifiedAt:{$gt:0}}},
+        {$lookup:{from:'ad_receipts',localField:'txRef',foreignField:'txRef',as:'receipts'}},
+        {$match:{receipts:{$size:0}}},
+        {$group:{_id:'$mode',amount:{$sum:'$amount'},payments:{$sum:1}}}
+      ]).toArray()
+    ]);
+    const revenue={currency:'NGN',basis:'verified-provider-receipts',gross:true,settlementVerified:false,live:{fulfilledNgn:0,fulfilledPayments:0,paidUnfulfilledNgn:0,paidUnfulfilledPayments:0},test:{fulfilledNgn:0,fulfilledPayments:0,paidUnfulfilledNgn:0,paidUnfulfilledPayments:0}};
+    for(const row of fulfilled)Object.assign(revenue[row._id],{fulfilledNgn:row.amount,fulfilledPayments:row.payments});
+    for(const row of unfulfilled)Object.assign(revenue[row._id],{paidUnfulfilledNgn:row.amount,paidUnfulfilledPayments:row.payments});
+    return revenue;
   }
   async mine(id,{status=null}={}) {
-    const filter={residentId:id};if(['pending','active','expired'].includes(status))filter.status=status;
+    const now=this.clock(),filter={residentId:id};
+    if(status==='pending')filter.status='pending';
+    if(status==='active')Object.assign(filter,{status:'active',endAt:{$gt:now}});
+    if(status==='expired')Object.assign(filter,{status:'active',endAt:{$lte:now}});
     const rows=await this.collection('ad_orders').find(filter).sort({createdAt:-1}).limit(100).toArray();
-    return {ok:true,ads:rows.map(orderView),serverTime:this.clock()};
+    return {ok:true,ads:rows.map(row=>orderView(row,now)),serverTime:now};
   }
   async publicState() {
     const now = this.clock(); await this.purgeExpiredSlots();
@@ -213,14 +257,14 @@ export class MongoAdStore {
     if (existing) {
       fail(order.status !== 'creating', 'This advert checkout is being created. Check its status before retrying',409,'checkout_processing');
       fail(order.checkoutUrl, 'The previous advert checkout could not be created. Start a new request',502,'checkout_failed');
-      return { ok:true, checkout:orderView(order), replayed:true };
+      return { ok:true, checkout:orderView(order,this.clock()), replayed:true };
     }
     try {
       const data = await this.payments.provider('/v3/payments',config.secrets.secretKey,{method:'POST',body:JSON.stringify({tx_ref:order.txRef,amount:AD_PRICE_NGN,currency:'NGN',redirect_url:`${config.publicOrigin}/?ad_payment_ref=${encodeURIComponent(order.txRef)}`,customer:{email,name:profile.displayName},customizations:{title:'AbujaLife Ads',description:kind==='plot'?'AbujaLife city ad plot · 7 days':'Roadside billboard · 7 days'},meta:{abujalife_reference:order.txRef,purpose:'advertising',kind}})});
       let checkout; try { checkout = new URL(data.link); } catch { throw new GameError('Flutterwave returned an invalid checkout link',502,'invalid_checkout'); }
       fail(checkout.protocol === 'https:' && (checkout.hostname === 'checkout.flutterwave.com' || checkout.hostname.endsWith('.flutterwave.com')) && !checkout.username && !checkout.password,'Flutterwave returned an untrusted checkout link',502,'invalid_checkout');
       await this.collection('ad_orders').updateOne({_id:order.txRef},[{$set:{checkoutUrl:checkout.href,status:{$cond:[{$eq:['$status','creating']},'pending','$status']}}}]);
-      return { ok:true, checkout:orderView(await this.collection('ad_orders').findOne({_id:order.txRef})), replayed:false };
+      return { ok:true, checkout:orderView(await this.collection('ad_orders').findOne({_id:order.txRef}),this.clock()), replayed:false };
     } catch (error) {
       await this.store.transaction(async session => { await this.collection('ad_orders').updateOne({_id:order.txRef,status:'creating'},{$set:{status:'checkout_failed'}},{session}); await this.collection('ad_slots').deleteMany({txRef:order.txRef,state:'reserved'},{session}); });
       throw error;
@@ -228,7 +272,7 @@ export class MongoAdStore {
   }
   async status(id, txRef) {
     const row = await this.collection('ad_orders').findOne({ txRef:clean(txRef,100),residentId:id }); fail(row,'Advert payment not found',404,'payment_not_found');
-    const status = row.status === 'active' && row.endAt <= this.clock() ? 'expired' : row.status; return { ok:true,payment:{...orderView(row),status} };
+    return { ok:true,payment:orderView(row,this.clock()) };
   }
   async verifiedOrder(transactionId, txRef, id = null) {
     const order = await this.collection('ad_orders').findOne({ txRef:clean(txRef,100) }); fail(order && (!id || order.residentId === id),'Advert payment not found',404,'payment_not_found');
@@ -256,14 +300,15 @@ export class MongoAdStore {
         }
         await this.payments.claimProviderReceipt(current,transactionId,'ad',0,session);
         await this.collection('ad_receipts').insertOne({_id:receiptId,provider:'flutterwave',transactionId,txRef:current.txRef,residentId:current.residentId,amount:AD_PRICE_NGN,createdAt:started},{session});
-        await this.collection('ad_orders').updateOne({_id:current.txRef,status:{$ne:'active'}},{$set:{status:'active',transactionId,startAt:started,endAt:ends}},{session});
+        await this.collection('ad_orders').updateOne({_id:current.txRef,status:{$ne:'active'}},{$set:{status:'active',transactionId,startAt:started,endAt:ends,lastError:null}},{session});
         await this.collection('ad_slots').updateMany({txRef:current.txRef},{$set:{state:'active',expiresAt:nowDate(ends)}},{session});
-        return {...current,status:'active',transactionId,startAt:started,endAt:ends};
+        await this.admin.record(actor,'activate-verified-ad',current.residentId,{txRef:current.txRef,transactionId,mode:current.mode,amount:current.amount,kind:current.kind,slots:current.slots,startAt:started,endAt:ends},{session});
+        return {...current,status:'active',transactionId,startAt:started,endAt:ends,lastError:null};
       });
     } catch(error){await this.payments.recordFulfillmentFailure('ad_orders',order.txRef,error);if(error.code===11000)throw new GameError('This provider transaction has already activated an advert',409,'payment_duplicate');throw error;}
     this.log(replayed?'ad_payment_replay':'ad_payment_grant',{provider:'flutterwave',residentId:order.residentId,reference:order.txRef,transactionId,kind:order.kind,slots:order.slots});
-    if(!replayed)this.store.emitUser?.(order.residentId,'receipt',{payment:orderView(activated)});
-    return {ok:true,replayed,ad:orderView(activated)};
+    if(!replayed)this.store.emitUser?.(order.residentId,'receipt',{payment:orderView(activated,this.clock())});
+    return {ok:true,replayed,ad:orderView(activated,this.clock())};
   }
   async verify(id,{transactionId,txRef}={}) { fail(!await this.admin.isSuspended(id),'This account is suspended',403,'account_suspended'); await this.store.profile(id); return this.activateVerified(await this.verifiedOrder(transactionId,txRef,id),id); }
   async handleWebhook(rawBody,signature,legacyHash) {

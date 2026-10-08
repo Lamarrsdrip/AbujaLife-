@@ -1,10 +1,13 @@
 import test from 'node:test';
+import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { TENANCY_RULES } from '../src/shared/tenancy.mjs';
 import { GameStore, jobs, catalog, properties } from '../src/server/gameStore.mjs';
-import { GAME_YEAR_MS, GAME_BILL_PERIOD_MS, VENUES, VENUE_ACTIONS } from '../src/shared/life.mjs';
+import { VEHICLE_PRICES } from '../src/shared/economy.mjs';
+import { GAME_BILL_PERIOD_MS, VENUES, VENUE_ACTIONS } from '../src/shared/life.mjs';
 
 async function fixture(t) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'abujalife-life-'));
@@ -28,7 +31,7 @@ test('venues require entry and apply their own prices and bounded needs', async 
   store.action(id, 'enter-venue', { venueId: 'restaurant' });
   const before = store.profile(id);
   const result = store.action(id, 'venue-action', { activityId: 'jollof-chicken', cost: -99999, effects: { hunger: 9000, wallet: 999999 } });
-  assert.equal(result.profile.wallet, before.wallet - 1800);
+  assert.equal(result.profile.wallet, before.wallet - VENUE_ACTIONS.find(activity=>activity.id==='jollof-chicken').cost);
   assert.equal(result.profile.hunger, 100);
   assert.equal(result.activity.venueId, 'restaurant');
   assert.throws(() => store.action(id, 'venue-action', { activityId: 'gym-workout' }), /Enter this place/);
@@ -48,9 +51,9 @@ test('work pays an earned wage and purchased driving enforces ownership without 
   const commute=store.action(id,'travel',{district:jobs['restaurant-host'].district,mode:'bus'}).trip;advance(commute.seconds*1000);store.action(id,'arrive',{tripId:commute.id});const beforeWork=store.profile(id).wallet;
   const { challenge } = store.action(id, 'start-shift');
   advance(2000);
-  const earned=store.action(id, 'complete-shift', { challengeId: challenge.id, answers: jobs['restaurant-host'].tasks.map(task => ({ taskId: task.id, optionId: task.answer })) });assert.equal(earned.result.pay,5600);assert.equal(earned.profile.wallet,beforeWork+earned.result.pay);
+  const earned=store.action(id, 'complete-shift', { challengeId: challenge.id, answers: jobs['restaurant-host'].tasks.map(task => ({ taskId: task.id, optionId: task.answer })) });assert.equal(earned.result.pay,jobs['restaurant-host'].pay);assert.equal(earned.profile.wallet,beforeWork+earned.result.pay);
   const bought = store.action(id, 'purchase', { itemId: 'used-hatchback' }).profile;
-  assert.equal(bought.wallet, earned.profile.wallet - 28000);
+  assert.equal(bought.wallet, earned.profile.wallet - catalog.find(item=>item.id==='used-hatchback').price);
   assert.equal(bought.drivingVehicle, null);
   const driving = store.action(id, 'toggle-driving', { vehicleId: 'used-hatchback' }).profile;
   assert.equal(driving.drivingVehicle, 'used-hatchback');
@@ -65,7 +68,7 @@ test('work pays an earned wage and purchased driving enforces ownership without 
   assert.equal(store.action(id, 'toggle-driving', { vehicleId: null }).profile.drivingVehicle, null);
   store.action(id, 'enter-venue', { venueId: 'hotel' });
   assert.throws(() => store.action(id, 'toggle-driving', { vehicleId: 'used-hatchback' }), /Head out/);
-  assert.equal(catalog.find(item => item.id === 'compact-car').price, 240000);
+  assert.equal(catalog.find(item => item.id === 'compact-car').price, VEHICLE_PRICES['compact-car']);
 });
 
 test('furniture must be owned, placed at home and remain inside the floor plan after restart', async t => {
@@ -82,26 +85,26 @@ test('furniture must be owned, placed at home and remain inside the floor plan a
   assert.throws(() => f.store.action(f.id, 'place-furniture', { itemId: 'dining-table', x: .5, y: .5 }), /Go home/);
   f.reopen();
   assert.deepEqual(f.store.profile(f.id).furnitureLayout, placed.furnitureLayout);
-  assert.equal(f.store.profile(f.id).wallet, starting - 4200);
+  assert.equal(f.store.profile(f.id).wallet, starting - catalog.find(item=>item.id==='dining-table').price);
 });
 
-test('rent covers a game year while weekly service charges never charge annual rent again', async t => {
-  const { store, id, advance } = await fixture(t);
-  const starting=store.profile(id).wallet;
-  const home = properties.find(property => property.id === 'lugbe-flat');
-  const moved = store.action(id, 'move-home', { propertyId: home.id, tenure: 'rent' }).profile;
-  assert.equal(moved.wallet, starting - 18000);
-  assert.equal(moved.home.rentDueAt, moved.rentPaidAt + GAME_YEAR_MS);
-  assert.throws(() => store.action(id, 'pay-bills'), /up to date/);
+test('rent runs weekly while service charges remain a separate disclosed payment', async t => {
+  const { store, id, advance } = await fixture(t),key=()=>crypto.randomUUID();
+  const starting=store.profile(id).wallet,home=properties.find(property=>property.id==='lugbe-flat');
+  const moved=store.action(id,'move-home',{propertyId:home.id,tenure:'rent',idempotencyKey:key()}).profile;
+  assert.equal(moved.wallet,starting-home.rent-home.cautionDeposit);
+  assert.equal(moved.home.rentDueAt,moved.rentPaidAt+TENANCY_RULES.intervalMs);
+  assert.throws(()=>store.action(id,'pay-bills'),/up to date/);
+  assert.throws(()=>store.action(id,'renew-rent',{idempotencyKey:key()}),/up to date/);
   advance(GAME_BILL_PERIOD_MS);
-  const serviced = store.action(id, 'pay-bills').profile;
-  assert.equal(serviced.wallet, moved.wallet - home.bills);
-  assert.throws(() => store.action(id, 'renew-rent'), /already paid/);
-  advance(GAME_YEAR_MS - GAME_BILL_PERIOD_MS);
-  const renewed = store.action(id, 'renew-rent').profile;
-  assert.equal(renewed.wallet, serviced.wallet - home.rent);
-  assert.equal(renewed.home.rentDueAt, renewed.rentPaidAt + GAME_YEAR_MS);
-  assert.throws(() => store.action(id, 'renew-rent'), /already paid/);
+  const serviced=store.action(id,'pay-bills').profile;
+  assert.equal(serviced.wallet,moved.wallet-home.bills);
+  assert.equal(serviced.home.tenancy.outstanding,home.rent);
+  const renewed=store.action(id,'renew-rent',{idempotencyKey:key()}).profile;
+  assert.equal(renewed.wallet,serviced.wallet-home.rent);
+  assert.equal(renewed.home.tenancy.outstanding,0);
+  assert.equal(renewed.home.rentDueAt,renewed.rentPaidAt+TENANCY_RULES.intervalMs);
+  assert.throws(()=>store.action(id,'renew-rent',{idempotencyKey:key()}),/up to date/);
 });
 
 test('character onboarding persists choices without accepting inventory or life-state forgery', async t => {

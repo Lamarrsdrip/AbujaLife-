@@ -133,7 +133,7 @@ function bathroom(s,x,y,{large=false}={}) {
   if(large)s.object(x+147,y+149,67,58,basinArt());
   else s.object(x+151,y+145,67,58,basinArt());
 }
-function kitchen(s,x,y,w=270) {s.object(x,y,w,80,kitchenArt(w));s.object(x+w+18,y-4,66,74,fridgeArt());s.point('eat',x+w*.5,y+130,'Make something to eat','eat');}
+function kitchen(s,x,y,w=270,addActivity=true) {s.object(x,y,w,80,kitchenArt(w));s.object(x+w+18,y-4,66,74,fridgeArt());if(addActivity)s.point('eat',x+w*.5,y+130,'Make something to eat','eat');}
 function lounge(s,x,y,{w=240,color='#849b86',table=true}={}) {
   s.rug(x-33,y-10,w+66,252,'#a7b39a');s.object(x,y,w,86,sofaArt(w,86,color));
   if(table)s.object(x+w/2-65,y+158,130,70,coffeeArt());
@@ -212,6 +212,13 @@ function buildStarterHome(profile,id,key,dimensions,owned) {
     s.wall(1259,672,15,152);s.wall(1259,965,15,228);
     bath={x:625,y:205};s.label(1020,518,'SPARE ROOM');s.label(1385,1161,'COURTYARD');
   }
+  // A starter room includes an authored kitchenette as part of the property,
+  // not as free player inventory. A purchased, placed unit replaces its counter.
+  const kitchenPosition=HOME_FURNITURE_ANCHORS[key].kitchen;
+  const ownsPlacedKitchen=['kitchen-unit','kitchen-island'].some(itemId=>owned.has(itemId)&&!profile.storedFurniture?.includes(itemId)&&(!profile.furnitureLayout?.[itemId]?.propertyId||profile.furnitureLayout[itemId].propertyId===profile.home.propertyId));
+  if(!ownsPlacedKitchen){const [kx,ky]=kitchenPosition,width=key==='garki-studio'?170:235;s.object(kx,ky,width,80,kitchenArt(width),{kind:'kitchen'});}
+  const ownsPlacedFridge=owned.has('fridge')&&!profile.storedFurniture?.includes('fridge')&&(!profile.furnitureLayout?.fridge?.propertyId||profile.furnitureLayout.fridge.propertyId===profile.home.propertyId);
+  if(!ownsPlacedFridge){const [kx,ky]=kitchenPosition,width=key==='garki-studio'?170:235;s.object(kx+width+18,ky-4,66,74,fridgeArt(),{kind:'fridge'});}
   bathroom(s,bath.x,bath.y);
   s.door(s.width/2);
   s.furnishingArea={x:62,y:160,w:s.width-124,h:s.height-280};
@@ -653,6 +660,9 @@ function buildVenue(profile,venue,id) {
     anchors.push({x:389,y:528},{x:1008,y:700},{x:373,y:794},{x:1024,y:940});fallbacks=[['workout','Start a workout'],['yoga','Stretch and reset'],['weights','Lift weights']];
   } else if(type==='cinema') {
     s.art.push(rect(70,155,1290,682,'#8e8978'),rect(129,157,1172,128,'#576e66',7),rect(151,175,1128,95,'#dce0c7',5),path('M151 258Q360 209 492 250T852 247T1279 244V270H151Z','#a1b59b'),ellipse(970,205,24,24,'#dfc484'),text(715,226,'ABUJA AFTER HOURS',27,'#587566','text-anchor="middle" letter-spacing="6"'));
+    // The SVG projection is hidden when WebGL takes over. Carry the same
+    // authored screen into native scenery without changing navigation geometry.
+    s.objects.push({x:129,y:157,w:1172,h:128,kind:'cinema-screen',solid:false});
     for(let row=0;row<4;row++)for(let col=0;col<12;col++){const x=150+col*82+(col>5?60:0),y=354+row*119;s.object(x,y,61,55,cinemaChair(0,0));}
     s.art.push(rect(668,304,88,525,'#b3a282'),line(682,315,682,820,'#d6c496',3),line(741,315,741,820,'#d6c496',3));
     s.object(106,908,293,69,counterArt(293,69,'#917a63'));s.object(1008,908,298,69,counterArt(298,69,'#917a63'));

@@ -22,7 +22,7 @@ async def action(context,name,payload=None):
 async def resident(browser,size):
     c=await browser.new_context(viewport=size,has_touch=size['width']<800)
     user='hud_'+uuid.uuid4().hex[:12]
-    await api(c,'/api/auth/register',{'username':user,'displayName':'HUD QA','password':'Hud QA fixture 2026!','appearance':APPEARANCE})
+    await api(c,'/api/auth/register',{'username':user,'displayName':'HUD QA','password':'Hud QA fixture 2026!','appearance':APPEARANCE,'originId':'lapo'})
     await api(c,'/api/profile',{'displayName':'HUD QA','appearance':APPEARANCE,'lifeGoal':'explore','onboardingComplete':True})
     p=await c.new_page();p.set_default_timeout(60000)
     errors=[];wire=[]
@@ -62,9 +62,10 @@ async def layout(p,label):
     await p.wait_for_timeout(100)
     d=await p.evaluate('''()=>{
       const box=s=>{const e=document.querySelector(s),r=e.getBoundingClientRect();return{x:r.x,y:r.y,w:r.width,h:r.height,bottom:r.bottom,right:r.right};};
-      const selectors=['.world-joystick','.world-actions','.play-chat','.club-life-dock','.location-activity-tray','.world-live-stats','.world-time-chip','.world-location-chip','.world-zoom-controls','.abj-whole-city-button','.world-sound-toggle','.world-catalogue-button','.world-motion-status.is-activity'];
+      const selectors=['.world-joystick','.world-actions','.world-context-action','.play-chat','.club-life-dock','.location-activity-tray','.world-live-stats','.world-time-chip','.world-location-chip','.world-zoom-controls','.abj-whole-city-button','.world-sound-toggle','.world-catalogue-button','.world-motion-status.is-activity'];
       const cards=selectors.flatMap(s=>{const e=document.querySelector(s);if(!e||getComputedStyle(e).display==='none'||getComputedStyle(e).visibility==='hidden'||e.closest('[hidden]'))return[];return[{s,...box(s)}];});
-      return{viewport:{w:innerWidth,h:innerHeight,vh:visualViewport.height},shell:box('.game-shell'),header:box('.game-header'),world:box('#world-scene'),stage:box('.world-stage'),nav:box('.game-nav'),scroll:{w:document.documentElement.scrollWidth,h:document.documentElement.scrollHeight},cards,renderer:document.querySelector('#world-scene').dataset.environmentRenderer};
+      const controls=['.world-home-shortcut','.world-sprint-button','.world-interact-button','.world-exit-shortcut'].flatMap(s=>document.querySelector(s)?[{s,...box(s)}]:[]);
+      return{viewport:{w:innerWidth,h:innerHeight,vh:visualViewport.height},shell:box('.game-shell'),header:box('.game-header'),world:box('#world-scene'),stage:box('.world-stage'),nav:box('.game-nav'),scroll:{w:document.documentElement.scrollWidth,h:document.documentElement.scrollHeight},cards,controls,renderer:document.querySelector('#world-scene').dataset.environmentRenderer};
     }''')
     assert abs(d['world']['bottom']-d['nav']['y'])<=1,(label,'dead footer',d)
     assert abs(d['world']['y']-d['header']['bottom'])<=1,(label,'header overlap',d)
@@ -76,6 +77,13 @@ async def layout(p,label):
             if a['s']>=b['s']:continue
             overlap=min(a['right'],b['right'])-max(a['x'],b['x'])>2 and min(a['bottom'],b['bottom'])-max(a['y'],b['y'])>2
             assert not overlap,(label,'overlapping HUD',a,b)
+    for a in d['controls']:
+        assert a['w']>=44 and a['h']>=44,(label,'small touch control',a)
+        assert a['x']>=d['world']['x']-1 and a['right']<=d['world']['right']+1 and a['y']>=d['world']['y']-1 and a['bottom']<=d['nav']['y']+1,(label,'clipped control',a)
+        for b in d['controls']:
+            if a['s']>=b['s']:continue
+            overlap=min(a['right'],b['right'])-max(a['x'],b['x'])>2 and min(a['bottom'],b['bottom'])-max(a['y'],b['y'])>2
+            assert not overlap,(label,'overlapping action controls',a,b)
     stage(label,d)
     return d
 async def enter(c,p,venue,district='central-area'):
@@ -95,7 +103,20 @@ async def enter(c,p,venue,district='central-area'):
     stage('entered-api',{'requested':venue,'profile':(await api(c,'/api/bootstrap'))['profile']['location']})
     await load(p)
     stage('entered-ui',{'requested':venue,'title':await p.locator('.world-location-chip').inner_text()})
+    # A location's persistent tray dismissal must survive re-entry. Its reopen
+    # chip remains visible without forcing another expanded card.
     await expect(p.locator('.location-activity-tray')).to_be_visible()
+async def go_outside(c,p,venue):
+    before=(await api(c,'/api/bootstrap'))['profile']
+    await expect(p.locator('.world-exit-shortcut')).to_be_visible()
+    await p.locator('.world-exit-shortcut').click()
+    await p.wait_for_function("()=>document.querySelector('#world-scene')?.dataset.sceneKind==='public'",timeout=30000)
+    after=(await api(c,'/api/bootstrap'))['profile']
+    assert after['location']['kind']=='public' and after['district']==before['district'],(venue,before,after)
+    assert after['wallet']==before['wallet'] and after['home']['propertyId']==before['home']['propertyId'],(venue,'exit charged or changed home',before,after)
+    assert after['location']['exteriorEntry']['venueId']==venue,(venue,'wrong exterior door',after['location'])
+    assert not await p.locator('.world-exit-shortcut').count()
+    stage('native-go-outside',{'venue':venue,'district':after['district'],'walletUnchanged':True,'correctExteriorDoor':after['location']['exteriorEntry']})
 async def timed_activity(c,p,activity,seconds):
     before=(await api(c,'/api/bootstrap'))['profile'];pose=await p.locator('#world-scene').get_attribute('data-player-x')
     await p.locator(f'[data-location-activity="{activity}"]').click()
@@ -161,10 +182,26 @@ async def main():
                                 assert not errors2,errors2;assert not wire2,wire2
                                 stage(engine+'-multiplayer',{'hereNowBefore':2,'uniqueAvatarsAfterRefresh':ids,'independentActivities':True,'zoneExitRemovesPresence':True})
                             finally:await c2.close()
-                            for venue,district in [('restaurant','central-area'),('hotel','central-area'),('gym','central-area'),('national-mosque-hub','central-area'),('eagle-square-hub','central-area'),('cbn-experience','central-area'),('wtc-abuja-hub','central-area'),('jabi-lake','jabi')]:
-                                state=await api(c,'/api/bootstrap');valid=next((v for v in state['venues'] if v['id']==venue),None)
-                                if not valid:raise AssertionError('Missing venue '+venue)
-                                await enter(c,p,venue,district);await layout(p,engine+'-'+venue)
+                            state=await api(c,'/api/bootstrap')
+                            catalogue=sorted(state['venues'],key=lambda v:((v.get('districts') or [state['profile']['district']])[0],v['id']))
+                            assert len(catalogue)>=43,'the full enterable catalogue must remain available'
+                            requested=[value.strip() for value in os.getenv('ABUJALIFE_HUD_VENUES','').split(',') if value.strip()]
+                            venues=[next((item for item in catalogue if item['id']==venue_id),None) for venue_id in requested] if requested else catalogue
+                            assert all(venues),'requested browser venue is absent from the actual catalogue'
+                            for venue in venues:
+                                current=(await api(c,'/api/bootstrap'))['profile']['district']
+                                district=(venue.get('districts') or [current])[0]
+                                await enter(c,p,venue['id'],district);await layout(p,engine+'-'+venue['id'])
+                                assert await p.locator('#world-scene').get_attribute('data-environment-renderer')=='webgl-3d'
+                                if venue['id'] in ['cinema','ceddi-genesis-cinema']:
+                                    native=json.loads(await p.locator('#world-scene').get_attribute('data-environment-objects'))
+                                    assert 'cinema-screen' in native,(venue['id'],'screen absent from native scene',native)
+                                if venue['id'] in ['cinema','ceddi-genesis-cinema','hotel','restaurant','gym','club','dealership']:
+                                    await p.screenshot(animations='disabled',path=str(ART/(engine+'-'+venue['id']+'.png')))
+                                await p.set_viewport_size({'width':1440,'height':900});await layout(p,engine+'-desktop-'+venue['id'])
+                                await p.set_viewport_size({'width':390,'height':844});await settled_viewport(p)
+                                await go_outside(c,p,venue['id'])
+                            stage(engine+'-selected-venue-exits',{'catalogueCount':len(catalogue),'testedCount':len(venues),'venues':[venue['id'] for venue in venues],'allNativeClicks':True,'mobileAndDesktopNoOverlap':True})
                             await p.locator('.game-nav [data-phone]').click()
                             await expect(p.locator('#phone-root')).to_be_visible();stage(engine+'-phone-open')
                             await p.set_viewport_size({'width':390,'height':420});await settled_viewport(p);await p.wait_for_timeout(150)

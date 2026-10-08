@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { GameStore, jobs } from '../src/server/gameStore.mjs';
+import crypto from 'node:crypto';
+import { GameStore, jobs, catalog, properties } from '../src/server/gameStore.mjs';
+import { ECONOMY_CONFIG } from '../src/shared/economy.mjs';
 
 async function fixture(t) {
   const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'abujalife-game-'));
@@ -15,17 +17,17 @@ async function fixture(t) {
 
 test('home meal debits the authoritative wallet and raises hunger',async t=>{
   const {store,id}=await fixture(t);const before=store.profile(id),after=store.action(id,'eat').profile;
-  assert.equal(after.wallet,before.wallet-1200);assert.ok(after.hunger>before.hunger);
+  assert.equal(after.wallet,before.wallet-ECONOMY_CONFIG.basicActivities.eat);assert.ok(after.hunger>before.hunger);
   store.action(id,'leave-home');assert.throws(()=>store.action(id,'sleep'),/Go home/);
 });
 
 test('client verification and payload amounts cannot mint currency',async t=>{
   const {store,id}=await fixture(t);const before=store.profile(id);
   for(const verified of [false,true])assert.throws(()=>store.action(id,'topup',{amount:5000000,receipt:'forged',verified}),/verified payment provider/);
-  assert.throws(()=>store.action(id,'purchase',{itemId:'not-a-real-item',price:-999999}),/Okrika Marketplace/);
-  const after=store.action(id,'purchase',{itemId:'plant',price:-999999,wallet:999999999}).profile;
-  assert.equal(after.wallet,before.wallet-2300);assert.deepEqual(after.inventory,['plant']);
-  assert.throws(()=>store.action(id,'purchase',{itemId:'plant'}),/already own/);
+  assert.throws(()=>store.action(id,'purchase',{idempotencyKey:crypto.randomUUID(),itemId:'not-a-real-item',price:-999999}),/Okrika Marketplace/);
+  const after=store.action(id,'purchase',{idempotencyKey:crypto.randomUUID(),itemId:'plant',price:-999999,wallet:999999999}).profile;
+  assert.equal(after.wallet,before.wallet-catalog.find(item=>item.id==='plant').price);assert.deepEqual(after.inventory,['plant']);
+  assert.throws(()=>store.action(id,'purchase',{idempotencyKey:crypto.randomUUID(),itemId:'plant'}),/already own/);
 });
 
 test('interactive job checks workplace, task answers and reward idempotency',async t=>{
@@ -36,7 +38,7 @@ test('interactive job checks workplace, task answers and reward idempotency',asy
   const answers=jobs['restaurant-host'].tasks.map(task=>({taskId:task.id,optionId:task.answer}));
   assert.throws(()=>store.action(id,'complete-shift',{challengeId:challenge.id,answers}),/Read the tasks/);
   advance(2000);assert.throws(()=>store.action(id,'complete-shift',{challengeId:challenge.id,answers:[]}),/each shift task/);
-  const first=store.action(id,'complete-shift',{challengeId:challenge.id,answers});assert.equal(first.profile.wallet,before.wallet+5600);
+  const first=store.action(id,'complete-shift',{challengeId:challenge.id,answers});assert.equal(first.profile.wallet,before.wallet+jobs['restaurant-host'].pay);
   const replay=store.action(id,'complete-shift',{challengeId:challenge.id,answers});assert.equal(replay.profile.wallet,first.profile.wallet);assert.deepEqual(replay.result,first.result);
   assert.throws(()=>store.action(id,'start-shift'),/between shifts/);
 });
@@ -59,8 +61,8 @@ test('profile update allowlist prevents balance and progression tampering',async
 test('premium wardrobe ownership and travel quotations are enforced by the server',async t=>{
   const {store,id}=await fixture(t);const before=store.profile(id);
   assert.throws(()=>store.updateProfile(id,{appearance:{top:'agbada'}}),/Buy this outfit/);
-  const bought=store.action(id,'purchase',{itemId:'traditional-set'}).profile;
-  assert.equal(bought.wallet,before.wallet-12000);assert.equal(store.updateProfile(id,{appearance:{top:'agbada'}}).appearance.top,'agbada');
+  const bought=store.action(id,'purchase',{idempotencyKey:crypto.randomUUID(),itemId:'traditional-set'}).profile;
+  assert.equal(bought.wallet,before.wallet-catalog.find(item=>item.id==='traditional-set').price);assert.equal(store.updateProfile(id,{appearance:{top:'agbada'}}).appearance.top,'agbada');
   const quote=store.quoteTravel(id,{district:'jabi',mode:'bus'});assert.equal(store.profile(id).wallet,bought.wallet);
   const journey=store.action(id,'travel',{district:'jabi',mode:'bus',cost:0});assert.equal(journey.trip.cost,quote.cost);assert.equal(journey.trip.seconds,quote.seconds);assert.equal(journey.profile.wallet,bought.wallet-quote.cost);
 });
@@ -95,10 +97,11 @@ test('friend groups, invitations, event RSVPs and reports contain actual residen
 });
 
 test('securing a home preserves travel and previously purchased ownership',async t=>{
-  const {store,id,advance}=await fixture(t);store.topup(id,{amount:900000,idempotencyKey:'home_purchase_funds'});const {trip}=store.action(id,'travel',{district:'garki-i',mode:'bus'});advance(trip.seconds*1000);store.action(id,'arrive',{tripId:trip.id});const starting=store.profile(id);
-  const bought=store.action(id,'move-home',{propertyId:'lugbe-flat',tenure:'own'}).profile;
-  assert.equal(bought.wallet,starting.wallet-280000);assert.equal(bought.home.district,'lugbe');assert.equal(bought.district,starting.district);assert.equal(bought.location.kind,'public');assert.deepEqual(bought.ownedProperties,['lugbe-flat']);
+  const owned=properties.find(home=>home.id==='lugbe-flat'),rented=properties.find(home=>home.id==='gwarinpa-apartment');
+  const {store,id,advance}=await fixture(t);store.topup(id,{amount:owned.buy+rented.rent+rented.cautionDeposit,idempotencyKey:'home_purchase_funds'});const {trip}=store.action(id,'travel',{district:'garki-i',mode:'bus'});advance(trip.seconds*1000);store.action(id,'arrive',{tripId:trip.id});const starting=store.profile(id);
+  const bought=store.action(id,'move-home',{idempotencyKey:crypto.randomUUID(),propertyId:'lugbe-flat',tenure:'own'}).profile;
+  assert.equal(bought.wallet,starting.wallet-owned.buy);assert.equal(bought.home.district,'lugbe');assert.equal(bought.district,starting.district);assert.equal(bought.location.kind,'public');assert.deepEqual(bought.ownedProperties,['lugbe-flat']);
   assert.throws(()=>store.action(id,'enter-home'),/Travel to your home/);
-  const rental=store.action(id,'move-home',{propertyId:'gwarinpa-apartment',tenure:'rent'}).profile;assert.equal(rental.wallet,bought.wallet-38000);assert.equal(rental.district,starting.district);
-  const returned=store.action(id,'move-home',{propertyId:'lugbe-flat',tenure:'own'}).profile;assert.equal(returned.wallet,rental.wallet);assert.equal(returned.home.propertyId,'lugbe-flat');assert.deepEqual(returned.ownedProperties,['lugbe-flat']);
+  const rental=store.action(id,'move-home',{idempotencyKey:crypto.randomUUID(),propertyId:'gwarinpa-apartment',tenure:'rent'}).profile;assert.equal(rental.wallet,bought.wallet-rented.rent-rented.cautionDeposit);assert.equal(rental.district,starting.district);
+  const returned=store.action(id,'move-home',{idempotencyKey:crypto.randomUUID(),propertyId:'lugbe-flat',tenure:'own'}).profile;assert.equal(returned.wallet,rental.wallet+rented.cautionDeposit,'leaving a debt-free rental returns its deposit');assert.equal(returned.home.propertyId,'lugbe-flat');assert.deepEqual(returned.ownedProperties,['lugbe-flat']);
 });

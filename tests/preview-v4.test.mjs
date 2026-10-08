@@ -1,3 +1,6 @@
+import { ECONOMY_CONFIG, VEHICLE_PRICES } from '../src/shared/economy.mjs';
+import { catalog, properties } from '../src/shared/catalogue.mjs';
+import { INVESTMENT_META } from '../src/shared/life.mjs';
 // Tests the real browser adapter through intercepted fetch without launching a GPU.
 // Only app startup is omitted; every game mutation uses the actual adapter API.
 // LEGACY_SAVE was captured from the pre-origin adapter initializer for migration.
@@ -64,7 +67,7 @@ await test("WebCrypto rejection sampling and one-time durable origins", async ()
   const f = fixture({ random: [1, 4294967295, 0] }), state = await f.request("/api/bootstrap");
   assert.ok(f.randomCalls >= 3, "Origin rejection sampling and randomized avatar both use secure entropy");
   assert.equal(state.profile.origin.id, "lapo");
-  assert.equal(state.profile.wallet, 1e5);
+  assert.equal(state.profile.wallet, ECONOMY_CONFIG.startingMoney.lapo);
   assert.equal(state.profile.home.district, "lugbe");
   assert.equal(state.profile.home.layoutId, "garki-studio");
   assert.equal(state.properties.at(-1).id, state.profile.home.propertyId);
@@ -78,7 +81,7 @@ await test("WebCrypto rejection sampling and one-time durable origins", async ()
   assert.equal(second.randomCalls, 0);
   const nepo = await fixture({ random: [0, 2] }).request("/api/bootstrap");
   assert.equal(nepo.profile.origin.id, "nepo");
-  assert.equal(nepo.profile.wallet, 1e6);
+  assert.equal(nepo.profile.wallet, ECONOMY_CONFIG.startingMoney.nepo);
   assert.equal(nepo.profile.home.district, "maitama");
   assert.ok(nepo.profile.ownedProperties.includes(nepo.profile.home.propertyId));
 });
@@ -86,7 +89,7 @@ await test("consenting loan borrowing, repayment and reload-safe idempotency", a
   const f = fixture(), payload = { amount: 1e5, consent: true, consentVersion: "game-loan-v1", idempotencyKey: key() };
   assert.equal((await f.action("borrow-loan", { ...payload, consent: false }, 400)).code, "loan_consent_required");
   const borrowed = await f.action("borrow-loan", payload);
-  assert.equal(borrowed.profile.wallet, 2e5);
+  assert.equal(borrowed.profile.wallet, ECONOMY_CONFIG.startingMoney.lapo + payload.amount);
   assert.equal(borrowed.loan.fee, 5e3);
   assert.equal(borrowed.loan.outstanding, 105e3);
   const partial = { loanId: borrowed.loan.id, amount: 3e4, idempotencyKey: key() };
@@ -94,7 +97,7 @@ await test("consenting loan borrowing, repayment and reload-safe idempotency", a
   const reopened = fixture({ storage: f.storage });
   assert.equal((await reopened.action("borrow-loan", payload)).replayed, true);
   assert.equal((await reopened.action("repay-loan", partial)).replayed, true);
-  assert.equal((await reopened.request("/api/wallet")).profile.wallet, 17e4);
+  assert.equal((await reopened.request("/api/wallet")).profile.wallet, ECONOMY_CONFIG.startingMoney.lapo + payload.amount - partial.amount);
   assert.equal((await reopened.request("/api/wallet")).loans[0].outstanding, 75e3);
   const before = await reopened.request("/api/wallet");
   await reopened.action("repay-loan", { ...partial, amount: 75001, idempotencyKey: key() }, 400);
@@ -106,16 +109,16 @@ await test("uncapped game funds and rent, exact overflow rollback, vehicle/dice 
   const f = fixture({ random: [1, 0, 0] }), funds = { amount: 25e7, idempotencyKey: key() };
   await f.request("/api/wallet/topup", funds);
   assert.equal((await f.request("/api/wallet/topup", funds)).replayed, true);
-  assert.equal((await f.request("/api/wallet")).profile.wallet, 2501e5);
+  assert.equal((await f.request("/api/wallet")).profile.wallet, ECONOMY_CONFIG.startingMoney.lapo + funds.amount);
   const overflow = { amount: Number.MAX_SAFE_INTEGER, idempotencyKey: key() }, before = await f.request("/api/wallet");
   assert.equal((await f.request("/api/wallet/topup", overflow, 409)).code, "numeric_limit");
   assert.deepEqual(await f.request("/api/wallet"), before);
   const bought = await f.action("purchase", { itemId: "compact-car", color: "blue", idempotencyKey: key() });
   assert.equal(bought.profile.vehicleColors["compact-car"], "blue");
   await f.action("buy-investment", { propertyId: "lugbe-flat", idempotencyKey: key() });
-  f.advance(6e4 * 1e3);
+  f.advance(INVESTMENT_META.periodMs * 1000);
   const collected = await f.action("collect-rent", { propertyId: "lugbe-flat", idempotencyKey: key() });
-  assert.equal(collected.income.amount, 56e4);
+  assert.equal(collected.income.amount, properties.find(item=>item.id==='lugbe-flat').investmentIncome * 1000);
   await f.action("leave-home");
   await f.action("enter-venue", { venueId: "games-lounge" });
   f.randomNext(0);
@@ -241,15 +244,15 @@ await test("legacy adapter saves retain money/home and remain origin-free until 
   assert.deepEqual(after.profile.home, before.profile.home);
   assert.equal(after.profile.origin, null);
   const bought = await upgraded.action("purchase", { itemId: "plant" });
-  assert.equal(bought.profile.wallet, 23700);
+  assert.equal(bought.profile.wallet, before.profile.wallet-catalog.find(item=>item.id==='plant').price);
   const again = await fixture({ storage }).request("/api/bootstrap");
-  assert.equal(again.profile.wallet, 23700);
+  assert.equal(again.profile.wallet, bought.profile.wallet);
   assert.ok(again.profile.inventory.includes("plant"));
   assert.equal(again.profile.origin, null);
   upgraded.reset();
   const fresh = await upgraded.request("/api/bootstrap");
   assert.equal(fresh.profile.origin.id, "lapo");
-  assert.equal(fresh.profile.wallet, 1e5);
+  assert.equal(fresh.profile.wallet, ECONOMY_CONFIG.startingMoney.lapo);
   assert.deepEqual(fresh.profile.inventory, []);
 });
 await test("local venue rides charge the quoted fare and physical walking remains free", async () => {
@@ -258,9 +261,9 @@ await test("local venue rides charge the quoted fare and physical walking remain
   const route = `/api/travel/quote?district=${district}&mode=taxi&venueId=restaurant`;
   const { quote } = await f.request(route);
   assert.equal(quote.venueId, "restaurant");
-  assert.equal(quote.cost, 830);
+  assert.equal(quote.cost, ECONOMY_CONFIG.transport.taxi.base+4*ECONOMY_CONFIG.transport.taxi.perDistance);
   assert.equal(quote.seconds, 14);
-  for (const [mode, cost] of [["bus", 330], ["bike", 420], ["ride", 1080]]) {
+  for (const [mode, cost] of ["bus","bike","ride"].map(mode=>[mode,ECONOMY_CONFIG.transport[mode].base+4*ECONOMY_CONFIG.transport[mode].perDistance])) {
     assert.deepEqual((await f.request(`/api/travel/quote?district=${district}&mode=${mode}&venueId=restaurant`)).quote, { destination: district, mode, cost, seconds: 14, venueId: "restaurant" });
   }
   assert.equal((await f.request(`/api/travel/quote?district=${district}&mode=walk&venueId=restaurant`)).quote.cost, 0);
@@ -380,7 +383,7 @@ await test("bike venue trips survive reload, auto-enter across districts and ret
 });
 await test("owned car venue arrival parks while district-only legacy fares and arrivals are preserved", async () => {
   const f = fixture(), start = (await f.request("/api/bootstrap")).profile, district = start.district;
-  await f.request("/api/wallet/topup", { amount: 1e6, idempotencyKey: key() });
+  await f.request("/api/wallet/topup", { amount: VEHICLE_PRICES['compact-car'], idempotencyKey: key() });
   await f.action("purchase", { itemId: "compact-car", idempotencyKey: key() });
   await f.action("leave-home");
   await f.action("toggle-driving", { vehicleId: "compact-car" });
@@ -405,7 +408,7 @@ await test("owned car venue arrival parks while district-only legacy fares and a
   }
   const state = await f.request("/api/bootstrap"), destination = "jabi";
   const distance = Math.max(4, Math.round(((state.atlas.find(place => place.id === destination).commute || 35) + (state.atlas.find(place => place.id === district).commute || 35)) / 3));
-  const expectedCost = 650 + distance * 45;
+  const expectedCost = ECONOMY_CONFIG.transport.taxi.base + distance * ECONOMY_CONFIG.transport.taxi.perDistance;
   assert.equal((await f.request(`/api/travel/quote?district=${destination}&mode=taxi`)).quote.cost, expectedCost);
   const legacy = await f.action("travel", { district: destination, mode: "taxi" });
   assert.equal(legacy.trip.venueId, undefined);

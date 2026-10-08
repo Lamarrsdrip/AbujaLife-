@@ -1,6 +1,8 @@
 /** Browser-only public preview. This adapter never connects to the game server. */
 import data from './data.mjs';
 import { LIFE_GOALS, GAME_YEAR_MS, GAME_BILL_PERIOD_MS, WALLET_META, INVESTMENT_META, DICE_META, LOAN_META, TRANSPORT_MODES, travelPricing, starterHomeSeed, systemResaleValue, homeBenefits, investmentView, loanQuote, loanView, venueFor, venueAvailable, venueActionFor, applyNeedEffects, furniturePlacement, ownsVehicle } from '../src/shared/life.mjs';
+import { syncHomeTenancy, TENANCY_RULES } from '../src/shared/tenancy.mjs';
+import { HOUSING_ACTIONS, applyHousingAction } from '../src/server/housingActions.mjs';
 import { vehicleColorFor } from '../src/shared/vehicles.mjs';
 import { ORIGIN_META, createOrigin, originHome } from '../src/shared/origins.mjs';
 import { abujaTime, jobSchedule, clubSchedule, seasonalWeather, JOB_SCHEDULES } from '../src/shared/simulation.mjs';
@@ -43,7 +45,7 @@ function initialState({assignOrigin=true}={}) {
   const origin=assignOrigin?createOrigin({residentId:PLAYER_ID,now:timestamp,randomInt,properties,atlas:[...atlas.values()]}):null;
   const seed=origin?starterHomeSeed(origin):{inventory:[],furnitureLayout:{},storedFurniture:[],homeStyle:{}};
   const home=origin?{...originHome(origin),...seed.homeStyle}:{propertyId:'garki-studio',layoutId:'garki-studio',name:'Garki starter studio',district:'garki-i',tenure:'starter'};
-  const wallet=origin?.startingBalance??26000;
+  const wallet=origin?.startingBalance??ORIGIN_META.options.find(option=>option.id==='lapo').startingBalance;
   return {
     version: 1,
     origin,
@@ -126,7 +128,12 @@ function challengeView() {
   const job=allJobs[state.challenge.jobId];
   return {...state.challenge,title:job.title,tasks:(job.tasks||[]).map(({answer,...task})=>clone(task))};
 }
+function reconcileHousing() {
+  const next=clone(state), profile=next.profile;
+  if(syncHomeTenancy(profile,{property:propertyFor(profile),temporaryProperty:properties.find(p=>p.id===TENANCY_RULES.temporaryPropertyId),now:Date.now(),id:uid(),seed:profile.id})) { state=next;persist(); }
+}
 function bootstrap() {
+  reconcileHousing();
   const now=Date.now(),clock=abujaTime(now),workSchedules=Object.fromEntries(Object.keys(allJobs).map(id=>[id,jobSchedule(id,state.profile,now)]));
   return {
     ...clone(publicData), walletMeta:{...clone(WALLET_META),transferEnabled:false,topupMode:'preview',demoTopupEnabled:true}, jobs:publicJobs(), authenticated:true, profile:clone(state.profile), activeChallenge:challengeView(),
@@ -217,13 +224,13 @@ function investmentAction(name,payload) {
     const investment=investmentView(profile,property,timestamp);
     check(investment.representable,'This rental income cannot be represented as exact whole Naira',409,'numeric_limit');
     if(name==='collect-rent') {
-      check(investment.collectable>0,'Rent is not ready yet; it accrues every minute',409,'rent_not_ready');
+      check(investment.collectable>0,'Rental income is not ready yet; it accrues weekly',409,'rent_not_ready');
       profile.wallet+=investment.collectable;
       const periods=Math.max(0,Math.floor((timestamp-investment.lastCollectedAt)/INVESTMENT_META.periodMs));
       profile.propertyInvestments[property.id].lastCollectedAt+=periods*INVESTMENT_META.periodMs;
       return{income:{propertyId:property.id,amount:investment.collectable,createdAt:timestamp},investment:investmentView(profile,property,timestamp),ledgerReason:`Rental income · ${property.name}`};
     }
-    check(timestamp>=investment.canSellAt,'Hold the investment for one minute before selling',409,'investment_cooldown');
+    check(timestamp>=investment.canSellAt,'Hold the investment for one week before selling',409,'investment_cooldown');
     const amount=investment.resaleValue+investment.collectable;profile.wallet+=amount;
     delete profile.propertyInvestments[property.id];profile.ownedProperties=profile.ownedProperties.filter(item=>item!==property.id);
     return{sale:{propertyId:property.id,amount,resaleValue:investment.resaleValue,rentalIncome:investment.collectable,createdAt:timestamp},ledgerReason:`Investment sale · ${property.name}`};
@@ -278,6 +285,8 @@ function sellItem(payload={}) {
   });
 }
 function action(name,payload={}) {
+  reconcileHousing();
+  if(HOUSING_ACTIONS.has(name)) return economyOperation(name,payload,{propertyId:payload.propertyId,tenure:payload.tenure,tenancyId:payload.tenancyId,early:payload.early===true,confirm:payload.confirm===true,venueId:payload.venueId,storyId:payload.storyId},(profile,now)=>applyHousingAction(profile,name,payload,{now,properties:propertiesFor(profile)}));
   if(name==='purchase'&&payload.idempotencyKey&&catalog.some(item=>item.id===payload.itemId&&item.category==='furniture')){
     const item=catalog.find(item=>item.id===payload.itemId);
     return economyOperation('purchase',payload,{itemId:item.id},profile=>{
@@ -398,21 +407,7 @@ function action(name,payload={}) {
     case 'purchase': {const item=catalog.find(item=>item.id===payload.itemId);check(item,'Choose an item from Okrika Marketplace');check(!profile.inventory.includes(item.id),'You already own this item',409);if(item.category==='vehicle'){const color=payload.color??item.defaultColor;check(vehicleColorFor(color)&&item.availableColors.includes(color),'Choose an available car colour');profile.vehicleColors[item.id]=color;}debit(item.price);profile.inventory.push(item.id);if(item.category==='furniture'&&!profile.storedFurniture.includes(item.id))profile.storedFurniture.push(item.id);extra.item=clone(item);break;}
     case 'paint-vehicle': {const item=catalog.find(item=>item.id===payload.itemId&&item.category==='vehicle');check(item&&profile.inventory.includes(item.id),'You can repaint a car you own',403,'vehicle_not_owned');check(vehicleColorFor(payload.color)&&item.availableColors.includes(payload.color),'Choose an available car colour');profile.vehicleColors[item.id]=payload.color;extra.item=clone(item);break;}
     case 'equip': {const item=catalog.find(item=>item.id===payload.itemId);check(item?.category==='clothing'&&profile.inventory.includes(item.id),'You can wear clothing you own');profile.appearance[item.slot]=item.value;break;}
-    case 'move-home': {
-      const property=propertyFor(profile,payload.propertyId);check(property&&(property.tier>0||property.originHome),'Choose a listed home');check(['rent','own'].includes(payload.tenure),'Choose rent or ownership');check(!property.originHome||payload.tenure==='own','Your starting home is available to move into without rent');check(profile.home.propertyId!==property.id||profile.home.tenure!==payload.tenure,'You already live here');
-      check(!(payload.tenure==='rent'&&profile.ownedProperties.includes(property.id)),'You already own this property; choose Move in',409,'already_owned');
-      debit(property.originHome?0:payload.tenure==='rent'?property.rent:profile.ownedProperties.includes(property.id)?0:property.buy??property.price);if(payload.tenure==='own'&&!profile.ownedProperties.includes(property.id))profile.ownedProperties.push(property.id);
-      if(profile.propertyInvestments[property.id]){const investment=investmentView(profile,property,timestamp);profile.wallet+=investment.collectable;extra.settledIncome=investment.collectable;delete profile.propertyInvestments[property.id];}
-      const previousHome=profile.home;profile.home={propertyId:property.id,layoutId:property.layoutId||property.id,name:property.name,district:property.district,tenure:property.originHome?property.gifted?'own':'starter':payload.tenure,gifted:Boolean(property.gifted),rentDueAt:payload.tenure==='rent'?timestamp+GAME_YEAR_MS:null,...(previousHome.starterVersion===1?{starterVersion:1,furnishingPreset:previousHome.furnishingPreset}:{}),...(previousHome.roomStyle&&(previousHome.layoutId||previousHome.propertyId)===(property.layoutId||property.id)?{roomStyle:previousHome.roomStyle}:{})};
-      if(profile.district===property.district){profile.drivingVehicle=null;profile.location={kind:'home',district:profile.district,venue:'home'};}else if(profile.location.kind==='home')profile.location={kind:'public',district:profile.district,venue:'neighbourhood'};profile.billsPaidAt=timestamp;profile.rentPaidAt=timestamp;break;
-    }
     case 'pay-bills': {check(timestamp-profile.billsPaidAt>=GAME_BILL_PERIOD_MS,'Your home bills are up to date');const property=propertyFor(profile);check(property,'Your home listing is unavailable');const amount=Math.round(property.bills*(100-comfort.billDiscountPercent)/100);debit(amount);profile.billsPaidAt=timestamp;extra.bill={amount,baseAmount:property.bills,discountPercent:comfort.billDiscountPercent};break;}
-    case 'renew-rent': {
-      check(profile.home.tenure==='rent','Only a rented home needs a rent renewal');
-      const property=propertyFor(profile);check(property,'Your home listing is unavailable');
-      check(timestamp-profile.rentPaidAt>=GAME_YEAR_MS,'Your rent is already paid for this game year');
-      debit(property.rent);profile.rentPaidAt=timestamp;profile.home.rentDueAt=timestamp+GAME_YEAR_MS;break;
-    }
     default:throw new PreviewError('Unknown preview action');
   }
   check(Number.isSafeInteger(profile.wallet)&&profile.wallet>=0,'This action cannot be represented as exact whole Naira',409,'numeric_limit');profile.lastActionAt=timestamp;if(profile.wallet!==before)next.transactions.push({id:uid(),amount:profile.wallet-before,reason:name,createdAt:timestamp});next.transactions=next.transactions.slice(-100);

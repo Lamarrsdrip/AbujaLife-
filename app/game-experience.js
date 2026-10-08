@@ -8,6 +8,9 @@ const appRoot=document.querySelector('#app');
 const sheetRoot=document.querySelector('#sheet-root');
 const toastRoot=document.querySelector('#toast');
 const WELCOME_KEY='abujalife.welcome-back.v1';
+// Payment callbacks resume an existing life. Capture this before their handler
+// removes the query string so a delayed bootstrap cannot open a welcome modal.
+const PAYMENT_RETURN_AT_ENTRY=['payment','payment_ref','ad_payment_ref','jackpot_payment_ref','jp_payment_ref','transaction_id'].some(key=>new URL(location.href).searchParams.has(key));
 const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const compact=value=>new Intl.NumberFormat('en',{notation:'compact',maximumFractionDigits:1}).format(Number(value||0));
 const money=value=>`₦${new Intl.NumberFormat('en-NG',{maximumFractionDigits:0}).format(Number(value||0))}`;
@@ -148,7 +151,7 @@ async function openJourney(district,venueId=null){
 
 async function showWelcome(initial){
   if(sessionStorage.getItem(WELCOME_KEY)==='1'||welcomeOverlay||!initial?.authenticated||!initial.profile?.onboardingComplete)return;
-  if(new URL(location.href).searchParams.has('payment')||location.hash.includes('verify')||location.hash.includes('reset'))return;
+  if(PAYMENT_RETURN_AT_ENTRY||location.hash.includes('verify')||location.hash.includes('reset'))return;
   snapshot=initial;lastSnapshotAt=Date.now();await readStats();
   let tries=0;while(!appRoot?.querySelector('.game-shell')&&tries++<40)await new Promise(resolve=>setTimeout(resolve,50));
   if(!appRoot?.querySelector('.game-shell'))return;

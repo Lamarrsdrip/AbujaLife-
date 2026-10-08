@@ -36,7 +36,8 @@ test('outer map preserves exploration and uses protected shared advertising inve
  const map=read('app/outside-city-v4.js');
  assert.match(map,/function createAdPlots\(\)/);
  assert.match(map,/width:10400,depth:7600/);
- assert.match(map,/best<720/);
+ assert.match(map,/adParcelIds\?\.\[h\.instanceId\]/);
+ assert.doesNotMatch(map,/best<720|adSpaceAt\(/);
  assert.match(map,/pinchBase\.zoom\*d\/pinchBase\.distance,\.22,24/);
  assert.match(map,/MAP_AD_INVENTORY/);
  assert.doesNotMatch(map,/basePlot\(plot,false\)/);

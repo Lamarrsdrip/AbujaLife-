@@ -4,6 +4,7 @@ import { HOME_ITEM_MODELS } from '../src/shared/home-items.mjs';
 import { vehicleFor } from '../src/shared/vehicles.mjs';
 import { createWorldMaterialLibrary } from './world-materials.js';
 import { WORLD_LANDMARK_FACADES } from '../src/shared/world-landmark-sizes.mjs';
+import { worldVehicleState } from './world-vehicle-state.js';
 
 // Combine rigid, opaque pieces with identical materials. Vertex normals, UVs,
 // triangles and joints are preserved; moving parts and transparent surfaces stay separate.
@@ -196,6 +197,17 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     const p=new T.Group();p.name=type||'fixture';
     const spec=HOME_ITEM_MODELS[type];if(spec){type=spec.modelKind;source={...spec,...source};}
     switch(type) {
+      case 'cinema-screen': {
+        const height=Math.min(190,w*.16),center=145;
+        box(p,0,center,0,w,height+16,12,mat('#293b38',.7),true,false);
+        const screen=box(p,0,center,7,w-24,height,2,mat('#c8dbcc',.65,0,{emissive:'#7b998e',emissiveIntensity:.22}),false,false);
+        screen.name='Cinema projection screen';
+        // Original Abuja skyline illustration: no stream, video decode or
+        // additional high-resolution texture allocation in the render loop.
+        for(let i=0;i<7;i++){const bw=w*.075,bh=height*(.2+(i%3)*.1);box(p,-w*.31+i*w*.1,center-height*.28+bh/2,9,bw,bh,1,mat(i%2?'#718d80':'#839b85'),false,false);}
+        box(p,w*.29,center+height*.18,9,height*.18,height*.18,1,mat('#d8bc76'),false,false);
+        break;
+      }
       case 'tech-laptop-stall':case 'tech-console-stall':case 'tech-repair-bench':case 'tech-accessory-stall':case 'tech-power-stall':case 'tech-parts-shelf':techStallModel(p,type,w,h);break;
       case 'sleeping-mat': {
         box(p,0,5,0,w,10,h,fabric('#8d9a89'),true);
@@ -927,8 +939,8 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
   // dynamic, while avoiding thousands of identical local matrix multiplications.
   group.traverse(part=>{if(part!==group&&(part.isMesh||part.isGroup)&&!part.userData.cameraCutaway){part.updateMatrix();part.matrixAutoUpdate=false;}});
   let ownCar,parkedCar;
-  if(profile.drivingVehicle||profile.activeTrip||profile.inventory?.some(id=>vehicleFor(id))) {
-    const ownId=profile.drivingVehicle||profile.activeTrip?.vehicleId||profile.inventory?.find(id=>vehicleFor(id));
+  const {vehicleId:ownId}=worldVehicleState(profile);
+  if(ownId||profile.activeTrip) {
     const item=vehicleFor(ownId);
     ownCar=profile.activeTrip?.mode==='bike'?bikeModel():carModel('#d8d8ca',profile.activeTrip?.mode==='bus'?'bus':profile.activeTrip?.mode==='taxi'?'taxi':item?.bodyStyle||'sedan',ownId);group.add(ownCar.group);
     if(kind==='public'){parkedCar=carModel('#d8d8ca',item?.bodyStyle||'sedan',ownId);group.add(parkedCar.group);}
@@ -981,14 +993,14 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     },
     updateView,
     playerModel:()=>ownCar?.group,
-    update({clock,weather,clubOpen,elapsed=0,player,angle=0,transport,driving,carColor,parked,trafficPositions=[],trip}) {
+    update({clock,weather,clubOpen,elapsed=0,player,angle=0,transport,driving,carColor,ownVehicle=ownId,carWithYou=true,parked,trafficPositions=[],trip}) {
       const night=!!clock?.isNight;if(night!==lastNight){for(const glow of glowingMaterials)glow.material.emissiveIntensity=night?Math.max(.9,glow.day*5):glow.day;for(const beams of nightBeams)beams.visible=night;lastNight=night;}
       clubLights.forEach((light,i)=>{light.intensity=clubOpen?21000+Math.sin(elapsed*2+i)*5000:0;light.target.position.set(580+i*180+Math.sin(elapsed*.55+i)*150,0,(630+Math.cos(elapsed*.4+i)*160)*ds);});
       if(carColor&&carColor!==appliedColor) {
         for(const car of [ownCar,parkedCar])if(car)car.group.traverse(o=>{if(o.material?.metalness===.28)o.material.color.set(carColor);});appliedColor=carColor;
       }
       positionCar(ownCar,player,trip?0:angle,!!transport,true,elapsed);
-      positionCar(parkedCar,parked||player,0,!transport&&!indoor,false,elapsed);
+      positionCar(parkedCar,parked||player,0,!transport&&!indoor&&!!ownVehicle&&carWithYou,false,elapsed);
       trafficPositions.forEach((p,i)=>positionCar(movingCars[i],p,p.angle,true,true,elapsed));
       for(const material of water)material.opacity=.91+Math.sin(elapsed*.7)*.025;
     },

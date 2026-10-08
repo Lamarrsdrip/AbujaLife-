@@ -11,6 +11,7 @@ import { GameStore, catalog, properties } from '../src/server/gameStore.mjs';
 import { appearanceOptions as appearanceValues } from '../src/shared/catalogue.mjs';
 import { starterHomeSeed } from '../src/shared/life.mjs';
 import { ORIGIN_HOMES } from '../src/shared/origins.mjs';
+import {ECONOMY_CONFIG} from '../src/shared/economy.mjs';
 import { buildInterior, furniturePlacementPreservesRoutes } from '../app/world-interiors.js';
 
 const repo=fileURLToPath(new URL('../',import.meta.url));
@@ -27,7 +28,7 @@ async function fixture(t,branch=1,index=0) {
 test('new Lapo residents start bare and Nepo residents own a useful furnished start',async t=>{
   for(const [branch,originId] of ['nepo','lapo'].entries()){
     const f=await fixture(t,branch),p=f.store.profile(f.id),nepo=originId==='nepo';
-    assert.equal(p.origin.id,originId);assert.equal(p.wallet,nepo?1000000:100000);
+    assert.equal(p.origin.id,originId);assert.equal(p.wallet,ECONOMY_CONFIG.startingMoney[originId]);
     assert.equal(p.home.furnishingPreset,nepo?'nepo-furnished':'lapo-basic');assert.equal(p.home.starterVersion,1);
     assert.deepEqual(p.inventory,nepo?gifts:[]);assert.deepEqual(p.furnitureLayout,{});assert.deepEqual(p.storedFurniture,[]);
     assert.ok(!p.inventory.includes('king-bed'));assert.ok(!p.inventory.includes('premium-sofa'));
@@ -48,16 +49,16 @@ test('random origin areas retain their different layouts and furnishing presets'
 test('Lapo furnishing progresses through actual purchases and saved placements',async t=>{
   const f=await fixture(t),before=f.store.profile(f.id);
   assert.throws(()=>f.store.action(f.id,'place-furniture',{itemId:'plant',x:.4,y:.5}),/Buy this furniture/);
-  const bought=f.store.action(f.id,'purchase',{itemId:'plant'}).profile;
-  assert.equal(bought.wallet,before.wallet-2300);assert.deepEqual(bought.inventory,['plant']);
+  const bought=f.store.action(f.id,'purchase',{idempotencyKey:crypto.randomUUID(),itemId:'plant'}).profile;
+  assert.equal(bought.wallet,before.wallet-catalog.find(item=>item.id==='plant').price);assert.deepEqual(bought.inventory,['plant']);
   const placed=f.store.action(f.id,'place-furniture',{itemId:'plant',x:.4,y:.5,rotation:0}).profile;
   f.reopen();assert.deepEqual(f.store.profile(f.id).inventory,['plant']);assert.deepEqual(f.store.profile(f.id).furnitureLayout,placed.furnitureLayout);
-  assert.equal(f.store.profile(f.id).home.furnishingPreset,'lapo-basic');assert.equal(f.store.profile(f.id).wallet,before.wallet-2300);
+  assert.equal(f.store.profile(f.id).home.furnishingPreset,'lapo-basic');assert.equal(f.store.profile(f.id).wallet,before.wallet-catalog.find(item=>item.id==='plant').price);
 });
 
 test('Nepo starter furnishings remain owned and stored gifts are not reseeded on restart',async t=>{
   const f=await fixture(t,0),before=f.store.profile(f.id);
-  assert.throws(()=>f.store.action(f.id,'purchase',{itemId:'bed'}),/already own/);
+  assert.throws(()=>f.store.action(f.id,'purchase',{idempotencyKey:crypto.randomUUID(),itemId:'bed'}),/already own/);
   f.store.action(f.id,'store-furniture',{itemId:'bed'});f.reopen();
   const p=f.store.profile(f.id);assert.deepEqual(p.inventory,gifts);assert.deepEqual(p.storedFurniture,['bed']);assert.equal(p.wallet,before.wallet);
   assert.deepEqual(starterHomeSeed(p.origin).inventory,gifts);
@@ -85,15 +86,15 @@ test('fresh Lapo scenes contain a basic mat and plumbing while Nepo scenes rende
     assert.ok(scene.interactables.some(point=>point.action==='leave-home'));
     if(bare){
       assert.deepEqual(scene.furniturePlacements,[]);
-      assert.deepEqual(scene.objects.map(object=>object.kind).sort(),['basin','shower','sleeping-mat','toilet']);
+      assert.deepEqual(scene.objects.map(object=>object.kind).sort(),['basin','fridge','kitchen','shower','sleeping-mat','toilet']);
       assert.equal(scene.objects.some(object=>object.itemId),false,'a basic mat grants no catalog furniture');
     }else{
       assert.equal(scene.furniturePlacements.length+scene.storedFurniture.length,gifts.length);
       assert.deepEqual([...scene.furniturePlacements.map(item=>item.itemId),...scene.storedFurniture].sort(),[...gifts].sort());
-      assert.deepEqual(scene.objects.filter(object=>!object.itemId).map(object=>object.kind).sort(),['basin','shower','toilet']);
+      assert.deepEqual(scene.objects.filter(object=>!object.itemId).map(object=>object.kind).sort(),['basin','kitchen','shower','toilet']);
       layoutShapes.add(JSON.stringify([scene.width,scene.height,scene.walls]));
     }
-    assert.equal(scene.objects.filter(object=>!object.itemId).some(object=>['wardrobe','kitchen','plant','tv','chair','desk','art-piece','pool-table'].includes(object.kind)),false);
+    assert.equal(scene.objects.filter(object=>!object.itemId).some(object=>['wardrobe','plant','tv','chair','desk','art-piece','pool-table'].includes(object.kind)),false);
   }
   assert.equal(layoutShapes.size,3,'the three Nepo areas retain different authored floor plans');
 });
@@ -105,7 +106,7 @@ test('buying a bed replaces the basic mat, and storing all gifts removes their s
   assert.equal(furniturePlacementPreservesRoutes(furnished,null),true);
   const nepo=starterHomeSeed({id:'nepo'}),stored=buildInterior({profile:{...profile,home:{...profile.home,layoutId:'jabi-apartment',...nepo.homeStyle},inventory:nepo.inventory,storedFurniture:[...gifts]}});
   assert.deepEqual(stored.furniturePlacements,[]);assert.deepEqual(stored.storedFurniture,gifts);
-  assert.deepEqual(stored.objects.map(object=>object.kind).sort(),['basin','shower','toilet']);
+  assert.deepEqual(stored.objects.map(object=>object.kind).sort(),['basin','fridge','kitchen','shower','toilet']);
   assert.equal(furniturePlacementPreservesRoutes(stored,null),true);
 });
 
@@ -124,11 +125,11 @@ test('moving to every listed floor plan preserves the furnishing progression wit
     const f=await fixture(t,branch);f.store.topup(f.id,{amount:moveHomeFunds,idempotencyKey:'home_start_move_funds'});
     const before=f.store.profile(f.id),inventory=[...before.inventory];
     for(const property of properties.filter(item=>item.tier>0)){
-      const moved=f.store.action(f.id,'move-home',{propertyId:property.id,tenure:'own'}).profile;
+      const moved=f.store.action(f.id,'move-home',{idempotencyKey:crypto.randomUUID(),propertyId:property.id,tenure:'own'}).profile;
       assert.equal(moved.home.starterVersion,1);assert.equal(moved.home.furnishingPreset,before.home.furnishingPreset);assert.deepEqual(moved.inventory,inventory);
       const scene=buildInterior({profile:{...moved,location:{kind:'home'}}});
       assert.equal(furniturePlacementPreservesRoutes(scene,null),true,property.id+' remains reachable after moving');
-      assert.equal(scene.objects.filter(object=>!object.itemId).some(object=>['kitchen','wardrobe','plant','tv','desk'].includes(object.kind)),false);
+      assert.equal(scene.objects.filter(object=>!object.itemId).some(object=>['wardrobe','plant','tv','desk'].includes(object.kind)),false);
       assert.deepEqual([...scene.furniturePlacements.map(item=>item.itemId),...scene.storedFurniture].sort(),[...inventory].sort());
       assert.equal(scene.objects.filter(object=>object.kind==='sleeping-mat').length,branch===1?1:0);
     }
@@ -166,11 +167,11 @@ test('actual preview onboarding and moving homes retain the same sparse progress
   assert.equal(chosen.profile.onboardingComplete,true);assert.equal(chosen.profile.appearance.presentation,'feminine');
   await adapter.request('/api/wallet/topup',{amount:moveHomeFunds,idempotencyKey:'preview_home_move_funds'});
   for(const property of properties.filter(item=>item.tier>0)){
-    const moved=await adapter.request('/api/action',{action:'move-home',payload:{propertyId:property.id,tenure:'own'}});
+    const moved=await adapter.request('/api/action',{action:'move-home',payload:{propertyId:property.id,tenure:'own',idempotencyKey:crypto.randomUUID()}});
     assert.equal(moved.profile.home.starterVersion,1);assert.equal(moved.profile.home.furnishingPreset,'lapo-basic');assert.deepEqual(moved.profile.inventory,[]);
     const scene=buildInterior({profile:{...moved.profile,location:{kind:'home'}}});
     assert.equal(furniturePlacementPreservesRoutes(scene,null),true,property.id);
-    assert.deepEqual(scene.objects.map(object=>object.kind).sort(),['basin','shower','sleeping-mat','toilet']);
+    assert.deepEqual(scene.objects.map(object=>object.kind).sort(),['basin','fridge','kitchen','shower','sleeping-mat','toilet']);
   }
 });
 
@@ -181,7 +182,7 @@ test('the actual browser adapter matches server fresh-home seeds and preserves p
     assert.deepEqual(browser.inventory,server.inventory);
     if(!server.inventory.includes('plant'))await adapter.request('/api/action',{action:'purchase',payload:{itemId:'plant'}});
     const reloaded=preview(1-branch,0,adapter.storage),saved=(await reloaded.request('/api/bootstrap')).profile;
-    assert.deepEqual(saved.inventory,server.inventory.includes('plant')?server.inventory:[...server.inventory,'plant']);assert.equal(saved.wallet,server.wallet-(server.inventory.includes('plant')?0:2300));assert.equal(reloaded.randomCalls,0);
+    assert.deepEqual(saved.inventory,server.inventory.includes('plant')?server.inventory:[...server.inventory,'plant']);assert.equal(saved.wallet,server.wallet-(server.inventory.includes('plant')?0:catalog.find(item=>item.id==='plant').price));assert.equal(reloaded.randomCalls,0);
   }
 });
 

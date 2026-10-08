@@ -2,7 +2,8 @@
 // library remains intact in world-interiors-base.js; this file makes sure every
 // real Abuja landmark enters an interior whose layout matches what people do
 // there instead of falling through to a renamed generic room.
-import {buildInterior as buildBaseInterior} from './world-interiors-base.js';
+import {buildInterior as buildBaseInterior, furniturePlacementPreservesRoutes} from './world-interiors-base.js';
+import {anchorInteriorActivities} from './world-interior-actions.js';
 import {cityLandmark} from '../src/shared/city-landmarks.mjs';
 import {venueFor} from '../src/shared/life.mjs';
 
@@ -156,7 +157,7 @@ export function buildInterior(args={}){
     relabelScene(scene,{name:routed.name,template,purpose:PURPOSE[landmark.builder]||landmark.blurb});
     authoredLandmarkScene(scene,landmark);
     scene.subtitle=landmark.blurb||scene.subtitle;
-    return scene;
+    return anchorInteriorActivities(scene,{routeValid:furniturePlacementPreservesRoutes});
   }
   const scene=buildBaseInterior(normalizedArgs);
   if(profile.location?.kind==='home'&&profile.home?.purchaseFurnishedPropertyId===profile.home?.propertyId){
@@ -167,5 +168,5 @@ export function buildInterior(args={}){
     relabelScene(scene,{name:'Capital Palm Hotel',template:'hotel',purpose:'RECEPTION · LOUNGE · GUEST ROOMS · SPA'});
     scene.venueLayout={venueId:'hotel',template:'hotel',zones:['reception','lounge','guest-room','spa']};
   }
-  return scene;
+  return anchorInteriorActivities(scene,{home:profile.location?.kind==='home',routeValid:furniturePlacementPreservesRoutes});
 }

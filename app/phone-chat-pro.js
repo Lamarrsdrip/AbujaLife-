@@ -19,18 +19,23 @@ function cachePayload(body){
 function pathFrom(input){try{return new URL(typeof input==='string'?input:input.url,location.href).pathname;}catch{return'';}}
 function conversationFromPath(path){const m=path.match(/^\/api\/conversations\/([^/]+)\/messages$/);return m?decodeURIComponent(m[1]):null;}
 if(nativeFetch){
-  globalThis.fetch=async(input,init={})=>{
+  globalThis.fetch=(input,init={})=>{
     let nextInit=init,path=pathFrom(input),conversationId=conversationFromPath(path),method=String(init?.method||'GET').toUpperCase();
+    // Keep unrelated game requests on their original native promise. Safari
+    // cancels world-presence requests during navigation; chat processing does
+    // not need to add another promise layer to their existing cancellation.
+    if(!conversationId&&path!=='/api/conversations')return nativeFetch(input,init);
     if(conversationId&&method==='POST'&&activeReply?.conversationId===conversationId&&typeof init.body==='string'){
       try{const body=JSON.parse(init.body);if(!body.replyToMessageId){body.replyToMessageId=activeReply.message.id;nextInit={...init,body:JSON.stringify(body)};}}catch{}
     }
     if(conversationId&&method==='GET'&&currentConversationId&&conversationId!==currentConversationId)releaseTransient();
     if(conversationId)currentConversationId=conversationId;
-    const response=await nativeFetch(input,nextInit);
-    if((conversationId||path==='/api/conversations')&&response.headers.get('content-type')?.includes('application/json')){
-      response.clone().json().then(body=>{cachePayload(body);if(conversationId){currentConversationId=conversationId;if(method==='POST'&&response.ok)clearReply();}scheduleEnhance();}).catch(()=>{});
-    }
-    return response;
+    return nativeFetch(input,nextInit).then(response=>{
+      if(response.headers.get('content-type')?.includes('application/json')){
+        response.clone().json().then(body=>{cachePayload(body);if(conversationId){currentConversationId=conversationId;if(method==='POST'&&response.ok)clearReply();}scheduleEnhance();}).catch(()=>{});
+      }
+      return response;
+    });
   };
 }
 if(globalThis.EventSource?.prototype?.addEventListener){

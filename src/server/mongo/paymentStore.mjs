@@ -108,6 +108,12 @@ export class MongoPaymentStore {
     try {
       response = await this.fetch(PROVIDER_ORIGIN + path, { ...options, headers: { 'content-type': 'application/json', authorization: `Bearer ${secretKey}` }, redirect: 'error', signal: AbortSignal.timeout(20000) }); data = await response.json();
     } catch { this.log('payment_failure', { provider: 'flutterwave', code: 'provider_unavailable' }); throw new GameError('Flutterwave could not be reached. No payment has been credited', 502, 'provider_unavailable'); }
+    // A hosted checkout exists before anyone pays. Flutterwave returns 400/404
+    // when a reference has no transaction yet; that is pending, not a provider
+    // outage or a successful payment. Only recognize this explicit GET result.
+    if (/^\/v3\/transactions\//.test(path) && [400,404].includes(response.status) && data.status === 'error' && /(?:no transaction(?: was)?(?: has been)?(?: is)? found|transaction(?: was)? not found)/i.test(String(data.message || ''))) {
+      throw new GameError('Payment has not been confirmed yet. Your balance and campaign are unchanged.', 409, 'payment_pending');
+    }
     if (!response.ok || data.status !== 'success') this.log('payment_failure', { provider: 'flutterwave', code: 'provider_rejected' });
     fail(response.ok && data.status === 'success', 'Flutterwave could not confirm this request. No payment has been credited', 502, 'provider_rejected'); return data.data;
   }
@@ -225,7 +231,12 @@ export class MongoPaymentStore {
         if (!row) break;
         let code = null;
         try { await owner.fulfill(row); }
-        catch (error) { code = error instanceof GameError ? error.code : 'fulfillment_failed'; this.log('payment_reconciliation_failure', { reference: row.txRef, product: collection, code }); }
+        catch (error) {
+          code = error instanceof GameError ? error.code : 'fulfillment_failed';
+          const facts=code==='payment_verification_failed'?await this.collection(collection).findOne({_id:row._id},{projection:{providerStatus:1,verifiedAt:1}}):null;
+          const waiting=code==='payment_pending'||(!facts?.verifiedAt&&['failed','cancelled','pending'].includes(facts?.providerStatus));
+          this.log(waiting?'payment_reconciliation_waiting':'payment_reconciliation_failure', { reference: row.txRef, product: collection, code });
+        }
         const delay = Math.min(21600000, 120000 * 2 ** Math.min(8, row.reconcileAttempts || 1));
         await this.collection(collection).updateOne({ _id: row._id, status: { $in: owner.statuses } }, { $set: { nextReconcileAt: this.clock() + delay, lastError: code, checkedAt: this.clock() } });
         results.push({ txRef: row.txRef, code });

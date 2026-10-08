@@ -1,11 +1,12 @@
+import { ECONOMY_CONFIG } from './economy.mjs';
 // Origin is chosen once by the server. These are fictional starting lives,
 // not statements about everyone living in an Abuja neighbourhood.
 export const ORIGIN_META = {
-  random: true, immutable: true, equalProbability: true,
-  description: 'Your starting life is assigned at random once, with an equal chance of Nepo or Lapo.',
+  random: false, selectable: true, immutable: true, equalProbability: true,
+  description: 'Choose your starting background once. Your balance and first home are saved with your resident.',
   options: [
-    { id: 'nepo', name: 'Nepo', startingBalance: 1000000, description: 'A family gift: ₦1,000,000 and a home in Jabi, Guzape or Maitama.' },
-    { id: 'lapo', name: 'Lapo', startingBalance: 100000, description: '₦100,000 and a practical starter home. Build your own Abuja story.' },
+    { id: 'nepo', name: 'Nepo Baby', startingBalance: ECONOMY_CONFIG.startingMoney.nepo, description: `₦${ECONOMY_CONFIG.startingMoney.nepo.toLocaleString('en-NG')} and a genuinely gifted, owned home in Jabi, Guzape or Maitama. No rent on your gifted home.` },
+    { id: 'lapo', name: 'Lapo Baby', startingBalance: ECONOMY_CONFIG.startingMoney.lapo, description: `₦${ECONOMY_CONFIG.startingMoney.lapo.toLocaleString('en-NG')} and a practical rent-free starter studio. Earn, explore and build your own Abuja story.` },
   ],
 };
 
@@ -24,9 +25,9 @@ export const ORIGIN_HOMES = {
   ],
 };
 
-export function createOrigin({ residentId, now, randomInt, properties, atlas }) {
+export function createOrigin({ residentId, now, originId, randomInt, properties, atlas }) {
   if (typeof randomInt !== 'function') throw new TypeError('Origin requires server randomness');
-  const option = ORIGIN_META.options[randomInt(0, 2)];
+  const option = originId === undefined ? ORIGIN_META.options[randomInt(0, 2)] : ORIGIN_META.options.find(row => row.id === originId);
   if (!option) throw new RangeError('Invalid origin selection');
   const choices = ORIGIN_HOMES[option.id], choice = choices[randomInt(0, choices.length)];
   if (!choice || !atlas.some(place => place.id === choice.district)) throw new RangeError('Origin home must use an atlas district');
@@ -34,7 +35,7 @@ export function createOrigin({ residentId, now, randomInt, properties, atlas }) 
   if (!layout) throw new RangeError('Origin home must use an authored layout');
   const propertyId = `origin-home-${residentId}`;
   const residence = { ...layout, ...choice, id: propertyId, propertyId, originHome: true, ownerId: residentId,
-    gifted: option.id === 'nepo', rent: 0, moveInCost: 0,
+    gifted: option.id === 'nepo', rent: 0, weeklyRent: 0, cautionDeposit: 0, moveInCost: 0,
     description: option.id === 'nepo' ? `Your family gifted you this home in ${choice.districtName}.` : `Your practical starting home in ${choice.districtName}.`,
   };
   return { id: option.id, name: option.name, assignedAt: now, startingBalance: option.startingBalance,

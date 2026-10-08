@@ -41,7 +41,15 @@ body:has(.game-shell.is-playing){overflow:hidden;overscroll-behavior:none}
 #app .is-playing .world-home-shortcut{min-height:44px;padding:8px 12px;font-size:11px}
 #app .is-playing .world-sprint-button{width:46px;height:46px;min-height:46px;border-radius:14px}
 #app .is-playing .world-interact-button{min-height:44px;max-width:100%;padding:8px 10px;font-size:11px;border-radius:14px}
-#app .is-playing .world-context-action{display:none} /* the corner action exposes the same hotspot */
+#app .is-playing .world-interaction-row{display:flex;align-items:stretch;justify-content:flex-end;gap:6px;width:100%;max-width:210px}
+#app .is-playing .world-exit-shortcut{display:flex;align-items:center;justify-content:center;gap:4px;flex:0 0 88px;min-height:44px;padding:8px;border:1px solid #fff9;border-radius:14px;background:#f5eddfec;color:#315940;box-shadow:0 4px 12px #163b2720;font:650 11px system-ui;touch-action:manipulation}
+#app .is-playing .world-exit-shortcut svg{width:15px;height:15px;flex:none}
+#app .is-playing .world-exit-shortcut:disabled{opacity:.6}
+#app .is-playing .world-interaction-row:has(.world-exit-shortcut) .world-interact-button{flex:1;min-width:0;gap:0;justify-content:center;padding:7px 8px}
+#app .is-playing .world-interaction-row:has(.world-exit-shortcut) .world-interact-button :is(kbd,b){display:none}
+#app .is-playing .world-interaction-row:has(.world-exit-shortcut) .world-interact-button>span{white-space:normal;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.25}
+#app .is-playing .world-context-action:not([hidden]){display:block;transform:none;width:max-content;max-width:min(185px,calc(100% - 24px));min-height:44px;padding:9px 12px;border-radius:14px;white-space:normal;line-height:1.3;text-align:center;z-index:5}
+#app .world-stage:has(#world-scene[data-activity],.world-resident-actions,.world-live-popover,.world-furniture-toolbar:not([hidden]),.location-chat-panel:not(.is-minimized),.club-spray-menu:not([hidden])) .world-context-action,body.hud-toast-active #app .world-context-action,body.phone-is-open #app .world-context-action{visibility:hidden;pointer-events:none}
 /* CONTEXT LANE: activity tray, progress, visits, suggestions and resident
    cards are mutually exclusive. Expanded tools take precedence over ideas. */
 .hud-context-slot{position:absolute;z-index:8;bottom:var(--hud-context);left:var(--hud-edge);right:var(--hud-edge);pointer-events:none;display:flex;justify-content:center}

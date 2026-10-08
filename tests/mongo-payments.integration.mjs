@@ -90,7 +90,7 @@ integration('Mongo provider amount currency status identity and reference mismat
   }
   await rejectCode(f.payments.creditVerified({ order, transactionId: '1234', verified: true }), 'payment_verification_required');
   assert.equal(await f.connection.db.collection('payment_receipts').countDocuments({ residentId: f.resident }), 0);
-  assert.equal(await f.connection.db.collection('ledger').countDocuments({ residentId: f.resident, type: 'verified-payment' }), 0);
+  assert.equal(await f.connection.db.collection('ledger').countDocuments({ residentId: f.resident, type: 'PAYMENT_TOPUP' }), 0);
   for (const provider of ['apple', 'google']) await rejectCode(f.payments.verifyStoreReceipt(f.resident, { provider, verified: true, amount: 1000000 }), 'store_provider_unconfigured');
 });
 
@@ -100,7 +100,7 @@ integration('Mongo concurrent verification and signed webhooks commit one receip
   const responses = await Promise.all(Array.from({ length: 10 }, (_, index) => index % 2 ? f.payments.verify(f.resident, { transactionId, txRef: order.txRef }) : f.payments.handleWebhook(raw, signature)));
   assert.equal(responses.filter(value => !value.replayed).length, 1); assert.ok(responses.every(value => value.profile.wallet === before + 10000 && value.payment.status === 'credited'));
   assert.equal((await f.store.profile(f.resident)).wallet, before + 10000); assert.equal(await f.connection.db.collection('payment_receipts').countDocuments({ transactionId, provider: 'flutterwave' }), 1);
-  const ledger = await f.connection.db.collection('ledger').find({ residentId: f.resident, type: 'verified-payment' }).toArray(); assert.equal(ledger.length, 1); assert.equal(ledger[0].amount, 10000); assert.equal(ledger[0].balanceAfter, before + 10000);
+  const ledger = await f.connection.db.collection('ledger').find({ residentId: f.resident, type: 'PAYMENT_TOPUP' }).toArray(); assert.equal(ledger.length, 1); assert.equal(ledger[0].amount, 10000); assert.equal(ledger[0].balanceAfter, before + 10000);
   assert.equal(await f.connection.db.collection('admin_audit').countDocuments({ action: 'credit-verified-payment', 'details.txRef': order.txRef }), 1);
   assert.equal(logs.filter(value => value.event === 'payment_grant').length, 1);
   assert.equal(logs.filter(value => value.event === 'payment_replay').length, 9);
@@ -135,7 +135,7 @@ integration('Mongo wallet overflow rolls back provider receipt payment state led
   await f.admin.adjustWallet(f.owner, { residentId: f.resident, amount: Number.MAX_SAFE_INTEGER - current - 500, reason: 'Explicit post-checkout numeric boundary fixture', idempotencyKey: unique('adjust_') });
   const before = (await f.store.profile(f.resident)).wallet; await rejectCode(f.payments.verify(f.resident, { transactionId, txRef: order.txRef }), 'wallet_limit');
   assert.equal((await f.store.profile(f.resident)).wallet, before); assert.equal((await f.payments.status(f.resident, order.txRef)).payment.status, 'pending');
-  assert.equal(await f.connection.db.collection('payment_receipts').countDocuments({ txRef: order.txRef }), 0); assert.equal(await f.connection.db.collection('ledger').countDocuments({ residentId: f.resident, type: 'verified-payment' }), 0);
+  assert.equal(await f.connection.db.collection('payment_receipts').countDocuments({ txRef: order.txRef }), 0); assert.equal(await f.connection.db.collection('ledger').countDocuments({ residentId: f.resident, type: 'PAYMENT_TOPUP' }), 0);
   const calls = f.calls.length; await rejectCode(checkout(f), 'wallet_limit'); assert.equal(f.calls.length, calls);
 });
 
@@ -165,7 +165,7 @@ integration('Mongo concurrent receipts for different residents still grant a glo
   const results = await Promise.allSettled([f.payments.creditVerified(firstProof), f.payments.creditVerified(secondProof)]);
   assert.equal(results.filter(value => value.status === 'fulfilled').length, 1); assert.equal(results.filter(value => value.status === 'rejected' && value.reason.code === 'payment_duplicate').length, 1);
   const after = [(await f.store.profile(f.resident)).wallet, (await f.store.profile(f.other)).wallet]; assert.equal(after[0] + after[1], balances[0] + balances[1] + 10000);
-  assert.equal(await f.connection.db.collection('payment_receipts').countDocuments({ transactionId }), 1); assert.equal(await f.connection.db.collection('ledger').countDocuments({ residentId: { $in: [f.resident, f.other] }, type: 'verified-payment' }), 1);
+  assert.equal(await f.connection.db.collection('payment_receipts').countDocuments({ transactionId }), 1); assert.equal(await f.connection.db.collection('ledger').countDocuments({ residentId: { $in: [f.resident, f.other] }, type: 'PAYMENT_TOPUP' }), 1);
 });
 
 integration('Mongo failure after payment state and wallet writes aborts all records then allows a clean verified retry', async t => {
@@ -178,11 +178,25 @@ integration('Mongo failure after payment state and wallet writes aborts all reco
 });
 
 integration('Mongo concurrent administrator demotions preserve the last active owner with a serialized RBAC check', async t => {
-  const f = await fixture(t); await f.admin.assignRole(f.owner, { residentId: f.other, role: 'superadmin' });
+  const f = await fixture(t), roleCollection=f.connection.db.collection('admin_roles');
+  const priorOwner=await roleCollection.findOne({residentId:f.owner}),priorOther=await roleCollection.findOne({residentId:f.other});
+  await f.admin.assignRole(f.owner, { residentId: f.other, role: 'superadmin' });
+  const countBeforeRace=await roleCollection.countDocuments({role:'superadmin'});
   const results = await Promise.allSettled([f.admin.assignRole(f.owner, { residentId: f.owner, role: null }), f.admin.assignRole(f.other, { residentId: f.other, role: null })]);
-  assert.equal(results.filter(value => value.status === 'fulfilled').length, 1); assert.equal(results.filter(value => value.status === 'rejected' && value.reason.code === 'last_superadmin').length, 1);
-  const ownerStatus = await f.admin.status(f.owner), otherStatus = await f.admin.status(f.other); assert.ok(ownerStatus.role === 'superadmin' || otherStatus.role === 'superadmin');
-  const remaining = ownerStatus.role === 'superadmin' ? f.owner : f.other; await f.admin.assignRole(remaining, { residentId: f.owner, role: 'superadmin' }); await f.admin.assignRole(f.owner, { residentId: f.other, role: null });
+  const active=await roleCollection.find({role:'superadmin'}).toArray();
+  assert.ok(active.length>=1,'concurrent role changes must preserve an active superadministrator');
+  if(countBeforeRace===2){assert.equal(results.filter(value => value.status === 'fulfilled').length, 1);assert.equal(results.filter(value => value.status === 'rejected' && value.reason.code === 'last_superadmin').length, 1);}
+  // This integration fixture is reused across test runs. Restore the two roles
+  // touched here so a repeat run neither accumulates admins nor disables its
+  // bootstrap administrator.
+  let actor=active[0].residentId;
+  const currentOwner=await roleCollection.findOne({residentId:f.owner});
+  if(priorOwner&&!currentOwner){await f.admin.assignRole(actor,{residentId:f.owner,role:priorOwner.role});actor=f.owner;}
+  else if(currentOwner)actor=f.owner;
+  const currentOther=await roleCollection.findOne({residentId:f.other});
+  if(priorOther){if(!currentOther||currentOther.role!==priorOther.role)await f.admin.assignRole(actor,{residentId:f.other,role:priorOther.role});}
+  else if(currentOther)await f.admin.assignRole(actor,{residentId:f.other,role:null});
+  const ownerStatus = await f.admin.status(f.owner); assert.equal(ownerStatus.role,priorOwner?.role||null);
 });
 
 integration('Mongo administrative key reuse racing across two wallets grants one correction and returns a domain conflict', async t => {
@@ -201,7 +215,7 @@ integration('reference-only return and competing background workers fulfill an a
  const results=await Promise.all([f.payments.reconcilePending({limit:1}),f.payments.reconcilePending({limit:1}),f.payments.verify(f.resident,{txRef:order.txRef})]);
  assert.equal((await f.store.profile(f.resident)).wallet,before+10000);
  assert.equal(await f.connection.db.collection('payment_receipts').countDocuments({txRef:order.txRef}),1);
- assert.equal(await f.connection.db.collection('ledger').countDocuments({residentId:f.resident,type:'verified-payment'}),1);
+ assert.equal(await f.connection.db.collection('ledger').countDocuments({residentId:f.resident,type:'PAYMENT_TOPUP'}),1);
  assert.equal((await f.payments.status(f.resident,order.txRef)).payment.fulfillmentStatus,'fulfilled');
  const replay=await f.payments.verify(f.resident,{txRef:order.txRef});assert.equal(replay.replayed,true);
 });
@@ -214,7 +228,7 @@ integration('reference verification requires order ownership and wrong provider 
 });
 
 integration('map-wide city and sky ad reservations race safely, verify by reference, render their actual image and replay once',async t=>{
- const f=await fixture(t),ads=new MongoAdStore({store:f.store,admin:f.admin,payments:f.payments});await ads.init({ensureIndexes:false});ads.attach();
+ const f=await fixture(t),ads=new MongoAdStore({store:f.store,admin:f.admin,payments:f.payments});await ads.init({ensureIndexes:false});ads.attach();const baselineInventory=await ads.inventory(f.owner);
  const png=Buffer.alloc(24);Buffer.from([137,80,78,71,13,10,26,10]).copy(png);png.write('IHDR',12);png.writeUInt32BE(320,16);png.writeUInt32BE(200,20);
  const sky=await ads.world({zoneId:'sky-displays',page:100}),city=await ads.world({zoneId:'map-parcels',page:0});assert.ok(sky.spaces.some(p=>p.available));const slots=[city.spaces.find(p=>p.available).id];
  const input={kind:'plot',slots,title:'Fixture city business',email:'advertiser@example.test',link:'https://example.com/business',imageDataUrl:'data:image/png;base64,'+png.toString('base64')};
@@ -232,13 +246,12 @@ integration('map-wide city and sky ad reservations race safely, verify by refere
  const state=await ads.publicState();assert.ok(state.active.some(ad=>ad.txRef===order.txRef&&ad.slots.length===1&&ad.imageDataUrl===input.imageDataUrl));
  const visible=await ads.world({bounds:{x:-40000,y:-40000,width:80000,height:80000}});assert.ok(visible.active.some(ad=>ad.txRef===order.txRef));
  const adminList=await f.payments.list(f.owner,{limit:100});assert.ok(adminList.payments.some(ad=>ad.txRef===order.txRef&&ad.purpose==='ad'&&ad.fulfillmentStatus==='fulfilled'));
- const inventorySize=MAP_AD_INVENTORY.length+COMPATIBILITY_MAP_AD_INVENTORY.length+BILLBOARD_IDS.length;
- const inventory=await ads.inventory(f.owner);assert.equal(inventory.summary.total,inventorySize);assert.equal(inventory.summary.occupied,1);assert.equal(inventory.summary.available,inventorySize-1);
+ const inventory=await ads.inventory(f.owner),inventorySize=inventory.summary.total;assert.ok(inventorySize>=MAP_AD_INVENTORY.length+COMPATIBILITY_MAP_AD_INVENTORY.length+BILLBOARD_IDS.length);assert.equal(inventory.summary.occupied,baselineInventory.summary.occupied+1);assert.equal(inventory.summary.available,inventorySize-inventory.summary.occupied);
  const assigned=inventory.plots.find(p=>p.id===slots[0]);assert.equal(assigned.campaign.txRef,order.txRef);assert.equal(assigned.campaign.residentId,own);assert.equal(assigned.available,false);assert.equal(assigned.width,city.spaces.find(p=>p.id===slots[0]).width);
  await assert.rejects(ads.inventory(f.other),error=>error.status===403);
  const protectedSpace=(await ads.world({zoneId:'capital-brand-coast',limit:180})).spaces.find(p=>!p.eligible);assert.ok(protectedSpace);const gatewayCalls=f.calls.length;
  await rejectCode(ads.checkout(f.resident,{...input,slots:[protectedSpace.id],idempotencyKey:unique('protected_')}),'invalid_ad_space');assert.equal(f.calls.length,gatewayCalls);
- f.advance(7*24*60*60*1000+1);const expired=await ads.inventory(f.owner);assert.equal(expired.summary.occupied,0);assert.equal(expired.summary.available,inventorySize);
+ f.advance(7*24*60*60*1000+1);const expired=await ads.inventory(f.owner);assert.equal(expired.plots.find(p=>p.id===slots[0]).available,true,'the tested campaign expires and frees its own plot');assert.equal(expired.summary.available,inventorySize-expired.summary.occupied);
 
 });
 
@@ -270,5 +283,68 @@ integration('one verified provider transaction cannot fulfill both a game-credit
  providerSuccess(f,ad,id);await rejectCode(f.payments.verify(f.other,{purpose:'ad',txRef:ad.txRef}),'payment_duplicate');
  assert.equal(await f.connection.db.collection('payment_receipts').countDocuments({transactionId:id}),1);
  assert.equal(await f.connection.db.collection('ad_receipts').countDocuments({transactionId:id}),0);
- assert.equal((await ads.status(f.other,ad.txRef)).payment.status,'pending');
+  assert.equal((await ads.status(f.other,ad.txRef)).payment.status,'pending');
+});
+
+const adCreative='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXQAAAABJRU5ErkJggg==';
+async function adCheckout(f,ads,{resident=f.resident,slot,kind='plot',key=unique('ad_')}={}){
+ const inventory=await ads.inventory(f.owner),space=slot||inventory.plots.find(p=>p.kind===kind&&p.available)?.id;
+ assert.ok(space,'disposable fixture should have a free ad placement');
+ return (await ads.checkout(resident,{kind,slots:[space],title:'Revenue audit fixture',email:'advertiser@example.test',link:'https://example.com/business',imageDataUrl:adCreative,idempotencyKey:key,amount:1,credits:999999999,mode:'live',verified:true})).checkout;
+}
+
+integration('advertising revenue counts unique verified receipts, separates test/live, and survives campaign expiry',async t=>{
+ const f=await fixture(t),ads=new MongoAdStore({store:f.store,admin:f.admin,payments:f.payments});await ads.init({ensureIndexes:false});ads.attach();
+ const before=(await ads.inventory(f.owner)).revenue,wallet=(await f.store.profile(f.resident)).wallet;
+ const pending=await adCheckout(f,ads);assert.equal(pending.amount,2000);assert.equal(pending.mode,'test');
+ assert.deepEqual((await ads.inventory(f.owner)).revenue,before,'unpaid checkout amounts never count as revenue');
+ const calls=f.calls.length;await rejectCode(ads.verify(f.other,{txRef:pending.txRef}),'payment_not_found');assert.equal(f.calls.length,calls);
+ const transactionId=providerSuccess(f,pending),{raw,signature}=webhook(f,pending,transactionId);
+ const results=await Promise.all(Array.from({length:8},(_,i)=>i%2?f.payments.verify(f.resident,{purpose:'ad',txRef:pending.txRef}):f.payments.handleWebhook(raw,signature)));
+ assert.equal(results.filter(result=>!result.replayed).length,1);
+ assert.equal(await f.connection.db.collection('ad_receipts').countDocuments({txRef:pending.txRef}),1);
+ assert.equal(await f.connection.db.collection('admin_audit').countDocuments({action:'activate-verified-ad','details.txRef':pending.txRef}),1);
+ const testRevenue=(await ads.inventory(f.owner)).revenue;assert.equal(testRevenue.test.fulfilledNgn,before.test.fulfilledNgn+2000);assert.equal(testRevenue.test.fulfilledPayments,before.test.fulfilledPayments+1);assert.deepEqual(testRevenue.live,before.live);
+ // The provider remains this fixture's in-process fake adapter. Selecting
+ // live mode here never sends a charge to a live merchant or real customer.
+ await f.payments.configure(f.owner,{mode:'live',enabled:true,creditRate:10,secretKey:'FLWSECK-fixture-live-secret-000000000000000',webhookSecret:SIGNING,activate:true});
+ const live=await adCheckout(f,ads);assert.equal(live.mode,'live');assert.deepEqual((await ads.inventory(f.owner)).revenue,testRevenue);
+ providerSuccess(f,live);await f.payments.verify(f.resident,{purpose:'ad',txRef:live.txRef});
+ const paid=(await ads.inventory(f.owner)).revenue;assert.equal(paid.live.fulfilledNgn,before.live.fulfilledNgn+2000);assert.equal(paid.live.fulfilledPayments,before.live.fulfilledPayments+1);assert.deepEqual(paid.test,testRevenue.test);assert.equal(paid.settlementVerified,false);assert.equal(paid.gross,true);
+ assert.equal((await f.store.profile(f.resident)).wallet,wallet,'advertising receipts never change Game Naira');
+ f.advance(7*24*60*60*1000+1);
+ const expired=await ads.mine(f.resident,{status:'expired'}),active=await ads.mine(f.resident,{status:'active'});
+ for(const txRef of [pending.txRef,live.txRef]){assert.ok(expired.ads.some(row=>row.txRef===txRef&&row.status==='expired'));assert.ok(!active.ads.some(row=>row.txRef===txRef));assert.equal((await ads.status(f.resident,txRef)).payment.status,'expired');assert.equal((await f.connection.db.collection('ad_orders').findOne({txRef})).status,'active','expiry is a view of server timestamps, not a rewrite of paid orders');}
+ const replay=await ads.verify(f.resident,{txRef:live.txRef});assert.equal(replay.replayed,true);assert.equal(replay.ad.status,'expired');
+ assert.deepEqual((await ads.inventory(f.owner)).revenue,paid,'expiry and callback retries do not reduce or duplicate lifetime gross receipts');
+ await rejectCode(ads.inventory(f.other),'admin_forbidden');
+});
+
+integration('late paid advertising cannot displace another campaign and unresolved payments remain visible to operators',async t=>{
+ const f=await fixture(t),ads=new MongoAdStore({store:f.store,admin:f.admin,payments:f.payments});await ads.init({ensureIndexes:false});ads.attach();
+ const before=(await ads.inventory(f.owner)).revenue,delayed=await adCheckout(f,ads);
+ f.advance(24*60*60*1000+1);
+ const replacement=await adCheckout(f,ads,{resident:f.other,slot:delayed.slots[0]});providerSuccess(f,replacement);await ads.verify(f.other,{txRef:replacement.txRef});
+ providerSuccess(f,delayed);await rejectCode(ads.verify(f.resident,{txRef:delayed.txRef}),'ad_space_unavailable_after_payment');
+ const lock=await f.connection.db.collection('ad_slots').findOne({_id:delayed.slots[0]});assert.equal(lock.txRef,replacement.txRef);assert.equal(lock.state,'active');
+ assert.equal(await f.connection.db.collection('payment_receipts').countDocuments({txRef:delayed.txRef}),0);assert.equal(await f.connection.db.collection('ad_receipts').countDocuments({txRef:delayed.txRef}),0);
+ const status=(await ads.status(f.resident,delayed.txRef)).payment;assert.equal(status.fulfillmentStatus,'failed');assert.equal(status.failureReason,'ad_space_unavailable_after_payment');assert.ok(status.verifiedAt);
+ const blocked=(await ads.inventory(f.owner)).revenue;assert.equal(blocked.test.fulfilledNgn,before.test.fulfilledNgn+2000);assert.equal(blocked.test.paidUnfulfilledNgn,before.test.paidUnfulfilledNgn+2000);assert.equal(blocked.test.paidUnfulfilledPayments,before.test.paidUnfulfilledPayments+1);
+ f.advance(7*24*60*60*1000+1);
+ const recovered=await ads.verify(f.resident,{txRef:delayed.txRef});assert.equal(recovered.ad.status,'active');assert.equal(recovered.ad.failureReason,null);assert.equal(recovered.ad.endAt-recovered.ad.startAt,7*24*60*60*1000);
+ const after=(await ads.inventory(f.owner)).revenue;assert.equal(after.test.fulfilledNgn,before.test.fulfilledNgn+4000);assert.equal(after.test.paidUnfulfilledNgn,before.test.paidUnfulfilledNgn);assert.equal(after.test.paidUnfulfilledPayments,before.test.paidUnfulfilledPayments);
+ assert.equal(await f.connection.db.collection('admin_audit').countDocuments({action:'activate-verified-ad','details.txRef':delayed.txRef}),1);
+});
+
+integration('ad activation and audit are one atomic transaction and failed persistence can be retried safely',async t=>{
+ const f=await fixture(t),ads=new MongoAdStore({store:f.store,admin:f.admin,payments:f.payments});await ads.init({ensureIndexes:false});ads.attach();
+ const order=await adCheckout(f,ads,{kind:'billboard'});providerSuccess(f,order);
+ await rejectCode(ads.activateVerified({order,transactionId:'1234',verified:true}),'payment_verification_required');
+ const record=f.admin.record;f.admin.record=async(...args)=>{if(args[1]==='activate-verified-ad')throw Object.assign(new Error('Explicit disposable audit persistence failure'),{code:'fixture_ad_audit_failure'});return record.apply(f.admin,args);};
+ try{await rejectCode(ads.verify(f.resident,{txRef:order.txRef}),'fixture_ad_audit_failure');}finally{f.admin.record=record;}
+ assert.equal((await ads.status(f.resident,order.txRef)).payment.status,'pending');assert.equal((await f.connection.db.collection('ad_slots').findOne({_id:order.slots[0]})).state,'reserved');
+ assert.equal(await f.connection.db.collection('payment_receipts').countDocuments({txRef:order.txRef}),0);assert.equal(await f.connection.db.collection('ad_receipts').countDocuments({txRef:order.txRef}),0);assert.equal(await f.connection.db.collection('admin_audit').countDocuments({action:'activate-verified-ad','details.txRef':order.txRef}),0);
+ const retry=await ads.verify(f.resident,{txRef:order.txRef});assert.equal(retry.replayed,false);assert.equal(retry.ad.status,'active');assert.equal(retry.ad.failureReason,null);
+ const replay=await ads.verify(f.resident,{txRef:order.txRef});assert.equal(replay.replayed,true);
+ assert.equal(await f.connection.db.collection('payment_receipts').countDocuments({txRef:order.txRef}),1);assert.equal(await f.connection.db.collection('ad_receipts').countDocuments({txRef:order.txRef}),1);assert.equal(await f.connection.db.collection('admin_audit').countDocuments({action:'activate-verified-ad','details.txRef':order.txRef}),1);
 });

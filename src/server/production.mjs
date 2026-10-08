@@ -39,6 +39,7 @@ export async function createProductionApplication({env=process.env,clock=Date.no
     const delivery=createEmailDelivery({env,publicWebUrl:config.publicWebUrl,fetchImpl,log});
     const auth=new MongoAuthStore({client:database.client,db:database.db,clock,...delivery});
     const store=new MongoGameStore({client:database.client,db:database.db,clock,originRandomInt,production:true,auth});
+    await store.initHousing();
     installFastLocationActions(store);
     installPropertyFurnitureIsolation(store);
     const social=new MongoSocialStore(store);await social.init({ensureIndexes:false});social.attachToGame();
@@ -58,7 +59,8 @@ export async function createProductionApplication({env=process.env,clock=Date.no
     const civic=await attachCivicRuntime(server,{store,admin,database,publicWebUrl:config.publicWebUrl,apiPublicUrl:config.apiPublicUrl,corsOrigins:config.corsOrigins,log});
     installActivityDiscovery(store,{log});
     payments.startReconciliation();
-    return{server,store,social,directory,presence,admin,payments,rewards,ads,sessionRuntime,liveActions,x,jackpot,civic,database,config,close:async()=>{await payments.stopReconciliation();jackpot.close();server.closeRealtime();if(server.listening)await new Promise(resolve=>server.close(resolve));await database.close();}};
+    store.startHousingReconciliation({log});
+    return{server,store,social,directory,presence,admin,payments,rewards,ads,sessionRuntime,liveActions,x,jackpot,civic,database,config,close:async()=>{await Promise.all([payments.stopReconciliation(),store.stopHousingReconciliation()]);jackpot.close();server.closeRealtime();if(server.listening)await new Promise(resolve=>server.close(resolve));await database.close();}};
   }catch(error){await database.close();throw error;}
 }
 export async function startProduction(){

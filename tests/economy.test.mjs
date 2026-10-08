@@ -1,3 +1,4 @@
+import { ECONOMY_CONFIG, ITEM_PRICES, VEHICLE_PRICES } from '../src/shared/economy.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -76,9 +77,9 @@ test('transfers reject forged amounts, absent or blocked recipients and insuffic
   rejection(()=>f.store.topup(f.ada,{amount:1000,idempotencyKey:request.idempotencyKey}),'idempotency_conflict');
 });
 
-test('branded vehicles preserve existing prices, validate chosen paint and retain owned colours after restart',async t=>{
-  const f=await fixture(t);f.store.topup(f.ada,{amount:2000000,idempotencyKey:key()});
-  assert.deepEqual(VEHICLE_CATALOG.slice(0,5).map(item=>item.price),[28000,95000,240000,380000,890000]);
+test('branded vehicles use authoritative progression prices, validate chosen paint and retain owned colours after restart',async t=>{
+  const f=await fixture(t);f.store.topup(f.ada,{amount:VEHICLE_PRICES['mercedes-g63'],idempotencyKey:key()});
+  assert.deepEqual(VEHICLE_CATALOG.slice(0,5).map(item=>item.price),['used-hatchback','starter-hatchback','compact-car','city-sedan','premium-suv'].map(id=>VEHICLE_PRICES[id]));
   assert.equal(catalog.find(item=>item.id==='used-hatchback').brand,'Toyota');
   assert.ok(VEHICLE_CATALOG.some(item=>item.brand==='Mercedes-AMG'&&item.bodyStyle==='offroad'));
   assert.throws(()=>f.store.action(f.ada,'purchase',{itemId:'mercedes-g63',color:'<script>'}),/available car colour/);
@@ -107,32 +108,32 @@ test('exact-integer wallet limits roll back both transfer sides and top-ups with
 
 test('property investments accrue uncapped simulated rent and resell durably without allowing primary-home income',async t=>{
   const f=await fixture(t),property=properties.find(item=>item.id==='lugbe-flat'),starting=f.store.profile(f.ada).wallet;
-  f.store.topup(f.ada,{amount:1000000,idempotencyKey:key()});
+  f.store.topup(f.ada,{amount:properties.find(item=>item.id==='lugbe-flat').buy,idempotencyKey:key()});
   const buy={propertyId:property.id,idempotencyKey:key()},investment=f.store.action(f.ada,'buy-investment',buy);
-  assert.equal(investment.profile.wallet,starting+1000000-property.buy);assert.equal(investment.investment.incomePerPeriod,560);
+  assert.equal(investment.profile.wallet,starting+property.buy-property.buy);assert.equal(investment.investment.incomePerPeriod,property.investmentIncome);
   assert.ok(investment.profile.ownedProperties.includes(property.id));
   assert.equal(f.store.action(f.ada,'buy-investment',buy).replayed,true);
   const collect={propertyId:property.id,idempotencyKey:key()};rejection(()=>f.store.action(f.ada,'collect-rent',collect),'rent_not_ready');
   rejection(()=>f.store.action(f.ada,'sell-investment',{propertyId:property.id,idempotencyKey:key()}),'investment_cooldown');
   f.advance(INVESTMENT_META.periodMs*3+3000);const income=f.store.action(f.ada,'collect-rent',collect);
-  assert.equal(income.income.amount,1680);assert.equal(income.investment.collectable,0);
-  f.reopen();assert.equal(f.store.action(f.ada,'collect-rent',collect).income.amount,1680);assert.equal(f.store.action(f.ada,'collect-rent',collect).replayed,true);
-  f.advance(INVESTMENT_META.periodMs*100);assert.equal(investmentView(f.store.profile(f.ada),property,f.now).collectable,560*100);
-  const uncapped=f.store.action(f.ada,'collect-rent',{propertyId:property.id,idempotencyKey:key()});assert.equal(uncapped.income.amount,56000);
+  assert.equal(income.income.amount,property.investmentIncome*3);assert.equal(income.investment.collectable,0);
+  f.reopen();assert.equal(f.store.action(f.ada,'collect-rent',collect).income.amount,property.investmentIncome*3);assert.equal(f.store.action(f.ada,'collect-rent',collect).replayed,true);
+  f.advance(INVESTMENT_META.periodMs*100);assert.equal(investmentView(f.store.profile(f.ada),property,f.now).collectable,property.investmentIncome*100);
+  const uncapped=f.store.action(f.ada,'collect-rent',{propertyId:property.id,idempotencyKey:key()});assert.equal(uncapped.income.amount,property.investmentIncome*100);
   rejection(()=>f.store.action(f.ada,'collect-rent',{propertyId:property.id,idempotencyKey:key()}),'rent_not_ready');
   const sale={propertyId:property.id,idempotencyKey:key()},sold=f.store.action(f.ada,'sell-investment',sale);
-  assert.equal(sold.sale.resaleValue,252000);assert.equal(sold.sale.rentalIncome,0);assert.ok(!sold.profile.ownedProperties.includes(property.id));
-  f.reopen();assert.equal(f.store.action(f.ada,'sell-investment',sale).sale.amount,252000);assert.equal(f.store.action(f.ada,'sell-investment',sale).replayed,true);
-  f.store.action(f.ada,'buy-investment',{propertyId:property.id,idempotencyKey:key()});f.advance(60000);
-  const before=f.store.profile(f.ada).wallet,moved=f.store.action(f.ada,'move-home',{propertyId:property.id,tenure:'own'});
-  assert.equal(moved.profile.wallet,before+560);assert.equal(moved.settledIncome,560);assert.ok(moved.profile.ownedProperties.includes(property.id));assert.equal(moved.profile.propertyInvestments[property.id],undefined);
+  assert.equal(sold.sale.resaleValue,property.investmentResale);assert.equal(sold.sale.rentalIncome,0);assert.ok(!sold.profile.ownedProperties.includes(property.id));
+  f.reopen();assert.equal(f.store.action(f.ada,'sell-investment',sale).sale.amount,property.investmentResale);assert.equal(f.store.action(f.ada,'sell-investment',sale).replayed,true);
+  f.store.action(f.ada,'buy-investment',{propertyId:property.id,idempotencyKey:key()});f.advance(INVESTMENT_META.periodMs);
+  const before=f.store.profile(f.ada).wallet,moved=f.store.action(f.ada,'move-home',{propertyId:property.id,tenure:'own',idempotencyKey:key()});
+  assert.equal(moved.profile.wallet,before+property.investmentIncome);assert.equal(moved.settledIncome,property.investmentIncome);assert.ok(moved.profile.ownedProperties.includes(property.id));assert.equal(moved.profile.propertyInvestments[property.id],undefined);
   for(const action of ['buy-investment','collect-rent','sell-investment'])rejection(()=>f.store.action(f.ada,action,{propertyId:property.id,idempotencyKey:key()}),'primary_home');
   f.advance(600000);assert.equal(investmentView(f.store.profile(f.ada),property,f.now),null);
 });
 
 test('legacy malformed, primary-home and unavailable investment rows are ignored before new purchases',async t=>{
   const f=await fixture(t),property=properties.find(item=>item.id==='lugbe-flat'),profile=f.store.profile(f.ada);
-  f.store.topup(f.ada,{amount:1000000,idempotencyKey:key()});
+  f.store.topup(f.ada,{amount:properties.find(item=>item.id==='lugbe-flat').buy,idempotencyKey:key()});
   const raw=f.store.get('SELECT profile FROM residents WHERE id=?',f.ada),stored=JSON.parse(raw.profile),now=f.now;
   stored.propertyInvestments={
     [property.id]:{propertyId:property.id,boughtAt:now,lastCollectedAt:now,purchasePrice:1,incomePerPeriod:0,resaleValue:1},
@@ -164,9 +165,9 @@ test('dice stakes exceed the former ceiling but only server outcomes pay and rep
 });
 
 test('unrepresentable rental credits and dice payouts preserve profiles, accrual, ledger and retry keys',async t=>{
-  const f=await fixture(t),property=properties.find(item=>item.id==='lugbe-flat');f.store.topup(f.ada,{amount:300000,idempotencyKey:key()});f.store.action(f.ada,'buy-investment',{propertyId:property.id,idempotencyKey:key()});f.store.topup(f.ada,{amount:Number.MAX_SAFE_INTEGER-f.store.profile(f.ada).wallet,idempotencyKey:key()});f.advance(INVESTMENT_META.periodMs);
+  const f=await fixture(t),property=properties.find(item=>item.id==='lugbe-flat');f.store.topup(f.ada,{amount:properties.find(item=>item.id==='lugbe-flat').buy,idempotencyKey:key()});f.store.action(f.ada,'buy-investment',{propertyId:property.id,idempotencyKey:key()});f.store.topup(f.ada,{amount:Number.MAX_SAFE_INTEGER-f.store.profile(f.ada).wallet,idempotencyKey:key()});f.advance(INVESTMENT_META.periodMs);
   const snapshot=()=>({profile:f.store.profile(f.ada),ledger:f.store.all('SELECT * FROM ledger'),operations:f.store.all('SELECT * FROM economy_operations')});const beforeRent=snapshot(),collect={propertyId:property.id,idempotencyKey:key()};rejection(()=>f.store.action(f.ada,'collect-rent',collect),'numeric_limit');assert.deepEqual(snapshot(),beforeRent);assert.equal(f.store.get('SELECT COUNT(*) n FROM economy_operations WHERE operation_key=?',collect.idempotencyKey).n,0);
-  f.store.transfer(f.ada,{residentId:f.bello,amount:560,idempotencyKey:key()});assert.equal(f.store.action(f.ada,'collect-rent',collect).profile.wallet,Number.MAX_SAFE_INTEGER);
+  f.store.transfer(f.ada,{residentId:f.bello,amount:property.investmentIncome,idempotencyKey:key()});assert.equal(f.store.action(f.ada,'collect-rent',collect).profile.wallet,Number.MAX_SAFE_INTEGER);
   f.store.action(f.ada,'leave-home');f.store.action(f.ada,'enter-venue',{venueId:'games-lounge'});t.mock.method(crypto,'randomInt',()=>1);const beforeDice=snapshot(),round={stake:Number.MAX_SAFE_INTEGER,choice:'low',idempotencyKey:key()};rejection(()=>f.store.action(f.ada,'play-dice',round),'numeric_limit');assert.deepEqual(snapshot(),beforeDice);assert.equal(f.store.get('SELECT COUNT(*) n FROM economy_operations WHERE operation_key=?',round.idempotencyKey).n,0);
 });
 
@@ -187,7 +188,7 @@ test('new life destinations enforce Jabi Lake geography and furniture storage re
 
 test('purchased home upgrades improve real rest and relaxation, lower bills and retain placement security after restart',async t=>{
   const f=await fixture(t);f.store.topup(f.ada,{amount:500000,idempotencyKey:key()});
-  assert.deepEqual(HOME_UPGRADES.map(item=>[item.id,item.price]),[['portable-ac',45000],['power-inverter',78000],['premium-sofa',56000],['king-bed',65000],['pool-table',55000],['gaming-console',42000],['bar-cart',18000],['art-piece',24000]]);
+  assert.deepEqual(HOME_UPGRADES.map(item=>[item.id,item.price]),HOME_UPGRADES.map(item=>[item.id,ITEM_PRICES[item.id]]));
   assert.throws(()=>f.store.action(f.bello,'place-furniture',{itemId:'king-bed',x:.5,y:.5}),/Buy this furniture/);
   const start=f.store.profile(f.ada).wallet;
   for(const item of HOME_UPGRADES)f.store.action(f.ada,'purchase',{itemId:item.id});
@@ -211,14 +212,14 @@ test('purchased home upgrades improve real rest and relaxation, lower bills and 
   assert.deepEqual(relaxed.furnitureLayout['king-bed'],{x:.4,y:.6,rotation:90,propertyId:relaxed.home.propertyId});
   assert.equal(homeBenefits(relaxed,properties[0]).billDiscountPercent,15);
   f.advance(GAME_BILL_PERIOD_MS);const wallet=f.store.profile(f.ada).wallet,paid=f.store.action(f.ada,'pay-bills');
-  assert.deepEqual(paid.bill,{amount:383,baseAmount:450,discountPercent:15});assert.equal(paid.profile.wallet,wallet-383);
+  const baseAmount=properties.find(item=>item.id===paid.profile.home.layoutId).bills,amount=Math.round(baseAmount*.85);assert.deepEqual(paid.bill,{amount,baseAmount,discountPercent:15});assert.equal(paid.profile.wallet,wallet-amount);
   assert.throws(()=>f.store.action(f.ada,'pay-bills'),/up to date/);
   const starter=f.store.profile(f.bello);assert.deepEqual(homeBenefits(starter,properties[0]),{sleepEnergyBonus:0,relaxFunBonus:0,relaxStressReduction:0,billDiscountPercent:0});
 });
 
 test('comfortable Jabi and Maitama homes add functional rest benefits without changing starter behavior',async t=>{
-  const f=await fixture(t);f.store.topup(f.ada,{amount:300000,idempotencyKey:key()});
-  f.store.action(f.ada,'move-home',{propertyId:'jabi-apartment',tenure:'rent'});
+  const f=await fixture(t);f.store.topup(f.ada,{amount:properties.find(item=>item.id==='lugbe-flat').buy,idempotencyKey:key()});
+  f.store.action(f.ada,'move-home',{propertyId:'jabi-apartment',tenure:'rent',idempotencyKey:key()});
   const {trip}=f.store.action(f.ada,'travel',{district:'jabi',mode:'bus'});f.advance(trip.seconds*1000);f.store.action(f.ada,'arrive',{tripId:trip.id});f.store.action(f.ada,'enter-home');
   const p=f.store.profile(f.ada),home=properties.find(item=>item.id===p.home.propertyId),benefits=homeBenefits(p,home);
   assert.equal(benefits.sleepEnergyBonus,4);assert.equal(benefits.relaxFunBonus,4);assert.equal(home.comfortBonus,4);
@@ -237,7 +238,7 @@ test('authenticated HTTP wallet routes serve metadata and persist actual two-res
   assert.equal((await request('/api/wallet')).status,401);
   const account=async username=>{const registered=await request('/api/auth/register',null,{username,password:'a-test-password'});assert.equal(registered.status,201);assert.equal(typeof registered.data.residentId,'string');const entry=await request('/api/entry',registered.cookie);assert.equal(entry.data.profile.id,registered.data.residentId);return{cookie:registered.cookie,data:entry.data};};
   const ada=await account('wallet_ada'),bello=await account('wallet_bello');
-  assert.equal(ada.data.walletMeta.currency,'NGN');assert.equal(ada.data.vehicleColors.length,7);assert.equal(ada.data.investmentMeta.periodMs,60000);
+  assert.equal(ada.data.walletMeta.currency,'NGN');assert.equal(ada.data.vehicleColors.length,7);assert.equal(ada.data.investmentMeta.periodMs,INVESTMENT_META.periodMs);
   const adaStart=ada.data.profile.wallet,belloStart=bello.data.profile.wallet,topup=await request('/api/wallet/topup',ada.cookie,{amount:10000,idempotencyKey:key()});assert.equal(topup.status,200);assert.equal(topup.data.profile.wallet,adaStart+10000);
   const payload={residentId:bello.data.profile.id,amount:2500,idempotencyKey:key()},transfer=await request('/api/wallet/transfer',ada.cookie,payload);assert.equal(transfer.status,200);
   assert.equal((await request('/api/wallet',bello.cookie)).data.profile.wallet,belloStart+2500);

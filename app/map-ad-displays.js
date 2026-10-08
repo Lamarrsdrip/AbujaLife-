@@ -1,15 +1,14 @@
 import * as THREE from './vendor/three.module.js';
 import {adSpaceFromId} from '../src/shared/advertising.mjs';
-import {okrikaHouseCreativeDataUrl} from './okrika-house-creative.js';
-import {adCampaignId,isHouseAd,activeAdAt} from './ad-state.js';
+import {adCampaignId,activeAdAt} from './ad-state.js';
 
 function creativeVersion(source=''){let hash=2166136261;for(let i=0;i<source.length;i++)hash=Math.imul(hash^source.charCodeAt(i),16777619);return `${source.length}-${hash>>>0}`;}
 const campaignRef=adCampaignId;
 const activeAt=activeAdAt;
-const creativeSource=ad=>String(ad?.imageDataUrl||((ad?.campaignType==='house'||ad?.creativeType==='okrika-house')?okrikaHouseCreativeDataUrl(ad):''));
+const creativeSource=ad=>String(ad?.imageDataUrl||'');
 export function mapAdPlacements(campaigns=[],now=Date.now()){
  const seen=new Set();
- return campaigns.filter(ad=>activeAt(ad,now)).sort((a,b)=>Number(isHouseAd(a))-Number(isHouseAd(b))).flatMap(ad=>(ad.slots||[]).flatMap(id=>{
+ return campaigns.filter(ad=>activeAt(ad,now)).flatMap(ad=>(ad.slots||[]).flatMap(id=>{
   const space=adSpaceFromId(id);if(!space||space.eligible===false||seen.has(id))return [];seen.add(id);
   const source=creativeSource(ad);
   return [{...space,key:`paid-ad:${id}`,campaign:ad,creativeSource:source,creativeVersion:creativeVersion(source),z:space.y}];
@@ -35,9 +34,9 @@ export function createMapAdDisplays(world,{now=Date.now,onChange=()=>{},maxTextu
   if(place.format==='roadside-billboard'||place.format==='building-display'){creative.rotation.x=-.28;creative.position.y=place.height*.46+18;frame.position.y=creative.position.y;frame.rotation.x=Math.PI/2-.28;}
   group.add(root);const entry={root,base,frame,creative,place,key:null};entries.set(place.id,entry);return entry;
  }
- function evict(keep,target=maxTextures){for(const [key,row] of cache){if(cache.size<=target)break;if(keep.has(key))continue;row.cancelled=true;for(const entry of entries.values())if(entry.key===key){entry.key=null;entry.creative.material.map=null;entry.creative.material.needsUpdate=true;}row.texture?.dispose();cache.delete(key);}}
+ function evict(keep,target=maxTextures){for(const [key,row]of cache){if(cache.size<=target)break;if(keep.has(key))continue;row.cancelled=true;for(const entry of entries.values())if(entry.key===key){entry.key=null;entry.creative.material.map=null;entry.creative.material.needsUpdate=true;}row.texture?.dispose();cache.delete(key);}}
  function load(entry,tier,keep){const ad=entry.place.campaign,cover=ad.fit==='cover',key=textureKey(entry.place),source=entry.place.creativeSource;keep.add(key);
-  if(!/^data:image\/(?:png|jpeg|webp);base64,/.test(source)&&!/^data:image\/svg\+xml;charset=utf-8,/.test(source))return;
+  if(!/^data:image\/(?:png|jpeg|webp);base64,/.test(source))return;
   let row=cache.get(key);if(row){cache.delete(key);cache.set(key,row);if(row.texture)fit(entry,row);entry.key=key;if(row.pending||row.tier===tier||failed.has(key))return;}
   else{if(failed.has(key))return;evict(keep,maxTextures-1);if(cache.size>=maxTextures)return;row={cancelled:false,texture:null,tier:0};cache.set(key,row);entry.key=key;}
   row.pending=true;
@@ -53,7 +52,7 @@ export function createMapAdDisplays(world,{now=Date.now,onChange=()=>{},maxTextu
  function setView(camera,size){if(disposed||!camera)return;const time=now();if(time-lastView<250)return;lastView=time;const visible=[];
   for(const place of placements){if(!activeAt(place.campaign,time))continue;point.set(place.x+place.width/2,8,place.z+place.height/2).project(camera);corner.set(place.x+place.width,8,place.z+place.height).project(camera);const pixels=Math.max(Math.abs(corner.x-point.x)*size.width,Math.abs(corner.y-point.y)*size.height);const margin=Math.max(.12,pixels/Math.min(size.width,size.height));if(point.z<-1||point.z>1||Math.abs(point.x)>1+margin||Math.abs(point.y)>1+margin)continue;visible.push({place,pixels});}
   visible.sort((a,b)=>b.pixels-a.pixels);const keep=new Set(),ids=new Set(),requests=new Map();
-  for(const {place,pixels} of visible.slice(0,maxDisplays)){ids.add(place.id);const entry=entries.get(place.id)||create(place),tier=mapTextureTier(pixels),key=textureKey(place);
+  for(const {place,pixels}of visible.slice(0,maxDisplays)){ids.add(place.id);const entry=entries.get(place.id)||create(place),tier=mapTextureTier(pixels),key=textureKey(place);
    if(tier&&(keep.has(key)||keep.size<maxTextures)){keep.add(key);const request=requests.get(key)||{tier:0,entries:[]};request.tier=Math.max(request.tier,tier);request.entries.push(entry);requests.set(key,request);}
    else if(entry.key){entry.key=null;entry.creative.material.map=null;entry.creative.material.needsUpdate=true;}
   }

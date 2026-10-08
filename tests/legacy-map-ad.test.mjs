@@ -8,7 +8,9 @@ test('original ad IDs and earlier checkout cells retain dedicated safe sale righ
  assert.equal(COMPATIBILITY_MAP_AD_INVENTORY.length,43);
  assert.deepEqual(COMPATIBILITY_MAP_AD_INVENTORY.slice(0,40).map(p=>p.id),PLOT_IDS);
  const all=[...MAP_AD_INVENTORY,...COMPATIBILITY_MAP_AD_INVENTORY,...MAP_ROADSIDE_PARCELS];
- assert.equal(new Set([...MAP_AD_INVENTORY,...COMPATIBILITY_MAP_AD_INVENTORY].map(p=>p.id)).size,197);
+ const saleRights=[...MAP_AD_INVENTORY,...COMPATIBILITY_MAP_AD_INVENTORY],uniqueRights=new Set(saleRights.map(p=>p.id));
+ assert.equal(uniqueRights.size,saleRights.length,'expanded inventory cannot reuse a legacy reservation ID');
+ assert.ok(uniqueRights.size>197,'new safe map inventory must expand beyond the previous 197 sale rights');
  for(const parcel of COMPATIBILITY_MAP_AD_INVENTORY){
   assert.equal(mapLandConflict(parcel),null,parcel.id);
   assert.ok(parcel.x>=-5200&&parcel.y>=-3800&&parcel.x+parcel.width<=5200&&parcel.y+parcel.height<=3800);

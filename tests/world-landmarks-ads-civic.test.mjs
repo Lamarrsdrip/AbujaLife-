@@ -28,12 +28,14 @@ test('Okrika environmental sponsor remains visible without replacing paid ad inv
  assert.match(city,/data-environmental-sponsor="okrika"/);
  assert.match(city,/>OKRIKA</);
  assert.match(city,/scene\.environmentalSponsor='okrika'/);
- assert.match(ads,/154 authored map parcels, 43 compatibility parcels and ten safely positioned roadside boards/);
+ assert.match(ads,/expanded safe authored map parcels, 43 compatibility parcels and ten safely positioned roadside boards/);
  assert.match(ads,/ten visible roadside billboard spaces/);
+ assert.match(ads,/₦2,000 NGN per placement/);
+ assert.match(ads,/Duration: 7 days/);
 });
 
 test('outer map preserves exploration and uses protected shared advertising inventory',()=>{
- const map=read('app/outside-city-v4.js');
+ const map=read('app/outside-city-v4.js'),direct=read('app/open-land-ads.js'),premium=read('app/map-premium-2026.css');
  assert.match(map,/function createAdPlots\(\)/);
  assert.match(map,/width:10400,depth:7600/);
  assert.match(map,/adParcelIds\?\.\[h\.instanceId\]/);
@@ -41,4 +43,7 @@ test('outer map preserves exploration and uses protected shared advertising inve
  assert.match(map,/pinchBase\.zoom\*d\/pinchBase\.distance,\.22,24/);
  assert.match(map,/MAP_AD_INVENTORY/);
  assert.doesNotMatch(map,/basePlot\(plot,false\)/);
+ assert.match(direct,/stopImmediatePropagation/);
+ assert.match(direct,/abj:open-ad-studio/);
+ assert.match(premium,/outside-roof-label/);
 });

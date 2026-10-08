@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Real-browser release gate for blank-land advertising.
+"""Real-browser release gate for direct map advertising.
 
-Exercises the production map renderer plus open-land picker and real advertising
-studio. Provider checkout is never called: HTTP responses are local readonly
-fixtures. Backend payment/admin mutation behavior is covered by Node/Mongo tests.
+Exercises the production map renderer plus direct safe-land picker and real
+advertising studio. Provider checkout is never called: HTTP responses are local
+readonly fixtures. Backend payment/admin mutation behavior is covered by Node/Mongo tests.
 """
 import asyncio
 import json
@@ -24,7 +24,7 @@ ART = Path(os.getenv('ABUJALIFE_OPEN_LAND_AD_ARTIFACTS', '/tmp/abuja-open-land-a
 HTML = '''<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/ads.css">
-<link rel="stylesheet" href="/outside-city.css"><link rel="stylesheet" href="/outside-quick-access.css">
+<link rel="stylesheet" href="/outside-city.css"><link rel="stylesheet" href="/map-premium-2026.css"><link rel="stylesheet" href="/outside-quick-access.css">
 <link rel="stylesheet" href="/game-map.css"><link rel="stylesheet" href="/abuja-game-polish-2026.css">
 <link rel="stylesheet" href="/game-hud.css"><style>
 body{margin:0}.abj-restored-map{height:100dvh;grid-template-rows:minmax(0,1fr) auto}
@@ -106,21 +106,21 @@ class Fixture:
 
 
 async def open_from_blank_land(page):
-    await page.get_by_role('button', name='Show advertising plots').click()
-    await expect(page.locator('.outside-status')).to_contain_text('Tap any open land')
+    # Revenue-critical behavior: a resident must not discover or enable an Ads
+    # mode first. A normal tap on eligible map land must open the studio itself.
+    ads_toggle = page.get_by_role('button', name='Show advertising plots')
+    await expect(ads_toggle).to_have_attribute('aria-pressed', 'false')
     stage = await page.locator('.outside-stage').bounding_box()
     assert stage
     candidates = [(x, y) for y in (.28,.38,.48,.58,.68,.76) for x in (.16,.28,.40,.52,.64,.76,.86)]
     for xf, yf in candidates:
         if await page.get_by_role('dialog', name='Put your business in the city.').count():
             break
-        selection = page.locator('.outside-selection')
-        if await selection.is_visible():
-            await selection.locator('[data-outside-action="close"]').click()
         await page.mouse.click(stage['x'] + stage['width'] * xf, stage['y'] + stage['height'] * yf)
         await page.wait_for_timeout(80)
     dialog = page.get_by_role('dialog', name='Put your business in the city.')
     await expect(dialog).to_be_visible(timeout=5000)
+    await expect(ads_toggle).to_have_attribute('aria-pressed', 'false')
     await page.wait_for_function('()=>window.lastPlacement?.plotId && document.querySelectorAll("[data-ad-selected] [data-ad-remove]").length===1')
     result = await page.evaluate('''()=>({placement:window.lastPlacement,space:window.spaceFor(window.lastPlacement.plotId),selected:document.querySelector('[data-ad-selected] [data-ad-remove]')?.dataset.adRemove})''')
     assert result['placement']['plotId'] == result['selected'], result

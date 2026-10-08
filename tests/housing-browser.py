@@ -75,6 +75,9 @@ async def rent_home(page,property_id='lugbe-flat',tenure='rent'):
     p=await truth(page);assert p['home']['propertyId']==property_id,p['home'];return p
 
 async def reload(page,account=None):
+    # Housing persistence checks should not race the separate returning-player
+    # welcome gate; that overlay has dedicated coverage in game-hud-browser.py.
+    await page.evaluate("()=>sessionStorage.setItem('abujalife.welcome-back.v1','1')")
     await page.reload(wait_until='domcontentloaded');await page.wait_for_function("()=>document.querySelector('#world-scene')||document.querySelector('#auth-form')",timeout=30000)
     if await page.locator('#auth-form').count():
         assert account,'the resident session expired; a login is required to continue this acceptance test'

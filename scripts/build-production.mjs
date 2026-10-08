@@ -10,6 +10,7 @@ export const productionEntryPoints = Object.freeze({
   'checkout-window': 'app/checkout-window.js',
   app: 'app/app.js',
   admin: 'app/admin.js',
+  'admin-house-ads': 'app/admin-house-ads.js',
   'phone-chat-pro': 'app/phone-chat-pro.js',
   'civic-life': 'app/civic-life.js',
   'game-ui-kit': 'app/game-ui-kit.js',

@@ -25,27 +25,24 @@ export function roadIntersectsPlot(box,{a,b,clearance}){
  return true;
 }
 export function mapLandConflict(box){const land=MAP_AD_PROTECTED_LAND.find(b=>boxesOverlap(box,b));if(land)return land.reason;return MAP_AD_PROTECTED_ROADS.some(r=>roadIntersectsPlot(box,r))?'Road, walkway or navigation access':null;}
-// Preserve the original frontage parcel positions first so every existing paid
-// campaign keeps its exact land. Then fill the remaining safe Abuja surface with
-// compact monetizable squares. Roads, landmarks, homes and expansion land still
-// pass through the same shared safety geometry before a plot can exist.
-const candidates=[];
-for(const y of[-3440,-3040,3040,3440])for(let x=-4480;x<=4480;x+=560)candidates.push({...centered(x,y,520,340),format:'ground-billboard',orientation:0});
-for(const x of[-5000,-4620,4620,5000])for(let y=-2440;y<=2440;y+=560)candidates.push({...centered(x,y,340,520),format:'ground-billboard',orientation:0});
-for(let y=-2300;y<=2300;y+=550)for(let x=-3500;x<=3500;x+=600)candidates.push({...centered(x,y,320,220),format:'map-billboard',orientation:0});
-// Dense city inventory: visually reads as clean plots and makes the map itself
-// sellable without putting fake ads or generic CTA cards on top of Abuja.
-for(let y=-3440;y<=3440;y+=300)for(let x=-4860;x<=4860;x+=340)candidates.push({...centered(x,y,286,216),format:'map-billboard',orientation:0});
-export const MAP_AD_PARCELS=Object.freeze(candidates.filter(box=>!mapLandConflict(box)).reduce((accepted,box)=>{if(!accepted.some(other=>boxesOverlap(box,other)))accepted.push(box);return accepted;},[]).map((box,index)=>Object.freeze({...box,name:`Ad plot ${String(index+1).padStart(3,'0')}`,priority:8,active:true,inventoryVersion:3})));
 
+// Build the pre-expansion catalogue first. Its geometry is a compatibility
+// contract: active/pending campaigns and the forty original Business Park IDs
+// must never move just because we add more inventory later.
+const baseCandidates=[];
+for(const y of[-3440,-3040,3040,3440])for(let x=-4480;x<=4480;x+=560)baseCandidates.push({...centered(x,y,520,340),format:'ground-billboard',orientation:0});
+for(const x of[-5000,-4620,4620,5000])for(let y=-2440;y<=2440;y+=560)baseCandidates.push({...centered(x,y,340,520),format:'ground-billboard',orientation:0});
+for(let y=-2300;y<=2300;y+=550)for(let x=-3500;x<=3500;x+=600)baseCandidates.push({...centered(x,y,320,220),format:'map-billboard',orientation:0});
+const baseParcels=baseCandidates.filter(box=>!mapLandConflict(box)).reduce((accepted,box)=>{if(!accepted.some(other=>boxesOverlap(box,other)))accepted.push(box);return accepted;},[]);
+
+// Keep roadside geometry based on the original catalogue too. New dense map
+// inventory fills around these boards rather than displacing them.
 const roadside=[];
-for(const road of MAP_AD_PROTECTED_ROADS){const dx=road.b.x-road.a.x,dy=road.b.y-road.a.y,len=Math.hypot(dx,dy);if(len<500)continue;for(const t of[.25,.5,.75])for(const sign of[-1,1]){const x=road.a.x+dx*t-dy/len*150*sign,y=road.a.y+dy*t+dx/len*150*sign,box=centered(x,y,140,80);if(!mapLandConflict(box)&&!MAP_AD_PARCELS.some(p=>boxesOverlap(box,p))&&!roadside.some(p=>boxesOverlap(box,{x:p.x-30,y:p.y-30,width:p.width+60,height:p.height+60})))roadside.push({...box,format:'roadside-billboard',orientation:0});}}
+for(const road of MAP_AD_PROTECTED_ROADS){const dx=road.b.x-road.a.x,dy=road.b.y-road.a.y,len=Math.hypot(dx,dy);if(len<500)continue;for(const t of[.25,.5,.75])for(const sign of[-1,1]){const x=road.a.x+dx*t-dy/len*150*sign,y=road.a.y+dy*t+dx/len*150*sign,box=centered(x,y,140,80);if(!mapLandConflict(box)&&!baseParcels.some(p=>boxesOverlap(box,p))&&!roadside.some(p=>boxesOverlap(box,{x:p.x-30,y:p.y-30,width:p.width+60,height:p.height+60})))roadside.push({...box,format:'roadside-billboard',orientation:0});}}
 export const MAP_ROADSIDE_PARCELS=Object.freeze(roadside.slice(0,10).map(Object.freeze));
 
-// Original Business Park IDs and three older five-slot checkout cells retain
-// distinct sale rights. Give them safe land without aliasing newer bookable
-// parcels. The rows below fit inside the existing city plane, with 24 units of
-// separation from every authored parcel, roadside board and compatibility plot.
+// Generate compatibility land before any expansion so original IDs retain their
+// exact old safe positions and cannot be pushed into a district or road.
 const compatibilityCandidates=[];
 for(const y of[-2690,2690,-2500,2500])for(let x=-4750;x<=4750;x+=400)compatibilityCandidates.push({...centered(x,y,320,220),format:'map-billboard',orientation:0});
 for(const x of[-4000,4000,-4300,4300])for(let y=-2450;y<=2450;y+=320)compatibilityCandidates.push({...centered(x,y,220,320),format:'map-billboard',orientation:0});
@@ -54,7 +51,21 @@ const expanded=box=>({x:box.x-24,y:box.y-24,width:box.width+48,height:box.height
 const compatibility=[];
 for(const box of compatibilityCandidates){
  if(box.x< -5200||box.y< -3800||box.x+box.width>5200||box.y+box.height>3800||mapLandConflict(box))continue;
- if([...MAP_AD_PARCELS,...MAP_ROADSIDE_PARCELS,...compatibility].some(p=>boxesOverlap(box,expanded(p))))continue;
+ if([...baseParcels,...MAP_ROADSIDE_PARCELS,...compatibility].some(p=>boxesOverlap(box,expanded(p))))continue;
  compatibility.push(box);if(compatibility.length===43)break;
 }
+if(compatibility.length!==43)throw new Error(`AbujaLife advertising compatibility geometry incomplete: ${compatibility.length}/43`);
 export const MAP_AD_COMPATIBILITY_PARCELS=Object.freeze(compatibility.map(box=>Object.freeze({...box,priority:8,active:true,inventoryVersion:3})));
+
+// Fill only the remaining safe Abuja surface with compact monetizable squares.
+// Dense inventory cannot overlap legacy sale rights, real roadside boards,
+// buildings, expansion land, landmarks, roads or another advertising plot.
+const denseCandidates=[];
+for(let y=-3440;y<=3440;y+=300)for(let x=-4860;x<=4860;x+=340)denseCandidates.push({...centered(x,y,286,216),format:'map-billboard',orientation:0});
+const occupied=[...baseParcels,...MAP_ROADSIDE_PARCELS,...MAP_AD_COMPATIBILITY_PARCELS],dense=[];
+for(const box of denseCandidates){
+ if(mapLandConflict(box))continue;
+ if(occupied.some(other=>boxesOverlap(box,other))||dense.some(other=>boxesOverlap(box,other)))continue;
+ dense.push(box);
+}
+export const MAP_AD_PARCELS=Object.freeze([...baseParcels,...dense].map((box,index)=>Object.freeze({...box,name:`Ad plot ${String(index+1).padStart(3,'0')}`,priority:8,active:true,inventoryVersion:3})));

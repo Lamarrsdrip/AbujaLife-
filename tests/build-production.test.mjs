@@ -22,6 +22,11 @@ test('API client uses credentialed production HTTP and SSE while source preview 
   try {
     delete globalThis.ABUJA_PUBLIC_CONFIG;
     assert.equal(apiURL('/api/bootstrap'), '/api/bootstrap');
+    globalThis.location = { hostname: 'abujacity.life' };
+    assert.equal(apiURL('/api/entry'), 'https://api.abujacity.life/api/entry');
+    globalThis.location = { hostname: 'www.abujacity.life' };
+    assert.equal(apiURL('/api/entry'), 'https://api.abujacity.life/api/entry');
+    delete globalThis.location;
     globalThis.ABUJA_PUBLIC_CONFIG = { API_PUBLIC_URL: 'https://api.abujacity.life' };
     assert.equal(apiURL('/api/residents?search=A%20B'), 'https://api.abujacity.life/api/residents?search=A%20B');
     for (const value of ['https://another.site/api/bootstrap', '/admin', '/api/../admin', '/api/\\admin']) assert.throws(() => apiURL(value));
@@ -40,6 +45,7 @@ test('API client uses credentialed production HTTP and SSE while source preview 
   } finally {
     if (original.config === undefined) delete globalThis.ABUJA_PUBLIC_CONFIG;
     else globalThis.ABUJA_PUBLIC_CONFIG = original.config;
+    delete globalThis.location;
     globalThis.fetch = original.fetch;
     globalThis.EventSource = original.EventSource;
   }

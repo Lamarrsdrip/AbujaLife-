@@ -1,4 +1,4 @@
-import {boundedFetch} from './api-client.js';
+import {apiURL, boundedFetch} from './api-client.js';
 import {showGameToast as toast} from './game-toast.js';
 const nativeFetch=globalThis.fetch?.bind(globalThis);
 const chatFetch=(input,options)=>boundedFetch(input,options,nativeFetch);
@@ -7,7 +7,6 @@ let currentConversationId=null,activeReply=null,imageDraft=null,voiceDraft=null,
 const root=()=>document.querySelector('#phone-root');
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=value=>`₦${new Intl.NumberFormat('en-NG',{maximumFractionDigits:0}).format(Number(value)||0)}`;
-const apiURL=path=>{const origin=globalThis.ABUJA_PUBLIC_CONFIG?.API_PUBLIC_URL;return origin?new URL(path,origin).href:path;};
 const uuid=()=>globalThis.crypto?.randomUUID?.()||`chat-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const icon=(name)=>({photo:'<path d="M3 5h4l2-2h6l2 2h4v15H3z"/><circle cx="12" cy="12" r="4"/>',mic:'<path d="M9 4a3 3 0 0 1 6 0v7a3 3 0 0 1-6 0z"/><path d="M5 10a7 7 0 0 0 14 0M12 17v4M8 21h8"/>',reply:'<path d="m9 7-6 5 6 5v-3c6 0 9 2 12 6-1-7-5-10-12-10z"/>',play:'<path d="m9 6 9 6-9 6z"/>',pause:'<path d="M9 6v12M15 6v12"/>',close:'<path d="m6 6 12 12M18 6 6 18"/>',trash:'<path d="M4 7h16M9 7V4h6v3M7 7l1 14h8l1-14M10 11v6M14 11v6"/>',copy:'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/>',check:'<path d="m5 12 4 4 10-10"/>',send:'<path d="m3 4 18 8-18 8 4-8zM7 12h14"/>'}[name]||'');
 const svg=name=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon(name)}</svg>`;

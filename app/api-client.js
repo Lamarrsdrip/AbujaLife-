@@ -1,12 +1,20 @@
 // Only public origins belong in this configuration. Source development and the
 // anonymous preview intentionally keep /api requests on the current origin.
+// A production page whose runtime-config.js did not run must still call the
+// API host. The website answers /api with the HTML shell, and parsing that
+// shell is what players see as "can't reach the city".
+function productionApiOrigin() {
+  const host = globalThis.location?.hostname;
+  return host === 'abujacity.life' || host === 'www.abujacity.life' ? 'https://api.abujacity.life' : '';
+}
+
 export function apiURL(path) {
   if (typeof path !== 'string' || !path.startsWith('/api/') || path.includes('\\')) {
     throw new TypeError('Use an API path beginning with /api/.');
   }
   const normalized = new URL(path, 'https://api.abujacity.life');
   if (!normalized.pathname.startsWith('/api/')) throw new TypeError('The API path is invalid.');
-  const origin = globalThis.ABUJA_PUBLIC_CONFIG?.API_PUBLIC_URL;
+  const origin = globalThis.ABUJA_PUBLIC_CONFIG?.API_PUBLIC_URL || productionApiOrigin();
   if (!origin) return path;
   let url;
   try { url = new URL(origin); } catch { throw new Error('The public API origin is invalid.'); }

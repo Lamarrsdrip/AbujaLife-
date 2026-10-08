@@ -62,7 +62,9 @@ async function api(path,options={}) {
  if(path==='/api/wallet/transfer'&&opts.body&&typeof opts.body==='object'&&!opts.body.idempotencyKey)opts.body.idempotencyKey=crypto.randomUUID();
  if(opts.body!==undefined&&typeof opts.body!=='string')opts.body=JSON.stringify(opts.body);
  if(opts.body!==undefined)opts.headers['content-type']='application/json';
- const response=await apiFetch(path,{...opts,signal:opts.signal,timeoutMs:opts.timeoutMs||(path.startsWith('/api/bootstrap')?8000:15000)}),body=await response.json();
+ const response=await apiFetch(path,{...opts,signal:opts.signal,timeoutMs:opts.timeoutMs||(path.startsWith('/api/bootstrap')?8000:15000)});
+ if((response.headers.get('content-type')||'').includes('text/html')){const error=new Error('The city could not be reached. Try again.');throw error;}
+ const body=await response.json();
  if(!response.ok||body.ok===false){const error=new Error(body.error||'Please try again.');error.status=response.status;error.code=body.code;throw error;}
  return body;
 }
@@ -727,20 +729,29 @@ async function boot(){
  root.innerHTML=`<div class="loading-state" role="status" aria-busy="true"><span class="wordmark">${brandMark()}</span><p>Opening your city…</p></div>`;
  // Optional account features never hold the city behind a second request.
  void api('/api/auth/config',{timeoutMs:5000}).then(config=>{authConfig=config;}).catch(()=>{});
- try{
-  await refresh({render:false,startup:true});
-  renderMain();connectRealtime();hydrateStartup();
-  if(authRecovery.snapshot().kind==='verify-email'&&authRecovery.snapshot().status==='pending'){
-   try{await authRecovery.verify();authNotice='Your email address is confirmed.';if(state.authenticated)toast(authNotice);renderMain();}catch{}
+ let error;
+ for(let attempt=0;attempt<3;attempt++){
+  try{
+   await refresh({render:false,startup:true});
+   renderMain();connectRealtime();hydrateStartup();
+   if(authRecovery.snapshot().kind==='verify-email'&&authRecovery.snapshot().status==='pending'){
+    try{await authRecovery.verify();authNotice='Your email address is confirmed.';if(state.authenticated)toast(authNotice);renderMain();}catch{}
+   }
+   const paymentParams=new URLSearchParams(location.search),paymentRef=paymentParams.get('payment_ref') || paymentParams.get('tx_ref');
+   if(state.authenticated && /^abjl_[a-f0-9-]+$/.test(paymentRef || ''))void phone.open('paymentcheckout');
+   return;
+  }catch(failure){
+   if(failure.status===401){expireAccount();return;}
+   error=failure;
+   // A refused connection fails immediately. Retry that. A timeout already
+   // waited out its own deadline, so do not stack more of those.
+   if(failure.name!=='TypeError'||attempt===2)break;
+   await new Promise(resolve=>setTimeout(resolve,400*(attempt+1)));
   }
-  const paymentParams=new URLSearchParams(location.search),paymentRef=paymentParams.get('payment_ref') || paymentParams.get('tx_ref');
-  if(state.authenticated && /^abjl_[a-f0-9-]+$/.test(paymentRef || ''))void phone.open('paymentcheckout');
- }catch(error){
-  if(error.status===401){expireAccount();return;}
-  const slow=error.name==='TimeoutError'||error.name==='AbortError';
-  root.innerHTML=`<div class="loading-state"><span class="wordmark">${brandMark()}</span><h1>${slow?'The city is taking too long.':'Let’s try that again.'}</h1><p>${slow?'Your connection timed out. Reconnect to pick up where you left off.':error.status?esc(error.message):'We can’t reach the city right now. Check your connection and try again.'}</p><button class="primary" id="retry-start">Reconnect</button></div>`;
-  root.querySelector('#retry-start').onclick=boot;
  }
+ const slow=error.name==='TimeoutError'||error.name==='AbortError';
+ root.innerHTML=`<div class="loading-state"><span class="wordmark">${brandMark()}</span><h1>${slow?'The city is taking too long.':'Let’s try that again.'}</h1><p>${slow?'Your connection timed out. Reconnect to pick up where you left off.':error.status?esc(error.message):'We can’t reach the city right now. Check your connection and try again.'}</p><button class="primary" id="retry-start">Reconnect</button></div>`;
+ root.querySelector('#retry-start').onclick=boot;
 }
 // Registration belongs in the same-origin module so the production CSP can
 // reject inline scripts. The self-contained browser preview has no worker.

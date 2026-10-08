@@ -63,6 +63,10 @@ jobs:
         env:
           ABUJALIFE_AD_ARTIFACTS: ${{ runner.temp }}/abujalife-ads
         run: python tests/map-ad-browser.py
+      - name: Blank-land resident and admin advertising journeys
+        env:
+          ABUJALIFE_OPEN_LAND_AD_ARTIFACTS: ${{ runner.temp }}/abujalife-open-land-ads
+        run: python tests/open-land-ads-browser.py
       - name: Current V4 full-client browser acceptance
         env:
           ABUJALIFE_V4_ARTIFACTS: ${{ runner.temp }}/abujalife-v4
@@ -79,6 +83,7 @@ jobs:
             ${{ runner.temp }}/abujalife-browser
             ${{ runner.temp }}/abujalife-hud
             ${{ runner.temp }}/abujalife-ads
+            ${{ runner.temp }}/abujalife-open-land-ads
             ${{ runner.temp }}/abujalife-v4
 
   windows:

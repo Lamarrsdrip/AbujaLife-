@@ -48,7 +48,9 @@ test('the dated public social asset is a complete optimized 1200 by 630 JPEG',()
 
 test('crawler policy permits the public card and HTTP www redirects directly to canonical HTTPS',()=>{
  const robots=fs.readFileSync('app/robots.txt','utf8');
- assert.match(robots,/User-agent: \*\nAllow: \/\n/);assert.doesNotMatch(robots,/Disallow: \/\s*$/m);
+ for(const policy of [robots,robots.replace(/\r?\n/g,'\r\n')]){
+  assert.match(policy,/User-agent: \*\r?\nAllow: \/\r?\n/);assert.doesNotMatch(policy,/Disallow: \/\s*$/m);
+ }
  const caddy=fs.readFileSync('deploy/windows/configure-frontend.ps1','utf8');
  assert.match(caddy,/http:\/\/www\.abujacity\.life\s*\{\s*redir https:\/\/abujacity\.life\{uri\} 308\s*\}/);
  assert.match(caddy,/script-src 'self';/);assert.doesNotMatch(caddy,/script-src[^;]*unsafe-inline/);

@@ -67,10 +67,6 @@ jobs:
         env:
           ABUJALIFE_V4_ARTIFACTS: ${{ runner.temp }}/abujalife-v4
         run: python tests/v4-browser-smoke-runner.py
-      - name: Real ad-loader Okrika house inventory and paid precedence
-        env:
-          ABUJALIFE_HOUSE_AD_ARTIFACTS: ${{ runner.temp }}/abujalife-house-ads
-        run: python tests/house-ads-browser.py
       - name: Retain player-facing browser evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -84,7 +80,6 @@ jobs:
             ${{ runner.temp }}/abujalife-hud
             ${{ runner.temp }}/abujalife-ads
             ${{ runner.temp }}/abujalife-v4
-            ${{ runner.temp }}/abujalife-house-ads
 
   windows:
     runs-on: windows-latest

@@ -5,15 +5,16 @@ import {createMapAdParcels} from '../app/map-ad-parcels.js';
 import {MAP_AD_INVENTORY,COMPATIBILITY_MAP_AD_INVENTORY} from '../src/shared/advertising.mjs';
 
 function camera(x=0,z=0){const view=new THREE.OrthographicCamera(-6000,6000,4500,-4500,1,20000);view.position.set(x,9000,z);view.up.set(0,0,-1);view.lookAt(x,0,z);view.updateProjectionMatrix();view.updateMatrixWorld();return view;}
-test('vacant map inventory has bounded visible boxes without creatives or fabricated campaigns',()=>{
+test('vacant map inventory has bounded visible tiles without creatives or fabricated campaigns',()=>{
  const world=new THREE.Group(),parcels=[...MAP_AD_INVENTORY,...COMPATIBILITY_MAP_AD_INVENTORY];let time=1000;
  const layer=createMapAdParcels(world,parcels,{now:()=>time,maxVisible:12});layer.setView(camera(),{width:1440,height:900});
  assert.equal(world.children.length,2);assert.equal(layer.diagnostics.visibleParcels,12);assert.equal(layer.diagnostics.totalParcels,197);
- assert.equal(world.children[0].material.opacity,.24,'available plots retain a visible light fill in normal city exploration');
- assert.equal(world.children[1].material.opacity,.92,'plot boundaries remain legible outside advertiser mode');
+ assert.equal(world.children[0].material.opacity,.58,'available plots read as map-native ad tiles in normal city exploration');
+ assert.equal(world.children[1].material.opacity,1,'plot boundaries stay crisp without floating labels');
+ assert.ok(world.children[0].instanceColor,'tile fill has per-plot state colour');
  for(const mesh of world.children){assert.equal(mesh.material.map,null);assert.equal(mesh.userData.adParcelIds.length,mesh.count);}
  const picked=parcels[150].id;time+=250;layer.setView(camera(),{width:1440,height:900},{selectedId:picked,advertiseMode:true});
- assert.equal(world.children[0].material.opacity,.62,'advertise mode makes the plot readable at overview zoom');assert.equal(world.children[1].material.opacity,1);
+ assert.equal(world.children[0].material.opacity,.72,'advertise mode strengthens the tile without adding CTA cards');assert.equal(world.children[1].material.opacity,1);
  assert.equal(world.children[0].userData.adParcelIds[0],picked,'selected visible parcel keeps priority at rendering capacity');
  time+=250;layer.setView(camera(25000,25000),{width:1440,height:900});assert.equal(layer.diagnostics.visibleParcels,0);
  layer.dispose();layer.dispose();assert.equal(world.children.length,0);

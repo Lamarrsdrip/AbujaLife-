@@ -13,6 +13,35 @@ function Write-State([hashtable]$State) {
     $State | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $statePath -Encoding UTF8
 }
 
+function Test-AbujaLifeApiHealth {
+    try {
+        $health = Invoke-RestMethod -Uri "http://127.0.0.1:$($config.apiPort)/health" -Method Get -TimeoutSec 3
+        return ($null -ne $health -and $health.ok -eq $true -and $health.storage -eq 'mongodb')
+    } catch {
+        return $false
+    }
+}
+
+function Repair-AbujaLifeApi {
+    if (Test-AbujaLifeApiHealth) { return $true }
+
+    $task = Get-ScheduledTask -TaskName 'AbujaLife-API' -ErrorAction Stop
+    if ($task.State -eq 'Disabled') {
+        throw 'The current release is deployed but the AbujaLife API task is disabled. Use control.ps1 -Action start after confirming maintenance is complete.'
+    }
+
+    if ($task.State -ne 'Running') {
+        Start-ScheduledTask -TaskName 'AbujaLife-API'
+    }
+
+    $deadline = [DateTime]::UtcNow.AddSeconds(30)
+    while ([DateTime]::UtcNow -lt $deadline) {
+        if (Test-AbujaLifeApiHealth) { return $true }
+        Start-Sleep -Milliseconds 750
+    }
+    return $false
+}
+
 try {
     $sha = $null
     $remote = (& $gitPath ls-remote $repo 'refs/heads/main' 2>$null | Select-Object -First 1)
@@ -20,7 +49,13 @@ try {
     $sha = $Matches[1]
     $currentPath = Join-Path $Root 'shared\state\current.json'
     $current = if (Test-Path -LiteralPath $currentPath) { Get-Content $currentPath -Raw | ConvertFrom-Json } else { $null }
-    if ($current -and [string]$current.revision -eq $sha) { exit 0 }
+    if ($current -and [string]$current.revision -eq $sha) {
+        if (-not (Repair-AbujaLifeApi)) {
+            throw 'The current AbujaLife release is deployed, but the API did not become healthy after the supervisor task was restarted.'
+        }
+        Write-State @{ status = 'healthy'; revision = $sha; checkedAt = (Get-Date).ToUniversalTime().ToString('o') }
+        exit 0
+    }
 
     $checks = Invoke-RestMethod -Uri "https://api.github.com/repos/Lamarrsdrip/AbujaLife-/commits/$sha/check-runs" -Headers $headers -Method Get
     $required = @($checks.check_runs | Where-Object { $_.name -in @('qa', 'windows', 'build-and-publish') })

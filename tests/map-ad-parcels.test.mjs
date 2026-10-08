@@ -9,8 +9,11 @@ test('vacant map inventory has bounded visible boxes without creatives or fabric
  const world=new THREE.Group(),parcels=[...MAP_AD_INVENTORY,...COMPATIBILITY_MAP_AD_INVENTORY];let time=1000;
  const layer=createMapAdParcels(world,parcels,{now:()=>time,maxVisible:12});layer.setView(camera(),{width:1440,height:900});
  assert.equal(world.children.length,2);assert.equal(layer.diagnostics.visibleParcels,12);assert.equal(layer.diagnostics.totalParcels,197);
+ assert.equal(world.children[0].material.opacity,.24,'available plots retain a visible light fill in normal city exploration');
+ assert.equal(world.children[1].material.opacity,.92,'plot boundaries remain legible outside advertiser mode');
  for(const mesh of world.children){assert.equal(mesh.material.map,null);assert.equal(mesh.userData.adParcelIds.length,mesh.count);}
  const picked=parcels[150].id;time+=250;layer.setView(camera(),{width:1440,height:900},{selectedId:picked,advertiseMode:true});
+ assert.equal(world.children[0].material.opacity,.62,'advertise mode makes the plot readable at overview zoom');assert.equal(world.children[1].material.opacity,1);
  assert.equal(world.children[0].userData.adParcelIds[0],picked,'selected visible parcel keeps priority at rendering capacity');
  time+=250;layer.setView(camera(25000,25000),{width:1440,height:900});assert.equal(layer.diagnostics.visibleParcels,0);
  layer.dispose();layer.dispose();assert.equal(world.children.length,0);

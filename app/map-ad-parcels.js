@@ -4,10 +4,12 @@ import * as THREE from './vendor/three.module.js';
 // outline the authored parcels without images, DOM cards or per-plot queries.
 export function createMapAdParcels(world, parcels, {now=Date.now,maxVisible=96}={}){
  const shape=new THREE.Shape();shape.moveTo(-.5,-.5);shape.lineTo(.5,-.5);shape.lineTo(.5,.5);shape.lineTo(-.5,.5);shape.closePath();
- const hole=new THREE.Path();hole.moveTo(-.48,-.48);hole.lineTo(-.48,.48);hole.lineTo(.48,.48);hole.lineTo(.48,-.48);hole.closePath();shape.holes.push(hole);
+ // Keep the plot edge thick enough to read at ordinary city zoom. A hairline
+ // border turns into a sub-pixel mark on phones and makes inventory look empty.
+ const hole=new THREE.Path();hole.moveTo(-.41,-.41);hole.lineTo(-.41,.41);hole.lineTo(.41,.41);hole.lineTo(.41,-.41);hole.closePath();shape.holes.push(hole);
  const ring=new THREE.ShapeGeometry(shape),plane=new THREE.PlaneGeometry(1,1);
  const borderMaterial=new THREE.MeshBasicMaterial({color:'#ffffff',transparent:true,opacity:.9,depthWrite:false,toneMapped:false,side:THREE.DoubleSide});
- const fillMaterial=new THREE.MeshBasicMaterial({color:'#f4eed6',transparent:true,opacity:.18,depthWrite:false,toneMapped:false,side:THREE.DoubleSide});
+ const fillMaterial=new THREE.MeshBasicMaterial({color:'#f4eed6',transparent:true,opacity:.24,depthWrite:false,toneMapped:false,side:THREE.DoubleSide});
  const borders=new THREE.InstancedMesh(ring,borderMaterial,maxVisible),fills=new THREE.InstancedMesh(plane,fillMaterial,maxVisible);
  borders.name='advertising-parcel-boundaries';fills.name='advertising-parcel-land';
  for(const mesh of [fills,borders]){mesh.frustumCulled=false;mesh.count=0;mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);world.add(mesh);}
@@ -32,13 +34,13 @@ export function createMapAdParcels(world, parcels, {now=Date.now,maxVisible=96}=
    matrix.compose(new THREE.Vector3(p.x+p.width/2,3.5,p.y+p.height/2),rotation,scale.set(p.width,p.height,1));
    fills.setMatrixAt(index,matrix);matrix.elements[13]=4;borders.setMatrixAt(index,matrix);
    const record=known.get(p.id),reserved=record?.available===false&&Number(new Date(record.expiresAt))>clock;
-   color.set(p.id===selectedId?'#e6af45':reserved?'#6e8172':'#486d56');borders.setColorAt(index,color);
+   color.set(p.id===selectedId?'#e6af45':reserved?'#6e8172':advertiseMode?'#c48b36':'#355d46');borders.setColorAt(index,color);
   });
   // Raycasting caches its instance bounds separately from render culling. The
   // visible batch moves with the camera, so a previous tap's sphere is stale.
   for(const mesh of [fills,borders]){mesh.count=shown.length;mesh.instanceMatrix.needsUpdate=true;mesh.boundingSphere=null;}
   if(borders.instanceColor)borders.instanceColor.needsUpdate=true;
-  borderMaterial.opacity=advertiseMode?1:.9;fillMaterial.opacity=advertiseMode?.28:.18;
+  fillMaterial.color.set(advertiseMode?'#edd69d':'#f4eed6');borderMaterial.opacity=advertiseMode?1:.92;fillMaterial.opacity=advertiseMode?.62:.24;
  }
  return {update,setView,get diagnostics(){return{visibleParcels:borders.count,totalParcels:parcels.length,maxVisible,selectedId:selected,advertiseMode:advertising,drawCalls:2};},dispose(){if(disposed)return;disposed=true;fills.removeFromParent();borders.removeFromParent();fills.dispose();borders.dispose();ring.dispose();plane.dispose();borderMaterial.dispose();fillMaterial.dispose();}};
 }

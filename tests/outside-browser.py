@@ -132,7 +132,7 @@ async def onboarding(page, url, preview=False):
         await form.locator('#begin-life' if step == 4 else '[data-onboarding-next]').click()
     await expect(page.locator('[data-nav-outside]')).to_be_visible()
     profile = (await state(page))['profile']
-    assert profile['onboardingComplete'] and profile['wallet'] in (100000, 1000000), profile
+    assert profile['onboardingComplete'] and profile['wallet'] in (10_000_000, 100_000_000), profile
     return {'origin': profile['origin']['id'], 'startingBalance': profile['wallet'], 'district': profile['district']}
 
 

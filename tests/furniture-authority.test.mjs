@@ -22,12 +22,12 @@ const place=(f,itemId,x=.4,y=.5,extra={})=>f.store.action(f.id,'place-furniture'
 
 test('furniture purchase debits one server price and remains stored until placement, including retry after restart',async t=>{
   const f=await fixture(t),p=f.store.profile(f.id),payload={itemId:'coffee-table',idempotencyKey:key(),price:1,wallet:900000000};
-  const bought=f.store.action(f.id,'purchase',payload);assert.equal(bought.profile.wallet,p.wallet-8000);
+  const bought=f.store.action(f.id,'purchase',payload);assert.equal(bought.profile.wallet,p.wallet-catalog.find(item=>item.id==='coffee-table').price);
   assert.deepEqual(bought.profile.inventory,['coffee-table']);assert.deepEqual(bought.profile.storedFurniture,['coffee-table']);
   assert.equal(buildInterior({profile:bought.profile}).furniturePlacements.length,0);
   f.reopen();const repeated=f.store.action(f.id,'purchase',payload);assert.equal(repeated.replayed,true);assert.equal(repeated.profile.wallet,bought.profile.wallet);
   assert.equal(f.store.transactions(f.id).filter(entry=>entry.reason==='Furniture purchase · Timber coffee table').length,1);
-  assert.throws(()=>f.store.action(f.id,'purchase',{...payload,itemId:'bedside-table'}),error=>error.code==='idempotency_conflict');
+  assert.throws(()=>f.store.action(f.id,'purchase',{idempotencyKey:crypto.randomUUID(),...payload,itemId:'bedside-table'}),error=>error.code==='idempotency_conflict');
   const placed=place(f,'coffee-table').profile;assert.equal(placed.furnitureLayout['coffee-table'].propertyId,p.home.propertyId);assert.deepEqual(placed.storedFurniture,[]);
   f.reopen();assert.deepEqual(f.store.profile(f.id).furnitureLayout,placed.furnitureLayout);assert.equal(f.store.profile(f.id).wallet,bought.profile.wallet);
 });
@@ -74,13 +74,13 @@ test('moving a furnished support carries its objects; storing or selling it retu
   const moved=place(f,'coffee-table',.6,.6,{rotation:90}).profile;assert.deepEqual(moved.furnitureLayout['table-lamp'],{x:.6,y:.6,rotation:90,propertyId:moved.home.propertyId,supportId:'coffee-table'});
   f.store.action(f.id,'store-furniture',{itemId:'coffee-table'});let stored=f.store.profile(f.id);assert.deepEqual(stored.storedFurniture.sort(),['coffee-table','table-lamp']);assert.deepEqual(stored.furnitureLayout,{});assert.deepEqual(stored.inventory.sort(),['coffee-table','table-lamp']);
   place(f,'coffee-table');place(f,'table-lamp',.4,.5,{supportId:'coffee-table'});const wallet=f.store.profile(f.id).wallet;
-  const sold=f.store.action(f.id,'sell-item',{itemId:'coffee-table',idempotencyKey:key()}).profile;assert.equal(sold.wallet,wallet+4000);assert.deepEqual(sold.inventory,['table-lamp']);assert.deepEqual(sold.storedFurniture,['table-lamp']);assert.deepEqual(sold.furnitureLayout,{});
+  const sold=f.store.action(f.id,'sell-item',{itemId:'coffee-table',idempotencyKey:key()}).profile;assert.equal(sold.wallet,wallet+Math.floor(catalog.find(item=>item.id==='coffee-table').price/2));assert.deepEqual(sold.inventory,['table-lamp']);assert.deepEqual(sold.storedFurniture,['table-lamp']);assert.deepEqual(sold.furnitureLayout,{});
 });
 
 test('a placement belongs to its saved property while remaining movable into the current owned home',async t=>{
   const f=await fixture(t);purchase(f,'plant');const saved=place(f,'plant').profile,original=saved.home.propertyId;
-  f.store.topup(f.id,{amount:300000,idempotencyKey:key()});const target=properties.find(item=>item.id==='lugbe-flat');
-  const moved=f.store.action(f.id,'move-home',{propertyId:target.id,tenure:'own'}).profile;assert.equal(moved.furnitureLayout.plant.propertyId,original);
+  const target=properties.find(item=>item.id==='lugbe-flat');f.store.topup(f.id,{amount:target.buy,idempotencyKey:key()});
+  const moved=f.store.action(f.id,'move-home',{idempotencyKey:crypto.randomUUID(),propertyId:target.id,tenure:'own'}).profile;assert.equal(moved.furnitureLayout.plant.propertyId,original);
   const scene=buildInterior({profile:{...moved,location:{kind:'home'}}});assert.equal(scene.furniturePlacements.some(item=>item.itemId==='plant'),false);assert.ok(scene.storedFurniture.includes('plant'));
   // Arranging is permitted only after reaching the resident's actual new home.
   const p=f.store.profile(f.id);p.district=p.home.district;p.location={kind:'home',district:p.home.district};f.store.save(p);

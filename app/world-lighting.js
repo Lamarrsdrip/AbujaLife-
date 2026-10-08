@@ -27,7 +27,9 @@ export function createWorldEnvironmentLighting(T,renderer,{indoors=false,constra
   if(constrained)return{texture:null,dispose(){}};
   const pmrem=new T.PMREMGenerator(renderer);
   const room=buildRoomEnvironment(T,{indoors});
-  const target=pmrem.fromScene(room,indoors?.035:.08,.1,100);
+  // Keep the initial blur within PMREM's 20-sample kernel. Roughness mipmaps
+  // supply the remaining diffusion without clipping a 39-sample outdoor blur.
+  const target=pmrem.fromScene(room,.035,.1,100);
   room.userData.dispose?.();
   pmrem.dispose();
   target.texture.name=indoors?'AbujaLife warm interior IBL':'AbujaLife ambient IBL';

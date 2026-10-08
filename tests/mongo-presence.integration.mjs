@@ -44,10 +44,14 @@ test('Real Mongo HTTP peers receive street, venue and consented home poses, incl
   }
   const [a,b]=await Promise.all([register('a'),register('b')]);
   const [streamA,streamB]=await Promise.all([stream(a),stream(b)]);
+  await stream(b); // A second device must share one authoritative resident zone.
   const action=(account,name,payload={})=>request('/api/action',account,{action:name,payload});
   const nearby=async account=>(await request('/api/presence/nearby',account)).value.nearby;
   const pose=(account,x,activity='walk')=>request('/api/presence',account,{pose:{x,y:800,angle:0,moving:activity==='walk',driving:false,activity}});
   assert.equal((await nearby(a)).some(person=>person.id===b.id),false,'Distinct homes must remain private');
+  const visitSession=await app.store.collection('sessions').findOne({residentId:a.id});
+  assert.ok(Number.isSafeInteger(visitSession.lastCityVisitAt),'entering the real city must record its tracked visit');
+  assert.equal(Object.hasOwn(visitSession,'cityVisitBucket'),false,'the legacy bucket is removed after migration');
   await action(a,'leave-home');await action(b,'leave-home');
   await streamA.wait(event=>event.type==='presence'&&event.data.resident.id===b.id&&event.data.resident.location?.kind==='public');
   assert.ok((await nearby(a)).some(person=>person.id===b.id));
@@ -60,10 +64,14 @@ test('Real Mongo HTTP peers receive street, venue and consented home poses, incl
   await action(a,'enter-venue',{venueId:'restaurant'});await action(b,'enter-venue',{venueId:'restaurant'});
   await streamA.wait(event=>event.type==='presence'&&event.data.resident.id===b.id&&event.data.resident.location?.kind==='venue');
   assert.ok((await nearby(a)).some(person=>person.id===b.id&&person.location.kind==='venue'));
+  const venueZone=await app.presence.zone(b.id),venueLeases=await app.store.collection('presence_sessions').find({residentId:b.id}).toArray();
+  assert.ok(venueLeases.every(lease=>lease.zone===venueZone),'every device lease must leave the previous building when its resident travels');
   await pose(b,650,'eat');
   const meal=await streamA.wait(event=>event.type==='world-pose'&&event.data.residentId===b.id&&event.data.pose.x===650);
   assert.equal(meal.data.pose.activity,'eat');assert.match(meal.data.zone,/^venue:.*:restaurant$/);
   await request('/api/profile',b,{settings:{presenceVisible:false}});
+  const hiddenLeases=await app.store.collection('presence_sessions').find({residentId:b.id}).toArray();
+  assert.ok(hiddenLeases.length>0);assert.ok(hiddenLeases.every(lease=>lease.presenceVisible===false),'privacy must immediately hide every stream and heartbeat lease');
   assert.equal((await nearby(a)).some(person=>person.id===b.id),false);
   await pose(b,777,'eat');await delay(150);
   assert.equal(streamA.events.some(event=>event.type==='world-pose'&&event.data.residentId===b.id&&event.data.pose.x===777),false,'A hidden resident must not broadcast movement');

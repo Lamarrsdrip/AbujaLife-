@@ -25,6 +25,7 @@ const indexes = Object.freeze({
     [{ residentId: 1, createdAt: -1 }, {}],
   ],
   jackpot_deposit_orders: [
+    [{ status: 1, nextReconcileAt: 1, createdAt: 1 }, {}],
     [{ txRef: 1 }, { unique: true }],
     [{ residentId: 1, operationKey: 1 }, { unique: true }],
     [{ transactionId: 1 }, { unique: true, partialFilterExpression: { transactionId: { $type: 'string' } } }],
@@ -58,5 +59,18 @@ export async function ensureMongoJackpotSchema(db) {
   for (const [name, definitions] of Object.entries(indexes)) {
     for (const [key, options] of definitions) await db.collection(name).createIndex(key, options);
   }
+  await migrateJackpotWithdrawalFingerprints(db);
   return { collections: [...JACKPOT_COLLECTIONS] };
 }
+
+export async function migrateJackpotWithdrawalFingerprints(db){
+  const withdrawals=db.collection('jackpot_withdrawals');
+  // Old replay fingerprints included the full bank account number even though
+  // encryptedBank was encrypted. Bootstrap scrubs all such rows, including
+  // completed payouts, while preserving the original replay identity.
+  for await(const row of withdrawals.find({fingerprint:/^\{/},{projection:{_id:1,fingerprint:1}}).batchSize(200)){
+    const fingerprint=crypto.createHash('sha256').update(row.fingerprint).digest('hex');
+    await withdrawals.updateOne({_id:row._id,fingerprint:row.fingerprint},{$set:{fingerprint}});
+  }
+}
+import crypto from 'node:crypto';

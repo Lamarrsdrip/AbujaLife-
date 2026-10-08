@@ -26,6 +26,8 @@ Set `ABUJALIFE_PUBLIC_ORIGIN` to the game's public HTTPS origin, or enter that o
 
 Full-server free demonstration top-ups are disabled by default. The anonymous preview continues to offer clearly labeled local game funds. The administrator can explicitly enable free demonstration top-ups through **Settings**. Neither purchased game Naira nor free preview funds provide a withdrawal facility.
 
+Community Jackpot uses a separate funded account and ledger. When configured, provider-verified deposits fund that account and room winnings remain there. A resident can request a bank withdrawal from the Jackpot balance; the finance-admin flow reviews the request and records payment or returns a rejected hold. The current withdrawal quote retains a 10% fee when paid. This does not permit cash withdrawal from the ordinary AbujaLife game wallet or preview funds. See [the current product currency boundaries](../README.md#naira-and-community-jackpot).
+
 Checkout sends the server's saved NGN amount, unique reference, customer receipt email and configured callback origin to Flutterwave's `/v3/payments` API. Only an HTTPS URL on `flutterwave.com` or its subdomains is accepted as a returned checkout link. The amount and credit rate are selected on the server, not by a client assertion that payment succeeded.
 
 After checkout, the server fetches `/v3/transactions/:id/verify`. Before crediting, it requires all of the following to match the saved order:

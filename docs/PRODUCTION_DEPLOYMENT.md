@@ -96,6 +96,8 @@ The server chooses prices, ownership, income and balances. Credits/transfers use
 
 Realtime is authenticated **Server-Sent Events**, with REST for client actions, presence, messaging, typing, delivered/read state, notifications and events. Caddy flushes streams immediately. The API bounds connections and event/request rates; it does not poll Mongo every second. Redis is unnecessary for this single-process release. Multiple API replicas will require shared fanout/presence infrastructure before horizontal scaling.
 
+The current guards permit at most 5,000 SSE connections per API process, five connections per resident and 30 connection attempts per resident per minute. These are rejection limits, not measured capacity guarantees. Movement fanout uses the authoritative zone index, nearby responses are bounded to 50 residents, and event streams close when their pending write buffer exceeds 256 KiB. Restart closes the live streams before draining HTTP, allowing clients to reconnect to the promoted process. Presence leases and stats deduplicate multiple connections for one resident, but movement poses and message fanout remain process-local. Running multiple API workers without distributed fanout would miss peer events; this release is not certified for millions of simultaneous residents.
+
 ## DNS, HTTPS and Hostinger
 
 Hostinger is currently authoritative through `horizon.dns-parking.com` and `orbit.dns-parking.com`. The API A record is `api → 173.212.249.202`, TTL 300. Before DNS cutover, the root domain still resolves to Hostinger and the configured Caddy frontend is origin-ready but not yet the public web origin. No MongoDB/API ports are exposed for this change; Okrika DNS remains unchanged.

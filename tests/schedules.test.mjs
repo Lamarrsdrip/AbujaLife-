@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { GameStore, jobs } from '../src/server/gameStore.mjs';
 import { VENUES, NIGHTCLUB_IDS, actionsForVenue } from '../src/shared/life.mjs';
 import { ABUJA_ATLAS } from '../src/shared/atlas.mjs';
@@ -32,7 +33,7 @@ test('bank work respects real Abuja weekdays and the client cannot supply a diff
 
 test('two slots per real day persist across restarts and job switching cannot replay a completed slot', async t => {
   const f = await fixture(t); f.workplace('bank-teller'); const first = f.complete();
-  assert.equal(first.result.pay, 7800); assert.equal(first.workSchedule.completedToday, 1); assert.equal(first.workSchedule.remainingToday, 1);
+  assert.equal(first.result.pay, jobs['bank-teller'].pay); assert.equal(first.workSchedule.completedToday, 1); assert.equal(first.workSchedule.remainingToday, 1);
   const answers = jobs['bank-teller'].tasks.map(task => ({ taskId: task.id, optionId: task.answer }));
   const replay = f.store.action(f.id, 'complete-shift', { challengeId: first.result.challengeId, answers }); assert.equal(replay.profile.wallet, first.profile.wallet);
   f.advance(20000); rejects(() => f.store.action(f.id, 'start-shift'), 'shift_slot_completed');

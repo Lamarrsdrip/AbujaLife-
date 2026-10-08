@@ -1,3 +1,6 @@
+import { ECONOMY_CONFIG, VEHICLE_PRICES } from '../src/shared/economy.mjs';
+import { catalog, properties } from '../src/shared/catalogue.mjs';
+import { INVESTMENT_META } from '../src/shared/life.mjs';
 // Tests the real browser adapter through intercepted fetch without launching a GPU.
 // Only app startup is omitted; every game mutation uses the actual adapter API.
 // LEGACY_SAVE was captured from the pre-origin adapter initializer for migration.
@@ -35,21 +38,14 @@ function fixture({ storage = /* @__PURE__ */ new Map(), time = "2026-10-05T09:00
   } }, structuredClone, URL, Request, Response, Event, EventTarget, MessageEvent, DOMException, Blob, atob, btoa, queueMicrotask, addEventListener: events.addEventListener.bind(events), dispatchEvent: events.dispatchEvent.bind(events), fetch: async () => {
     throw new Error("External network was not authorized by this preview test");
   } });
-  context.location.reload = () => {
-  };
+  context.location.reload = () => {};
   vm.runInContext(source2, context);
   async function request(route, body, expected = 200) {
     const response = await context.fetch(`https://preview.test${route}`, body === void 0 ? {} : { method: "POST", body: JSON.stringify(body) }), data = await response.json();
     assert.equal(response.status, expected, JSON.stringify(data));
     return data;
   }
-  return { request, storage, randomNext: value => random.push(value), reset: () => context.dispatchEvent(new Event("abujalife:reset-preview")), get randomCalls() {
-    return calls;
-  }, at: (time2) => {
-    now = Date.parse(time2);
-  }, advance: (ms) => {
-    now += ms;
-  }, now: () => now, action: (action, payload = {}, status = 200) => request("/api/action", { action, payload }, status) };
+  return { request, storage, randomNext: value => random.push(value), reset: () => context.dispatchEvent(new Event("abujalife:reset-preview")), get randomCalls() { return calls; }, at: (time2) => { now = Date.parse(time2); }, advance: (ms) => { now += ms; }, now: () => now, action: (action, payload = {}, status = 200) => request("/api/action", { action, payload }, status) };
 }
 const key = () => crypto.randomUUID();
 const LEGACY_SAVE = { "version": 1, "profile": { "id": "browser-preview", "username": "preview_resident", "displayName": "Preview resident", "appearance": { "skinTone": "brown", "face": "oval", "body": "regular", "hair": "crop", "facialHair": "none", "presentation": "neutral", "top": "forest", "bottom": "charcoal", "shoes": "white", "accessory": "none" }, "wallet": 26e3, "energy": 82, "hunger": 72, "hygiene": 88, "social": 58, "fun": 64, "stress": 12, "mood": 76, "reputation": 0, "district": "garki-i", "location": { "kind": "home", "district": "garki-i", "venue": "home" }, "home": { "propertyId": "garki-studio", "name": "Garki starter studio", "district": "garki-i", "tenure": "starter" }, "job": null, "careerLevel": 1, "skills": {}, "inventory": [], "ownedProperties": [], "onboardingComplete": false, "lifeGoal": "explore", "drivingVehicle": null, "furnitureLayout": {}, "storedFurniture": [], "propertyInvestments": {}, "vehicleColors": {}, "gambleHistory": [], "lastGambleRound": null, "settings": { "presenceVisible": false, "allowInvites": false, "soundEnabled": true }, "activeTrip": null, "activeShift": null, "completedShifts": 0, "nextShiftAt": 0, "lastActionAt": 17911908e5, "billsPaidAt": 17911908e5, "rentPaidAt": 17911908e5, "createdAt": 17911908e5 }, "challenge": null, "completedChallenges": {}, "economyOperations": {}, "notifications": [{ "id": "ec887fb3-d011-4b73-8abb-c8bcb0350d8c", "kind": "preview", "title": "Your browser preview", "body": "Explore on your own. Progress saves in this browser; public multiplayer is unavailable.", "link": "home", "createdAt": 17911908e5, "readAt": null }], "transactions": [{ "id": "3b414b96-7a98-4f29-9f9c-719a7b29653a", "amount": 26e3, "reason": "Preview starting balance", "createdAt": 17911908e5 }] };
@@ -71,11 +67,11 @@ await test("WebCrypto rejection sampling and one-time durable origins", async ()
   const f = fixture({ random: [1, 4294967295, 0] }), state = await f.request("/api/bootstrap");
   assert.ok(f.randomCalls >= 3, "Origin rejection sampling and randomized avatar both use secure entropy");
   assert.equal(state.profile.origin.id, "lapo");
-  assert.equal(state.profile.wallet, 1e5);
+  assert.equal(state.profile.wallet, ECONOMY_CONFIG.startingMoney.lapo);
   assert.equal(state.profile.home.district, "lugbe");
   assert.equal(state.profile.home.layoutId, "garki-studio");
   assert.equal(state.properties.at(-1).id, state.profile.home.propertyId);
-  assert.equal(state.venues.length, 20);
+  assert.deepEqual(state.venues.map(venue=>venue.id), VENUES.map(venue=>venue.id));
   assert.equal(state.clock.timeZone, "Africa/Lagos");
   assert.equal(state.weather.verified, false);
   assert.equal(state.weather.source, "seasonal-simulation");
@@ -85,7 +81,7 @@ await test("WebCrypto rejection sampling and one-time durable origins", async ()
   assert.equal(second.randomCalls, 0);
   const nepo = await fixture({ random: [0, 2] }).request("/api/bootstrap");
   assert.equal(nepo.profile.origin.id, "nepo");
-  assert.equal(nepo.profile.wallet, 1e6);
+  assert.equal(nepo.profile.wallet, ECONOMY_CONFIG.startingMoney.nepo);
   assert.equal(nepo.profile.home.district, "maitama");
   assert.ok(nepo.profile.ownedProperties.includes(nepo.profile.home.propertyId));
 });
@@ -93,7 +89,7 @@ await test("consenting loan borrowing, repayment and reload-safe idempotency", a
   const f = fixture(), payload = { amount: 1e5, consent: true, consentVersion: "game-loan-v1", idempotencyKey: key() };
   assert.equal((await f.action("borrow-loan", { ...payload, consent: false }, 400)).code, "loan_consent_required");
   const borrowed = await f.action("borrow-loan", payload);
-  assert.equal(borrowed.profile.wallet, 2e5);
+  assert.equal(borrowed.profile.wallet, ECONOMY_CONFIG.startingMoney.lapo + payload.amount);
   assert.equal(borrowed.loan.fee, 5e3);
   assert.equal(borrowed.loan.outstanding, 105e3);
   const partial = { loanId: borrowed.loan.id, amount: 3e4, idempotencyKey: key() };
@@ -101,7 +97,7 @@ await test("consenting loan borrowing, repayment and reload-safe idempotency", a
   const reopened = fixture({ storage: f.storage });
   assert.equal((await reopened.action("borrow-loan", payload)).replayed, true);
   assert.equal((await reopened.action("repay-loan", partial)).replayed, true);
-  assert.equal((await reopened.request("/api/wallet")).profile.wallet, 17e4);
+  assert.equal((await reopened.request("/api/wallet")).profile.wallet, ECONOMY_CONFIG.startingMoney.lapo + payload.amount - partial.amount);
   assert.equal((await reopened.request("/api/wallet")).loans[0].outstanding, 75e3);
   const before = await reopened.request("/api/wallet");
   await reopened.action("repay-loan", { ...partial, amount: 75001, idempotencyKey: key() }, 400);
@@ -113,19 +109,19 @@ await test("uncapped game funds and rent, exact overflow rollback, vehicle/dice 
   const f = fixture({ random: [1, 0, 0] }), funds = { amount: 25e7, idempotencyKey: key() };
   await f.request("/api/wallet/topup", funds);
   assert.equal((await f.request("/api/wallet/topup", funds)).replayed, true);
-  assert.equal((await f.request("/api/wallet")).profile.wallet, 2501e5);
+  assert.equal((await f.request("/api/wallet")).profile.wallet, ECONOMY_CONFIG.startingMoney.lapo + funds.amount);
   const overflow = { amount: Number.MAX_SAFE_INTEGER, idempotencyKey: key() }, before = await f.request("/api/wallet");
   assert.equal((await f.request("/api/wallet/topup", overflow, 409)).code, "numeric_limit");
   assert.deepEqual(await f.request("/api/wallet"), before);
   const bought = await f.action("purchase", { itemId: "compact-car", color: "blue", idempotencyKey: key() });
   assert.equal(bought.profile.vehicleColors["compact-car"], "blue");
   await f.action("buy-investment", { propertyId: "lugbe-flat", idempotencyKey: key() });
-  f.advance(6e4 * 1e3);
+  f.advance(INVESTMENT_META.periodMs * 1000);
   const collected = await f.action("collect-rent", { propertyId: "lugbe-flat", idempotencyKey: key() });
-  assert.equal(collected.income.amount, 56e4);
+  assert.equal(collected.income.amount, properties.find(item=>item.id==='lugbe-flat').investmentIncome * 1000);
   await f.action("leave-home");
   await f.action("enter-venue", { venueId: "games-lounge" });
-  f.randomNext(0); // The next verified draw belongs to this round, independent of avatar entropy.
+  f.randomNext(0);
   const round = await f.action("play-dice", { stake: 1e7, choice: "low", idempotencyKey: key() });
   assert.equal(round.round.stake, 1e7);
   assert.equal(round.round.die, 1);
@@ -188,9 +184,7 @@ await test("home editor route validation and persistent styling use the personal
   assert.deepEqual(saved.profile.home.roomStyle, roomStyle);
   assert.equal(saved.profile.home.layoutId, "garki-studio");
   assert.equal((await f.action("design-home", { roomStyle: { wall: "bad", floor: "tile", partitions: [] } }, 400)).ok, false);
-  const blocked = await f.action("design-home", {
-    roomStyle: { ...roomStyle, partitions: [{ id: "blocked-entrance", x: .4, y: .9, w: .2, h: .02 }] }
-  }, 400);
+  const blocked = await f.action("design-home", { roomStyle: { ...roomStyle, partitions: [{ id: "blocked-entrance", x: .4, y: .9, w: .2, h: .02 }] } }, 400);
   assert.equal(blocked.code, "home_route_blocked");
   assert.deepEqual((await f.request("/api/bootstrap")).profile.home.roomStyle, roomStyle);
   await f.action("leave-home");
@@ -250,29 +244,27 @@ await test("legacy adapter saves retain money/home and remain origin-free until 
   assert.deepEqual(after.profile.home, before.profile.home);
   assert.equal(after.profile.origin, null);
   const bought = await upgraded.action("purchase", { itemId: "plant" });
-  assert.equal(bought.profile.wallet, 23700);
+  assert.equal(bought.profile.wallet, before.profile.wallet-catalog.find(item=>item.id==='plant').price);
   const again = await fixture({ storage }).request("/api/bootstrap");
-  assert.equal(again.profile.wallet, 23700);
+  assert.equal(again.profile.wallet, bought.profile.wallet);
   assert.ok(again.profile.inventory.includes("plant"));
   assert.equal(again.profile.origin, null);
   upgraded.reset();
   const fresh = await upgraded.request("/api/bootstrap");
   assert.equal(fresh.profile.origin.id, "lapo");
-  assert.equal(fresh.profile.wallet, 1e5);
+  assert.equal(fresh.profile.wallet, ECONOMY_CONFIG.startingMoney.lapo);
   assert.deepEqual(fresh.profile.inventory, []);
 });
-
 await test("local venue rides charge the quoted fare and physical walking remains free", async () => {
   const f = fixture(), before = await f.request("/api/bootstrap"), district = before.profile.district;
   assert.ok(before.transportModes.some(mode => mode.id === "bike"));
   const route = `/api/travel/quote?district=${district}&mode=taxi&venueId=restaurant`;
   const { quote } = await f.request(route);
   assert.equal(quote.venueId, "restaurant");
-  assert.equal(quote.cost, 830);
+  assert.equal(quote.cost, ECONOMY_CONFIG.transport.taxi.base+4*ECONOMY_CONFIG.transport.taxi.perDistance);
   assert.equal(quote.seconds, 14);
-  for (const [mode, cost] of [["bus", 330], ["bike", 420], ["ride", 1080]]) {
-    assert.deepEqual((await f.request(`/api/travel/quote?district=${district}&mode=${mode}&venueId=restaurant`)).quote,
-      { destination: district, mode, cost, seconds: 14, venueId: "restaurant" });
+  for (const [mode, cost] of ["bus","bike","ride"].map(mode=>[mode,ECONOMY_CONFIG.transport[mode].base+4*ECONOMY_CONFIG.transport[mode].perDistance])) {
+    assert.deepEqual((await f.request(`/api/travel/quote?district=${district}&mode=${mode}&venueId=restaurant`)).quote, { destination: district, mode, cost, seconds: 14, venueId: "restaurant" });
   }
   assert.equal((await f.request(`/api/travel/quote?district=${district}&mode=walk&venueId=restaurant`)).quote.cost, 0);
   assert.deepEqual((await f.request("/api/bootstrap")).profile, before.profile);
@@ -303,7 +295,6 @@ await test("local venue rides charge the quoted fare and physical walking remain
   assert.equal(arrived.profile.wallet, before.profile.wallet - quote.cost);
   assert.equal((await f.request("/api/wallet")).transactions[0].amount, -quote.cost);
 });
-
 await test("Abuja Car exit retains its own street arrival across preview reload and ignores forged home entry", async () => {
   const f = fixture(), original = (await f.request('/api/bootstrap')).profile;
   await f.action('leave-home');
@@ -326,7 +317,6 @@ await test("Abuja Car exit retains its own street arrival across preview reload 
   assert.equal(home.location.exteriorEntry, undefined);
   assert.equal(home.home.propertyId, original.home.propertyId);
 });
-
 await test("venue transport validates destinations, departure and funds before mutating progress", async () => {
   const f = fixture(), initial = await f.request("/api/bootstrap"), district = initial.profile.district;
   const before = await f.request("/api/wallet");
@@ -362,7 +352,6 @@ await test("venue transport validates destinations, departure and funds before m
   await empty.action("travel", { district, mode: "bike", venueId: "restaurant" }, 400);
   assert.deepEqual(await empty.request("/api/wallet"), emptyBefore);
 });
-
 await test("bike venue trips survive reload, auto-enter across districts and retain the home route", async () => {
   const f = fixture(), start = (await f.request("/api/bootstrap")).profile;
   await f.action("leave-home");
@@ -373,7 +362,6 @@ await test("bike venue trips survive reload, auto-enter across districts and ret
   assert.equal(departure.trip.seconds, quote.seconds);
   assert.equal(departure.profile.wallet, start.wallet - quote.cost);
   const reopened = fixture({ storage: f.storage, time: new Date(f.now() + quote.seconds * 1e3).toISOString() });
-  // Validate a persisted target again at arrival, before any progress mutation.
   const invalidSave = JSON.parse(f.storage.get("abujalife.browser-preview.v1"));
   invalidSave.profile.activeTrip.venueId = "unknown-place";
   const invalid = fixture({ storage: new Map([["abujalife.browser-preview.v1", JSON.stringify(invalidSave)]]), time: new Date(f.now() + quote.seconds * 1e3).toISOString() });
@@ -393,10 +381,9 @@ await test("bike venue trips survive reload, auto-enter across districts and ret
   assert.deepEqual(settled.profile.location, { kind: "home", district: start.home.district, venue: "home" });
   assert.equal(settled.profile.wallet, start.wallet - quote.cost - homeQuote.cost);
 });
-
 await test("owned car venue arrival parks while district-only legacy fares and arrivals are preserved", async () => {
   const f = fixture(), start = (await f.request("/api/bootstrap")).profile, district = start.district;
-  await f.request("/api/wallet/topup", { amount: 1e6, idempotencyKey: key() });
+  await f.request("/api/wallet/topup", { amount: VEHICLE_PRICES['compact-car'], idempotencyKey: key() });
   await f.action("purchase", { itemId: "compact-car", idempotencyKey: key() });
   await f.action("leave-home");
   await f.action("toggle-driving", { vehicleId: "compact-car" });
@@ -421,9 +408,8 @@ await test("owned car venue arrival parks while district-only legacy fares and a
   }
   const state = await f.request("/api/bootstrap"), destination = "jabi";
   const distance = Math.max(4, Math.round(((state.atlas.find(place => place.id === destination).commute || 35) + (state.atlas.find(place => place.id === district).commute || 35)) / 3));
-  const expectedCost = 650 + distance * 45;
+  const expectedCost = ECONOMY_CONFIG.transport.taxi.base + distance * ECONOMY_CONFIG.transport.taxi.perDistance;
   assert.equal((await f.request(`/api/travel/quote?district=${destination}&mode=taxi`)).quote.cost, expectedCost);
-  // District-only requests retain the existing ability to depart directly from home.
   const legacy = await f.action("travel", { district: destination, mode: "taxi" });
   assert.equal(legacy.trip.venueId, undefined);
   assert.equal(legacy.trip.cost, expectedCost);

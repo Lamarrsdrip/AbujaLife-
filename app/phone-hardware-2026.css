@@ -1,0 +1,75 @@
+/* AbujaLife Phone is an in-game handset overlay. The 3D world remains mounted behind it. */
+#phone-root.phone-root{pointer-events:none;isolation:isolate;position:fixed;inset:auto;top:var(--ph-viewport-top,0px);left:var(--ph-viewport-left,0px);width:var(--ph-viewport-width,100vw);height:var(--ph-viewport-height,100dvh);padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
+body.phone-is-open{position:fixed;top:var(--ph-page-scroll,0px);left:0;right:0;width:100%;overflow:hidden;overscroll-behavior:none}
+#phone-root.phone-root[hidden]{display:none}
+#phone-root.phone-root .ph-backdrop{
+  pointer-events:auto;
+  position:absolute;inset:0;
+  padding:0;overflow:hidden;overscroll-behavior:none;
+  background:radial-gradient(circle at 50% 44%,rgba(13,29,24,.08),rgba(7,17,13,.42));
+  backdrop-filter:none;
+  -webkit-backdrop-filter:none;
+}
+#phone-root.phone-root .ph-device{
+  position:absolute;
+  width:390px;
+  height:823px;
+  aspect-ratio:390/823;
+  max-height:none;
+  left:var(--ph-viewport-x,50%);
+  top:var(--ph-viewport-y,50%);
+  padding:7px;
+  border:1px solid #9b9d93;
+  border-radius:49px;
+  background:linear-gradient(103deg,#292e2a 0%,#8b9088 2.5%,#e7e6db 5.5%,#9da198 7.5%,#373d37 11%,#181d19 15%,#c3c4b9 86%,#efeee2 90%,#737970 93%,#242925 98%);
+  box-shadow:0 34px 86px rgba(0,0,0,.5),0 0 0 2px #1b201c,0 0 0 4px #858a80,inset 0 0 0 1px rgba(255,255,255,.3),inset 0 -3px 7px rgba(8,12,9,.45);
+  transform:translate(-50%,-50%) scale(var(--ph-device-scale,.8));
+  transform-origin:center;
+  contain:layout;
+}
+#phone-root.phone-root .ph-device::before{
+  content:"";
+  position:absolute;
+  inset:3px;
+  border-radius:inherit;
+  border:1px solid rgba(255,255,255,.2);
+  box-shadow:inset 0 0 0 2px rgba(14,18,15,.34),inset 0 1px 2px rgba(255,255,255,.16);
+  pointer-events:none;
+}
+#phone-root.phone-root .ph-screen{
+  height:100%;
+  min-height:0;
+  border:3px solid #101410;
+  border-radius:42px;
+  overflow:hidden;
+  clip-path:inset(0 round 42px);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.07),inset 0 8px 18px rgba(255,255,255,.025);
+  isolation:isolate;
+}
+#phone-root.phone-root .ph-island{top:11px;box-shadow:inset 0 1px rgba(255,255,255,.035),0 1px 4px rgba(0,0,0,.28)}
+#phone-root.phone-root .ph-statusbar{padding-inline:23px;min-height:49px;flex-basis:49px}
+#phone-root.phone-root .ph-status-icons{gap:5px}
+#phone-root.phone-root .ph-status-icons>.ph-icon{width:15px;height:15px}
+#phone-root.phone-root .ph-status-icons .ph-network-type{font-size:9px;font-weight:750;letter-spacing:-.03em;margin:0 2px}
+#phone-root.phone-root .ph-status-icons .ph-battery{width:22px;height:11px}
+#phone-root.phone-root .ph-hardware{z-index:-1;box-shadow:inset 1px 0 rgba(255,255,255,.2)}
+#phone-root.phone-root .ph-action-button{left:-5px;top:90px}
+#phone-root.phone-root .ph-volume{left:-5px;top:132px;height:68px}
+#phone-root.phone-root .ph-power{right:-5px;top:154px;height:61px}
+#phone-root.phone-root .ph-device-caption{top:-47px;right:1px;left:auto;z-index:4;pointer-events:none;padding:0;text-shadow:none}
+#phone-root.phone-root .ph-device-caption>span{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+#phone-root.phone-root .ph-device-caption button{pointer-events:auto;min-height:38px;padding:0 15px;gap:6px;border:1px solid rgba(18,31,25,.08);border-radius:999px;background:rgba(255,255,255,.96);color:#202722;font-size:13px;font-weight:600;box-shadow:0 7px 22px rgba(0,0,0,.18);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+#phone-root.phone-root .ph-device-caption button:active{transform:scale(.97)}
+#phone-root.phone-root .ph-device-caption button .ph-icon{width:15px;height:15px}
+#phone-root.phone-root .ph-app-content,#phone-root.phone-root .ph-home-content,#phone-root.phone-root .ph-lock-content{min-width:0;min-height:0}
+#phone-root.phone-root .ph-scroll{overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+#phone-root.phone-root .ph-app,#phone-root.phone-root .ph-home,#phone-root.phone-root .ph-locked{overflow:hidden}
+#phone-root.phone-root .ph-app-content>*{max-width:100%}
+#phone-root.phone-root input,#phone-root.phone-root textarea,#phone-root.phone-root select{font-size:16px}
+
+/* Keyboard changes one whole-device transform, never the screen/frame ratio. */
+#phone-root.phone-root.phone-keyboard-open .ph-thread-scroll{scroll-padding-bottom:92px}
+#phone-root.phone-root .ph-composer{position:relative;z-index:6;flex-shrink:0}
+@media(min-width:900px){#phone-root.phone-root .ph-backdrop{background:radial-gradient(circle at 50% 45%,rgba(13,29,24,.05),rgba(7,17,13,.34))}}
+
+.ph-bank-card>strong,.ph-wallet-summary>strong,.ph-money-review-amount>strong,.ph-review-card>strong,.ph-wallet-receipt h2,.ph-wallet-widget>strong{white-space:nowrap;word-break:normal;overflow-wrap:normal;font-variant-numeric:tabular-nums;max-width:100%;min-width:0}

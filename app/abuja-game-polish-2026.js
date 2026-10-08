@@ -48,25 +48,8 @@ function auditPhone(scope=document){
   scope.querySelectorAll?.('#ph-device-name,.ph-about strong').forEach(label=>{if(/iphone/i.test(label.textContent||''))label.textContent='AbujaLife Phone';});
 }
 
-function syncPhoneViewport(){
-  if(!phoneRoot)return;
-  const mobile=globalThis.matchMedia?.('(max-width: 700px)').matches===true;
-  if(!mobile){phoneRoot.style.removeProperty('--abj-phone-vh');phoneRoot.style.removeProperty('--abj-phone-vtop');phoneRoot.classList.remove('abj-phone-input-active');return;}
-  const viewport=globalThis.visualViewport;
-  const height=Math.max(240,Math.round(viewport?.height||globalThis.innerHeight||700));
-  const top=Math.max(0,Math.round(viewport?.offsetTop||0));
-  phoneRoot.style.setProperty('--abj-phone-vh',`${height}px`);
-  phoneRoot.style.setProperty('--abj-phone-vtop',`${top}px`);
-  const focused=phoneRoot.contains(document.activeElement)&&document.activeElement?.matches?.('input,textarea,select');
-  phoneRoot.classList.toggle('abj-phone-input-active',Boolean(focused));
-}
-
 function decorate(scope=document){fixHeaderIcon(scope);cleanMyLife(scope);ensureMapNav(scope);ensureWholeCityButton(scope);auditPhone(scope);}
-decorate();syncPhoneViewport();
-const observer=new MutationObserver(records=>{for(const record of records)for(const node of record.addedNodes){if(!(node instanceof Element))continue;decorate(node);decorate(document);}syncPhoneViewport();});
+decorate();
+const observer=new MutationObserver(records=>{for(const record of records)for(const node of record.addedNodes){if(!(node instanceof Element))continue;decorate(node);decorate(document);}});
 observer.observe(document.documentElement,{childList:true,subtree:true});
 addEventListener('hashchange',()=>queueMicrotask(()=>decorate()));
-addEventListener('resize',syncPhoneViewport,{passive:true});
-visualViewport?.addEventListener('resize',syncPhoneViewport,{passive:true});
-visualViewport?.addEventListener('scroll',syncPhoneViewport,{passive:true});
-document.addEventListener('focusin',syncPhoneViewport);document.addEventListener('focusout',()=>requestAnimationFrame(syncPhoneViewport));

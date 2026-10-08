@@ -40,9 +40,10 @@ test('explicitly stored furniture stays owned and out of the rendered room after
 
 test('every home preserves walking routes with the complete expanded inventory and rotated saved layouts',()=>{
   assert.ok(furniture.length>=54);
-  assert.equal(properties.length,6);
+  assert.ok(properties.length>=18,'expanded Abuja housing catalogue should stay broad');
+  assert.equal(new Set(properties.map(home=>home.id)).size,properties.length);
   for(const home of properties)for(const mode of ['empty','all','rotated']){
-    const profile=homeProfile(home.id,{inventory:mode==='empty'?[]:furniture,furnitureLayout:mode==='rotated'?Object.fromEntries(furniture.map((id,i)=>[id,{x:(i%4+1)/5,y:(Math.floor(i/4)+1)/6,rotation:i%2?90:270}])):{}});
+    const profile=homeProfile(home.id,{home:{propertyId:home.id,layoutId:home.layoutId},inventory:mode==='empty'?[]:furniture,furnitureLayout:mode==='rotated'?Object.fromEntries(furniture.map((id,i)=>[id,{x:(i%4+1)/5,y:(Math.floor(i/4)+1)/6,rotation:i%2?90:270}])):{}});
     const scene=buildInterior({profile});
     assert.equal(furniturePlacementPreservesRoutes(scene,null),true,`${home.id}: ${mode}`);
     assert.equal(scene.furniturePlacements.length+scene.storedFurniture.length,profile.inventory.length,`${home.id}: every owned item is placed or stored`);

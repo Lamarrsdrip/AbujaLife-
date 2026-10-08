@@ -276,6 +276,8 @@ async def aim_piece(page, item_id, candidate, mobile=True):
 
 
 async def confirm_place(page, item_id):
+    scene_node=await page.locator('#world-scene').element_handle()
+    revision=int(await page.locator('#world-scene').get_attribute('data-furniture-reconciled') or 0)
     await expect(page.locator('[data-world-control="place-furniture"]')).to_be_enabled()
     async with page.expect_response(lambda response: urlsplit(response.url).path == '/api/action' and response.request.method == 'POST' and response.request.post_data_json.get('action') == 'place-furniture') as observed:
         await page.locator('[data-world-control="place-furniture"]').click()
@@ -283,6 +285,8 @@ async def confirm_place(page, item_id):
     assert response.status == 200, await response.text()
     result = await response.json()
     saved = result['profile']['furnitureLayout'][item_id]
+    await page.wait_for_function('(previous)=>Number(document.querySelector("#world-scene")?.dataset.furnitureReconciled||0)>previous',arg=revision)
+    assert await scene_node.evaluate('(node)=>node.isConnected'),'Furniture placement remounted the physical world'
     await expect(page.locator('#world-scene')).to_have_attribute('data-furniture-mode', '')
     return saved
 
@@ -444,6 +448,8 @@ async def tap_owned_mesh(page, item_id, mobile):
 
 async def furniture_mesh_surface_check(page,label,mobile,report):
     before=(await state(page))['profile']
+    scene_node=await page.locator('#world-scene').element_handle()
+    revision=int(await page.locator('#world-scene').get_attribute('data-furniture-reconciled') or 0)
     selected=await tap_owned_mesh(page,'coffee-table',mobile)
     for action in ['move','store','sell']:
         await expect(page.locator(f'[data-furnish-action="{action}"]')).to_be_enabled()
@@ -460,6 +466,8 @@ async def furniture_mesh_surface_check(page,label,mobile,report):
     response=await observed.value
     assert response.status==200,await response.text()
     stored=(await response.json())['profile']
+    await page.wait_for_function('(previous)=>Number(document.querySelector("#world-scene")?.dataset.furnitureReconciled||0)>previous',arg=revision)
+    assert await scene_node.evaluate('(node)=>node.isConnected'),'Storing furniture remounted the physical world'
     assert 'coffee-table' in stored['inventory'] and 'coffee-table' in stored['storedFurniture'] and 'coffee-table' not in stored['furnitureLayout']
     assert stored['wallet']==before['wallet']
     await expect(page.locator('[data-furnish-action="store"]')).to_be_disabled()

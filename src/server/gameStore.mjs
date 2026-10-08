@@ -1,10 +1,14 @@
 import crypto from 'node:crypto';
+import { ECONOMY_CONFIG } from '../shared/economy.mjs';
+import { economyTransactionType } from '../shared/transactions.mjs';
+import { TENANCY_RULES, recordHousingLifeEvent, syncHomeTenancy } from '../shared/tenancy.mjs';
+import { HOUSING_ACTIONS, HOUSING_MONEY_ACTIONS, applyHousingAction } from './housingActions.mjs';
 import { promisify } from 'node:util';
 import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
 import { ABUJA_ATLAS } from '../shared/atlas.mjs';
-import { LIFE_GOALS, GAME_YEAR_MS, GAME_BILL_PERIOD_MS, WALLET_META, INVESTMENT_META, DICE_META, LOAN_META, HOME_UPGRADES, TRANSPORT_MODES, travelPricing, starterHomeSeed, systemResaleValue, homeBenefits, investmentView, loanView, loanQuote, venueFor, venueAvailable, venueActionFor, ownsVehicle, applyNeedEffects, furniturePlacement } from '../shared/life.mjs';
+import { LIFE_GOALS, GAME_BILL_PERIOD_MS, WALLET_META, INVESTMENT_META, DICE_META, LOAN_META, HOME_UPGRADES, TRANSPORT_MODES, travelPricing, starterHomeSeed, systemResaleValue, homeBenefits, investmentView, normalizeInvestmentRecords, loanView, loanQuote, venueFor, venueAvailable, venueActionFor, ownsVehicle, applyNeedEffects, furniturePlacement } from '../shared/life.mjs';
 import { VEHICLE_CATALOG, vehicleColorFor } from '../shared/vehicles.mjs';
 import { ORIGIN_META, createOrigin, originHome } from '../shared/origins.mjs';
 import { abujaTime, jobSchedule, clubSchedule, JOB_SCHEDULES } from '../shared/simulation.mjs';
@@ -55,6 +59,8 @@ export class GameStore {
     const challengeColumns=new Set(this.all('PRAGMA table_info(challenges)').map(column=>column.name));
     for(const [name,type] of [['work_date','TEXT'],['shift_slot','TEXT'],['shift_ends_at','INTEGER'],['cancelled_at','INTEGER']])if(!challengeColumns.has(name))this.db.exec(`ALTER TABLE challenges ADD COLUMN ${name} ${type}`);
     this.db.exec('CREATE INDEX IF NOT EXISTS challenges_work_date ON challenges(resident_id,work_date,completed_at)');
+    const ledgerColumns=new Set(this.all('PRAGMA table_info(ledger)').map(column=>column.name));
+    for(const [name,type] of [['type',"TEXT NOT NULL DEFAULT 'LEGACY'"],['balance_after','INTEGER'],['operation_id','TEXT']])if(!ledgerColumns.has(name))this.db.exec(`ALTER TABLE ledger ADD COLUMN ${name} ${type}`);
     // Older pending tasks have no real-calendar reservation and cannot be redeemed.
     this.run('UPDATE challenges SET cancelled_at=? WHERE completed_at IS NULL AND cancelled_at IS NULL AND work_date IS NULL',this.clock());
   }
@@ -63,17 +69,22 @@ export class GameStore {
   all(sql,...args){return this.db.prepare(sql).all(...args);}
   run(sql,...args){return this.db.prepare(sql).run(...args);}
   transaction(fn){this.db.exec('BEGIN IMMEDIATE');try{const value=fn();this.db.exec('COMMIT');return value;}catch(error){this.db.exec('ROLLBACK');throw error;}}
-  profile(id){check(typeof id==='string'&&id.length>0&&id.length<=80,'Choose a valid resident');const row=this.get('SELECT profile FROM residents WHERE id=?',id);check(row,'Resident not found',404);const p=JSON.parse(row.profile);const origin=this.get('SELECT origin FROM resident_origins WHERE resident_id=?',id);if(origin)p.origin=JSON.parse(origin.origin);p.furnitureLayout ||= {};p.storedFurniture ||= [];p.drivingVehicle ??= null;p.onboardingComplete ??= false;p.lifeGoal ||= 'explore';p.ownedProperties ||= [];p.vehicleColors ||= {};p.propertyInvestments ||= {};p.gambleHistory ||= [];p.lastGambleRound ??= null;p.loans ||= [];p.workDays ||= {};p.rentPaidAt ??= p.billsPaidAt??p.createdAt;return p;}
+  profile(id){check(typeof id==='string'&&id.length>0&&id.length<=80,'Choose a valid resident');const row=this.get('SELECT profile FROM residents WHERE id=?',id);check(row,'Resident not found',404);const p=JSON.parse(row.profile);const origin=this.get('SELECT origin FROM resident_origins WHERE resident_id=?',id);if(origin)p.origin=JSON.parse(origin.origin);p.furnitureLayout ||= {};p.storedFurniture ||= [];p.drivingVehicle ??= null;p.onboardingComplete ??= false;p.lifeGoal ||= 'explore';p.ownedProperties ||= [];p.vehicleColors ||= {};p.propertyInvestments=normalizeInvestmentRecords(p,this.propertiesFor(p));p.gambleHistory ||= [];p.lastGambleRound ??= null;p.loans ||= [];p.workDays ||= {};p.rentPaidAt ??= p.billsPaidAt??p.createdAt;const before=JSON.stringify(p.home);syncHomeTenancy(p,{property:this.propertyFor(p),temporaryProperty:properties.find(row=>row.id===TENANCY_RULES.temporaryPropertyId),now:this.clock(),id:uid(),seed:uid()});if(before!==JSON.stringify(p.home))this.run('UPDATE residents SET profile=? WHERE id=?',JSON.stringify(p),p.id);return p;}
   save(profile){const origin=this.get('SELECT origin FROM resident_origins WHERE resident_id=?',profile.id);if(origin)profile.origin=JSON.parse(origin.origin);this.run('UPDATE residents SET profile=? WHERE id=?',JSON.stringify(profile),profile.id);return structuredClone(profile);}
   propertiesFor(id){const p=typeof id==='string'?this.profile(id):id;return p?.origin?.residence?[...properties,p.origin.residence]:[...properties];}
   propertyFor(profile,propertyId=profile.home.propertyId){return this.propertiesFor(profile).find(item=>item.id===propertyId);}
-  async register({username,displayName,password,appearance,referrerId}) {
+  housingAction(id,action,payload={}){
+    const kind=action==='renew-rent'?'pay-rent':action,normalized=Object.fromEntries(Object.entries(payload).filter(([key])=>key!=='idempotencyKey').sort(([a],[b])=>a.localeCompare(b)));
+    return this.economyOperation(id,kind,payload,normalized,(p,now)=>applyHousingAction(p,kind,payload,{now,properties:this.propertiesFor(p)}),{requireKey:HOUSING_MONEY_ACTIONS.has(action)});
+  }
+  async register({username,displayName,password,appearance,referrerId,originId}) {
     username=clean(username,24).toLowerCase();displayName=clean(displayName,40)||username;check(/^[a-z0-9_]{3,24}$/.test(username),'Use 3–24 letters, numbers or underscores for your username');check(typeof password==='string'&&password.length>=8&&password.length<=128,'Choose a password of 8–128 characters');check(!this.get('SELECT id FROM residents WHERE username=?',username),'That username is already taken',409);
     referrerId=/^[A-Za-z0-9:_-]{1,80}$/.test(String(referrerId||''))?String(referrerId):null;
     const salt=crypto.randomBytes(16).toString('hex');const hash=(await scrypt(password,salt,64)).toString('hex');const id=uid(),timestamp=this.clock();
-    const origin=createOrigin({residentId:id,now:timestamp,randomInt:this.originRandomInt,properties,atlas:ABUJA_ATLAS}),seed=starterHomeSeed(origin),home={...originHome(origin),...seed.homeStyle};
+    check(originId===undefined||ORIGIN_META.options.some(option=>option.id===originId),'Choose a listed life background',400,'invalid_origin');
+    const origin=createOrigin({residentId:id,now:timestamp,originId,randomInt:this.originRandomInt,properties,atlas:ABUJA_ATLAS}),seed=starterHomeSeed(origin),home={...originHome(origin),...seed.homeStyle};
     const profile={id,username,displayName,origin,appearance:updateAppearance(variedAppearance({presentation:appearanceOptions.presentation.includes(appearance?.presentation)?appearance.presentation:'neutral',randomInt:max=>crypto.randomInt(max)}),appearance),wallet:origin.startingBalance,energy:82,hunger:72,hygiene:88,social:58,fun:64,stress:12,mood:76,reputation:0,district:home.district,location:{kind:'home',district:home.district,venue:'home'},home,job:null,careerLevel:1,skills:{},inventory:seed.inventory,ownedProperties:origin.giftedHome?[home.propertyId]:[],propertyInvestments:{},vehicleColors:{},gambleHistory:[],lastGambleRound:null,loans:[],workDays:{},furnitureLayout:seed.furnitureLayout,storedFurniture:seed.storedFurniture,drivingVehicle:null,onboardingComplete:false,lifeGoal:'explore',settings:{presenceVisible:true,allowInvites:true,soundEnabled:true},activeTrip:null,activeShift:null,completedShifts:0,nextShiftAt:0,lastActionAt:timestamp,billsPaidAt:timestamp,rentPaidAt:timestamp,createdAt:timestamp};
-    try{this.transaction(()=>{this.run('INSERT INTO residents VALUES(?,?,?,?,?)',id,username,`${salt}:${hash}`,JSON.stringify(profile),timestamp);this.run('INSERT INTO resident_origins VALUES(?,?,?)',id,JSON.stringify(origin),timestamp);this.run('INSERT INTO ledger VALUES(?,?,?,?,?)',uid(),id,origin.startingBalance,'Resident starting balance',timestamp);if(referrerId&&referrerId!==id&&this.get('SELECT id FROM residents WHERE id=?',referrerId))this.run("INSERT OR IGNORE INTO friendship VALUES(?,?,?,'accepted',?)",uid(),referrerId,id,timestamp);});}catch(error){if(error.message.includes('UNIQUE'))throw new GameError('That username is already taken',409);throw error;}
+    try{this.transaction(()=>{this.run('INSERT INTO residents VALUES(?,?,?,?,?)',id,username,`${salt}:${hash}`,JSON.stringify(profile),timestamp);this.run('INSERT INTO resident_origins VALUES(?,?,?)',id,JSON.stringify(origin),timestamp);this.appendLedger(id,origin.startingBalance,'Resident starting balance',timestamp,`registration:${id}`,'STARTING_MONEY',origin.startingBalance);if(referrerId&&referrerId!==id&&this.get('SELECT id FROM residents WHERE id=?',referrerId))this.run("INSERT OR IGNORE INTO friendship VALUES(?,?,?,'accepted',?)",uid(),referrerId,id,timestamp);});}catch(error){if(error.message.includes('UNIQUE'))throw new GameError('That username is already taken',409);throw error;}
     this.notify(id,'welcome','Welcome home',`Your ${home.name} is ready. Settle in, then explore your neighbourhood.`,'home');return this.createSession(id);
   }
   async login({username,password}) {
@@ -100,19 +111,19 @@ export class GameStore {
     if(venueId!==null)check(venueId&&venueAvailable(venueId,destination),'Choose a place available in your destination neighbourhood');
     return travelPricing(locations.get(p.district),locations.get(destination),mode,{venueId});
   }
-  economyOperation(id,kind,payload,normalized,mutate) {
-    const key=payload.idempotencyKey;
+  economyOperation(id,kind,payload,normalized,mutate,{requireKey=true}={}) {
+    const key=payload.idempotencyKey===undefined?(!requireKey?uid():undefined):payload.idempotencyKey;
     check(typeof key==='string'&&/^[A-Za-z0-9_-]{8,100}$/.test(key),'Use a valid idempotency key for this money action',400,'idempotency_required');
     const fingerprint=JSON.stringify(normalized);let replayed=false;
     const result=this.transaction(()=>{
       const existing=this.get('SELECT * FROM economy_operations WHERE resident_id=? AND operation_key=?',id,key);
       if(existing){check(existing.kind===kind&&existing.fingerprint===fingerprint,'This request key was already used for a different action',409,'idempotency_conflict');replayed=true;return{...JSON.parse(existing.result),profile:this.profile(id)};}
       const p=this.profile(id),timestamp=this.clock(),before=p.wallet;
-      const extra=mutate(p,timestamp);
+      const extra=mutate(p,timestamp);recordHousingLifeEvent(p,{kind,extra,now:timestamp,beforeBalance:before});
       check(Number.isSafeInteger(p.wallet)&&p.wallet>=0,'This action cannot be represented as exact whole Naira',409,'numeric_limit');
       p.lastActionAt=timestamp;this.save(p);
-      if(p.wallet!==before)this.run('INSERT INTO ledger VALUES(?,?,?,?,?)',uid(),id,p.wallet-before,extra.ledgerReason||kind,timestamp);
-      const {ledgerReason,...publicExtra}=extra;
+      if(p.wallet!==before)this.appendLedger(id,p.wallet-before,extra.ledgerReason||kind,timestamp,key,extra.ledgerType||economyTransactionType(kind,normalized,catalog),p.wallet);
+      const {ledgerReason,ledgerType,...publicExtra}=extra;
       const response={ok:true,profile:p,...publicExtra};
       this.run('INSERT INTO economy_operations VALUES(?,?,?,?,?,?,?)',id,key,kind,fingerprint,JSON.stringify(response),kind==='demo-topup'?normalized.amount:0,timestamp);
       return response;
@@ -121,7 +132,8 @@ export class GameStore {
     return{...result,replayed};
   }
   wallet(id){const p=this.profile(id),workSchedule=this.workSchedule(p);return{ok:true,profile:p,walletMeta:WALLET_META,loanMeta:LOAN_META,loans:loanView(p,this.clock()),workSchedule,transactions:this.transactions(id)};}
-  transactions(id){return this.all('SELECT * FROM ledger WHERE resident_id=? ORDER BY created_at DESC,rowid DESC LIMIT 60',id).map(row=>({id:row.id,amount:row.amount,reason:row.reason,createdAt:row.created_at}));}
+  appendLedger(id,amount,reason,createdAt,operationId,type,balanceAfter){this.run('INSERT INTO ledger(id,resident_id,amount,reason,created_at,type,balance_after,operation_id) VALUES(?,?,?,?,?,?,?,?)',uid(),id,amount,reason,createdAt,type,balanceAfter,operationId);}
+  transactions(id){return this.all('SELECT * FROM ledger WHERE resident_id=? ORDER BY created_at DESC,rowid DESC LIMIT 60',id).map(row=>({id:row.id,amount:row.amount,reason:row.reason,createdAt:row.created_at,type:row.type,balanceAfter:row.balance_after,operationId:row.operation_id}));}
   topup(id,payload={}) {
     check(!Object.hasOwn(payload,'verified'),'Real-money payments require a verified payment provider; use a free game top-up',403,'payments_unavailable');
     const amount=payload.amount;
@@ -146,7 +158,7 @@ export class GameStore {
       check(Number.isSafeInteger(recipient.wallet+amount),'The recipient balance cannot represent this amount as exact whole Naira',409,'numeric_limit');
       p.wallet-=amount;recipient.wallet+=amount;this.save(recipient);
       const transfer={id:uid(),residentId,recipientName:recipient.displayName,amount,note,createdAt:timestamp,virtual:true};
-      this.run('INSERT INTO ledger VALUES(?,?,?,?,?)',uid(),residentId,amount,`Naira from ${p.displayName}${note?` · ${note}`:''}`,timestamp);
+      this.appendLedger(residentId,amount,`Naira from ${p.displayName}${note?` · ${note}`:''}`,timestamp,`transfer:${transfer.id}:recipient`,'TRANSFER',recipient.wallet);
       if(!this.muted(residentId,id)){
         notice={id:uid(),kind:'transfer',title:'Naira received',body:`${p.displayName} sent you ₦${amount.toLocaleString()} in game Naira${note?` · ${note}`:''}.`,link:conversationId?`conversation:${conversationId}`:'wallet',createdAt:timestamp,readAt:null};
         this.run('INSERT INTO notifications(id,resident_id,kind,title,body,link,created_at,read_at,sender_id) VALUES(?,?,?,?,?,?,?,NULL,?)',notice.id,residentId,notice.kind,notice.title,notice.body,notice.link,timestamp,id);
@@ -195,7 +207,7 @@ export class GameStore {
       const investment=investmentView(p,property,timestamp);
       check(investment.representable,'This rental income cannot be represented as exact whole Naira',409,'numeric_limit');
       if(action==='collect-rent'){
-        check(investment.collectable>0,'Rent is not ready yet; it accrues every minute',409,'rent_not_ready');
+        check(investment.collectable>0,'Rent is not ready yet; it accrues every week',409,'rent_not_ready');
         p.wallet+=investment.collectable;
         const periods=Math.max(0,Math.floor((timestamp-investment.lastCollectedAt)/INVESTMENT_META.periodMs));
         p.propertyInvestments[property.id].lastCollectedAt+=periods*INVESTMENT_META.periodMs;
@@ -268,20 +280,22 @@ export class GameStore {
     if(['buy-investment','collect-rent','sell-investment'].includes(action))return this.investmentAction(id,action,payload);
     if(action==='play-dice')return this.playDice(id,payload);
     if(['borrow-loan','repay-loan'].includes(action))return this.loanAction(id,action,payload);
+    if(HOUSING_ACTIONS.has(action))return this.housingAction(id,action,payload);
     if(payload.idempotencyKey&&(['paint-vehicle'].includes(action)||(action==='purchase'&&catalog.some(item=>item.id===payload.itemId&&item.category==='vehicle'))))return this.vehicleAction(id,action,payload);
-    const result=this.transaction(()=>{
-      const p=this.profile(id);this.decay(p);const before=p.wallet,timestamp=this.clock(),comfort=homeBenefits(p,this.propertyFor(p));let extra={};
+    const normalized=Object.fromEntries(Object.entries(payload).filter(([key])=>key!=='idempotencyKey').sort(([a],[b])=>a.localeCompare(b)));
+    const result=this.economyOperation(id,action,payload,normalized,(p,timestamp)=>{
+      this.decay(p);const comfort=homeBenefits(p,this.propertyFor(p));let extra={};
       const debit=amount=>{check(Number.isSafeInteger(amount)&&amount>=0,'Invalid cost');check(p.wallet>=amount,'You need more Naira for this');p.wallet-=amount;};const home=()=>check(p.location.kind==='home','Go home to use this object');const publicPlace=()=>check(p.location.kind==='public'&&!p.activeTrip,'Head out into your neighbourhood first');
       if(p.activeTrip&&!['arrive','topup'].includes(action))throw new GameError('Your journey is still in progress');
       if(p.location.kind==='visit'&&['travel','return-home','move-home'].includes(action))throw new GameError('Leave your visit before travelling or moving home',409,'visit_active');
       switch(action){
-        case 'eat':home();debit(1200);p.hunger=clamp(p.hunger+34);p.mood=clamp(p.mood+4);break;
+        case 'eat':home();debit(ECONOMY_CONFIG.basicActivities.eat);p.hunger=clamp(p.hunger+34);p.mood=clamp(p.mood+4);break;
         case 'sleep':home();p.energy=clamp(p.energy+46+comfort.sleepEnergyBonus);p.hunger=clamp(p.hunger-9);p.stress=clamp(p.stress-12);break;
         case 'shower':home();p.hygiene=clamp(p.hygiene+42);p.mood=clamp(p.mood+2);break;
         case 'relax':home();p.fun=clamp(p.fun+22+comfort.relaxFunBonus);p.stress=clamp(p.stress-14-comfort.relaxStressReduction);p.energy=clamp(p.energy+8);break;
-        case 'hangout':publicPlace();debit(2400);p.social=clamp(p.social+28);p.fun=clamp(p.fun+20);p.energy=clamp(p.energy-8);break;
-        case 'exercise':publicPlace();debit(800);p.fun=clamp(p.fun+12);p.stress=clamp(p.stress-18);p.energy=clamp(p.energy-14);p.hygiene=clamp(p.hygiene-10);break;
-        case 'cinema':publicPlace();debit(3800);p.fun=clamp(p.fun+34);p.stress=clamp(p.stress-16);p.energy=clamp(p.energy-5);break;
+        case 'hangout':publicPlace();debit(ECONOMY_CONFIG.basicActivities.hangout);p.social=clamp(p.social+28);p.fun=clamp(p.fun+20);p.energy=clamp(p.energy-8);break;
+        case 'exercise':publicPlace();debit(ECONOMY_CONFIG.basicActivities.exercise);p.fun=clamp(p.fun+12);p.stress=clamp(p.stress-18);p.energy=clamp(p.energy-14);p.hygiene=clamp(p.hygiene-10);break;
+        case 'cinema':publicPlace();debit(ECONOMY_CONFIG.basicActivities.cinema);p.fun=clamp(p.fun+34);p.stress=clamp(p.stress-16);p.energy=clamp(p.energy-5);break;
         case 'leave-home':home();p.drivingVehicle=null;p.location={kind:'public',district:p.district,venue:'neighbourhood'};break;
         case 'enter-home':check(p.district===p.home.district,'Travel to your home neighbourhood first');check(!p.drivingVehicle,'Park your car before entering');check(['public','home'].includes(p.location.kind),'Head outside before entering your home');p.location={kind:'home',district:p.district,venue:'home'};break;
         case 'enter-venue':{publicPlace();const venue=venueFor(payload.venueId);check(venue&&venueAvailable(venue.id,p.district),'Choose a place in your neighbourhood');check(!payload.district||payload.district===p.district,'Travel to this neighbourhood first');check(!p.drivingVehicle,'Park your car before entering');p.location={kind:'venue',district:p.district,venue:venue.id};extra.venue=venue;break;}
@@ -306,10 +320,12 @@ export class GameStore {
           const venueId=action==='travel'&&payload.venueId!=null?clean(payload.venueId,80):null;
           if(venueId!==null)publicPlace();
           const {mode,cost,seconds}=this.quoteTravel(id,{district:destination,mode:payload.mode,venueId});
-          const vehicleId=mode==='car'?(ownsVehicle(p,catalog,p.drivingVehicle)?p.drivingVehicle:catalog.find(item=>ownsVehicle(p,catalog,item.id))?.id):null;
-          debit(cost);p.drivingVehicle=null;p.activeTrip={id:uid(),destination,mode,cost,seconds,vehicleId,...(venueId?{venueId}:{}),arrivesAt:timestamp+seconds*1000,returningHome:action==='return-home'};extra.trip=p.activeTrip;p.location={kind:'transit',district:p.district,venue:'journey'};break;
+          const requestedVehicle=payload.vehicleId??p.drivingVehicle??(p.vehiclePresence?.district===p.district?p.vehiclePresence.vehicleId:null);
+          if(mode==='car'&&payload.vehicleId!=null)check(ownsVehicle(p,catalog,payload.vehicleId),'Buy this car before choosing it');
+          const vehicleId=mode==='car'?(ownsVehicle(p,catalog,requestedVehicle)?requestedVehicle:catalog.find(item=>ownsVehicle(p,catalog,item.id))?.id):null;
+          debit(cost);p.drivingVehicle=null;p.activeTrip={id:uid(),fromLocation:{...p.location},destination,mode,cost,seconds,vehicleId,...(venueId?{venueId}:{}),arrivesAt:timestamp+seconds*1000,returningHome:action==='return-home'};extra.trip=p.activeTrip;p.location={kind:'transit',district:p.district,venue:'journey'};break;
         }
-        case 'arrive':{const trip=p.activeTrip;check(trip&&trip.id===payload.tripId,'This journey is no longer active');check(timestamp>=trip.arrivesAt,'Your journey is still in progress',409,'trip_in_progress');if(trip.venueId)check(venueAvailable(trip.venueId,trip.destination),'This destination is no longer available');p.district=trip.destination;p.location={kind:trip.returningHome?'home':trip.venueId?'venue':'public',district:trip.destination,venue:trip.returningHome?'home':trip.venueId||'neighbourhood'};p.drivingVehicle=!trip.returningHome&&!trip.venueId&&trip.mode==='car'&&ownsVehicle(p,catalog,trip.vehicleId)?trip.vehicleId:null;p.activeTrip=null;p.energy=clamp(p.energy-3);break;}
+        case 'arrive':{const trip=p.activeTrip;check(trip&&trip.id===payload.tripId,'This journey is no longer active',409,'trip_not_active');check(timestamp>=trip.arrivesAt,'Your journey is still in progress',409,'trip_in_progress');if(trip.venueId)check(venueAvailable(trip.venueId,trip.destination),'This destination is no longer available');p.district=trip.destination;p.location={kind:trip.returningHome?'home':trip.venueId?'venue':'public',district:trip.destination,venue:trip.returningHome?'home':trip.venueId||'neighbourhood'};p.drivingVehicle=!trip.returningHome&&!trip.venueId&&trip.mode==='car'&&ownsVehicle(p,catalog,trip.vehicleId)?trip.vehicleId:null;p.activeTrip=null;p.energy=clamp(p.energy-3);break;}
         case 'take-job':check(typeof payload.jobId==='string'&&Object.hasOwn(jobs,payload.jobId),'Choose a listed job');check(!this.activeChallenge(id),'Finish your current shift before switching careers');p.job=payload.jobId;break;
         case 'start-shift':{
           const job=jobs[p.job];check(job,'Choose a job before starting a shift');publicPlace();check(p.district===job.district,`Travel to ${locations.get(job.district)?.name||job.district} for your shift`);
@@ -337,13 +353,11 @@ export class GameStore {
         case 'purchase':{const item=catalog.find(item=>item.id===payload.itemId);check(item,'Choose an item from Okrika Marketplace');check(!p.inventory.includes(item.id),'You already own this item',409);if(item.category==='vehicle'){const color=payload.color??item.defaultColor;check(vehicleColorFor(color)&&item.availableColors.includes(color),'Choose an available car colour');p.vehicleColors[item.id]=color;}debit(item.price);p.inventory.push(item.id);if(item.category==='furniture'&&!p.storedFurniture.includes(item.id))p.storedFurniture.push(item.id);extra.item=item;break;}
         case 'paint-vehicle':{const item=catalog.find(item=>item.id===payload.itemId&&item.category==='vehicle');check(item&&p.inventory.includes(item.id),'You can repaint a car you own',403,'vehicle_not_owned');check(vehicleColorFor(payload.color)&&item.availableColors.includes(payload.color),'Choose an available car colour');p.vehicleColors[item.id]=payload.color;extra.item=item;break;}
         case 'equip':{const item=catalog.find(item=>item.id===payload.itemId);check(item?.category==='clothing'&&p.inventory.includes(item.id),'You can wear clothing you own');p.appearance[item.slot]=item.value;break;}
-        case 'move-home':{const property=this.propertyFor(p,payload.propertyId);check(property&&(property.tier>0||property.originHome),'Choose a listed home');check(['rent','own'].includes(payload.tenure),'Choose rent or ownership');check(!property.originHome||payload.tenure==='own','Your starting home is available to move into without rent');check(p.home.propertyId!==property.id||p.home.tenure!==payload.tenure,'You already live here');check(!(payload.tenure==='rent'&&p.ownedProperties.includes(property.id)),'You already own this property; choose Move in',409,'already_owned');debit(property.originHome?0:payload.tenure==='rent'?property.rent:p.ownedProperties.includes(property.id)?0:property.buy);if(payload.tenure==='own'&&!p.ownedProperties.includes(property.id))p.ownedProperties.push(property.id);if(p.propertyInvestments[property.id]){const investment=investmentView(p,property,timestamp);p.wallet+=investment.collectable;extra.settledIncome=investment.collectable;delete p.propertyInvestments[property.id];}const previousHome=p.home;p.home={propertyId:property.id,layoutId:property.layoutId||property.id,name:property.name,district:property.district,tenure:property.originHome?property.gifted?'own':'starter':payload.tenure,gifted:Boolean(property.gifted),rentDueAt:payload.tenure==='rent'?timestamp+GAME_YEAR_MS:null,...(previousHome.starterVersion===1?{starterVersion:1,furnishingPreset:previousHome.furnishingPreset}:{}),...(previousHome.roomStyle&&(previousHome.layoutId||previousHome.propertyId)===(property.layoutId||property.id)?{roomStyle:previousHome.roomStyle}:{})};if(p.district===property.district){p.drivingVehicle=null;p.location={kind:'home',district:p.district,venue:'home'};}else if(p.location.kind==='home')p.location={kind:'public',district:p.district,venue:'neighbourhood'};p.billsPaidAt=timestamp;p.rentPaidAt=timestamp;break;}
         case 'pay-bills':{check(timestamp-p.billsPaidAt>=GAME_BILL_PERIOD_MS,'Your home bills are up to date');const property=this.propertyFor(p);check(property,'Home property not found',404);const amount=Math.round(property.bills*(100-comfort.billDiscountPercent)/100);debit(amount);p.billsPaidAt=timestamp;extra.bill={amount,baseAmount:property.bills,discountPercent:comfort.billDiscountPercent};break;}
-        case 'renew-rent':{check(p.home.tenure==='rent','Your home is not rented');check(timestamp-p.rentPaidAt>=GAME_YEAR_MS,'Your rent is already paid for this game year');const property=this.propertyFor(p);check(property,'Home property not found',404);debit(property.rent);p.rentPaidAt=timestamp;p.home.rentDueAt=timestamp+GAME_YEAR_MS;break;}
         default:throw new GameError('Unknown action');
       }
-      check(Number.isSafeInteger(p.wallet)&&p.wallet>=0,'This action cannot be represented as exact whole Naira',409,'numeric_limit');p.lastActionAt=timestamp;this.save(p);if(p.wallet!==before)this.run('INSERT INTO ledger VALUES(?,?,?,?,?)',uid(),id,p.wallet-before,action,timestamp);return{ok:true,profile:p,...extra};
-    });this.emitUser(id,'profile',{profile:result.profile});return result;
+      return {...extra,ledgerReason:action};
+    },{requireKey:false});return result;
   }
   sellItem(id,payload={}) {
     const itemId=clean(payload.itemId,80),item=catalog.find(item=>item.id===itemId);

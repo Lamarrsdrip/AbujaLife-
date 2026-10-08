@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { GameError } from './errors.mjs';
+import { validFlutterwaveWebhook, verifyFlutterwaveOrder } from './flutterwaveVerification.mjs';
 
 export const JACKPOT_ENTRY_AMOUNT = 2000;
 export const JACKPOT_CAPACITY = 50;
@@ -33,7 +34,9 @@ const publicRoom = row => ({ id: row._id, laneId: row.laneId, name: row.name, st
 
 export function jackpotWithdrawalQuote(grossAmount) {
   fail(Number.isSafeInteger(grossAmount) && grossAmount > 0 && grossAmount % 10 === 0, 'Withdrawal amount must be a positive whole Naira amount ending in 0', 400, 'invalid_withdrawal_amount');
-  const feeAmount = grossAmount * JACKPOT_WITHDRAWAL_FEE_BPS / 10000;
+  // Divide first: multiplying a safe whole-Naira amount by 1,000 can lose
+  // integer precision before the basis-point division takes place.
+  const feeAmount = grossAmount / (10000 / JACKPOT_WITHDRAWAL_FEE_BPS);
   return Object.freeze({ grossAmount, feeAmount, netAmount: grossAmount - feeAmount });
 }
 
@@ -58,10 +61,12 @@ function trustedCheckout(link) { let url; try { url = new URL(link); } catch { r
 function roomSort(a, b) { return JACKPOT_LANES.findIndex(lane => lane.id === a.laneId) - JACKPOT_LANES.findIndex(lane => lane.id === b.laneId); }
 
 export class JackpotIntegration {
+  #verifiedProofs = new WeakSet();
   constructor({ store, admin, payments, database, publicWebUrl, corsOrigins = [], log = () => {} } = {}) {
     fail(store?.db && store?.transaction && admin && payments && database, 'Jackpot requires the production stores', 500, 'jackpot_configuration');
     this.store = store; this.db = store.db; this.admin = admin; this.payments = payments; this.database = database; this.publicWebUrl = publicWebUrl; this.log = log;
     this.allowedOrigins = new Set([publicWebUrl, ...corsOrigins].filter(Boolean)); this.limits = new Map(); this.timer = null; this.tickRunning = false;
+    payments.registerReconciliationOwner?.('jackpot_deposit_orders', { statuses: ['creating','pending','checkout_failed'], fulfill: (row,actor) => this.creditDepositFromReference(row.txRef,actor) });
   }
   collection(name) { return this.db.collection(name); }
   async init() {
@@ -205,31 +210,35 @@ export class JackpotIntegration {
     try {
       const profile = await this.store.profile(residentId), data = await this.payments.provider('/v3/payments', config.secrets.secretKey, { method: 'POST', body: JSON.stringify({ tx_ref: txRef, amount, currency: 'NGN', redirect_url: `${config.publicOrigin}/?jackpot=return&jackpot_payment_ref=${encodeURIComponent(txRef)}`, customer: { email, name: profile.displayName }, customizations: { title: 'AbujaLife Community Jackpot', description: `Add ₦${amount.toLocaleString('en-NG')} to Jackpot Balance` }, meta: { abujalife_reference: txRef, abujalife_product: 'community_jackpot' } }) });
       fail(trustedCheckout(data.link), 'Flutterwave returned an untrusted checkout link', 502, 'invalid_checkout');
-      await this.collection('jackpot_deposit_orders').updateOne({ _id: txRef, status: 'creating' }, { $set: { status: 'pending', checkoutUrl: data.link } }); row = await this.collection('jackpot_deposit_orders').findOne({ _id: txRef });
+      await this.collection('jackpot_deposit_orders').updateOne({ _id: txRef }, [{ $set: { checkoutUrl: data.link, status: { $cond: [{ $eq: ['$status', 'creating'] }, 'pending', '$status'] } } }]); row = await this.collection('jackpot_deposit_orders').findOne({ _id: txRef });
       return { ok: true, checkout: orderView(row), replayed: false };
     } catch (error) { await this.collection('jackpot_deposit_orders').updateOne({ _id: txRef, status: 'creating' }, { $set: { status: 'checkout_failed' } }); throw error; }
   }
   async verifiedDeposit(transactionId, txRef, residentId = null) {
-    transactionId = String(transactionId ?? ''); fail(/^\d{1,24}$/.test(transactionId), 'Use the Flutterwave transaction ID', 400, 'invalid_transaction');
     const order = await this.collection('jackpot_deposit_orders').findOne({ txRef: clean(txRef, 100) }); fail(order && (!residentId || order.residentId === residentId), 'Deposit not found', 404, 'deposit_not_found');
     const secrets = this.payments.decrypt(order.encryptedSecret, `jackpot-order:${order.txRef}`); fail(secrets?.secretKey, 'Payment credentials are unavailable', 503, 'payments_unavailable');
-    const data = await this.payments.provider(`/v3/transactions/${transactionId}/verify`, secrets.secretKey);
-    fail(String(data?.id) === transactionId && data.status === 'successful' && data.currency === 'NGN' && Number(data.amount) === order.amount && String(data.tx_ref || '') === order.txRef, 'This transaction does not match your Jackpot deposit', 409, 'payment_verification_failed'); return { order, transactionId };
+    const confirmed = await verifyFlutterwaveOrder(this.payments, { transactionId, txRef: order.txRef, amount: order.amount, secretKey: secrets.secretKey, onResult: facts => this.payments.recordVerification('jackpot_deposit_orders', order.txRef, facts) });
+    const proof=Object.freeze({order:Object.freeze({...order}),transactionId:confirmed.transactionId});this.#verifiedProofs.add(proof);return proof;
   }
-  async creditDeposit({ order, transactionId }, actor = 'resident') {
+  async creditDepositFromReference(txRef,actor='provider-reconciliation') { return this.creditDeposit(await this.verifiedDeposit(null,txRef),actor); }
+  async creditDeposit(proof, actor = 'resident') {
+    fail(this.#verifiedProofs.has(proof),'A server-verified provider receipt is required',403,'payment_verification_required');
+    const {order,transactionId}=proof;
     try {
       const result = await this.store.transaction(async session => {
         const current = await this.collection('jackpot_deposit_orders').findOne({ _id: order._id }, { session }); fail(current && current.residentId === order.residentId && current.amount === order.amount, 'Deposit changed during verification', 409, 'payment_verification_failed');
-        if (current.status === 'credited') return { replayed: true, payment: orderView(current) };
+        if (current.status === 'credited') { fail(current.transactionId===transactionId,'This deposit was credited by another transaction',409,'payment_duplicate'); return { replayed: true, payment: orderView(current) }; }
         const receiptId = `flutterwave:${transactionId}`, prior = await this.collection('jackpot_deposit_receipts').findOne({ _id: receiptId }, { session }); fail(!prior, 'This provider transaction has already been credited', 409, 'payment_duplicate');
         await this.moveBalance(current.residentId, { operationKey: `deposit:${transactionId}`, type: 'deposit', deltaAvailable: current.amount, metadata: { provider: 'flutterwave', transactionId, txRef: current.txRef } }, session);
+        await this.payments.claimProviderReceipt(current,transactionId,'jackpot',0,session);
         await this.collection('jackpot_deposit_receipts').insertOne({ _id: receiptId, provider: 'flutterwave', transactionId, txRef: current.txRef, residentId: current.residentId, amount: current.amount, createdAt: this.store.clock() }, { session });
         await this.collection('jackpot_deposit_orders').updateOne({ _id: current._id, status: { $ne: 'credited' } }, { $set: { status: 'credited', transactionId, creditedAt: this.store.clock() } }, { session });
         await this.admin.record(actor, 'credit-jackpot-deposit', current.residentId, { txRef: current.txRef, transactionId, amount: current.amount, mode: current.mode }, { session });
         return { replayed: false, payment: orderView({ ...current, status: 'credited', transactionId, creditedAt: this.store.clock() }) };
       });
+      if(!result.replayed)this.store.emitUser?.(order.residentId,'receipt',{payment:{...result.payment,purpose:'jackpot'}});
       this.log(result.replayed ? 'jackpot_deposit_replay' : 'jackpot_deposit_credit', { residentId: order.residentId, txRef: order.txRef, transactionId, amount: order.amount }); return result;
-    } catch (error) { if (error.code === 11000) throw new GameError('This provider transaction has already been credited', 409, 'payment_duplicate'); throw error; }
+    } catch (error) { await this.payments.recordFulfillmentFailure('jackpot_deposit_orders',order.txRef,error); if (error.code === 11000) throw new GameError('This provider transaction has already been credited', 409, 'payment_duplicate'); throw error; }
   }
   async verifyDeposit(residentId, body = {}) { const result = await this.creditDeposit(await this.verifiedDeposit(body.transactionId, body.txRef, residentId), residentId); return { ok: true, ...result, state: await this.state(residentId) }; }
   async depositStatus(residentId, txRef) { const row = await this.collection('jackpot_deposit_orders').findOne({ residentId, txRef: clean(txRef, 100) }); fail(row, 'Deposit not found', 404, 'deposit_not_found'); return { ok: true, payment: orderView(row) }; }
@@ -237,16 +246,17 @@ export class JackpotIntegration {
     fail(idempotencyKey(requestKey), 'Use a valid withdrawal request key'); const quote = jackpotWithdrawalQuote(Number(amount));
     bankName = clean(bankName, 80); accountNumber = clean(accountNumber, 20).replace(/\s+/g, ''); accountName = clean(accountName, 100);
     fail(bankName.length >= 2, 'Enter your bank'); fail(/^\d{10,20}$/.test(accountNumber), 'Enter a valid account number'); fail(accountName.length >= 2, 'Enter the account name');
-    const fingerprint = JSON.stringify({ ...quote, bankName: bankName.toLowerCase(), accountNumber, accountName: accountName.toLowerCase() }), withdrawalId = `jwd_${crypto.randomUUID()}`; let row;
+    const fingerprint = hash(JSON.stringify({ ...quote, bankName: bankName.toLowerCase(), accountNumber, accountName: accountName.toLowerCase() })), withdrawalId = `jwd_${crypto.randomUUID()}`; let row;
+    const matches = existing => existing.fingerprint === fingerprint || (typeof existing.fingerprint === 'string' && existing.fingerprint.startsWith('{') && hash(existing.fingerprint) === fingerprint);
     try {
       row = await this.store.transaction(async session => {
-        const existing = await this.collection('jackpot_withdrawals').findOne({ residentId, operationKey: requestKey }, { session }); if (existing) { fail(existing.fingerprint === fingerprint, 'This withdrawal key was already used for another request', 409, 'idempotency_conflict'); return existing; }
+        const existing = await this.collection('jackpot_withdrawals').findOne({ residentId, operationKey: requestKey }, { session }); if (existing) { fail(matches(existing), 'This withdrawal key was already used for another request', 409, 'idempotency_conflict'); if(existing.fingerprint!==fingerprint)await this.collection('jackpot_withdrawals').updateOne({_id:existing._id},{$set:{fingerprint}},{session}); return existing; }
         await this.moveBalance(residentId, { operationKey: `withdrawal-hold:${withdrawalId}`, type: 'withdrawal_requested', deltaAvailable: -quote.grossAmount, deltaPending: quote.grossAmount, metadata: { withdrawalId, ...quote } }, session);
         const now = this.store.clock(), encryptedBank = this.payments.encrypt({ bankName, accountNumber, accountName }, `jackpot-withdrawal:${withdrawalId}`);
         const created = { _id: withdrawalId, residentId, operationKey: requestKey, fingerprint, ...quote, status: 'requested', bankName, bankLast4: accountNumber.slice(-4), accountName, encryptedBank, requestedAt: now, updatedAt: now, paidAt: null, reference: null };
         await this.collection('jackpot_withdrawals').insertOne(created, { session }); return created;
       });
-    } catch (error) { if (error.code !== 11000) throw error; row = await this.collection('jackpot_withdrawals').findOne({ residentId, operationKey: requestKey }); fail(row && row.fingerprint === fingerprint, 'This withdrawal key was already used for another request', 409, 'idempotency_conflict'); }
+    } catch (error) { if (error.code !== 11000) throw error; row = await this.collection('jackpot_withdrawals').findOne({ residentId, operationKey: requestKey }); fail(row && matches(row), 'This withdrawal key was already used for another request', 409, 'idempotency_conflict'); }
     this.log('jackpot_withdrawal_requested', { residentId, withdrawalId: row._id, grossAmount: row.grossAmount, netAmount: row.netAmount }); return { ok: true, withdrawal: { id: row._id, grossAmount: row.grossAmount, feeAmount: row.feeAmount, netAmount: row.netAmount, status: row.status, bankName: row.bankName, bankLast4: row.bankLast4, accountName: row.accountName, requestedAt: row.requestedAt }, state: await this.state(residentId) };
   }
   async adminOverview(adminId) {
@@ -276,10 +286,13 @@ export class JackpotIntegration {
     });
   }
   async handleWebhook(req, res) {
-    const raw = await rawBody(req), signature = req.headers['flutterwave-signature'];
-    const base = await this.payments.handleWebhook(raw, signature); let body = {}; try { body = JSON.parse(raw.toString('utf8')); } catch { return json(res, 200, base); }
+    this.rateLimit(req.socket.remoteAddress,'webhook',120);
+    const raw = await rawBody(req), signature = req.headers['flutterwave-signature'], legacyHash=req.headers['verif-hash'];
+    const base = await this.payments.handleWebhook(raw, signature, legacyHash); let body = {}; try { body = JSON.parse(raw.toString('utf8')); } catch { return json(res, 200, base); }
     const txRef = clean(body.data?.tx_ref, 100); if (body.event !== 'charge.completed' || !txRef.startsWith('abjl_jp_')) return json(res, 200, base);
     const order = await this.collection('jackpot_deposit_orders').findOne({ txRef }); if (!order) return json(res, 200, { ok: true, ignored: true });
+    const config=await this.payments.config(order.mode);
+    fail(validFlutterwaveWebhook(raw,signature,config?.secrets.webhookSecret,legacyHash),'Webhook signing mode does not match the deposit',401,'invalid_webhook_signature');
     const result = await this.creditDeposit(await this.verifiedDeposit(body.data?.id, txRef), 'flutterwave-webhook'); return json(res, 200, { ok: true, jackpot: true, ...result });
   }
   async handle(req, res) {

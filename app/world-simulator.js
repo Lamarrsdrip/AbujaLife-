@@ -1,3 +1,4 @@
+import {renderTripWorld} from './world-trip.js';
 import { canUseFurnitureSurface } from '../src/shared/furniture-metadata.mjs';
 // Original AbujaLife scenery. These are authored social spaces, not geographic maps.
 let serial = 0;
@@ -57,10 +58,12 @@ export function avatarSVG(appearance = {}, {size = 160, fullBody = false} = {}) 
   return `<svg xmlns="http://www.w3.org/2000/svg" class="resident-avatar ${fullBody?'resident-avatar-full':''}" viewBox="${fullBody?'0 0 200 280':'25 22 150 154'}" width="${Number(size)||160}" role="img" aria-label="Resident portrait">${residentArt(appearance)}</svg>`;
 }
 
-import { buildCity, buildJourney, vehicleArt } from './world-city.js';
+import { buildCity, vehicleArt } from './world-city.js';
 import { buildInterior, furnitureGhost, furnitureDimensions } from './world-interiors.js';
+import { interiorExit, interiorPromptPosition } from './world-interior-actions.js';
+import { worldVehicleState } from './world-vehicle-state.js';
 import { VENUES, VENUE_ACTIONS, venuesForDistrict } from '../src/shared/life.mjs';
-import { VEHICLE_CATALOG, vehicleColorHex, vehicleFor } from '../src/shared/vehicles.mjs';
+import { vehicleColorHex, vehicleFor } from '../src/shared/vehicles.mjs';
 import { createCharacterRenderer } from './world-3d.js';
 import { abujaTime, clubSchedule, seasonalWeather } from '../src/shared/simulation.mjs';
 import { createClubAudio } from './world-audio.js';
@@ -100,8 +103,20 @@ function writeScenePoses() {
     if (serialized !== lastPoseWrite) {localStorage.setItem(poseStorageKey,serialized);lastPoseWrite=serialized;}
   } catch { /* The live scene still works when browser storage is unavailable. */ }
 }
+const carDistrictKey='abujalife.car-district.v1';
+function storedCarDistrict(profile){
+  try{
+    const raw=localStorage.getItem(carDistrictKey);if(!raw)return null;
+    const parsed=JSON.parse(raw);
+    if(parsed?.residentId!==profile?.id||typeof parsed.district!=='string')return null;
+    return parsed.district;
+  }catch{return null;}
+}
+export function rememberCarDistrict(residentId,district){
+  if(typeof residentId!=='string'||!residentId||typeof district!=='string'||!district)return;
+  try{localStorage.setItem(carDistrictKey,JSON.stringify({residentId,district}));}catch{}
+}
 const arrowIcon='<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18L18 6M6 6h12v12"/></svg>';
-const vehicleIds = VEHICLE_CATALOG.map(vehicle=>vehicle.id);
 const clamp = (n,a,b) => Math.max(a,Math.min(b,n));
 const distance = (a,b) => Math.hypot(a.x-b.x,a.y-b.y);
 
@@ -146,12 +161,13 @@ function makeNavigation(scene,radius=10) {
 
 /** A locally simulated playable world. Online residents only come from the server. */
 export function renderWorld(container,{profile={},place={},people=[],serverNow,weather:reportedWeather,canDecorate=true,catalog=[],onInteract=()=>{},onResident=()=>{},onFurnitureSelect=()=>{},onDestination=()=>{},onArrive}={}) {
+ if(profile.activeTrip)return renderTripWorld(container,{profile,place,people,serverNow,onArrive});
  if(!container)return Object.assign(()=>{},{perform:()=>{},walkTo:()=>{}});
- const id=`abuja-motion-${++serial}`,trip=profile.activeTrip,kind=trip?'transit':profile.location?.kind||'public',atHome=kind==='home'||kind==='visit',interior=atHome||kind==='venue',preview=container.id==='welcome-scene';
+ const id=`abuja-motion-${++serial}`,trip=null,kind=trip?'transit':profile.location?.kind||'public',atHome=kind==='home'||kind==='visit',interior=atHome||kind==='venue',preview=container.id==='welcome-scene';
  const realTimeStart=Number.isFinite(Number(serverNow))?Number(serverNow):Date.now(),localTimeStart=performance.now();
  const now=()=>realTimeStart+(performance.now()-localTimeStart);
  const venue=VENUES.find(v=>v.id===profile.location?.venue),isClub=venue?.kind==='club'||['club','club-cage','magic-city','bear-barn'].includes(venue?.id);
- const scene=trip?buildJourney({profile,place,id}):interior?buildInterior({profile:kind==='visit'?{...profile,location:{...profile.location,kind:'home',venue:'home'}}:profile,venue:kind==='visit'?undefined:venue,id}):buildCity({profile,place,id,venues:venuesForDistrict(profile.district||place.id)});
+ let scene=interior?buildInterior({profile:kind==='visit'?{...profile,location:{...profile.location,kind:'home',venue:'home'}}:profile,venue:kind==='visit'?undefined:venue,id}):buildCity({profile,place,id,venues:venuesForDistrict(profile.district||place.id)});
  scene.obstacles ||= [];scene.interactables ||= [];
  // A guest sees the owner's real floor plan, but every interaction must stay
  // read-only. Keep the door as the authoritative leave action and turn the
@@ -166,13 +182,13 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
   });
  }
  scene.pedestrians ||= [];scene.traffic ||= [];
- const ownVehicle=typeof profile.drivingVehicle==='string'?profile.drivingVehicle:vehicleIds.find(v=>profile.inventory?.includes(v));
+ const {vehicleId:ownVehicle,carWithYou}=worldVehicleState(profile,storedCarDistrict(profile));
  const driving=!!profile.drivingVehicle&&!interior&&!trip,transport=trip?trip.mode!=='walk':driving;
  const key=[profile.id||'preview',profile.createdAt||0,profile.district||place.id||'garki',kind,atHome?profile.home?.propertyId:venue?.id||'',trip?.id||''].join(':');
  const persistentScene=container.id==='world-scene'&&typeof profile.id==='string'&&profile.id.length>0&&!trip;
  if(persistentScene)loadScenePoses();
  const entry=worldEntryState(scene,profile,persistentScene?sceneMemory.get(key):undefined),saved=entry.saved;scene.spawn=entry.spawn;
- const nav=makeNavigation(scene,driving?24:10);
+ let nav=makeNavigation(scene,driving?24:10);
  const initial=saved?{x:saved.x,y:saved.y}:scene.spawn;
  let player={x:initial.x,y:initial.y},camera={x:saved?.cameraX??player.x,y:saved?.cameraY??player.y},angle=saved?.angle||0,dir=saved?.dir||1,disposed=false,raf=0,lastTime=0,elapsed=0,travelDistance=0,walkPhase=0,path=[],pending=null,routeRepairs=0,nearby=null,moving=false,sprinting=false,arrived=false,furnitureMode=null,furnitureRotation=0,activity=null,lastStatus='',parked={x:saved?.parked?.x??scene.spawn.x+144,y:saved?.parked?.y??scene.spawn.y+108};
  if(saved&&saved.driving&&!driving&&!interior&&!trip){parked={...player};player.x+=78;}
@@ -192,6 +208,7 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
  const keyboard=new Set(),joy={x:0,y:0,pointer:null},listeners=[];
  let viewWidth=1050,viewHeight=650,zoom=clampWorldZoom(saved?.zoom ?? 1),frameCount=0;
  const orbit=createWorldOrbit({yaw:saved?.cameraYaw,elevation:saved?.cameraElevation,zoom});
+ if(preview)camera={x:scene.width/2,y:scene.height/2};
  const orientation=()=>orbit.getState();
  const viewport=()=>({width:viewWidth,height:viewHeight,oblique,...orientation()});
  const usablePose=p=>p&&Number.isFinite(p.x)&&Number.isFinite(p.y)&&p.x>=0&&p.y>=0&&p.x<=scene.width&&p.y<=scene.height;
@@ -201,22 +218,22 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
  const residentUpdatedAt=new Map(neighbours.map(p=>[String(p.id),now()]));
  const residentMarkup=person=>{const pose=residentPoses.get(String(person.id))||person.pose;return `<g class="world-online-resident" data-world-resident="${escape(person.id)}" transform="translate(${pose.x} ${pose.y})" role="button" tabindex="0" aria-label="${escape('@'+String(person.username||'resident').replace(/^@+/,''))} — live resident">${movingResident(person.appearance)}<g class="online-resident-label"><rect x="-52" y="-145" width="104" height="20" rx="10" fill="#f5f1df"/><circle cx="-41" cy="-135" r="3" fill="#63a168"/><text x="4" y="-131" text-anchor="middle">${escape(('@'+String(person.username||'resident').replace(/^@+/, '')).slice(0,22))}</text></g><rect x="-27" y="-145" width="54" height="150" fill="transparent"/></g>`;};
  const carColor=vehicleColorHex(profile,ownVehicle),carStyle=vehicleFor(ownVehicle)?.bodyStyle||'sedan';
- if(ownVehicle&&!interior&&!trip)scene.interactables.push({id:'your-car',x:parked.x,y:parked.y-58,label:'Drive your car',action:'toggle-driving',payload:{vehicleId:ownVehicle},radius:105,icon:'↔'});
- const markerMarkup=scene.interactables.map(point=>`<g class="world-point" data-world-target="${escape(point.id)}" transform="translate(${point.x} ${point.y})" role="button" tabindex="0" aria-label="Walk to ${escape(point.label)}"><ellipse class="world-point-ring" cy="0" rx="22" ry="9"/><path class="world-point-arrow" d="M-5-13L0-8L5-13"/><g class="world-point-label"><rect x="${-Math.max(45,point.label.length*3.15+17)}" y="-48" width="${Math.max(90,point.label.length*6.3+34)}" height="25" rx="12.5"/><text y="-31" text-anchor="middle">${escape(point.label)}</text></g><rect x="-44" y="-58" width="88" height="79" rx="10" fill="transparent"/></g>`).join('');
+ if(ownVehicle&&carWithYou&&!interior&&!trip)scene.interactables.push({id:'your-car',x:parked.x,y:parked.y-58,label:'Drive your car',action:'toggle-driving',payload:{vehicleId:ownVehicle},radius:105,icon:'↔'});
+ const markerMarkup=()=>scene.interactables.map(point=>`<g class="world-point" data-world-target="${escape(point.id)}" transform="translate(${point.x} ${point.y})" role="button" tabindex="0" aria-label="Walk to ${escape(point.label)}"><ellipse class="world-point-ring" cy="0" rx="22" ry="9"/><path class="world-point-arrow" d="M-5-13L0-8L5-13"/><g class="world-point-label"><rect x="${-Math.max(45,point.label.length*3.15+17)}" y="-48" width="${Math.max(90,point.label.length*6.3+34)}" height="25" rx="12.5"/><text y="-31" text-anchor="middle">${escape(point.label)}</text></g><rect x="-44" y="-58" width="88" height="79" rx="10" fill="transparent"/></g>`).join('');
  container.classList.add('world-canvas','world-playable');container.classList.toggle('world-preview',preview);container.tabIndex=0;
  container.dataset.sceneKind=kind;container.dataset.sceneName=scene.title||'';container.dataset.driving=String(driving);container.dataset.homeProperty=atHome?profile.home?.propertyId||'garki-studio':'';
  container.setAttribute('aria-label',`${scene.title||'Abuja'} playable world. Use WASD or arrow keys to walk. Hold Shift to run. E to interact. Tap the ground to move; use the camera + and − buttons or pinch this environment to zoom.`);
- container.innerHTML=`<svg xmlns="http://www.w3.org/2000/svg" class="world-scene ${interior?'world-interior':'world-public'}" data-home-property="${escape(atHome?profile.home?.propertyId||'garki-studio':'')}" viewBox="0 0 1050 650" role="group" aria-label="${escape(scene.title||'Your neighbourhood')}"><title>${escape(scene.title||'AbujaLife')}</title><desc>Walkable authored game scenery. Tap a destination, use arrow keys or WASD, or drag the movement joystick. City pedestrians and traffic are ambient simulation; online residents have separate name labels.</desc><g class="world-art">${scene.art}</g><g class="world-traffic">${scene.traffic.map((car,i)=>`<g data-city-traffic="${i}" aria-label="Ambient city traffic">${vehicleArt(car.color,car.type)}</g>`).join('')}</g><g class="world-ambient">${scene.pedestrians.map((npc,i)=>`<g data-city-npc="${i}" aria-label="${escape(scene.pedestrians[i]?.role||'Ambient city pedestrian')}"><g class="walker-facing">${movingResident({skinTone:i%3?'brown':'deep',top:['forest','cream','ochre','navy'][i%4],hair:['crop','braids','afro'][i%3]})}</g><text x="0" y="-91" text-anchor="middle" class="world-npc-label ${scene.pedestrians[i]?.role?'is-security':''}">${escape(scene.pedestrians[i]?.role||'')}</text></g>`).join('')}</g><g class="world-online">${neighbours.map(residentMarkup).join('')}</g><g class="world-route"><path class="world-route-line"/><g class="world-destination" hidden><ellipse rx="17" ry="7"/><ellipse rx="7" ry="3"/></g></g><g class="world-markers">${markerMarkup}</g>${ownVehicle&&!interior&&!trip?`<g class="world-parked-car" data-world-target="your-car" aria-label="Your parked car" transform="translate(${parked.x} ${parked.y})">${vehicleArt(carColor,carStyle,ownVehicle)}</g>`:''}<g class="world-player" data-world-player><ellipse class="world-player-halo" cy="3" rx="27" ry="11"/><g class="world-player-walker"><g class="walker-facing">${movingResident(profile.appearance,true)}</g><g class="world-you-label"><path d="M-4-94L0-88L4-94Z"/><rect x="-18" y="-115" width="36" height="19" rx="9"/><text text-anchor="middle" y="-102">YOU</text></g></g><g class="world-player-car">${vehicleArt(trip&&trip.mode==='taxi'?'#cfb278':carColor,trip?.mode==='bus'?'bus':trip?.mode==='taxi'?'taxi':carStyle,ownVehicle)}</g></g><g class="world-furniture-ghost" hidden><ellipse rx="49" ry="24"/><path d="M-25-12H25V12H-25Z"/><text y="-34" text-anchor="middle">PLACE HERE</text></g></svg><div class="world-hud"><div class="world-location-chip"><i></i><span>${escape(scene.title||place.name||'Abuja')}</span><small>${trip?'ON THE ROAD':driving?'DRIVING':interior?'INDOORS':'FREE ROAM'}</small></div><button class="world-camera-button" data-world-control="center" title="Center on you" aria-label="Center camera on your character">⌖</button></div><div class="world-zoom-controls" role="group" aria-label="Environment camera zoom"><button type="button" data-world-control="zoom-out" aria-label="Zoom environment out" title="Zoom out">−</button><button type="button" data-world-control="zoom-fit" aria-label="Reset environment to wide view" title="Wide view"><svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M7 3H3v4m10-4h4v4M3 13v4h4m10-4v4h-4"/></svg></button><button type="button" data-world-control="zoom-in" aria-label="Zoom environment in" title="Zoom in">+</button><span class="world-zoom-announcement" aria-live="polite"></span></div><div class="world-minimap" aria-label="Your position in this game space"><svg viewBox="0 0 ${scene.width} ${scene.height}" preserveAspectRatio="xMidYMid meet">${scene.obstacles.map(o=>`<rect x="${o.x}" y="${o.y}" width="${o.w}" height="${o.h}" rx="8" fill="#668269" opacity=".45"/>`).join('')}${scene.interactables.map(p=>`<circle cx="${p.x}" cy="${p.y}" r="${interior?12:22}" fill="#f4e6b8"/>`).join('')}<rect class="world-minimap-view" fill="#fbf5d31a" stroke="#f3f0d8" stroke-width="${interior?5:13}"/><circle class="world-minimap-player" r="${interior?19:33}" fill="#fff4c8" stroke="#55714e" stroke-width="${interior?5:10}"/></svg><span>YOUR NEIGHBOURHOOD</span></div><div class="world-motion-status" aria-live="polite">${trip?'Watch the city go by':preview?'':interior?'Make yourself at home.':'A whole neighbourhood to explore.'}</div><div class="world-game-controls"><div class="world-joystick-wrap"><div class="world-joystick" role="application" aria-label="Movement joystick. Drag to walk; push further to run." tabindex="0"><span class="world-joystick-cross"></span><span class="world-joystick-knob"></span></div><span class="world-joystick-caption">${driving?'DRIVE':'MOVE'}</span></div><div class="world-actions"><button class="world-sprint-button" data-world-control="sprint" aria-label="Hold to ${driving?'accelerate':'run'}"><span>${arrowIcon}</span><small>${driving?'BOOST':'RUN'}</small></button><button class="world-interact-button" data-world-control="interact"><kbd>E</kbd><span>${driving?'Get out':'Explore'}</span><b>${arrowIcon}</b></button></div></div><div class="world-help"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move</span><span><kbd>Shift</kbd> run</span><span>Tap anywhere to walk</span></div><div class="world-simulation-label">${interior?'Your space, your pace':'City traffic & pedestrians · simulated'}</div><div class="world-furniture-toolbar" hidden role="group" aria-label="Arrange your furniture"><div class="world-furniture-heading"><strong data-furniture-name>Your piece</strong><span data-furniture-feedback aria-live="polite">Choose a spot</span></div><div class="world-furniture-adjust"><button type="button" data-world-control="nudge-left" aria-label="Move furniture left">←</button><button type="button" data-world-control="nudge-forward" aria-label="Move furniture forward">↑</button><button type="button" data-world-control="nudge-back" aria-label="Move furniture back">↓</button><button type="button" data-world-control="nudge-right" aria-label="Move furniture right">→</button><button type="button" data-world-control="rotate" aria-label="Rotate furniture 90 degrees">↻</button><button type="button" data-world-control="snap" aria-pressed="true">Snap</button></div><div class="world-furniture-confirm"><button type="button" data-world-control="cancel-furniture">Cancel</button><button type="button" data-world-control="place-furniture">Place</button></div></div>`;
- const svg=container.querySelector('.world-scene'),playerNode=container.querySelector('.world-player'),walkerNode=playerNode.querySelector('.world-player-walker'),carNode=playerNode.querySelector('.world-player-car'),facingNode=walkerNode.querySelector('.walker-facing'),bodyNode=walkerNode.querySelector('.walker-body'),legs=[...walkerNode.querySelectorAll('.walker-leg')],arms=[...walkerNode.querySelectorAll('.walker-arm')],backHead=walkerNode.querySelector('.walker-back-head'),frontFace=walkerNode.querySelector('.walker-face'),destinationNode=container.querySelector('.world-destination'),routeNode=container.querySelector('.world-route-line'),statusNode=container.querySelector('.world-motion-status'),interactButton=container.querySelector('.world-interact-button'),parkedNode=container.querySelector('.world-parked-car'),ghost=container.querySelector('.world-furniture-ghost'),joyNode=container.querySelector('.world-joystick'),joyKnob=container.querySelector('.world-joystick-knob'),trafficNodes=[...container.querySelectorAll('[data-city-traffic]')],npcNodes=[...container.querySelectorAll('[data-city-npc]')];
+ container.innerHTML=`<svg xmlns="http://www.w3.org/2000/svg" class="world-scene ${interior?'world-interior':'world-public'}" data-home-property="${escape(atHome?profile.home?.propertyId||'garki-studio':'')}" viewBox="0 0 1050 650" role="group" aria-label="${escape(scene.title||'Your neighbourhood')}"><title>${escape(scene.title||'AbujaLife')}</title><desc>Walkable authored game scenery. Tap a destination, use arrow keys or WASD, or drag the movement joystick. City pedestrians and traffic are ambient simulation; online residents have separate name labels.</desc><g class="world-art">${scene.art}</g><g class="world-traffic">${scene.traffic.map((car,i)=>`<g data-city-traffic="${i}" aria-label="Ambient city traffic">${vehicleArt(car.color,car.type)}</g>`).join('')}</g><g class="world-ambient">${scene.pedestrians.map((npc,i)=>`<g data-city-npc="${i}" aria-label="${escape(scene.pedestrians[i]?.role||'Ambient city pedestrian')}"><g class="walker-facing">${movingResident({skinTone:i%3?'brown':'deep',top:['forest','cream','ochre','navy'][i%4],hair:['crop','braids','afro'][i%3]})}</g><text x="0" y="-91" text-anchor="middle" class="world-npc-label ${scene.pedestrians[i]?.role?'is-security':''}">${escape(scene.pedestrians[i]?.role||'')}</text></g>`).join('')}</g><g class="world-online">${neighbours.map(residentMarkup).join('')}</g><g class="world-route"><path class="world-route-line"/><g class="world-destination" hidden><ellipse rx="17" ry="7"/><ellipse rx="7" ry="3"/></g></g><g class="world-markers">${markerMarkup()}</g>${ownVehicle&&carWithYou&&!interior&&!trip?`<g class="world-parked-car" data-world-target="your-car" aria-label="Your parked car" transform="translate(${parked.x} ${parked.y})">${vehicleArt(carColor,carStyle,ownVehicle)}</g>`:''}<g class="world-player" data-world-player><ellipse class="world-player-halo" cy="3" rx="27" ry="11"/><g class="world-player-walker"><g class="walker-facing">${movingResident(profile.appearance,true)}</g><g class="world-you-label"><path d="M-4-94L0-88L4-94Z"/><rect x="-18" y="-115" width="36" height="19" rx="9"/><text text-anchor="middle" y="-102">YOU</text></g></g><g class="world-player-car">${vehicleArt(trip&&trip.mode==='taxi'?'#cfb278':carColor,trip?.mode==='bus'?'bus':trip?.mode==='taxi'?'taxi':carStyle,ownVehicle)}</g></g><g class="world-furniture-ghost" hidden><ellipse rx="49" ry="24"/><path d="M-25-12H25V12H-25Z"/><text y="-34" text-anchor="middle">PLACE HERE</text></g></svg><div class="world-hud"><div class="world-location-chip"><i></i><span>${escape(scene.title||place.name||'Abuja')}</span><small>${trip?'ON THE ROAD':driving?'DRIVING':interior?'INDOORS':'FREE ROAM'}</small></div><button class="world-camera-button" data-world-control="center" title="Center on you" aria-label="Center camera on your character">⌖</button></div><div class="world-zoom-controls" role="group" aria-label="Environment camera zoom"><button type="button" data-world-control="zoom-out" aria-label="Zoom environment out" title="Zoom out">−</button><button type="button" data-world-control="zoom-fit" aria-label="Reset environment to wide view" title="Wide view"><svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M7 3H3v4m10-4h4v4M3 13v4h4m10-4v4h-4"/></svg></button><button type="button" data-world-control="zoom-in" aria-label="Zoom environment in" title="Zoom in">+</button><span class="world-zoom-announcement" aria-live="polite"></span></div><div class="world-minimap" aria-label="Your position in this game space"><svg viewBox="0 0 ${scene.width} ${scene.height}" preserveAspectRatio="xMidYMid meet">${scene.obstacles.map(o=>`<rect x="${o.x}" y="${o.y}" width="${o.w}" height="${o.h}" rx="8" fill="#668269" opacity=".45"/>`).join('')}${scene.interactables.map(p=>`<circle cx="${p.x}" cy="${p.y}" r="${interior?12:22}" fill="#f4e6b8"/>`).join('')}<rect class="world-minimap-view" fill="#fbf5d31a" stroke="#f3f0d8" stroke-width="${interior?5:13}"/><circle class="world-minimap-player" r="${interior?19:33}" fill="#fff4c8" stroke="#55714e" stroke-width="${interior?5:10}"/></svg><span>YOUR NEIGHBOURHOOD</span></div><div class="world-motion-status" aria-live="polite">${trip?'Watch the city go by':preview?'':interior?'Make yourself at home.':'A whole neighbourhood to explore.'}</div><div class="world-game-controls"><div class="world-joystick-wrap"><div class="world-joystick" role="application" aria-label="Movement joystick. Drag to walk; push further to run." tabindex="0"><span class="world-joystick-cross"></span><span class="world-joystick-knob"></span></div><span class="world-joystick-caption">${driving?'DRIVE':'MOVE'}</span></div><div class="world-actions"><button class="world-sprint-button" data-world-control="sprint" aria-label="Hold to ${driving?'accelerate':'run'}"><span>${arrowIcon}</span><small>${driving?'BOOST':'RUN'}</small></button><div class="world-interaction-row">${interior&&kind!=='home'&&!preview&&interiorExit(scene)?`<button type="button" class="world-exit-shortcut" data-world-control="exit" aria-label="Go outside to the street"><span>Go outside</span>${arrowIcon}</button>`:''}<button class="world-interact-button" data-world-control="interact"><kbd>E</kbd><span>${driving?'Get out':'Explore'}</span><b>${arrowIcon}</b></button></div></div></div><button type="button" class="world-context-action" data-world-context hidden></button><div class="world-help"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move</span><span><kbd>Shift</kbd> run</span><span>Tap anywhere to walk</span></div><div class="world-simulation-label">${interior?'Your space, your pace':'City traffic & pedestrians · simulated'}</div><div class="world-furniture-toolbar" hidden role="group" aria-label="Arrange your furniture"><div class="world-furniture-heading"><strong data-furniture-name>Your piece</strong><span data-furniture-feedback aria-live="polite">Choose a spot</span></div><div class="world-furniture-adjust"><button type="button" data-world-control="nudge-left" aria-label="Move furniture left">←</button><button type="button" data-world-control="nudge-forward" aria-label="Move furniture forward">↑</button><button type="button" data-world-control="nudge-back" aria-label="Move furniture back">↓</button><button type="button" data-world-control="nudge-right" aria-label="Move furniture right">→</button><button type="button" data-world-control="rotate" aria-label="Rotate furniture 90 degrees">↻</button><button type="button" data-world-control="snap" aria-pressed="true">Snap</button></div><div class="world-furniture-confirm"><button type="button" data-world-control="cancel-furniture">Cancel</button><button type="button" data-world-control="place-furniture">Place</button></div></div>`;
+ const svg=container.querySelector('.world-scene'),playerNode=container.querySelector('.world-player'),walkerNode=playerNode.querySelector('.world-player-walker'),carNode=playerNode.querySelector('.world-player-car'),facingNode=walkerNode.querySelector('.walker-facing'),bodyNode=walkerNode.querySelector('.walker-body'),legs=[...walkerNode.querySelectorAll('.walker-leg')],arms=[...walkerNode.querySelectorAll('.walker-arm')],backHead=walkerNode.querySelector('.walker-back-head'),frontFace=walkerNode.querySelector('.walker-face'),destinationNode=container.querySelector('.world-destination'),routeNode=container.querySelector('.world-route-line'),statusNode=container.querySelector('.world-motion-status'),interactButton=container.querySelector('.world-interact-button'),contextAction=container.querySelector('[data-world-context]'),parkedNode=container.querySelector('.world-parked-car'),ghost=container.querySelector('.world-furniture-ghost'),joyNode=container.querySelector('.world-joystick'),joyKnob=container.querySelector('.world-joystick-knob'),trafficNodes=[...container.querySelectorAll('[data-city-traffic]')],npcNodes=[...container.querySelectorAll('[data-city-npc]')];
  walkerNode.style.display=transport?'none':'';carNode.style.display=transport?'':'none';if(driving&&parkedNode)parkedNode.style.display='none';
  if(driving)container.querySelector('[data-world-target="your-car"].world-point')?.setAttribute('display','none');
  const timeChip=document.createElement('div');timeChip.className='world-time-chip';timeChip.setAttribute('aria-label','Actual Abuja time and weather');container.append(timeChip);
  let clock=abujaTime(now()),weather=reportedWeather||seasonalWeather(now()),lastClockSecond=-1;
- const sound=createClubAudio({enabled:profile.settings?.soundEnabled!==false,mode:isClub?'club':'ambient',onState:playing=>{const button=container.querySelector('.world-sound-toggle');if(button){const label=isClub?'Music':'Ambience';button.textContent=playing?`${label} on`:`${label} off`;button.setAttribute('aria-pressed',String(playing));}}});
+ const sound=createClubAudio({enabled:profile.settings?.soundEnabled!==false,mode:isClub?'club':'ambient',onState:state=>{const button=container.querySelector('.world-sound-toggle');if(button){const label=isClub?'Music':'Ambience';button.textContent=state.playing?`${label} on`:state.enabled?`${label} paused`:`${label} off`;button.setAttribute('aria-pressed',String(state.enabled));}}});
  {const button=document.createElement('button');button.className='world-sound-toggle';button.type='button';button.textContent=isClub?'Music off':'Ambience off';button.setAttribute('aria-pressed','false');button.setAttribute('aria-label',isClub?'Toggle original synthesized club music':'Toggle original Abuja city ambience');button.disabled=profile.settings?.soundEnabled===false;button.title=button.disabled?'Enable sound in Settings first':isClub?'Original club beats · tap to listen':'Original Abuja ambience · tap to listen';button.onclick=()=>sound.toggle();container.append(button);}
  let characterRenderer=null;
  const mountCharacterRenderer=()=>{
-  if(disposed||characterRenderer||preview)return;
+  if(disposed||characterRenderer)return;
   characterRenderer=createCharacterRenderer(container,{appearance:profile.appearance,pedestrians:scene.pedestrians,neighbours,scene,profile,kind,venue,place});
   if(container.dataset.environmentRenderer==='webgl-3d'){oblique=true;updateViewport();}
   armLoop();
@@ -233,8 +250,38 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
  while(svg.firstChild)groundGroup.append(svg.firstChild);svg.append(groundGroup);
  const on=(node,type,handler,options)=>{node.addEventListener(type,handler,options);listeners.push(()=>node.removeEventListener(type,handler,options));};
  const say=text=>{if(text!==lastStatus){statusNode.textContent=text;lastStatus=text;statusNode.classList.toggle('is-important',/out of reach|Try |Get out|Park your|clear space|clear spot|rotation/.test(text));}};
- const modalOpen=()=>[...document.querySelectorAll('.sheet-backdrop,[aria-modal="true"],.ph-backdrop')].some(modal=>!modal.contains(container));
+ const modalOpen=()=>[...document.querySelectorAll('.sheet-backdrop,[aria-modal="true"],.ph-backdrop')].some(modal=>{if(modal.contains(container)||modal.hidden||modal.getAttribute('aria-hidden')==='true')return false;const style=getComputedStyle(modal);return style.display!=='none'&&style.visibility!=='hidden'&&modal.getClientRects().length>0;});
  const inputBlocked=()=>preview||document.hidden||modalOpen()||/INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName||'')||document.activeElement?.isContentEditable;
+ let exiting=false;
+ const updateInteriorPrompt=()=>{
+  if(!contextAction)return;
+  const eligible=interior&&!trip&&!furnitureMode&&!activity&&!inputBlocked();
+  const points=eligible?scene.interactables.filter(point=>!['exit-venue','leave-home','leave-visit','furnish'].includes(point.action)&&distance(player,point)<260).sort((a,b)=>distance(player,a)-distance(player,b)):[];
+  contextAction.hidden=true;
+  delete contextAction.dataset.pointId;
+  const rect=container.getBoundingClientRect();
+  const blockers=[];
+  if(!points.length||!rect.width||!rect.height)return;
+  const stage=container.closest('.world-stage')||container;
+  for(const node of stage.querySelectorAll('.world-hud,.world-live-stats,.world-time-chip,.world-zoom-controls,.world-game-controls,.world-catalogue-button,.world-sound-toggle,.abj-whole-city-button,.hud-context-slot,.world-resident-actions,.world-live-popover,.play-visit-card,.club-life-dock,.location-chat-panel,.world-furniture-toolbar')){
+   if(node.hidden||!node.getClientRects().length)continue;
+   const style=getComputedStyle(node),box=node.getBoundingClientRect();
+   if(style.display==='none'||style.visibility==='hidden'||!box.width||!box.height)continue;
+   blockers.push({x:box.left-rect.left,y:box.top-rect.top,width:box.width,height:box.height});
+  }
+  const you=characterRenderer?.projectGround?.(player)||worldToScreen(player,rect,camera,viewport());
+  blockers.push({x:you.x-rect.left-22,y:you.y-rect.top-76,width:44,height:94});
+  for(const point of points){
+   contextAction.textContent=point.label;
+   contextAction.setAttribute('aria-label',`Walk to ${point.label.toLowerCase()}`);
+   contextAction.hidden=false;
+   const anchor=point.promptAnchor||point,projected=characterRenderer?.projectWorld?.(anchor)||worldToScreen(anchor,rect,camera,viewport());
+   if(projected.z!==undefined&&(projected.z<-1||projected.z>1)){contextAction.hidden=true;continue;}
+   const placement=interiorPromptPosition({anchor:{x:projected.x-rect.left,y:projected.y-rect.top},width:rect.width,height:rect.height,promptWidth:contextAction.offsetWidth,promptHeight:contextAction.offsetHeight,blockers});
+   if(!placement){contextAction.hidden=true;continue;}
+   contextAction.style.left=`${placement.x}px`;contextAction.style.top=`${placement.y}px`;contextAction.dataset.pointId=point.id;break;
+  }
+ };
  const remember=(persist=false)=>{if(!persistentScene)return;sceneMemory.delete(key);sceneMemory.set(key,{...player,cameraX:camera.x,cameraY:camera.y,zoom,cameraYaw:orientation().yaw,cameraElevation:orientation().elevation,angle,dir,parked:{...parked},driving,exteriorTransition:entry.exteriorTransition});while(sceneMemory.size>poseLimit)sceneMemory.delete(sceneMemory.keys().next().value);if(persist)writeScenePoses();};
  on(window,'beforeunload',()=>remember(true));on(window,'pagehide',()=>remember(true));
  const updateRoute=()=>{routeNode.setAttribute('d',path.length?`M${player.x} ${player.y} ${path.map(p=>`L${p.x} ${p.y}`).join(' ')}`:'');destinationNode.toggleAttribute('hidden',!path.length);if(path.length)destinationNode.setAttribute('transform',`translate(${path.at(-1).x} ${path.at(-1).y})`);};
@@ -301,14 +348,15 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
   const result=furniturePlacementFeedback(profile,furnitureMode,furniturePayload(furnitureCursor),{scene});
   if(!result.valid){container.querySelector('[data-furniture-feedback]').textContent=result.message;say(result.message);return false;}
   furnitureSaving=true;container.querySelectorAll('.world-furniture-toolbar button').forEach(button=>button.disabled=true);
-  try{const saved=await onInteract('place-furniture',{itemId:furnitureMode,...result.placement});if(saved!==false&&saved!==null&&saved!==undefined){if(!disposed)setFurnitureMode(null);return true;}return false;}
+  try{const saved=await onInteract('place-furniture',{itemId:furnitureMode,...result.placement});if(saved!==false&&saved!==null&&saved!==undefined){if(!disposed)setFurnitureMode(null);return true;}if(!disposed){setFurnitureMode(null);say('Could not save that spot. Your piece is back where it was.');}return false;}
   finally{if(!disposed){furnitureSaving=false;container.querySelectorAll('.world-furniture-toolbar button').forEach(button=>button.disabled=false);paintFurniture(furnitureCursor);}}
  };
  const toWorld=e=>screenToWorld({x:e.clientX,y:e.clientY},svg.getBoundingClientRect(),camera,viewport());
  const updateViewport=()=>{
+  if(disposed)return;
   const box=container.getBoundingClientRect(),view=worldViewport({pixelWidth:box.width,pixelHeight:box.height,sceneWidth:scene.width,sceneHeight:scene.height,interior,transit:!!trip,zoom,oblique,...orientation()});
   viewWidth=view.width;viewHeight=view.height;camera=constrainWorldCamera(camera,view,scene);
-  if(oblique){const screen=worldToScreen(player,{left:0,top:0,width:1,height:1},camera,view);if(screen.x<.15||screen.x>.85||screen.y<.12||screen.y>.88)camera=constrainWorldCamera({x:player.x,y:player.y-55},view,scene);}
+  if(oblique&&!preview){const screen=worldToScreen(player,{left:0,top:0,width:1,height:1},camera,view);if(screen.x<.15||screen.x>.85||screen.y<.12||screen.y>.88)camera=constrainWorldCamera({x:player.x,y:player.y-55},view,scene);}
   container.dataset.cameraZoom=zoom.toFixed(3);container.dataset.cameraYaw=orientation().yaw.toFixed(5);container.dataset.cameraElevation=orientation().elevation.toFixed(5);
   container.dataset.cameraViewWidth=viewWidth.toFixed(2);container.dataset.cameraViewHeight=viewHeight.toFixed(2);
   const target=orientation().targetZoom;container.querySelector('[data-world-control="zoom-out"]').disabled=target<=WORLD_ZOOM.min+.001;container.querySelector('[data-world-control="zoom-in"]').disabled=target>=WORLD_ZOOM.max-.001;
@@ -317,7 +365,15 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
   orbit.setZoom(next,{immediate});zoom=orientation().zoom;updateViewport();
   if(announce)container.querySelector('.world-zoom-announcement').textContent=`Environment zoom ${Math.round(orientation().targetZoom*100)} percent`;remember();return orientation().targetZoom;
  };
- const resetZoom=()=>{orbit.reset({immediate:false});camera={x:interior?scene.width/2:player.x,y:interior?scene.height/2:player.y-55};updateViewport();remember();return 1;};
+ const resetZoom=()=>{
+  if(!interior&&!trip){
+   const box=container.getBoundingClientRect(),aspect=Math.max(.45,box.width/Math.max(1,box.height));
+   const atOne=worldViewport({pixelWidth:box.width,pixelHeight:box.height,sceneWidth:scene.width,sceneHeight:scene.height,interior:false,transit:false,zoom:1,oblique,...orientation()});
+   const fit=clampWorldZoom(atOne.baseWidth/Math.max(scene.width*1.32,scene.height*aspect*1.45));
+   orbit.stopMomentum();orbit.setZoom(fit,{immediate:false});zoom=orientation().zoom;camera={x:scene.width/2,y:scene.height/2};updateViewport();remember();return fit;
+  }
+  orbit.reset({immediate:false});camera={x:interior?scene.width/2:player.x,y:interior?scene.height/2:player.y-55};updateViewport();remember();return 1;
+ };
  const touch=bindWorldTouch({surface:svg,enabled:()=>!inputBlocked()&&!trip,orbit,placing:()=>!!furnitureMode,onStart:stop,onItemDrag:e=>paintFurniture(furniturePointer(e)),onZoom:next=>setZoom(next),onChange:()=>{zoom=orientation().zoom;updateViewport();}});
  on(svg,'click',e=>{
   if(inputBlocked()||trip||touch.blocksClick())return;const person=e.target.closest('[data-world-resident]');if(person){const resident=neighbours.find(p=>String(p.id)===person.dataset.worldResident);if(resident)onResident(resident);return;}
@@ -327,7 +383,16 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
   const target=e.target.closest('[data-world-target]');if(target){requestPoint(scene.interactables.find(point=>point.id===target.dataset.worldTarget));return;}moveTo(p.x,p.y);
  });
  on(container,'click',e=>{
+  const prompt=e.target.closest('[data-world-context]');
+  if(prompt){e.preventDefault();e.stopPropagation();if(!inputBlocked())requestPoint(scene.interactables.find(point=>point.id===prompt.dataset.pointId));return;}
   const control=e.target.closest('[data-world-control]')?.dataset.worldControl;if(!control)return;
+  if(control==='exit'){
+   e.preventDefault();e.stopPropagation();
+   const exit=interiorExit(scene);
+   if(!exit||exiting||activity||furnitureMode||inputBlocked())return;
+   exiting=true;e.target.closest('button').disabled=true;stop();remember();
+   dispatch(exit.action,exit.payload,()=>{exiting=false;if(!disposed)container.querySelector('[data-world-control="exit"]').disabled=false;});return;
+  }
   if(control==='center'){orbit.stopMomentum();camera={...player};container.focus({preventScroll:true});}
   if(control==='zoom-in')setZoom(orientation().targetZoom*WORLD_ZOOM.step,{announce:true});
   if(control==='zoom-out')setZoom(orientation().targetZoom/WORLD_ZOOM.step,{announce:true});
@@ -411,8 +476,7 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
   const blocked=inputBlocked();sound.setActive(!blocked&&(!isClub||clubSchedule(currentNow).isOpen));if(blocked&&!preview)dt=0;elapsed+=dt;if(blocked){keyboard.clear();joy.x=joy.y=0;}
   const orbitState=orbit.tick(dt);zoom=orbitState.zoom;if(orbitState.changed)updateViewport();
   const old={...player};moving=false;
-  if(trip){const duration=Math.max(1,Number(trip.seconds)||30)*1000,start=Number(trip.arrivesAt)-duration,progress=clamp((currentNow-start)/duration,0,1);player.x=450+progress*(scene.width-1000);player.y=889+Math.sin(elapsed*.6)*3;angle=0;moving=progress<1;walkPhase+=dt*10;if(progress>=1&&!arrived){arrived=true;Promise.resolve(onArrive?.(trip.id)).then(ok=>{if(ok===false)arrived=false;});}}
-  else if(!blocked&&!furnitureMode&&!activity){let dx=(keyboard.has('d')||keyboard.has('arrowright')?1:0)-(keyboard.has('a')||keyboard.has('arrowleft')?1:0)+joy.x,dy=(keyboard.has('s')||keyboard.has('arrowdown')?1:0)-(keyboard.has('w')||keyboard.has('arrowup')?1:0)+joy.y;
+  if(!blocked&&!furnitureMode&&!activity){let dx=(keyboard.has('d')||keyboard.has('arrowright')?1:0)-(keyboard.has('a')||keyboard.has('arrowleft')?1:0)+joy.x,dy=(keyboard.has('s')||keyboard.has('arrowdown')?1:0)-(keyboard.has('w')||keyboard.has('arrowup')?1:0)+joy.y;
    const inputLength=Math.hypot(dx,dy);if(inputLength>.06){if(path.length)stop();dx/=Math.max(1,inputLength);dy/=Math.max(1,inputLength);const velocity=screenVectorToWorld({x:dx,y:dy},oblique,orientation()),velocityLength=Math.hypot(velocity.x,velocity.y);dx=velocity.x/Math.max(1,velocityLength);dy=velocity.y/Math.max(1,velocityLength);const run=sprinting||keyboard.has('shift')||Math.hypot(joy.x,joy.y)>.82;const speed=driving?(run?455:300):(run?212:127);updatePlayer(dx*speed*dt,dy*speed*dt,dt);}
    else if(path.length){
     // Slow WebGL frames must not stretch a short walk past the time a player
@@ -436,7 +500,6 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
    moving=distance(old,player)>.05;
   }
   if(activity)paintActivity();
-  if(trip){camera.x=player.x;camera.y=player.y-55;}
   else if(!moving){camera=constrainWorldCamera({x:player.x,y:player.y-55},viewport(),scene);}
   else {const targetCam={x:player.x+(driving?Math.cos(angle*Math.PI/180)*100:0),y:player.y-55};const ease=1-Math.exp(-dt*(driving?4.5:6));camera.x+=(targetCam.x-camera.x)*ease;camera.y+=(targetCam.y-camera.y)*ease;camera=constrainWorldCamera(camera,viewport(),scene);}
   groundGroup.setAttribute('transform',worldFloorTransform(camera,viewport()));
@@ -456,14 +519,15 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
    const turn=((Number(target.angle||0)-Number(current.angle||0)+540)%360)-180;current.angle=Number(current.angle||0)+turn*smooth;
    current.moving=target.moving===true;current.driving=target.driving===true;if(target.activity)current.activity=target.activity;else delete current.activity;
   }
-  if(!blocked||preview)characterRenderer?.draw({player,camera,width:viewWidth,height:viewHeight,orientation:orientation(),angle,phase:walkPhase,time:elapsed,moving,transport,driving,activity,clock,weather,clubOpen:isClub&&clubSchedule(currentNow).isOpen,carColor,carStyle,ownVehicle,parked,trafficPositions,trip,npcPositions,onlinePositions:neighbours.map(person=>{const pose=residentPoses.get(String(person.id))||person.pose||{};return{...pose,phase:elapsed*8,activity:pose.activity?{name:pose.activity,elapsed:elapsed*1000}:null};})});
+  if(!blocked||preview)characterRenderer?.draw({player,camera,width:viewWidth,height:viewHeight,orientation:orientation(),angle,phase:walkPhase,time:elapsed,moving,transport,driving,activity,clock,weather,clubOpen:isClub&&clubSchedule(currentNow).isOpen,carColor,carStyle,ownVehicle,carWithYou,parked,trafficPositions,trip,npcPositions,onlinePositions:neighbours.map(person=>{const pose=residentPoses.get(String(person.id))||person.pose||{};return{...pose,phase:elapsed*8,activity:pose.activity?{name:pose.activity,elapsed:elapsed*1000}:null};})});
   if(frameCount%6===0&&roofEntries.length){
    const rect=container.getBoundingClientRect();
    for(const {button,point} of roofEntries){const p=characterRenderer?.projectWorld?.(point);const visible=p&&p.z>=-1&&p.z<=1&&p.x>rect.left+32&&p.x<rect.right-32&&p.y>rect.top+110&&p.y<rect.bottom-150&&!furnitureMode;
     button.hidden=!visible;if(visible){button.style.left=`${p.x-rect.left}px`;button.style.top=`${p.y-rect.top}px`;}}
   }
-  if(frameCount%5===0||moving){nearby=scene.interactables.filter(p=>!driving||p.action==='toggle-driving').filter(p=>distance(player,p)<(p.radius||76)).sort((a,b)=>distance(player,a)-distance(player,b))[0]||null;container.querySelectorAll('.world-point').forEach(node=>node.classList.toggle('is-nearby',node.dataset.worldTarget===nearby?.id));interactButton.querySelector('span').textContent=driving?'Park & get out':nearby?.label||'Explore';interactButton.classList.toggle('is-ready',driving||!!nearby);container.dataset.playerX=player.x.toFixed(2);container.dataset.playerY=player.y.toFixed(2);container.dataset.cameraX=camera.x.toFixed(2);container.dataset.cameraY=camera.y.toFixed(2);const screen=worldToScreen(player,{left:0,top:0,width:container.clientWidth,height:container.clientHeight},camera,viewport());container.dataset.playerScreenX=screen.x.toFixed(2);container.dataset.playerScreenY=screen.y.toFixed(2);container.dataset.moving=String(moving);container.dataset.distance=travelDistance.toFixed(1);container.dataset.nearby=nearby?.id||'';const miniPlayer=container.querySelector('.world-minimap-player'),miniView=container.querySelector('.world-minimap-view');miniPlayer?.setAttribute('cx',String(player.x));miniPlayer?.setAttribute('cy',String(player.y));if(miniView){miniView.setAttribute('x',String(camera.x-viewWidth/2));miniView.setAttribute('y',String(camera.y-viewHeight/2));miniView.setAttribute('width',String(viewWidth));miniView.setAttribute('height',String(viewHeight));}if(moving&&!pending&&!trip)say(driving?'Windows down. The city is yours.':keyboard.has('shift')||sprinting?'Picking up the pace.':nearby?`${nearby.label} · press E to interact`:'Going places.');}
+  if(frameCount%5===0||moving){nearby=scene.interactables.filter(p=>!driving||p.action==='toggle-driving').filter(p=>distance(player,p)<(p.radius||76)).sort((a,b)=>distance(player,a)-distance(player,b))[0]||null;container.querySelectorAll('.world-point').forEach(node=>node.classList.toggle('is-nearby',node.dataset.worldTarget===nearby?.id));interactButton.querySelector('span').textContent=driving?'Park & get out':nearby?.label||'Explore';interactButton.classList.toggle('is-ready',driving||!!nearby);container.dataset.playerX=player.x.toFixed(2);container.dataset.playerY=player.y.toFixed(2);container.dataset.cameraX=camera.x.toFixed(2);container.dataset.cameraY=camera.y.toFixed(2);const screen=worldToScreen(player,{left:0,top:0,width:container.clientWidth,height:container.clientHeight},camera,viewport());container.dataset.playerScreenX=screen.x.toFixed(2);container.dataset.playerScreenY=screen.y.toFixed(2);container.dataset.moving=String(moving);container.dataset.driving=String(driving);container.dataset.distance=travelDistance.toFixed(1);container.dataset.nearby=nearby?.id||'';const miniPlayer=container.querySelector('.world-minimap-player'),miniView=container.querySelector('.world-minimap-view');miniPlayer?.setAttribute('cx',String(player.x));miniPlayer?.setAttribute('cy',String(player.y));if(miniView){miniView.setAttribute('x',String(camera.x-viewWidth/2));miniView.setAttribute('y',String(camera.y-viewHeight/2));miniView.setAttribute('width',String(viewWidth));miniView.setAttribute('height',String(viewHeight));}if(moving&&!pending&&!trip)say(driving?'Windows down. The city is yours.':keyboard.has('shift')||sprinting?'Picking up the pace.':nearby?`${nearby.label} · press E to interact`:'Going places.');}
   for(const person of neighbours){const pose=residentPoses.get(String(person.id)),node=container.querySelector(`[data-world-resident="${CSS.escape(String(person.id))}"]`);if(node&&pose)node.setAttribute('transform',`translate(${pose.x} ${pose.y})`);}
+  if(frameCount%5===0){updateInteriorPrompt();const exitButton=container.querySelector('[data-world-control="exit"]');if(exitButton)exitButton.disabled=exiting||!!activity||!!furnitureMode||inputBlocked();}
   if(frameCount%60===0)remember();
   const standing=!moving&&!activity&&!trip&&!furnitureMode&&!path.length&&!joy.pointer&&!orbitState.active&&performance.now()>activeUntil;
   if(standing&&frameCount>6&&(preview||characterRenderer)){
@@ -483,10 +547,48 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
   playerNode.append(prop);say(activity.label);armActivityClock();return true;
  }
  syncPlayback();
- if(!preview)requestAnimationFrame(mountCharacterRenderer);
+ requestAnimationFrame(mountCharacterRenderer);
  const cleanup=()=>{if(disposed)return;stop();disposed=true;remember(true);cancelAnimationFrame(raf);raf=0;clearTimeout(idleTimer);idleTimer=0;clearTimeout(activityTimer);activityTimer=0;activity=null;touch.dispose();overlayObserver?.disconnect();visibilityObserver?.disconnect();characterRenderer?.dispose();sound?.dispose();observer?.disconnect();listeners.forEach(remove=>remove());container.classList.remove('world-playable');};
+ const furnitureStateKey=resident=>JSON.stringify([resident?.inventory||[],resident?.furnitureLayout||{},resident?.storedFurniture||[]]);
+ let lastFurnitureState=furnitureStateKey(profile);
+ cleanup.updateProfile=nextProfile=>{
+  if(!nextProfile||nextProfile.id!==profile.id)return false;
+  const nextFurnitureState=furnitureStateKey(nextProfile),furnitureChanged=nextFurnitureState!==lastFurnitureState;
+  profile=nextProfile;lastFurnitureState=nextFurnitureState;
+  if(!furnitureChanged||!atHome||trip||!['home','visit'].includes(kind))return true;
+  const oldSpawn=scene.spawn;
+  const nextScene=buildInterior({profile:kind==='visit'?{...profile,location:{...profile.location,kind:'home',venue:'home'}}:profile,venue:kind==='visit'?undefined:venue,id});
+  nextScene.spawn=oldSpawn;nextScene.obstacles||=[];nextScene.interactables||=[];
+  if(kind==='visit')nextScene.interactables.forEach(point=>{
+   if(point.action==='leave-home'){point.action='leave-visit';point.label='Leave this home';return;}
+   point.payload={...point.payload,visitAction:point.action,visitLabel:point.label};point.action='visit-interact';point.label=point.label?.replace(/^Arrange your home$/i,'Look around the room')||'Look around the room';
+  });
+  scene=nextScene;nav=makeNavigation(scene,driving?24:10);stop();path=[];nearby=null;
+  player=fitPosition(player,scene.spawn,nav);camera=constrainWorldCamera(camera,viewport(),scene);
+  svg.querySelector('.world-art').innerHTML=scene.art;
+  container.querySelector('.world-markers').innerHTML=markerMarkup();
+  const minimap=container.querySelector('.world-minimap svg');
+  minimap.setAttribute('viewBox',`0 0 ${scene.width} ${scene.height}`);
+  minimap.innerHTML=`${scene.obstacles.map(o=>`<rect x="${o.x}" y="${o.y}" width="${o.w}" height="${o.h}" rx="8" fill="#668269" opacity=".45"/>`).join('')}${scene.interactables.map(point=>`<circle cx="${point.x}" cy="${point.y}" r="${interior?12:22}" fill="#f4e6b8"/>`).join('')}<rect class="world-minimap-view" fill="#fbf5d31a" stroke="#f3f0d8" stroke-width="${interior?5:13}"/><circle class="world-minimap-player" r="${interior?19:33}" fill="#fff4c8" stroke="#55714e" stroke-width="${interior?5:10}"/>`;
+  characterRenderer?.updateFurniture?.(scene);
+  container.dataset.furnitureReconciled=String(Number(container.dataset.furnitureReconciled||0)+1);
+  updateViewport();poke();return true;
+ };
  cleanup.updateResidents=next=>{knownResidents=(Array.isArray(next)?next:[]).filter(p=>p.id!==profile.id&&p.online);const present=new Set(knownResidents.map(p=>String(p.id)));for(const id of [...residentPoses.keys()])if(!present.has(id)){residentPoses.delete(id);residentTargets.delete(id);residentUpdatedAt.delete(id);}for(const person of knownResidents){const id=String(person.id);if(usablePose(person.pose)){if(!residentPoses.has(id))residentPoses.set(id,{...person.pose});residentTargets.set(id,{...person.pose});residentUpdatedAt.set(id,now());}else if(Object.hasOwn(person,'pose')){residentPoses.delete(id);residentTargets.delete(id);residentUpdatedAt.delete(id);}}neighbours=knownResidents.filter(p=>usablePose(residentPoses.get(String(p.id)))).slice(0,50);container.querySelector('.world-online').innerHTML=neighbours.map(residentMarkup).join('');characterRenderer?.setResidents?.(neighbours);};
  cleanup.updateResidentPose=data=>{const id=String(data?.residentId||''),pose=data?.pose;if(!usablePose(pose))return false;const current=residentPoses.get(id),last=residentUpdatedAt.get(id)||0,gap=current?Math.hypot(pose.x-current.x,pose.y-current.y):Infinity;if(!current||gap>720||now()-last>10000)residentPoses.set(id,{...pose});residentTargets.set(id,{...pose});residentUpdatedAt.set(id,now());if(!neighbours.some(p=>String(p.id)===id)&&knownResidents.some(p=>String(p.id)===id))cleanup.updateResidents(knownResidents.map(p=>String(p.id)===id?{...p,pose}:p));return true;};
+ cleanup.performDirect=(action,payload={},metadata)=>{
+  if(preview||trip||activity||furnitureMode||disposed)return false;
+  if(action==='venue-action'){
+   const task=VENUE_ACTIONS.find(a=>a.id===payload.activityId&&a.venueId===venue?.id);
+   if(!task)return false;
+   stop();animateActivity(task.animation,task.duration,()=>dispatch(action,payload),task.name);return true;
+  }
+  if(['sleep','eat','shower','relax'].includes(action)&&kind==='home'&&metadata){
+   stop();animateActivity(metadata.animation,metadata.duration,()=>dispatch(action,payload),metadata.name);return true;
+  }
+  if(['dealership','estate-office','banex-market','furniture-store','play-dice'].includes(action)&&kind==='venue'){stop();dispatch(action,payload);return true;}
+  return false;
+ };
  cleanup.walkTo=moveTo;cleanup.perform=perform;cleanup.performAsync=(action,payload={})=>new Promise(resolve=>{if(!perform(action,payload,resolve))resolve(false);});cleanup.setFurnitureMode=setFurnitureMode;cleanup.cancelNavigation=stop;cleanup.focus=()=>container.focus({preventScroll:true});cleanup.getFurnitureState=()=>({placed:[...container.querySelectorAll('[data-furniture-item],[data-home-item]')].map(n=>n.dataset.furnitureItem||n.dataset.homeItem).filter((id,i,a)=>a.indexOf(id)===i),stored:scene.storedFurniture||[],placements:scene.furniturePlacements||[]});cleanup.getMotionState=()=>({...player,angle,cameraX:camera.x,cameraY:camera.y,zoom,viewWidth,viewHeight,moving,driving,activity:activity?.name||null,pathLength:path.length,nearby:nearby?.id,travelDistance,scene:kind});cleanup.animateAction=animateActivity;cleanup.animateActivity=animateActivity;cleanup.setZoom=setZoom;cleanup.resetZoom=resetZoom;cleanup.getCameraState=()=>({x:camera.x,y:camera.y,...orientation(),zoom,width:viewWidth,height:viewHeight,oblique,minZoom:WORLD_ZOOM.min,maxZoom:WORLD_ZOOM.max});cleanup.worldToScreen=point=>worldToScreen(point,svg.getBoundingClientRect(),camera,viewport());
  return cleanup;
 }

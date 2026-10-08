@@ -22,10 +22,17 @@ test('movement, turning, actions and real location transitions publish without w
 });
 test('failed pose writes retry, and overlapping ticks never queue duplicate network work',async()=>{
  const f=fixture();f.setSend(async()=>{throw new Error('Offline');});assert.equal(await f.publisher.publish(),false);
- let release;f.setSend(()=>new Promise(resolve=>{release=resolve;}));
+ f.setTime(1000);let release;f.setSend(()=>new Promise(resolve=>{release=resolve;}));
  const pending=f.publisher.publish();assert.equal(await f.publisher.publish(),false);release();assert.equal(await pending,true);
  assert.equal(await f.publisher.publish(),false);
 });
 test('closed or hidden worlds do not share fabricated poses',async()=>{
  const f=fixture();f.setSnapshot(null);assert.equal(await f.publisher.publish(),false);assert.equal(f.calls.length,0);
+});
+
+test('rejected poses back off and a genuine location transition can recover immediately',async()=>{
+ const f=fixture();let failures=0;f.setSend(async()=>{failures++;throw new Error('Rejected pose');});
+ await f.publisher.publish();f.setTime(500);assert.equal(await f.publisher.publish(),false);assert.equal(failures,1);
+ f.setTime(1000);await f.publisher.publish();f.setTime(1500);await f.publisher.publish();assert.equal(failures,2);
+ f.setSnapshot({...f.getSnapshot(),key:'one:venue:garki:restaurant'});f.setSend(async()=>{});assert.equal(await f.publisher.publish(),true);
 });

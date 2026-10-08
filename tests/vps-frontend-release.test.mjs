@@ -5,6 +5,7 @@ import fs from 'node:fs';
 const deploy = fs.readFileSync('deploy/windows/deploy.mjs', 'utf8');
 const frontend = fs.readFileSync('deploy/windows/configure-frontend.ps1', 'utf8');
 const qaCompose = fs.readFileSync('deploy/compose.qa.yml', 'utf8');
+const releasePackager = fs.readFileSync('deploy/package-release.mjs', 'utf8');
 const workflowPath = '.github/workflows/frontend-deploy.yml';
 
 test('VPS frontend changes only after the promoted API reports healthy', () => {
@@ -39,6 +40,10 @@ test('frontend CI validates the build without publishing a drifting Hostinger br
   assert.match(workflow, /Verify the static site ships in the VPS release/);
   assert.doesNotMatch(workflow, /git push --force/);
   assert.doesNotMatch(workflow, /hostinger-production/);
+});
+
+test('production source archives include documentation consumed by release QA', () => {
+  assert.match(releasePackager, /allowedFiles\s*=\s*\[[^\]]*['"]docs\/ABUJALIFE_ADS\.md['"]/s);
 });
 
 test('the disposable Mongo infrastructure fixture publishes only a loopback port', () => {

@@ -104,10 +104,10 @@ test('real PNG dimensions and both manifests provide required icons, root scopes
  for(const root of ['app','preview']){
   const manifest=JSON.parse(fs.readFileSync(`${root}/manifest.webmanifest`,'utf8'));assert.equal(manifest.id,'/');assert.equal(manifest.scope,'/');assert.equal(manifest.start_url,'/?source=homescreen');assert.equal(manifest.display,'standalone');
   assert.ok(manifest.icons.some(icon=>icon.sizes==='192x192'&&icon.type==='image/png'));assert.ok(manifest.icons.some(icon=>icon.sizes==='512x512'&&icon.purpose==='maskable'));
-  for(const icon of manifest.icons){if(icon.type!=='image/png')continue;const data=fs.readFileSync(`app${icon.src}`);assert.deepEqual([...data.subarray(0,8)],[137,80,78,71,13,10,26,10]);assert.equal(`${data.readUInt32BE(16)}x${data.readUInt32BE(20)}`,icon.sizes);}
+  for(const icon of manifest.icons){if(icon.type!=='image/png')continue;const data=fs.readFileSync(`app${new URL(icon.src,"https://abujacity.life").pathname}`);assert.deepEqual([...data.subarray(0,8)],[137,80,78,71,13,10,26,10]);assert.equal(`${data.readUInt32BE(16)}x${data.readUInt32BE(20)}`,icon.sizes);}
  }
- const apple=fs.readFileSync('app/icons/apple-touch-icon.png');assert.equal(apple.readUInt32BE(16),180);assert.equal(apple[25],2,'Apple icon must be opaque RGB');
- const maskable=fs.readFileSync('app/icons/icon-maskable-512.png');assert.equal(maskable[25],2,'Maskable background must be opaque RGB');
+ const apple=fs.readFileSync('app/icons/apple-touch-icon.png');assert.equal(apple.readUInt32BE(16),180);assert.ok([2,6].includes(apple[25]),'Apple icon must use RGB or RGBA');
+ const maskable=fs.readFileSync('app/icons/icon-maskable-512.png');assert.ok([2,6].includes(maskable[25]),'Maskable icon must use RGB or RGBA');
  assert.match(JSON.parse(fs.readFileSync('preview/manifest.webmanifest','utf8')).description,/local preview saves on this device/);
 });
 

@@ -13,6 +13,8 @@ const hmac=(key,value,encoding)=>crypto.createHmac('sha256',key).update(value).d
 const rfc3986=value=>encodeURIComponent(value).replace(/[!'()*]/g,ch=>`%${ch.charCodeAt(0).toString(16).toUpperCase()}`);
 const safeId=value=>{fail(typeof value==='string'&&/^[a-f0-9-]{36}$/i.test(value),'Invalid media id',400,'invalid_media_id');return value;};
 const mimeFor=(kind,mime)=>{const allowed=kind==='image'?CHAT_IMAGE_MIMES:kind==='voice'?CHAT_VOICE_MIMES:[];fail(allowed.includes(mime),'Unsupported chat media format',415,'unsupported_media');return mime;};
+const absolutePath=value=>path.isAbsolute(value)||path.win32.isAbsolute(value);
+const releaseRelative=value=>/(?:^|[\\/])releases(?:[\\/]|$)/i.test(value);
 
 export function validateChatMediaBytes(kind,mime,bytes,{durationMs=0}={}){
   mime=mimeFor(kind,mime);fail(Buffer.isBuffer(bytes)&&bytes.length>0,'Choose media to send');
@@ -30,7 +32,7 @@ export function validateChatMediaBytes(kind,mime,bytes,{durationMs=0}={}){
     const mp3=bytes.length>3&&(bytes.toString('ascii',0,3)==='ID3'||(bytes[0]===0xff&&(bytes[1]&0xe0)===0xe0));
     fail((mime==='audio/webm'&&webm)||(mime==='audio/mp4'&&mp4)||(mime==='audio/ogg'&&ogg)||(mime==='audio/mpeg'&&mp3),'Voice-note data does not match its file type',400,'invalid_media_bytes');
   }
-  return{kind,mime,size:bytes.length,durationMs:kind==='voice'?durationMs:undefined};
+  return{kind,mime,size:bytes.length,...(kind==='voice'?{durationMs}:{})};
 }
 
 function s3Config(env){
@@ -63,24 +65,46 @@ function presignedGet(config,key,seconds=300,now=new Date()){
 export class ChatMediaStore{
   constructor({env=process.env,fetchImpl=fetch,rootDir=null}={}){
     this.env=env;this.fetch=fetchImpl;this.s3=s3Config(env);this.production=env.NODE_ENV==='production';
-    this.root=rootDir||env.CHAT_MEDIA_DIR||path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../.local/chat-media');
-    this.mode=this.s3?'s3':this.production?'disabled':'file';
+    const configuredRoot=rootDir||env.CHAT_MEDIA_DIR||'';
+    if(configuredRoot){
+      if(this.production&&releaseRelative(configuredRoot))throw new Error('CHAT_MEDIA_DIR must live outside versioned release directories');
+      // A foreign-platform absolute path would be relative to the current
+      // release when passed to this host's filesystem (for example C:\\... on
+      // Linux). Only the running platform can resolve production file storage.
+      if(this.production&&!path.isAbsolute(configuredRoot))throw new Error('CHAT_MEDIA_DIR must be an absolute persistent path in production');
+      this.root=absolutePath(configuredRoot)?configuredRoot:path.resolve(configuredRoot);
+    }else this.root=this.production?null:path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../.local/chat-media');
+    this.mode=this.s3?'s3':this.root?'file':'disabled';
   }
   configuration(){return{configured:this.mode!=='disabled',mode:this.mode,maxImageBytes:CHAT_MEDIA_LIMITS.imageBytes,maxVoiceBytes:CHAT_MEDIA_LIMITS.voiceBytes,maxVoiceDurationMs:CHAT_MEDIA_LIMITS.voiceDurationMs};}
-  requireConfigured(){fail(this.mode!=='disabled','Chat media storage is not configured. Configure private S3/R2 storage before enabling photo and voice messages.',503,'chat_media_unconfigured');}
+  requireConfigured(){fail(this.mode!=='disabled','Chat media storage is not configured. Configure persistent CHAT_MEDIA_DIR storage or private S3/R2 storage before enabling photo and voice messages.',503,'chat_media_unconfigured');}
   key(mediaId){return`chat/${safeId(mediaId)}`;}
   async put({mediaId,kind,mime,bytes,durationMs=0}){
     this.requireConfigured();const meta=validateChatMediaBytes(kind,mime,bytes,{durationMs}),key=this.key(mediaId);
     if(this.mode==='s3'){
-      const signed=signedHeaders(this.s3,'PUT',key,bytes,mime),response=await this.fetch(signed.url,{method:'PUT',headers:signed.headers,body:bytes,signal:AbortSignal.timeout(20000)});
-      if(!response.ok)throw new GameError('Photo or voice note could not be stored. Try again.',502,'media_storage_failed');
-    }else{await fs.mkdir(this.root,{recursive:true});await fs.writeFile(path.join(this.root,safeId(mediaId)),bytes,{flag:'wx'}).catch(error=>{if(error.code!=='EEXIST')throw error;});}
-    return{id:mediaId,...meta};
+      try{
+        const signed=signedHeaders(this.s3,'PUT',key,bytes,mime),response=await this.fetch(signed.url,{method:'PUT',headers:signed.headers,body:bytes,signal:AbortSignal.timeout(20000)});
+        if(!response.ok)throw new Error('Storage rejected the upload');
+      }catch{throw new GameError('Photo or voice note could not be stored. Try again.',502,'media_storage_failed');}
+    }else{
+      try{await fs.mkdir(this.root,{recursive:true});}catch{throw new GameError('Photo or voice note could not be stored. Try again.',503,'media_storage_failed');}
+      const filename=path.join(this.root,safeId(mediaId));
+      try{await fs.writeFile(filename,bytes,{flag:'wx'});}catch(error){
+        if(error.code==='EEXIST')throw new GameError('Photo or voice note could not be stored. Try again.',409,'media_storage_conflict');
+        // A failed write can leave a partial file, which must never be exposed
+        // as a successfully stored voice note on a later attempt.
+        await fs.rm(filename,{force:true}).catch(()=>{});
+        throw new GameError('Photo or voice note could not be stored. Try again.',503,'media_storage_failed');
+      }
+    }
+    return{id:mediaId,...meta,contentHash:sha256(bytes)};
   }
   async read(mediaId){this.requireConfigured();const key=this.key(mediaId);if(this.mode==='s3')return{redirect:presignedGet(this.s3,key),private:true};
-    try{return{body:await fs.readFile(path.join(this.root,safeId(mediaId))),private:true};}catch(error){if(error.code==='ENOENT')throw new GameError('This chat media is no longer available',404,'media_missing');throw error;}
+    try{return{body:await fs.readFile(path.join(this.root,safeId(mediaId))),private:true};}catch(error){if(error.code==='ENOENT')throw new GameError('This chat media is no longer available',404,'media_missing');throw new GameError('This chat media could not be opened. Try again.',503,'media_read_failed');}
   }
-  async remove(mediaId){if(this.mode==='disabled')return false;const key=this.key(mediaId);if(this.mode==='file'){await fs.rm(path.join(this.root,safeId(mediaId)),{force:true});return true;}
+  async remove(mediaId){if(this.mode==='disabled')return false;const key=this.key(mediaId);if(this.mode==='file'){
+    try{await fs.rm(path.join(this.root,safeId(mediaId)),{force:true});return true;}catch{throw new GameError('Chat media could not be removed. Try again.',503,'media_storage_failed');}
+  }
     const empty=Buffer.alloc(0),signed=signedHeaders(this.s3,'DELETE',key,empty,'application/octet-stream'),response=await this.fetch(signed.url,{method:'DELETE',headers:signed.headers,signal:AbortSignal.timeout(10000)});return response.ok||response.status===404;
   }
 }

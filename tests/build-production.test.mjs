@@ -22,6 +22,11 @@ test('API client uses credentialed production HTTP and SSE while source preview 
   try {
     delete globalThis.ABUJA_PUBLIC_CONFIG;
     assert.equal(apiURL('/api/bootstrap'), '/api/bootstrap');
+    globalThis.location = { hostname: 'abujacity.life' };
+    assert.equal(apiURL('/api/entry'), 'https://api.abujacity.life/api/entry');
+    globalThis.location = { hostname: 'www.abujacity.life' };
+    assert.equal(apiURL('/api/entry'), 'https://api.abujacity.life/api/entry');
+    delete globalThis.location;
     globalThis.ABUJA_PUBLIC_CONFIG = { API_PUBLIC_URL: 'https://api.abujacity.life' };
     assert.equal(apiURL('/api/residents?search=A%20B'), 'https://api.abujacity.life/api/residents?search=A%20B');
     for (const value of ['https://another.site/api/bootstrap', '/admin', '/api/../admin', '/api/\\admin']) assert.throws(() => apiURL(value));
@@ -40,6 +45,7 @@ test('API client uses credentialed production HTTP and SSE while source preview 
   } finally {
     if (original.config === undefined) delete globalThis.ABUJA_PUBLIC_CONFIG;
     else globalThis.ABUJA_PUBLIC_CONFIG = original.config;
+    delete globalThis.location;
     globalThis.fetch = original.fetch;
     globalThis.EventSource = original.EventSource;
   }
@@ -65,6 +71,7 @@ test('Hostinger build contains connected bundles and public assets, and worker b
     vm.runInNewContext(await fs.readFile(path.join(target, 'runtime-config.js'), 'utf8'), runtime);
     assert.deepEqual(Object.keys(runtime.ABUJA_PUBLIC_CONFIG).sort(), ['API_PUBLIC_URL', 'PUBLIC_WEB_URL']);
     assert.equal(runtime.ABUJA_PUBLIC_CONFIG.API_PUBLIC_URL, 'https://api.abujacity.life');
+    for(const asset of ['favicon.ico','icons/abujalife-city-gate-180-v3.png','icons/abujalife-city-gate-512-v3.png','social/abujalife-city-gate-v3.png','social/abujalife-x-card-20261008.jpg','robots.txt'])assert.deepEqual(await fs.readFile(path.join(target,asset)),await fs.readFile(path.join('app',asset)),'Production must preserve the actual branding export: '+asset);
     const manifest = JSON.parse(await fs.readFile(path.join(target, 'manifest.webmanifest'), 'utf8'));
     assert.equal(manifest.scope, '/'); assert.equal(manifest.id, '/');
     const handlers = {};

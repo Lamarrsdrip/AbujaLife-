@@ -40,6 +40,7 @@ try {
   privileges.push(
     {resource:{db:database,collection:'ad_orders'},actions:['find','insert','update','remove','listIndexes']},
     {resource:{db:database,collection:'ad_slots'},actions:['find','insert','update','remove','listIndexes']},
+    {resource:{db:database,collection:'ad_house_campaigns'},actions:['find','insert','update','listIndexes']},
     {resource:{db:database,collection:'ad_receipts'},actions:['find','insert','listIndexes']}
   );
   for (const collection of JACKPOT_COLLECTIONS) {

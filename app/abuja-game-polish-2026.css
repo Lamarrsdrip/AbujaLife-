@@ -1,6 +1,6 @@
 .abj-header-app-icon{display:block;width:46px;height:46px;border-radius:14px;object-fit:cover}.game-header .header-edition{display:none!important}
 
-.game-nav{gap:8px!important;padding:10px 14px calc(10px + env(safe-area-inset-bottom))!important;background:linear-gradient(180deg,#0c382d 0%,#082e25 100%)!important;border-top:1px solid #ffffff12!important;box-shadow:0 -12px 28px #123b2c1a!important}.game-nav button{min-height:62px!important;border-radius:22px!important;transition:transform .16s ease,background .16s ease,color .16s ease!important}.game-nav button svg{width:24px!important;height:24px!important}.game-nav button span{font-size:11px!important;font-weight:800!important;letter-spacing:-.1px!important}.game-nav button.active{background:#f3f1e7!important;color:#1b4b3b!important;box-shadow:0 8px 24px #071d161f,inset 0 0 0 1px #fff!important}.game-nav button:active{transform:scale(.965)}
+
 
 .abj-life-game-hub--compact{margin-bottom:14px!important}.abj-life-game-hub--compact .abj-life-hero{margin-bottom:0!important}.abj-life-game-hub--compact+.life-menu-grid{margin-top:10px!important}
 
@@ -11,21 +11,16 @@
 .abj-map-bottom-nav{position:fixed;left:50%;bottom:max(14px,env(safe-area-inset-bottom));z-index:24;transform:translateX(-50%);display:grid;grid-template-columns:repeat(4,1fr);gap:6px;width:min(94vw,560px);padding:7px;border:1px solid #ffffffb5;border-radius:25px;background:#0d372ddf;box-shadow:0 20px 55px #071d1738;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}.abj-map-bottom-nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:57px;border:0;border-radius:18px;background:transparent;color:#d7e4dc;font:700 10px/1.1 system-ui,-apple-system,sans-serif}.abj-map-bottom-nav button.active{background:#f3f1e8;color:#174b3a;box-shadow:0 8px 18px #071d161f}.abj-map-bottom-nav .abj-nav-icon{font-size:21px;line-height:1}.abj-map-bottom-nav button:active{transform:scale(.965)}
 .abj-map-journey{z-index:40}
 
-@media(max-width:700px){.game-header .wordmark{width:52px;height:52px;border-radius:16px!important}.abj-header-app-icon{width:41px;height:41px;border-radius:13px}.abj-whole-city-button{top:106px;right:14px;min-height:42px;padding:0 12px}.outside-city-v2 .outside-heading{top:25px!important;left:24px!important;max-width:62vw}.outside-city-v2 .outside-heading h2{font-size:32px!important}.outside-city-v2 .outside-heading p{font-size:11px!important}.outside-city-v2 .outside-tools{top:24px!important;right:16px!important;max-width:168px;grid-template-columns:repeat(2,1fr)}.outside-city-v2 .outside-tools button{min-height:47px!important;border-radius:14px!important}.outside-city-v2 .outside-selection{left:15px!important;right:15px!important;bottom:174px!important;width:auto!important}.outside-city-v2 .outside-directory{left:20px!important;right:20px!important;bottom:103px!important}.outside-city-v2 .outside-hint{display:none!important}.outside-city-v2 .outside-quick{overflow-x:auto;scrollbar-width:none}.outside-city-v2 .outside-quick::-webkit-scrollbar{display:none}.abj-map-bottom-nav{width:calc(100vw - 30px)}}
+@media(max-width:700px){.game-header .wordmark{width:52px;height:52px;border-radius:16px!important}.abj-header-app-icon{width:41px;height:41px;border-radius:13px}.abj-whole-city-button{top:106px;right:14px;min-height:42px;padding:0 12px}.outside-city-v2 .outside-heading{top:25px!important;left:24px!important;max-width:62vw}.outside-city-v2 .outside-heading h2{font-size:32px!important}.outside-city-v2 .outside-heading p{font-size:11px!important}.outside-city-v2 .outside-tools{grid-template-columns:repeat(2,1fr)}.outside-city-v2 .outside-tools button{min-height:47px!important;border-radius:14px!important}.outside-city-v2 .outside-selection{left:15px!important;right:15px!important;bottom:174px!important;width:auto!important}.outside-city-v2 .outside-directory{left:20px!important;right:20px!important;bottom:103px!important}.outside-city-v2 .outside-hint{display:none!important}.outside-city-v2 .outside-quick{overflow-x:auto;scrollbar-width:none}.outside-city-v2 .outside-quick::-webkit-scrollbar{display:none}.abj-map-bottom-nav{width:calc(100vw - 30px)}}
 
 /* City Story belongs in the in-game Phone, never as another My Life dashboard card. */
 .civic-life-entry{display:none!important}.civic-phone-icon{background:linear-gradient(145deg,#d8bb6f,#76562a)!important;color:#fff9df!important}.civic-phone-icon .ph-icon{width:29px;height:29px}.civic-phone-launcher{min-width:0}
 
-/* A software keyboard already shrinks the visual viewport. Do not shrink the mock phone a second time. */
+/* Keep iOS from zooming into inputs; the virtual keyboard only changes the
+   conversation viewport and never replaces the existing handset frame. */
 @media(max-width:700px){
-  .phone-root:has(input:focus,textarea:focus,select:focus) .ph-backdrop{padding:0!important;place-items:stretch!important;background:#101a16!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
-  .phone-root:has(input:focus,textarea:focus,select:focus) .ph-device{width:100%!important;max-width:none!important;height:100dvh!important;max-height:none!important;padding:0!important;border:0!important;border-radius:0!important;background:#101a16!important;box-shadow:none!important}
-  .phone-root:has(input:focus,textarea:focus,select:focus) .ph-screen{border:0!important;border-radius:0!important;min-height:0!important}
-  .phone-root:has(input:focus,textarea:focus,select:focus) :is(.ph-hardware,.ph-device-caption){display:none!important}
-  .phone-root:has(input:focus,textarea:focus,select:focus) .ph-statusbar{flex-basis:42px!important;padding-inline:max(16px,env(safe-area-inset-left))!important}
-  .phone-root:has(input:focus,textarea:focus,select:focus) .ph-app-content{padding-bottom:max(4px,env(safe-area-inset-bottom))!important}
-  .phone-root:has(input:focus,textarea:focus,select:focus) .ph-composer{padding-bottom:max(6px,env(safe-area-inset-bottom))!important}
-  .phone-root:has(input:focus,textarea:focus,select:focus) .ph-scroll{scroll-padding-bottom:90px}
+  .phone-root input,.phone-root textarea,.phone-root select{font-size:16px!important}
+  .phone-root .ph-search input{font-size:16px!important}
 }
 
 /* Every online resident has an SVG safety body. Hide only the body whose 3D rig
@@ -34,28 +29,18 @@
 .world-canvas[data-character-renderer="webgl-3d"] .world-online-resident.has-webgl-resident .walker-body{visibility:hidden!important}
 .world-canvas[data-webgl-context="lost"] .world-online-resident .walker-body{visibility:visible!important}
 
-/* Real phones use the entire physical display for the in-game phone. A handset
-   frame remains on desktop, but a phone-within-a-phone is wasted space and is
-   what caused the keyboard/input squeeze on iOS. */
+/* Track iOS's changing visible viewport while keeping the current in-game
+   handset as the one owner of phone sizing and hardware. */
 @media(max-width:700px){
- .phone-root{top:var(--abj-phone-vtop,0px)!important;right:0!important;bottom:auto!important;left:0!important;width:100vw!important;height:var(--abj-phone-vh,100dvh)!important;max-height:none!important;overflow:hidden!important;background:#10241c}
- .phone-root .ph-backdrop,.phone-root.phone-chat-open .ph-backdrop,.phone-root:has(input:focus,textarea:focus,select:focus) .ph-backdrop{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;padding:0!important;display:block!important;overflow:hidden!important;background:#10241c!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
- .phone-root .ph-device,.phone-root.phone-chat-open .ph-device,.phone-root.phone-keyboard-open .ph-device,.phone-root:has(input:focus,textarea:focus,select:focus) .ph-device{position:relative!important;width:100%!important;height:100%!important;min-height:0!important;max-width:none!important;max-height:none!important;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;background:#10241c!important;box-shadow:none!important}
- .phone-root .ph-screen,.phone-root.phone-keyboard-open .ph-screen,.phone-root:has(input:focus,textarea:focus,select:focus) .ph-screen{width:100%!important;height:100%!important;min-height:0!important;border:0!important;border-radius:0!important;overflow:hidden!important}
- .phone-root .ph-hardware{display:none!important}
- .phone-root .ph-device-caption{display:flex!important;top:auto!important;bottom:max(4px,env(safe-area-inset-bottom));z-index:8;padding:0 16px;pointer-events:none}
- .phone-root .ph-device-caption>span{display:none}
- .phone-root .ph-device-caption button{pointer-events:auto;min-height:36px;color:#e7efe9}
- .phone-root .ph-statusbar{flex:0 0 calc(45px + env(safe-area-inset-top))!important;min-height:calc(45px + env(safe-area-inset-top))!important;padding:env(safe-area-inset-top) max(18px,env(safe-area-inset-right)) 0 max(18px,env(safe-area-inset-left))!important}
- .phone-root .ph-island{top:calc(8px + env(safe-area-inset-top))!important}
- .phone-root .ph-app-content,.phone-root.phone-keyboard-open .ph-app-content{min-height:0!important;height:auto!important;flex:1 1 auto!important;padding-bottom:max(18px,env(safe-area-inset-bottom))!important}
- .phone-root .ph-home-content,.phone-root .ph-lock-content{padding-left:max(17px,env(safe-area-inset-left))!important;padding-right:max(17px,env(safe-area-inset-right))!important;padding-bottom:max(30px,calc(22px + env(safe-area-inset-bottom)))!important}
- .phone-root .ph-home-indicator{bottom:max(4px,env(safe-area-inset-bottom))!important}
- .phone-root .ph-scroll{padding-bottom:max(28px,calc(18px + env(safe-area-inset-bottom)))!important;scroll-padding-bottom:max(90px,calc(70px + env(safe-area-inset-bottom)))!important}
- .phone-root .ph-app-header{min-height:48px!important;height:48px!important;padding-left:max(12px,env(safe-area-inset-left))!important;padding-right:max(12px,env(safe-area-inset-right))!important}
+ .phone-root .ph-backdrop{overflow:hidden}
+ .phone-root .ph-app-content,.phone-root.phone-keyboard-open .ph-app-content{min-height:0!important;height:auto!important;flex:1 1 auto!important}
  .phone-root .ph-chat-thread,.phone-root .ph-chat-app{min-height:0!important;overflow:hidden!important}
  .phone-root .ph-chat-thread .ph-thread-scroll,.phone-root.phone-keyboard-open .ph-chat-thread .ph-thread-scroll{flex:1 1 auto!important;height:auto!important;max-height:none!important;min-height:0!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important;padding-bottom:18px!important;scroll-padding-bottom:18px!important}
  .phone-root .ph-chat-thread .ph-composer,.phone-root.phone-keyboard-open .ph-chat-thread .ph-composer{position:relative!important;left:auto!important;right:auto!important;bottom:auto!important;width:auto!important;transform:none!important;z-index:4!important;flex:0 0 auto!important;padding:9px max(10px,env(safe-area-inset-right)) max(9px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left))!important;box-shadow:0 -6px 18px #17352510!important}
  .phone-root.phone-keyboard-open .ph-thread-profile{padding-bottom:6px!important;margin-bottom:6px!important}.phone-root.phone-keyboard-open .ph-chat-shortcuts{display:none!important}
- .phone-root input,.phone-root textarea,.phone-root select{font-size:max(16px,1em)!important}.phone-root .ph-search input{font-size:16px!important}.phone-root .ph-dock{margin-bottom:max(5px,env(safe-area-inset-bottom))!important}
+ .phone-root .ph-dock{margin-bottom:5px!important}
 }
+
+#app .game-nav{position:fixed;left:50%;right:auto;bottom:max(12px,env(safe-area-inset-bottom));transform:translateX(-50%);width:min(560px,calc(100% - 24px));max-width:calc(100% - 24px);display:flex;gap:4px;padding:6px;border-radius:24px;border:1px solid #ffffff38;background:#0f4033ee;box-shadow:0 12px 30px #153f2c30;backdrop-filter:blur(18px);z-index:70;margin:0}#app .game-nav button{flex:1;min-width:0;min-height:52px;max-height:none;padding:8px;border-radius:19px;color:#dbe8dc;font-size:11px;font-weight:700}#app .game-nav button.active{background:#f5f4e9;color:#1b4b3b;box-shadow:0 3px 10px #08281c33}#app .game-nav button svg{width:22px;height:22px}#app .game-content:not(.view-world):not(.view-outside){padding-bottom:calc(116px + env(safe-area-inset-bottom))}.phone-is-open #app .game-nav{visibility:hidden;pointer-events:none}
+
+.activity-discovery-card{position:absolute;top:84px;left:14px;z-index:9;width:min(290px,calc(100% - 94px));padding:13px 45px 13px 14px;border:1px solid #ffffffe0;border-radius:19px;background:#f5f5eaf2;box-shadow:0 8px 24px #0c332528;backdrop-filter:blur(12px);color:#17483a;animation:discovery-in .25s ease-out}.activity-discovery-card small{display:block;font-size:9px;letter-spacing:1.8px;color:#718278}.activity-discovery-card strong{display:block;margin-top:6px;font-size:16px;line-height:1.2}.activity-discovery-card p{font-size:12px;line-height:1.4;margin:5px 0 8px;color:#596d61}.discovery-dismiss{position:absolute;right:4px;top:3px;width:40px;height:40px;border:0;background:transparent;color:#456353;font-size:22px}.discovery-go{min-height:40px;border:0;border-radius:11px;padding:7px 12px;background:#1a5341;color:#fffef0;font-size:12px;font-weight:700}.phone-is-open .activity-discovery-card{display:none}@keyframes discovery-in{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:none}}@media(prefers-reduced-motion:reduce){.activity-discovery-card{animation:none}}

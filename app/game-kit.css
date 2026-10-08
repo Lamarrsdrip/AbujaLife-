@@ -15,13 +15,13 @@
 
 /* One viewport, one game surface. Chrome has its own space, so city controls
    and roof names stay tappable below the header and above the native dock. */
-#app .game-shell.is-playing{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:calc(64px + env(safe-area-inset-top)) minmax(0,1fr) calc(76px + env(safe-area-inset-bottom));height:100dvh;min-height:0;min-width:0;width:100%;max-width:none;padding:0;overflow:hidden;background:#f7f5ee}
+#app .game-shell.is-playing{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto;height:100dvh;min-height:0;min-width:0;width:100%;max-width:none;padding:0;overflow:hidden;background:#f7f5ee}
 #app .is-playing .game-header{position:relative;inset:auto;height:100%;padding:env(safe-area-inset-top) 16px 0;z-index:20;pointer-events:auto;background:#f7f5ee;color:#24483a}
 #app .is-playing .game-header .wordmark{filter:none}
 #app .is-playing .game-header .wallet-button{background:#e7eee2;border:1px solid #dce5d7;box-shadow:inset 0 1px #fff8;color:#24483a}
 #app .is-playing .game-header .wallet-button>span{color:#72806c}
 #app .is-playing .game-header .wallet-button strong{color:#24483a}
-#app .is-playing .game-header,#app .is-playing .game-content,#app .is-playing .game-nav{min-width:0;box-sizing:border-box}
+#app .is-playing .game-header,#app .is-playing .game-content,
 #app .is-playing .game-content{height:100%;min-height:0;width:100%;max-width:none;padding:0;overflow:hidden}
 #app .is-playing :is(.world-stage,#world-scene.world-playable){height:100%;min-height:0;width:100%;border:0;border-radius:0;box-shadow:none}
 #app .is-playing .game-nav{position:relative;inset:auto;transform:none;align-self:stretch;width:100%;max-width:none;margin:0;border:0;border-top:1px solid #dce4d6;border-radius:0;padding:8px 12px calc(8px + env(safe-area-inset-bottom));gap:5px;backdrop-filter:none;background:#f7f5ee;box-shadow:none}

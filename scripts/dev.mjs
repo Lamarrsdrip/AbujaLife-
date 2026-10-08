@@ -6,7 +6,13 @@ const port=Number(process.env.PORT||8787);
 const localOrigin=`http://localhost:${port}`;
 const loopbackOrigin=`http://127.0.0.1:${port}`;
 const localOrigins=[localOrigin,loopbackOrigin];
-const server=createServer({production:process.argv.includes('--prod'),publicWebUrl:localOrigin,corsOrigins:localOrigins});
+const qaClockHour=Number(process.env.ABUJALIFE_QA_CLOCK_HOUR_WAT);
+let clock=Date.now;
+if(Number.isInteger(qaClockHour)&&qaClockHour>=0&&qaClockHour<=23){
+  const now=Date.now(),wat=new Date(now+3600000),target=Date.UTC(wat.getUTCFullYear(),wat.getUTCMonth(),wat.getUTCDate(),qaClockHour-1,0,0,0),offset=target-now;
+  clock=()=>Date.now()+offset;
+}
+const server=createServer({production:process.argv.includes('--prod'),publicWebUrl:localOrigin,corsOrigins:localOrigins,clock});
 attachXIntegration(server,{store:server.store,env:process.env,publicWebUrl:process.env.PUBLIC_WEB_URL||localOrigin,apiPublicUrl:process.env.API_PUBLIC_URL||localOrigin,corsOrigins:process.env.PUBLIC_WEB_URL?[process.env.PUBLIC_WEB_URL]:localOrigins,fetchImpl:fetch});
 await attachCivicRuntime(server,{store:server.store,admin:server.admin,publicWebUrl:localOrigin,corsOrigins:localOrigins,log:(event,data)=>console.warn(`[civic] ${event}`,data)});
 server.on('error',error=>{console.error(error.code==='EADDRINUSE'?`Port ${port} is already in use. Choose another PORT or stop the AbujaLife process using it.`:error.message);server.store.close();process.exit(1);});

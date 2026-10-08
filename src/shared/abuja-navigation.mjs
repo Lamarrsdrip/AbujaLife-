@@ -1,3 +1,4 @@
+import {CITY_LANDMARKS} from './city-landmarks.mjs';
 // One reusable AbujaLife navigation model for city overview, travel and tests.
 // Coordinates are intentionally stylised but preserve the relative relationships
 // already authored by the premium Abuja v4 city. They are game coordinates, not GIS.
@@ -9,29 +10,9 @@ export const ABUJA_DISTRICT_ANCHORS=Object.freeze({
   'central-area':{lat:9.0555,lon:7.4900},'garki-i':{lat:9.0360,lon:7.4860},'garki-ii':{lat:9.0250,lon:7.4870},'asokoro':{lat:9.0470,lon:7.5350},'maitama':{lat:9.0830,lon:7.4930},'wuse-i':{lat:9.0630,lon:7.4700},'wuse-ii-a07':{lat:9.0770,lon:7.4700},'wuse-ii-a08':{lat:9.0750,lon:7.4590},'guzape':{lat:9.0260,lon:7.5190},'kukwaba':{lat:9.0390,lon:7.4510},'gudu':{lat:9.0200,lon:7.4630},'durumi':{lat:9.0310,lon:7.4530},'wuye':{lat:9.0490,lon:7.4420},'jabi':{lat:9.0690,lon:7.4230},'utako':{lat:9.0670,lon:7.4450},'mabushi':{lat:9.0860,lon:7.4550},'katampe':{lat:9.1020,lon:7.4690},'jahi':{lat:9.1000,lon:7.4400},'kado':{lat:9.0910,lon:7.4320},'gwarinpa-i':{lat:9.1090,lon:7.4080},'gwarinpa-ii':{lat:9.1270,lon:7.4020},'galadimawa':{lat:8.9950,lon:7.4340},'lokogoma':{lat:8.9910,lon:7.4820},'lugbe':{lat:8.9980,lon:7.3770},'chika':{lat:9.0120,lon:7.4050},'kuchigoro':{lat:9.0250,lon:7.4170},'pyakasa':{lat:8.9810,lon:7.4010},'kyami':{lat:9.0000,lon:7.3350},'karmo':{lat:9.1000,lon:7.3660},'dape':{lat:9.1070,lon:7.4210},'mpape':{lat:9.1370,lon:7.4940},'kubwa':{lat:9.1540,lon:7.3220},'dawaki':{lat:9.1390,lon:7.3850},'dei-dei':{lat:9.1300,lon:7.2720},'zuba':{lat:9.1000,lon:7.2170},'karu':{lat:9.0110,lon:7.5720},'nyanya':{lat:9.0280,lon:7.5740},'orozo':{lat:8.9860,lon:7.5580},'gwagwalada-town':{lat:8.9430,lon:7.0790}
 });
 
-export const ABUJA_LANDMARK_NAV_POINTS=Object.freeze([
- ['airport-hub','Nnamdi Azikiwe International Airport',9.0066,7.2642,'lugbe'],
- ['city-gate-plaza','Abuja City Gate',9.0357,7.4486,'kukwaba'],
- ['national-stadium-hub','Moshood Abiola National Stadium',9.0379,7.4534,'kukwaba'],
- ['magicland','Magicland Amusement Park',9.0428,7.4518,'kukwaba'],
- ['wtc-abuja-hub','World Trade Centre Abuja',9.0496,7.4733,'central-area'],
- ['cbn-experience','Central Bank of Nigeria',9.0509,7.4931,'central-area'],
- ['national-assembly-hub','National Assembly Complex',9.0682,7.5123,'central-area'],
- ['eagle-square-hub','Eagle Square',9.0615,7.4922,'central-area'],
- ['national-mosque-hub','Abuja National Mosque',9.0602,7.4898,'central-area'],
- ['national-christian-centre-hub','National Christian Centre',9.0510,7.4905,'central-area'],
- ['transcorp-hilton-hub','Transcorp Hilton Abuja',9.0744,7.4951,'maitama'],
- ['millennium-park-hub','Millennium Park',9.0707,7.4994,'maitama'],
- ['aso-rock-view','Aso Rock Viewpoint',9.0698,7.5208,'central-area'],
- ['farm-city','Farm City Abuja',9.0800,7.4708,'wuse-ii-a07'],
- ['jabi-lake','Jabi Lake',9.0750,7.4170,'jabi'],
- ['jabi-lake-mall','Jabi Lake Mall',9.0760,7.4210,'jabi'],
- ['international-conference-centre','International Conference Centre',9.0618,7.4862,'central-area'],
- ['banex','Banex Tech Market',9.0790,7.4590,'wuse-ii-a08'],
- ['inec-hq','INEC Headquarters',9.0830,7.4970,'maitama'],
- ['efcc-hq','EFCC Headquarters',9.0149,7.4081,'jabi'],
- ['federal-high-court-hub','Federal High Court Abuja',9.0552,7.5003,'central-area']
-].map(([id,name,lat,lon,districtId])=>Object.freeze({id,name,lat,lon,districtId})));
+// Destination identity, coordinates and district come from the existing registry.
+// A newly playable landmark automatically gains a route and a local access road.
+export const ABUJA_LANDMARK_NAV_POINTS=Object.freeze(CITY_LANDMARKS.map(({id,name,lat,lon,districtId})=>Object.freeze({id,name,lat,lon,districtId})));
 
 // Landmark roads authored by the premium city overview.
 export const ABUJA_LANDMARK_ROAD_LINKS=Object.freeze([

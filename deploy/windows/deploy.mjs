@@ -47,10 +47,17 @@ try {
     verifyRelease(destination);
   }
   if (!fs.existsSync(path.join(destination, 'scripts', 'qa.mjs')) || !fs.existsSync(path.join(destination, 'tests'))) throw new Error('The release must include the source QA/build scripts and tests.');
+  // Persistent runtime media belongs to shared storage, never an immutable
+  // release. Provision and prove write access before any candidate API starts.
+  fs.mkdirSync(config.chatMedia, { recursive: true });
+  fs.accessSync(config.chatMedia, fs.constants.R_OK | fs.constants.W_OK);
+  const mediaProbe=path.join(config.chatMedia, `.write-probe-${process.pid}`);
+  fs.writeFileSync(mediaProbe, 'ok', { flag: 'wx' });
+  fs.rmSync(mediaProbe, { force: true });
   const npm = path.join(path.dirname(config.nodePath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
   // Build/QA see public configuration only; they never receive runtime secrets.
   const buildEnv = { ...safeEnvironment(), PUBLIC_WEB_URL: config.publicWebUrl, API_PUBLIC_URL: config.apiPublicUrl };
-  for (const name of ['MONGODB_URI', 'ABUJALIFE_CONFIG_KEY', 'RESEND_API_KEY', 'EMAIL_FROM']) delete buildEnv[name];
+  for (const name of ['MONGODB_URI', 'ABUJALIFE_CONFIG_KEY', 'RESEND_API_KEY', 'EMAIL_FROM', 'CHAT_MEDIA_DIR']) delete buildEnv[name];
   command(config.nodePath, [npm, 'ci', '--no-audit', '--no-fund'], destination, buildEnv);
   command(config.nodePath, [npm, 'run', 'qa'], destination, buildEnv);
   command(config.nodePath, ['--test', 'deploy/windows/runtime.test.mjs'], destination, buildEnv);
@@ -81,7 +88,7 @@ try {
   await waitHealth(18788); await closeCandidate();
   const next = { releaseId: checked.releaseId, revision: checked.manifest.revision, promotedAt: new Date().toISOString() };
   if (previous) writeJson(path.join(config.state, 'previous.json'), previous);
-  writeJson(path.join(destination, 'QA.json'), { ok: true, deterministicInstall: true, tests: 'npm run qa', productionBuild: true, candidateHealth: true, revision: next.revision, checkedAt: new Date().toISOString() });
+  writeJson(path.join(destination, 'QA.json'), { ok: true, deterministicInstall: true, tests: 'npm run qa', productionBuild: true, candidateHealth: true, persistentChatMedia: config.chatMedia, revision: next.revision, checkedAt: new Date().toISOString() });
   writeJson(currentFile, next); promoted = true;
   requestReload();
   ps("$ErrorActionPreference='Stop'; $task=Get-ScheduledTask -TaskName 'AbujaLife-API'; if($task.State -ne 'Running'){Start-ScheduledTask -TaskName 'AbujaLife-API'}");

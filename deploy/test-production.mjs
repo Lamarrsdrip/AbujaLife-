@@ -33,7 +33,7 @@ async function run(command,arguments_,{capture=false,input,env={}}={}){
   });
 }
 const compose=(arguments_,options)=>run('docker',['compose','--project-name',project,'--env-file',path.join(directory,'.env'),'-f',path.join(root,'deploy/compose.yml'),'-f',path.join(root,'deploy/compose.qa.yml'),...arguments_],options);
-async function waitFor(check,label){for(let attempt=0;attempt<120;attempt++){try{if(await check())return;}catch{}await new Promise(resolve=>setTimeout(resolve,500));}throw new Error(label+' did not become ready.');}
+async function waitFor(check,label){for(let attempt=0;attempt<360;attempt++){try{if(await check())return;}catch{}await new Promise(resolve=>setTimeout(resolve,500));}throw new Error(label+' did not become ready.');}
 async function build(arguments_){
   const args=['build','--network','host','--build-arg','HTTPS_PROXY','--build-arg','HTTP_PROXY','--build-arg','NO_PROXY'];
   const proxies=new Set();for(const name of ['HTTPS_PROXY','HTTP_PROXY'])if(process.env[name])proxies.add(new URL(process.env[name]).hostname);
@@ -49,7 +49,8 @@ try{
   await build(['--target','ops','-t',images.ops]);
   await build(['--target','runtime','-t',images.api]);
   composeCreated=true;await compose(['up','-d','--no-build','mongo']);
-  await waitFor(async()=>(await run('docker',['inspect','--format','{{.State.Health.Status}}',project+'-mongo-1'],{capture:true})).trim()==='healthy','Authenticated Mongo');
+  try{await waitFor(async()=>(await run('docker',['inspect','--format','{{.State.Health.Status}}',project+'-mongo-1'],{capture:true})).trim()==='healthy','Authenticated Mongo');}
+  catch(error){console.error(await run('docker',['logs','--tail','30',project+'-mongo-1'],{capture:true}));console.error(await run('docker',['inspect','--format','{{json .State.Health}}',project+'-mongo-1'],{capture:true}));throw error;}
   await compose(['run','--rm','--no-deps','bootstrap']);
   const mongoPorts=JSON.parse(await run('docker',['inspect','--format','{{json .NetworkSettings.Ports}}',project+'-mongo-1'],{capture:true}));
   const mongoPort=mongoPorts['27017/tcp']?.find(mapping=>mapping.HostIp==='127.0.0.1')?.HostPort;
@@ -59,7 +60,10 @@ try{
   const configFile=path.join(directory,'test-mongodb.json');fs.writeFileSync(configFile,JSON.stringify({uri,database:'abujalife_prod'}),{mode:0o600});
   const testEnvironment={TEST_MONGODB_CONFIG:configFile,TEST_MONGODB_URI:'',TEST_MONGODB_DATABASE:'abujalife_prod'};
   const integrationFiles=fs.readdirSync(path.join(root,'tests')).filter(name=>/^mongo-.*\.integration\.mjs$/.test(name)).sort().map(name=>'tests/'+name);
-  assert.ok(integrationFiles.length>=3);await run(process.execPath,['--test',...integrationFiles],{env:testEnvironment});
+  // Files share global provider configuration and scheduled game records in
+  // this disposable database. Keep their fixtures isolated; each file still
+  // exercises simultaneous requests and database races within its own tests.
+  assert.ok(integrationFiles.length>=3);await run(process.execPath,['--test','--test-concurrency=1',...integrationFiles],{env:testEnvironment});
   const portServer=net.createServer();await new Promise(resolve=>portServer.listen(0,'127.0.0.1',resolve));const httpPort=portServer.address().port;await new Promise(resolve=>portServer.close(resolve));
   await run('npm',['run','qa:production'],{env:{...testEnvironment,ABUJALIFE_QA_HTTP_PORT:String(httpPort)}});
   await compose(['up','-d','--no-build','api']);

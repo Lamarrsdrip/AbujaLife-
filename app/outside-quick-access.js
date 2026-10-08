@@ -19,6 +19,7 @@ const safeExternalLink = value => {
 const liveAdSpaces = () => new Map((globalThis.__ABJ_ADS__?.spaces || []).map(space => [space.id, space]));
 
 function syncAdTiles(shell) {
+  if(shell?.classList?.contains('outside-city-v4'))return; // v4 campaigns are framed world geometry, never duplicate DOM images.
   const spaces = liveAdSpaces();
   const interactivePlots = shell?.classList?.contains('outside-city-v3');
   shell?.querySelectorAll('.outside-ad-label').forEach(button => {

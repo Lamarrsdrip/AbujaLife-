@@ -10,7 +10,20 @@ export function configuration(root = process.env.ABUJALIFE_WINDOWS_ROOT || 'C:\\
     const url = new URL(config[name]);
     if (url.protocol !== 'https:' || url.username || url.password || url.port || url.pathname !== '/' || url.search || url.hash || /^(localhost|127\.|0\.|\[?::1\]?$)/i.test(url.hostname)) throw new Error(`${name} must identify a public HTTPS origin.`);
   }
-  return { ...config, root: base, shared: path.join(base, 'shared'), state: path.join(base, 'shared', 'state'), run: path.join(base, 'shared', 'run'), secrets: path.join(base, 'shared', '.secrets'), releases: path.join(base, 'releases'), backups: path.join(base, 'shared', 'backups'), logs: path.join(base, 'shared', 'logs') };
+  const shared = path.join(base, 'shared');
+  return {
+    ...config,
+    root: base,
+    shared,
+    state: path.join(shared, 'state'),
+    run: path.join(shared, 'run'),
+    secrets: path.join(shared, '.secrets'),
+    releases: path.join(base, 'releases'),
+    backups: path.join(shared, 'backups'),
+    logs: path.join(shared, 'logs'),
+    media: path.join(shared, 'media'),
+    chatMedia: path.join(shared, 'media', 'chat')
+  };
 }
 
 export function secret(config, name) {
@@ -25,7 +38,7 @@ export function mongoUri(config, user = 'abujalife_app', password = 'mongo-app-p
 }
 
 export function apiEnvironment(config, port = config.apiPort) {
-  const env = { ...safeEnvironment(), NODE_ENV: 'production', HOST: '127.0.0.1', PORT: String(port), MONGODB_DATABASE: config.database, MONGODB_URI: mongoUri(config), PUBLIC_WEB_URL: config.publicWebUrl, API_PUBLIC_URL: config.apiPublicUrl, CORS_ORIGINS: config.corsOrigins.join(','), TRUST_PROXY: '1', ABUJALIFE_CONFIG_KEY: secret(config, 'config-key') };
+  const env = { ...safeEnvironment(), NODE_ENV: 'production', HOST: '127.0.0.1', PORT: String(port), MONGODB_DATABASE: config.database, MONGODB_URI: mongoUri(config), PUBLIC_WEB_URL: config.publicWebUrl, API_PUBLIC_URL: config.apiPublicUrl, CORS_ORIGINS: config.corsOrigins.join(','), TRUST_PROXY: '1', ABUJALIFE_CONFIG_KEY: secret(config, 'config-key'), CHAT_MEDIA_DIR: config.chatMedia };
   // Optional provider secrets are server-only and are never included in a build.
   const providers = path.join(config.shared, 'providers.json');
   if (fs.existsSync(providers)) {

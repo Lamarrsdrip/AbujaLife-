@@ -122,7 +122,7 @@ test('Store retains ownership, and Sell requires a visible confirmation before o
   assert.equal(await f.controller.edit('confirm-sell', 'sofa'), false);
   f.controller.showItem('sofa'); await f.controller.edit('sell');
   assert.equal(await f.controller.edit('confirm-sell'), true);
-  assert.equal(f.state.profile.wallet, 109000);
+  assert.equal(f.state.profile.wallet, 100000+Math.floor(catalog.find(item=>item.id==='sofa').price/2));
   assert.ok(!f.state.profile.inventory.includes('sofa'));
   assert.deepEqual(f.writes.map(write => write.action), ['store-furniture', 'sell-item']);
   assert.equal(f.controller.isOpen(), false);

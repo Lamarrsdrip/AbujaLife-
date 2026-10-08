@@ -1,15 +1,17 @@
+import { ECONOMY_CONFIG, RENT_RULES, ITEM_PRICES, VENUE_PRICES, LEGACY_PROPERTY_BUY, economyPrice } from './economy.mjs';
 import { CITY_LANDMARKS, cityLandmark } from './city-landmarks.mjs';
 // Authored game venues and prices, not verified business listings or property quotations.
 // Neighbourhood names come from the atlas; the walkable streets are game scenery.
 export const GAME_YEAR_MS = 28 * 86400000;
-export const GAME_BILL_PERIOD_MS = 7 * 86400000;
+export const GAME_BILL_PERIOD_MS = ECONOMY_CONFIG.serviceIntervalMs;
 export const ECONOMY_META = {
   currency: 'Naira',
   currencyCode: 'NGN',
   priceLabel: 'Game prices',
   description: 'Virtual prices are scaled for gameplay. They are not real Abuja market quotations.',
-  rentPeriod: 'game year',
-  rentPeriodDays: 28,
+  version: ECONOMY_CONFIG.version,
+  rentPeriod: 'week',
+  rentPeriodDays: RENT_RULES.intervalMs / 86400000,
   billPeriodDays: 7,
 };
 
@@ -36,12 +38,12 @@ export function starterHomeSeed(origin) {
 }
 
 export const SYSTEM_RESALE_META = {
-  virtual: true, buybackBasisPoints: 5000,
+  virtual: true, ...ECONOMY_CONFIG.resale,
   description: 'The game system buys owned catalog items for 50% of their listed game price.',
 };
 export function systemResaleValue(item) {
   if (!Number.isSafeInteger(item?.price) || item.price < 0) throw new RangeError('This item has no valid game resale price');
-  return Math.floor(item.price / 2);
+  return Math.floor(item.price * SYSTEM_RESALE_META.buybackBasisPoints / 10000);
 }
 
 // The server validates ownership and venue availability before quoting these game fares.
@@ -50,7 +52,8 @@ export function systemResaleValue(item) {
 export function travelPricing(originPlace, destinationPlace, mode, { venueId = null } = {}) {
   const same = originPlace.id === destinationPlace.id;
   const distance = same ? venueId ? 4 : 0 : Math.max(4, Math.round(((destinationPlace.commute || 35) + (originPlace.commute || 35)) / 3));
-  const cost = mode === 'walk' || mode === 'car' || !distance ? 0 : mode === 'bus' ? 250 + distance * 20 : mode === 'taxi' ? 650 + distance * 45 : mode === 'bike' ? 300 + distance * 30 : 900 + distance * 45;
+  const fare=ECONOMY_CONFIG.transport[mode];
+  const cost = mode === 'walk' || mode === 'car' || !distance ? 0 : (fare||ECONOMY_CONFIG.transport.ride).base + distance * (fare||ECONOMY_CONFIG.transport.ride).perDistance;
   const seconds = mode === 'walk' || !distance ? 1 : 10 + Math.min(14, Math.max(4, Math.round(distance / (mode === 'bus' ? 2.5 : 4))));
   return { destination: destinationPlace.id, mode, cost, seconds, ...(venueId ? { venueId } : {}) };
 }
@@ -59,12 +62,11 @@ export const WALLET_META = {
   currency: 'NGN', currencyName: 'Naira', currencyCode: 'NGN', balanceLabel: 'Naira balance', virtual: true, gameMoney: true, transferEnabled: true,
   uncapped: true, maxSafeInteger: Number.MAX_SAFE_INTEGER, topupMin: 1,
   topupAmounts: [1000, 10000, 50000, 250000, 1000000, 5000000],
-  topupLabel: 'Free game top-up', description: 'Game Naira has no cash value. Top-ups are free virtual funds; there is no payment or withdrawal.',
+  topupLabel: 'Buy game credits', description: 'Game Naira has no cash value. Earn through jobs and city activities; optional credit purchases require verified provider payment. Local preview funds stay on this device.',
 };
 export const INVESTMENT_META = {
-  virtual: true, periodMs: 60000, incomeBasisPoints: 20, uncappedAccrual: true,
-  sellCooldownMs: 60000, resaleBasisPoints: 9000,
-  description: 'Simulated rent accrues every real minute without an accrual ceiling. These are game returns, not property prices or investment forecasts.',
+  virtual: true, ...ECONOMY_CONFIG.investment, uncappedAccrual: true,
+  description: 'Simulated investment rent accrues every real week. Resale unlocks after one real day. Existing purchase values remain preserved. Game returns carry no real property entitlement.',
 };
 export const DICE_META = {
   virtual: true, minStake: 100, uncappedStake: true, payoutMultiplier: 2,
@@ -73,8 +75,7 @@ export const DICE_META = {
 };
 export const LOAN_META = {
   id: 'lapo-style', name: 'LAPO-style game loan', virtual: true, optional: true,
-  consentVersion: 'game-loan-v1', feeBasisPoints: 500, termDays: 28, termMs: 28 * 86400000,
-  dailyPrincipalCap: 10_000_000, maxOutstandingPrincipal: 100_000_000, redrawAfterRepaymentPercent: 50,
+  consentVersion: 'game-loan-v1', ...ECONOMY_CONFIG.loan, termMs: ECONOMY_CONFIG.loan.termDays * 86400000,
   description: 'Optional fictional game borrowing: up to ₦10m of new principal per real day, with ₦100m total outstanding. Repay at least 50% before requesting another advance; a one-time 5% fee is due in 28 real days.',
   affiliation: 'This simulated game lender has no affiliation with LAPO Microfinance Bank.',
 };
@@ -89,15 +90,15 @@ export function loanView(profile, now = Date.now()) {
   return (profile?.loans || []).map(loan => ({ ...loan, overdue: loan.outstanding > 0 && now >= loan.dueAt, canRepay: loan.outstanding > 0 }));
 }
 export const HOME_UPGRADES = [
-  { id: 'portable-ac', name: 'Portable air conditioner', category: 'furniture', price: 45000, cost: 45000, description: 'Cool down after a hot Abuja afternoon. Adds 6 energy when sleeping and reduces 6 more stress when relaxing.', effects: { sleepEnergy: 6, relaxStressReduction: 6 } },
-  { id: 'power-inverter', name: 'Backup power inverter', category: 'furniture', price: 78000, cost: 78000, description: 'Steady backup power for your home. A fixed game benefit reduces weekly home service bills by 15%.', effects: { billDiscountPercent: 15 } },
-  { id: 'premium-sofa', name: 'Premium sectional sofa', category: 'furniture', price: 56000, cost: 56000, description: 'A generous lounge setting for your Jabi or Maitama home. Adds 6 fun when relaxing.', effects: { relaxFun: 6 } },
-  { id: 'king-bed', name: 'King-size bed', category: 'furniture', price: 65000, cost: 65000, description: 'A spacious upholstered bed for proper rest. Adds 10 energy when sleeping.', effects: { sleepEnergy: 10 } },
-  { id: 'pool-table', name: 'Home pool table', category: 'furniture', price: 55000, cost: 55000, description: 'A statement piece for your games room. Place this decorative table wherever it fits.', effects: {} },
-  { id: 'gaming-console', name: 'Gaming console & screen', category: 'furniture', price: 42000, cost: 42000, description: 'Set up your entertainment corner. Adds 12 fun when relaxing at home.', effects: { relaxFun: 12 } },
-  { id: 'bar-cart', name: 'Hosting drinks trolley', category: 'furniture', price: 18000, cost: 18000, description: 'A polished drinks and serveware trolley for your lounge. A decorative home accent.', effects: {} },
-  { id: 'art-piece', name: 'Contemporary art piece', category: 'furniture', price: 24000, cost: 24000, description: 'An original decorative artwork to bring colour and character to your home.', effects: {} },
-];
+  { id: 'portable-ac', name: 'Portable air conditioner', category: 'furniture',  description: 'Cool down after a hot Abuja afternoon. Adds 6 energy when sleeping and reduces 6 more stress when relaxing.', effects: { sleepEnergy: 6, relaxStressReduction: 6 } },
+  { id: 'power-inverter', name: 'Backup power inverter', category: 'furniture',  description: 'Steady backup power for your home. A fixed game benefit reduces weekly home service bills by 15%.', effects: { billDiscountPercent: 15 } },
+  { id: 'premium-sofa', name: 'Premium sectional sofa', category: 'furniture',  description: 'A generous lounge setting for your Jabi or Maitama home. Adds 6 fun when relaxing.', effects: { relaxFun: 6 } },
+  { id: 'king-bed', name: 'King-size bed', category: 'furniture',  description: 'A spacious upholstered bed for proper rest. Adds 10 energy when sleeping.', effects: { sleepEnergy: 10 } },
+  { id: 'pool-table', name: 'Home pool table', category: 'furniture',  description: 'A statement piece for your games room. Place this decorative table wherever it fits.', effects: {} },
+  { id: 'gaming-console', name: 'Gaming console & screen', category: 'furniture',  description: 'Set up your entertainment corner. Adds 12 fun when relaxing at home.', effects: { relaxFun: 12 } },
+  { id: 'bar-cart', name: 'Hosting drinks trolley', category: 'furniture',  description: 'A polished drinks and serveware trolley for your lounge. A decorative home accent.', effects: {} },
+  { id: 'art-piece', name: 'Contemporary art piece', category: 'furniture',  description: 'An original decorative artwork to bring colour and character to your home.', effects: {} },
+].map(item=>({...item,price:economyPrice(ITEM_PRICES,item.id),cost:economyPrice(ITEM_PRICES,item.id)}));
 export function homeBenefits(profile, property) {
   const result={sleepEnergyBonus:property?.tier>=3?4:0,relaxFunBonus:property?.tier>=3?4:0,relaxStressReduction:0,billDiscountPercent:0};
   for(const item of HOME_UPGRADES)if(profile?.inventory?.includes(item.id)){
@@ -108,9 +109,27 @@ export function homeBenefits(profile, property) {
   }
   return result;
 }
+export function validInvestmentRecord(profile, property, investment = profile?.propertyInvestments?.[property?.id]) {
+  if (!property || property.tier <= 0 || !investment || typeof investment !== 'object' || Array.isArray(investment)) return false;
+  if (investment.propertyId !== property.id || profile?.home?.propertyId === property.id || !profile?.ownedProperties?.includes(property.id)) return false;
+  const legacy=LEGACY_PROPERTY_BUY[property.id];
+  const currentQuote=investment.purchasePrice===property.buy && investment.incomePerPeriod===property.investmentIncome && investment.resaleValue===property.investmentResale;
+  const legacyQuote=legacy!==undefined && investment.purchasePrice===legacy && investment.incomePerPeriod===Math.floor(legacy*20/10000) && investment.resaleValue===Math.floor(legacy*9000/10000);
+  return (currentQuote||legacyQuote) && Number.isSafeInteger(investment.boughtAt) && investment.boughtAt >= 0
+    && Number.isSafeInteger(investment.lastCollectedAt) && investment.lastCollectedAt >= investment.boughtAt;
+}
+
+export function normalizeInvestmentRecords(profile, propertyCatalog) {
+  const byId = new Map((Array.isArray(propertyCatalog) ? propertyCatalog : []).map(property => [property.id, property]));
+  return Object.fromEntries(Object.entries(profile?.propertyInvestments || {}).filter(([id, investment]) => {
+    const property = byId.get(id);
+    return property?.id === id && validInvestmentRecord(profile, property, investment);
+  }));
+}
+
 export function investmentView(profile, property, now = Date.now()) {
   const investment = profile?.propertyInvestments?.[property?.id];
-  if (!investment) return null;
+  if (!validInvestmentRecord(profile, property, investment)) return null;
   const incomePerPeriod = investment.incomePerPeriod;
   const periods = Math.max(0, Math.floor((now - investment.lastCollectedAt) / INVESTMENT_META.periodMs));
   const exactCollectable = BigInt(periods) * BigInt(incomePerPeriod), collectable = Number(exactCollectable);
@@ -122,6 +141,24 @@ export function investmentView(profile, property, now = Date.now()) {
   };
 }
 
+export function investmentPortfolio(profile, propertyCatalog, now = Date.now()) {
+  const catalog = Array.isArray(propertyCatalog) ? propertyCatalog : [];
+  const records = Object.entries(profile?.propertyInvestments || {}).flatMap(([id]) => {
+    const property = catalog.find(item => item.id === id);
+    const investment = property && investmentView(profile, property, now);
+    return investment ? [{ property, investment }] : [];
+  });
+  const totals = records.reduce((value, row) => {
+    value.purchase += BigInt(row.investment.purchasePrice);
+    value.resale += BigInt(row.investment.resaleValue);
+    value.rent += BigInt(row.investment.collectableExact);
+    return value;
+  }, { purchase: 0n, resale: 0n, rent: 0n });
+  const exact = value => value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : null;
+  return { records, count: records.length, purchaseValue: exact(totals.purchase), resaleValue: exact(totals.resale), unclaimedRent: exact(totals.rent),
+    purchaseValueExact: totals.purchase.toString(), resaleValueExact: totals.resale.toString(), unclaimedRentExact: totals.rent.toString() };
+}
+
 export const LIFE_GOALS = [
   { id: 'explore', title: 'Find my Abuja rhythm', description: 'Explore the city, eat well and make time for yourself.' },
   { id: 'career', title: 'Build a career', description: 'Earn through work and grow your skills.' },
@@ -130,34 +167,34 @@ export const LIFE_GOALS = [
 ];
 
 export const VENUE_ACTIONS = [
-  { id: 'jollof-chicken', venueId: 'restaurant', name: 'Jollof rice & chicken', cost: 1800, duration: 15, animation: 'eat', effects: { hunger: 42, mood: 5 } },
-  { id: 'suya-plate', venueId: 'restaurant', name: 'Suya & a chilled drink', cost: 2200, duration: 15, animation: 'eat', effects: { hunger: 35, fun: 8, social: 5 } },
-  { id: 'egusi-pounded-yam', venueId: 'restaurant', name: 'Egusi & pounded yam', cost: 2500, duration: 16, animation: 'eat', effects: { hunger: 52, energy: 5, mood: 5 } },
-  { id: 'hotel-rest', venueId: 'hotel', name: 'Book a room & rest', cost: 6500, duration: 17, animation: 'rest', effects: { energy: 60, stress: -22, hunger: -12, mood: 8 } },
-  { id: 'hotel-shower', venueId: 'hotel', name: 'Freshen up at the spa', cost: 1900, duration: 15, animation: 'shower', effects: { hygiene: 50, stress: -12, mood: 5 } },
-  { id: 'gym-workout', venueId: 'gym', name: 'Train at the gym', cost: 1600, duration: 18, animation: 'exercise', effects: { energy: -16, hunger: -12, hygiene: -12, stress: -18, fun: 20, mood: 8 }, skill: 'Fitness' },
-  { id: 'gym-recovery', venueId: 'gym', name: 'Stretch & recovery', cost: 800, duration: 15, animation: 'exercise', effects: { energy: 8, stress: -16, fun: 10 } },
-  { id: 'cinema-film', venueId: 'cinema', name: 'Watch a film', cost: 3800, duration: 18, animation: 'watch', effects: { fun: 42, stress: -15, social: 8, hunger: -6 } },
-  { id: 'groceries', venueId: 'grocery', name: 'Pick up a meal & essentials', cost: 1400, duration: 14, animation: 'shop', effects: { hunger: 28, mood: 4 } },
+  { id: 'jollof-chicken', venueId: 'restaurant', name: 'Jollof rice & chicken',  duration: 15, animation: 'eat', effects: { hunger: 42, mood: 5 } },
+  { id: 'suya-plate', venueId: 'restaurant', name: 'Suya & a chilled drink',  duration: 15, animation: 'eat', effects: { hunger: 35, fun: 8, social: 5 } },
+  { id: 'egusi-pounded-yam', venueId: 'restaurant', name: 'Egusi & pounded yam',  duration: 16, animation: 'eat', effects: { hunger: 52, energy: 5, mood: 5 } },
+  { id: 'hotel-rest', venueId: 'hotel', name: 'Book a room & rest',  duration: 17, animation: 'rest', effects: { energy: 60, stress: -22, hunger: -12, mood: 8 } },
+  { id: 'hotel-shower', venueId: 'hotel', name: 'Freshen up at the spa',  duration: 15, animation: 'shower', effects: { hygiene: 50, stress: -12, mood: 5 } },
+  { id: 'gym-workout', venueId: 'gym', name: 'Train at the gym',  duration: 18, animation: 'exercise', effects: { energy: -16, hunger: -12, hygiene: -12, stress: -18, fun: 20, mood: 8 }, skill: 'Fitness' },
+  { id: 'gym-recovery', venueId: 'gym', name: 'Stretch & recovery',  duration: 15, animation: 'exercise', effects: { energy: 8, stress: -16, fun: 10 } },
+  { id: 'cinema-film', venueId: 'cinema', name: 'Watch a film',  duration: 18, animation: 'watch', effects: { fun: 42, stress: -15, social: 8, hunger: -6 } },
+  { id: 'groceries', venueId: 'grocery', name: 'Pick up a meal & essentials',  duration: 14, animation: 'shop', effects: { hunger: 28, mood: 4 } },
   { id: 'park-walk', venueId: 'park', name: 'Take a gentle walk', cost: 0, duration: 16, animation: 'walk', effects: { stress: -14, fun: 14, energy: -3, mood: 5 } },
-  { id: 'park-picnic', venueId: 'park', name: 'Relax with a picnic', cost: 1200, duration: 16, animation: 'eat', effects: { hunger: 26, fun: 22, stress: -12 } },
-  { id: 'coffee-break', venueId: 'cafe', name: 'Coffee & a small chop plate', cost: 1500, duration: 15, animation: 'eat', effects: { energy: 15, hunger: 20, social: 12, stress: -8 } },
-  { id: 'salon-cut', venueId: 'salon', name: 'Grooming & a fresh look', cost: 2100, duration: 15, animation: 'groom', effects: { hygiene: 28, mood: 10, social: 7 } },
+  { id: 'park-picnic', venueId: 'park', name: 'Relax with a picnic',  duration: 16, animation: 'eat', effects: { hunger: 26, fun: 22, stress: -12 } },
+  { id: 'coffee-break', venueId: 'cafe', name: 'Coffee & a small chop plate',  duration: 15, animation: 'eat', effects: { energy: 15, hunger: 20, social: 12, stress: -8 } },
+  { id: 'salon-cut', venueId: 'salon', name: 'Grooming & a fresh look',  duration: 15, animation: 'groom', effects: { hygiene: 28, mood: 10, social: 7 } },
   { id: 'mosque-prayer', venueId: 'mosque', name: 'Take time for prayer', cost: 0, duration: 16, animation: 'pray', effects: { stress: -18, mood: 10 } },
   { id: 'mosque-community', venueId: 'mosque', name: 'Meet the community', cost: 0, duration: 16, animation: 'social', effects: { social: 20, mood: 6 } },
   { id: 'church-reflect', venueId: 'church', name: 'Prayer & quiet reflection', cost: 0, duration: 16, animation: 'pray', effects: { stress: -18, mood: 10 } },
   { id: 'church-community', venueId: 'church', name: 'Spend time with the community', cost: 0, duration: 16, animation: 'social', effects: { social: 20, mood: 6 } },
   { id: 'lake-walk', venueId: 'jabi-lake', name: 'Walk by the lake', cost: 0, duration: 17, animation: 'walk', effects: { stress: -22, fun: 20, energy: -4 } },
-  { id: 'lake-picnic', venueId: 'jabi-lake', name: 'Lakeside picnic', cost: 1500, duration: 16, animation: 'eat', effects: { hunger: 28, social: 12, fun: 22 } },
-  { id: 'club-dance', venueId: 'club', name: 'Tokyo · dance to the DJ set', cost: 8000, duration: 18, animation: 'dance', effects: { fun: 40, social: 20, energy: -12, hygiene: -8 } },
-  { id: 'club-refreshment', venueId: 'club', name: 'Tokyo · refreshments & small chops', cost: 6000, duration: 15, animation: 'eat', effects: { hunger: 25, energy: 8, social: 10 } },
-  { id: 'tokyo-vip', venueId: 'club', name: 'Tokyo · VIP lounge & music', cost: 16000, duration: 17, animation: 'social', effects: { fun: 35, social: 30, stress: -12, energy: -4 } },
-  { id: 'cage-dance', venueId: 'club-cage', name: 'Cage · dance floor', cost: 4000, duration: 18, animation: 'dance', effects: { fun: 35, social: 18, energy: -12, hygiene: -8 } },
-  { id: 'cage-drinks', venueId: 'club-cage', name: 'Cage · drinks & music', cost: 8000, duration: 15, animation: 'eat', effects: { hunger: 18, fun: 20, social: 16, energy: 6 } },
-  { id: 'magic-city-stage', venueId: 'magic-city', name: 'Magic City · stage entertainment', cost: 6000, duration: 18, animation: 'watch', effects: { fun: 40, social: 15, stress: -10, energy: -5 } },
-  { id: 'magic-city-vip', venueId: 'magic-city', name: 'Magic City · VIP lounge', cost: 12000, duration: 17, animation: 'social', effects: { fun: 30, social: 30, stress: -12, energy: -4 } },
-  { id: 'bear-barn-relax', venueId: 'bear-barn', name: 'Bear Barn · unwind with music', cost: 2500, duration: 16, animation: 'social', effects: { fun: 24, social: 20, stress: -16, energy: -3 } },
-  { id: 'bear-barn-drinks', venueId: 'bear-barn', name: 'Bear Barn · drinks & small chops', cost: 4500, duration: 15, animation: 'eat', effects: { hunger: 24, fun: 16, social: 12, energy: 6 } },
+  { id: 'lake-picnic', venueId: 'jabi-lake', name: 'Lakeside picnic',  duration: 16, animation: 'eat', effects: { hunger: 28, social: 12, fun: 22 } },
+  { id: 'club-dance', venueId: 'club', name: 'Tokyo · dance to the DJ set',  duration: 18, animation: 'dance', effects: { fun: 40, social: 20, energy: -12, hygiene: -8 } },
+  { id: 'club-refreshment', venueId: 'club', name: 'Tokyo · refreshments & small chops',  duration: 15, animation: 'eat', effects: { hunger: 25, energy: 8, social: 10 } },
+  { id: 'tokyo-vip', venueId: 'club', name: 'Tokyo · VIP lounge & music',  duration: 17, animation: 'social', effects: { fun: 35, social: 30, stress: -12, energy: -4 } },
+  { id: 'cage-dance', venueId: 'club-cage', name: 'Cage · dance floor',  duration: 18, animation: 'dance', effects: { fun: 35, social: 18, energy: -12, hygiene: -8 } },
+  { id: 'cage-drinks', venueId: 'club-cage', name: 'Cage · drinks & music',  duration: 15, animation: 'eat', effects: { hunger: 18, fun: 20, social: 16, energy: 6 } },
+  { id: 'magic-city-stage', venueId: 'magic-city', name: 'Magic City · stage entertainment',  duration: 18, animation: 'watch', effects: { fun: 40, social: 15, stress: -10, energy: -5 } },
+  { id: 'magic-city-vip', venueId: 'magic-city', name: 'Magic City · VIP lounge',  duration: 17, animation: 'social', effects: { fun: 30, social: 30, stress: -12, energy: -4 } },
+  { id: 'bear-barn-relax', venueId: 'bear-barn', name: 'Bear Barn · unwind with music',  duration: 16, animation: 'social', effects: { fun: 24, social: 20, stress: -16, energy: -3 } },
+  { id: 'bear-barn-drinks', venueId: 'bear-barn', name: 'Bear Barn · drinks & small chops',  duration: 15, animation: 'eat', effects: { hunger: 24, fun: 16, social: 12, energy: 6 } },
 
   // Purposeful Abuja multiplayer hubs. These actions make each destination more than scenery:
   // residents share the same venue zone, can meet there, and have activities that fit the place.
@@ -167,17 +204,17 @@ export const VENUE_ACTIONS = [
   { id:'aso-view-meet', venueId:'aso-rock-view', name:'Meet friends at the viewpoint', cost:0, duration:16, animation:'social', effects:{social:22,stress:-10,fun:12} },
   { id:'cbn-exhibit', venueId:'cbn-experience', name:'Explore money & economic history', cost:0, duration:17, animation:'watch', effects:{fun:8,mood:5} },
   { id:'cbn-career', venueId:'cbn-experience', name:'Attend a finance career session', cost:0, duration:18, animation:'social', effects:{social:10,mood:8} },
-  { id:'magicland-rides', venueId:'magicland', name:'Go on the rides', cost:3500, duration:19, animation:'ride', effects:{fun:48,social:14,energy:-8,stress:-18,mood:10} },
-  { id:'magicland-arcade', venueId:'magicland', name:'Play in the arcade', cost:2500, duration:18, animation:'play', effects:{fun:38,social:16,energy:-4,mood:8} },
+  { id:'magicland-rides', venueId:'magicland', name:'Go on the rides',  duration:19, animation:'ride', effects:{fun:48,social:14,energy:-8,stress:-18,mood:10} },
+  { id:'magicland-arcade', venueId:'magicland', name:'Play in the arcade',  duration:18, animation:'play', effects:{fun:38,social:16,energy:-4,mood:8} },
   { id:'magicland-meet', venueId:'magicland', name:'Meet up inside the park', cost:0, duration:15, animation:'social', effects:{social:24,fun:14} },
-  { id:'farmcity-meal', venueId:'farm-city', name:'Eat at Farm City', cost:4500, duration:17, animation:'eat', effects:{hunger:48,fun:14,social:12,mood:8} },
-  { id:'farmcity-arcade', venueId:'farm-city', name:'Play at the game arcade', cost:2200, duration:17, animation:'play', effects:{fun:34,social:18,stress:-10} },
-  { id:'farmcity-hangout', venueId:'farm-city', name:'Hang out with friends', cost:1200, duration:17, animation:'social', effects:{social:30,fun:20,stress:-12} },
+  { id:'farmcity-meal', venueId:'farm-city', name:'Eat at Farm City',  duration:17, animation:'eat', effects:{hunger:48,fun:14,social:12,mood:8} },
+  { id:'farmcity-arcade', venueId:'farm-city', name:'Play at the game arcade',  duration:17, animation:'play', effects:{fun:34,social:18,stress:-10} },
+  { id:'farmcity-hangout', venueId:'farm-city', name:'Hang out with friends',  duration:17, animation:'social', effects:{social:30,fun:20,stress:-12} },
   { id:'transcorp-lobby', venueId:'transcorp-hilton-hub', name:'Meet in the lobby', cost:0, duration:16, animation:'social', effects:{social:25,stress:-8,mood:8} },
-  { id:'transcorp-pool', venueId:'transcorp-hilton-hub', name:'Spend time by the pool', cost:3500, duration:18, animation:'relax', effects:{fun:28,stress:-24,energy:8,mood:8} },
-  { id:'transcorp-dining', venueId:'transcorp-hilton-hub', name:'Dinner at the hotel', cost:5500, duration:18, animation:'eat', effects:{hunger:45,fun:16,social:16,mood:8} },
+  { id:'transcorp-pool', venueId:'transcorp-hilton-hub', name:'Spend time by the pool',  duration:18, animation:'relax', effects:{fun:28,stress:-24,energy:8,mood:8} },
+  { id:'transcorp-dining', venueId:'transcorp-hilton-hub', name:'Dinner at the hotel',  duration:18, animation:'eat', effects:{hunger:45,fun:16,social:16,mood:8} },
   { id:'millennium-walk', venueId:'millennium-park-hub', name:'Walk through Millennium Park', cost:0, duration:18, animation:'walk', effects:{stress:-22,fun:18,energy:-4,mood:7} },
-  { id:'millennium-picnic', venueId:'millennium-park-hub', name:'Picnic in the park', cost:1200, duration:17, animation:'eat', effects:{hunger:25,fun:24,social:15,stress:-12} },
+  { id:'millennium-picnic', venueId:'millennium-park-hub', name:'Picnic in the park',  duration:17, animation:'eat', effects:{hunger:25,fun:24,social:15,stress:-12} },
   { id:'millennium-meet', venueId:'millennium-park-hub', name:'Meet friends on the lawn', cost:0, duration:16, animation:'social', effects:{social:28,fun:12} },
   { id:'eagle-square-meet', venueId:'eagle-square-hub', name:'Meet at Eagle Square', cost:0, duration:16, animation:'social', effects:{social:24,fun:10,mood:6} },
   { id:'eagle-square-event', venueId:'eagle-square-hub', name:'Attend a public city event', cost:0, duration:18, animation:'watch', effects:{fun:24,social:16,mood:8} },
@@ -185,7 +222,7 @@ export const VENUE_ACTIONS = [
   { id:'national-mosque-community', venueId:'national-mosque-hub', name:'Spend time with the community', cost:0, duration:16, animation:'social', effects:{social:22,mood:6} },
   { id:'national-christian-reflect', venueId:'national-christian-centre-hub', name:'Prayer & reflection', cost:0, duration:16, animation:'pray', effects:{stress:-20,mood:10} },
   { id:'national-christian-community', venueId:'national-christian-centre-hub', name:'Spend time with the community', cost:0, duration:16, animation:'social', effects:{social:22,mood:6} },
-  { id:'stadium-train', venueId:'national-stadium-hub', name:'Train at the stadium', cost:800, duration:19, animation:'exercise', effects:{energy:-14,fun:20,stress:-18,mood:8} },
+  { id:'stadium-train', venueId:'national-stadium-hub', name:'Train at the stadium',  duration:19, animation:'exercise', effects:{energy:-14,fun:20,stress:-18,mood:8} },
   { id:'stadium-meet', venueId:'national-stadium-hub', name:'Meet on the concourse', cost:0, duration:15, animation:'social', effects:{social:22,fun:10} },
 
   { id:'airport-checkin', venueId:'airport-hub', name:'Check the departures hall', cost:0, duration:14, animation:'walk', effects:{fun:6,social:5,mood:4} },
@@ -203,17 +240,37 @@ export const VENUE_ACTIONS = [
   { id:'transcorp-meet', venueId:'transcorp-hilton-hub', name:'Meet in the main lobby', cost:0, duration:15, animation:'social', effects:{social:18,mood:5} },
   { id:'millennium-relax', venueId:'millennium-park-hub', name:'Relax on the lawn', cost:0, duration:16, animation:'rest', effects:{stress:-20,fun:12} },
   { id:'aso-viewpoint', venueId:'aso-rock-view', name:'Take in the Aso Rock view', cost:0, duration:16, animation:'watch', effects:{stress:-18,fun:12,mood:8} },
-  { id:'farmcity-social', venueId:'farm-city', name:'Join the Farm City hangout', cost:1200, duration:16, animation:'social', effects:{social:22,fun:16,stress:-8} },
+  { id:'farmcity-social', venueId:'farm-city', name:'Join the Farm City hangout',  duration:16, animation:'social', effects:{social:22,fun:16,stress:-8} },
   { id:'jabi-lake-view', venueId:'jabi-lake', name:'Watch the water from the promenade', cost:0, duration:15, animation:'watch', effects:{stress:-18,fun:10} },
   { id:'jabi-mall-shop', venueId:'jabi-lake-mall', name:'Browse the mall', cost:0, duration:16, animation:'shop', effects:{fun:14,social:8} },
-  { id:'jabi-mall-food', venueId:'jabi-lake-mall', name:'Meet at the food court', cost:2400, duration:16, animation:'eat', effects:{hunger:30,social:15,fun:12} },
+  { id:'jabi-mall-food', venueId:'jabi-lake-mall', name:'Meet at the food court',  duration:16, animation:'eat', effects:{hunger:30,social:15,fun:12} },
   { id:'icc-conference', venueId:'international-conference-centre', name:'Attend a city conference', cost:0, duration:18, animation:'watch', effects:{social:12,fun:10,mood:5} },
   { id:'banex-browse', venueId:'banex', name:'Browse the tech counters', cost:0, duration:15, animation:'shop', effects:{fun:10,social:8} },
   { id:'inec-registration', venueId:'inec-hq', name:'Visit the candidate registration desk', cost:0, duration:14, animation:'social', effects:{social:8,mood:4} },
   { id:'inec-info', venueId:'inec-hq', name:'Read the AbujaLife election information', cost:0, duration:14, animation:'watch', effects:{fun:8,mood:4} },
   { id:'efcc-briefing', venueId:'efcc-hq', name:'Visit the fictional integrity briefing', cost:0, duration:15, animation:'watch', effects:{fun:8,mood:4} },
   { id:'court-gallery', venueId:'federal-high-court-hub', name:'Visit the fictional hearing gallery', cost:0, duration:16, animation:'watch', effects:{fun:8,mood:4} },
-];
+  { id:'central-park-walk',venueId:'central-park-abuja',name:'Walk the garden paths',cost:0,duration:16,animation:'walk',effects:{stress:-18,fun:14,mood:6} },
+  { id:'central-park-play',venueId:'central-park-abuja',name:'Spend time at the playground',duration:18,animation:'play',effects:{fun:28,social:12,energy:-8} },
+  { id:'central-park-meet',venueId:'central-park-abuja',name:'Meet friends on the lawn',cost:0,duration:16,animation:'social',effects:{social:26,fun:12} },
+  ...['sahad-cbd','ceddi-plaza'].flatMap(venueId=>[
+    {id:`${venueId}-browse`,venueId,name:'Browse the retail court',cost:0,duration:16,animation:'shop',effects:{fun:14,social:8}},
+    {id:`${venueId}-food`,venueId,name:'Meet over a meal',duration:16,animation:'eat',effects:{hunger:32,social:16,fun:10}},
+  ]),
+  ...['sahad-area-11','grand-square-abuja'].flatMap(venueId=>[
+    {id:`${venueId}-browse`,venueId,name:'Browse daily essentials',cost:0,duration:15,animation:'shop',effects:{fun:10,social:8}},
+    {id:`${venueId}-meal`,venueId,name:'Take a meal break',duration:16,animation:'eat',effects:{hunger:34,fun:8}},
+  ]),
+  {id:'sahad-area-11-arcade',venueId:'sahad-area-11',name:'Play in the arcade',duration:17,animation:'play',effects:{fun:28,social:12,stress:-10}},
+  {id:'ceddi-genesis-film',venueId:'ceddi-genesis-cinema',name:'Watch a movie',duration:18,animation:'watch',effects:{fun:42,stress:-15,social:8,hunger:-6}},
+  {id:'ceddi-genesis-popcorn',venueId:'ceddi-genesis-cinema',name:'Buy popcorn',duration:14,animation:'eat',effects:{hunger:18,fun:8}},
+  {id:'ceddi-genesis-screening',venueId:'ceddi-genesis-cinema',name:'Watch the game screening',duration:20,animation:'watch',effects:{fun:32,social:10,stress:-16}},
+  {id:'ceddi-genesis-meet',venueId:'ceddi-genesis-cinema',name:'Meet friends in the foyer',cost:0,duration:16,animation:'social',effects:{social:22,fun:10}},
+  ...['thought-pyramid-abuja','nike-gallery-abuja'].flatMap(venueId=>[
+    {id:`${venueId}-exhibition`,venueId,name:'Explore the art exhibition',cost:0,duration:18,animation:'watch',effects:{fun:24,stress:-18,mood:10}},
+    {id:`${venueId}-workshop`,venueId,name:'Join a creative workshop',duration:20,animation:'play',effects:{fun:26,social:20,mood:8}},
+  ]),
+].map(action=>({...action,cost:action.cost===0?0:economyPrice(VENUE_PRICES,action.id)}));
 
 const venue = (id, name, category, description) => ({
   id, type: id, name, title: name, category, description,
@@ -267,6 +324,14 @@ export const VENUES = [
   realVenue('inec-hq','INEC Headquarters','inec','Civic & elections','The AbujaLife election registration destination used by the fictional City Story system.',['maitama']),
   realVenue('efcc-hq','EFCC Headquarters','efcc','Civic storyline','A fictional integrity-story destination used only by AbujaLife civic gameplay.',['jabi']),
   realVenue('federal-high-court-hub','Federal High Court Abuja','court','Civic storyline','A fictional hearing destination used only by AbujaLife civic gameplay.',['central-area']),
+  realVenue('central-park-abuja','Central Park Abuja','park','Outdoors & play','An authored recreation garden with walks, playground time and public meetups.',['central-area']),
+  realVenue('sahad-cbd','Sahad Stores CBD','mall','Shopping & social','An authored retail court, meal stop and shared social space.',['central-area']),
+  realVenue('sahad-area-11','Sahad Stores Area 11','grocery','Shopping & arcade','Browse essentials, eat and play in the game arcade.',['garki-i']),
+  realVenue('grand-square-abuja','Grand Square Abuja','grocery','Shopping & food','An authored supermarket with daily essentials and a meal break.',['central-area']),
+  realVenue('ceddi-plaza','Ceddi Plaza','mall','Shopping & social','An authored city-centre shopping court and food stop.',['central-area']),
+  realVenue('ceddi-genesis-cinema','Genesis Cinema · Ceddi Plaza','cinema','Cinema & friends','An authored game screening room and social foyer.',['central-area']),
+  realVenue('thought-pyramid-abuja','Thought Pyramid Art Centre','gallery','Art & culture','Original AbujaLife art displays and a creative workshop inspired by the Wuse art destination.',['wuse-ii-a08']),
+  realVenue('nike-gallery-abuja','Nike Art Gallery Abuja','gallery','Art & culture','An original game exhibition inspired by Nigerian art and textile culture.',['lugbe']),
 ];
 
 export const NIGHTCLUB_IDS = VENUES.filter(place => place.kind === 'club').map(place => place.id);

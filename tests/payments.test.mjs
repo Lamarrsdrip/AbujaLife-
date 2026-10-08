@@ -7,13 +7,24 @@ import path from 'node:path';
 import { GameStore } from '../src/server/gameStore.mjs';
 import { AdminStore } from '../src/server/adminStore.mjs';
 import { PaymentStore } from '../src/server/paymentStore.mjs';
+import {validFlutterwaveWebhook} from '../src/server/flutterwaveVerification.mjs';
+
+test('v3 secret hash and v4 raw body signature validate explicitly without bad-signature fallback',()=>{
+ const raw=Buffer.from('{"event":"charge.completed"}'),secret='test_webhook_secret_at_least16',signature=crypto.createHmac('sha256',secret).update(raw).digest('base64');
+ assert.equal(validFlutterwaveWebhook(raw,signature,secret),true);
+ assert.equal(validFlutterwaveWebhook(raw,undefined,secret,secret),true);
+ assert.equal(validFlutterwaveWebhook(raw,undefined,secret,'wrong'),false);
+ assert.equal(validFlutterwaveWebhook(raw,'wrong',secret,secret),false);
+ assert.equal(validFlutterwaveWebhook(raw,signature,secret+'wrong'),false);
+ assert.equal(validFlutterwaveWebhook(Buffer.concat([raw,Buffer.from(' ')]),signature,secret),false);
+});
 
 // Explicit provider fixture: these tests do not contact Flutterwave or claim a
 // live merchant configuration. The production verifier still parses the exact
 // provider response and shares the real SQLite ledger transaction boundary.
 const SECRET='FLWSECK_TEST-fixture-0000000000000000000';
 const WEBHOOK_SECRET='local-fixture-webhook-signing-secret';
-async function fixture(t,{configured=true}={}) {const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'abujalife-payments-test-'));let store=new GameStore({dataDir});t.after(()=>{store.close();fs.rmSync(dataDir,{recursive:true,force:true});});const owner=(await store.register({username:'payment_owner',password:'Local payment fixture password!'})).residentId;const resident=(await store.register({username:'payment_user',password:'Local payment fixture password!'})).residentId;const other=(await store.register({username:'payment_other',password:'Local payment fixture password!'})).residentId;let admin=new AdminStore({store,bootstrapUsername:'payment_owner'});const key=crypto.randomBytes(32).toString('hex'),calls=[],verified=new Map();const fetchImpl=async(url,options)=>{calls.push({url,options});if(url.endsWith('/v3/payments'))return{ok:true,json:async()=>({status:'success',data:{link:'https://checkout.flutterwave.com/v3/hosted/pay/local-fixture'}})};const id=url.match(/transactions\/(\d+)\/verify/)?.[1];return{ok:true,json:async()=>({status:'success',data:verified.get(id)||{id:Number(id),status:'failed'}})};};let payments=new PaymentStore({store,admin,fetchImpl,configKey:key,publicOrigin:'https://game.example'});if(configured)payments.configure(owner,{mode:'test',enabled:true,creditRate:10,secretKey:SECRET,webhookSecret:WEBHOOK_SECRET,activate:true});return{dataDir,owner,resident,other,initial:{resident:store.profile(resident).wallet,other:store.profile(other).wallet},key,calls,verified,get store(){return store;},get admin(){return admin;},get payments(){return payments;},restart(){store.close();store=new GameStore({dataDir});admin=new AdminStore({store});payments=new PaymentStore({store,admin,fetchImpl,configKey:key,publicOrigin:'https://game.example'});}};}
+async function fixture(t,{configured=true,publicOrigin='https://game.example'}={}) {const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'abujalife-payments-test-'));let store=new GameStore({dataDir});t.after(()=>{store.close();fs.rmSync(dataDir,{recursive:true,force:true});});const owner=(await store.register({username:'payment_owner',password:'Local payment fixture password!'})).residentId;const resident=(await store.register({username:'payment_user',password:'Local payment fixture password!'})).residentId;const other=(await store.register({username:'payment_other',password:'Local payment fixture password!'})).residentId;let admin=new AdminStore({store,bootstrapUsername:'payment_owner'});const key=crypto.randomBytes(32).toString('hex'),calls=[],verified=new Map();const fetchImpl=async(url,options)=>{calls.push({url,options});if(url.endsWith('/v3/payments'))return{ok:true,json:async()=>({status:'success',data:{link:'https://checkout.flutterwave.com/v3/hosted/pay/local-fixture'}})};const ref=new URL(url).searchParams.get('tx_ref');const id=ref?[...verified].find(([,row])=>row.tx_ref===ref)?.[0]:url.match(/transactions\/(\d+)\/verify/)?.[1];return{ok:true,json:async()=>({status:'success',data:verified.get(id)||{id:Number(id),status:'failed'}})};};let payments=new PaymentStore({store,admin,fetchImpl,configKey:key,publicOrigin});if(configured)payments.configure(owner,{mode:'test',enabled:true,creditRate:10,secretKey:SECRET,webhookSecret:WEBHOOK_SECRET,activate:true});return{dataDir,owner,resident,other,initial:{resident:store.profile(resident).wallet,other:store.profile(other).wallet},key,calls,verified,get store(){return store;},get admin(){return admin;},get payments(){return payments;},restart(){store.close();store=new GameStore({dataDir});admin=new AdminStore({store});payments=new PaymentStore({store,admin,fetchImpl,configKey:key,publicOrigin});}};}
 async function checkout(f,key='checkout_fixture_key_001',amount=1000){return(await f.payments.checkout(f.resident,{amount,email:'fixture@example.test',idempotencyKey:key})).checkout;}
 function providerSuccess(f,order,id='901',overrides={}){f.verified.set(id,{id:Number(id),tx_ref:order.txRef,amount:order.amount,currency:'NGN',status:'successful',...overrides});return id;}
 
@@ -30,6 +41,18 @@ test('payment lookup and verification reject a different resident',async t=>{con
 test('a provider transaction ID cannot be reused for a second checkout',async t=>{const f=await fixture(t);const first=await checkout(f),second=await checkout(f,'checkout_fixture_key_002');const id=providerSuccess(f,first);await f.payments.verify(f.resident,{transactionId:id,txRef:first.txRef});providerSuccess(f,second,id);await assert.rejects(f.payments.verify(f.resident,{transactionId:id,txRef:second.txRef}),{code:'payment_duplicate'});assert.equal(f.store.profile(f.resident).wallet,f.initial.resident+10000);});
 
 test('webhook requires raw-body HMAC and still verifies the provider before credit',async t=>{const f=await fixture(t);const order=await checkout(f),id=providerSuccess(f,order);const raw=Buffer.from(JSON.stringify({event:'charge.completed',data:{id:Number(id),tx_ref:order.txRef,status:'successful',amount:1000}}));const signature=crypto.createHmac('sha256',WEBHOOK_SECRET).update(raw).digest('base64');await assert.rejects(f.payments.handleWebhook(raw,WEBHOOK_SECRET),{status:401});await assert.rejects(f.payments.handleWebhook(Buffer.concat([raw,Buffer.from(' ')]),signature),{status:401});providerSuccess(f,order,id,{amount:1});await assert.rejects(f.payments.handleWebhook(raw,signature),{code:'payment_verification_failed'});assert.equal(f.store.profile(f.resident).wallet,f.initial.resident);providerSuccess(f,order,id);const success=await f.payments.handleWebhook(raw,signature);assert.equal(success.profile.wallet,f.initial.resident+10000);const replay=await f.payments.handleWebhook(raw,signature);assert.equal(replay.replayed,true);assert.equal(f.store.profile(f.resident).wallet,f.initial.resident+10000);});
+
+test('shared Flutterwave merchant callbacks retain the Abuja return origin and ignore Okrika order references',async t=>{
+ const f=await fixture(t,{publicOrigin:'https://abujacity.life'}),order=await checkout(f);
+ const checkoutBody=JSON.parse(f.calls[0].options.body);
+ assert.equal(new URL(checkoutBody.redirect_url).origin,'https://abujacity.life');
+ assert.match(order.txRef,/^abjl_/);
+ const raw=Buffer.from(JSON.stringify({event:'charge.completed',data:{id:884211,tx_ref:'okrika_seller_plan_884211',status:'successful'}}));
+ const signature=crypto.createHmac('sha256',WEBHOOK_SECRET).update(raw).digest('base64');
+ assert.deepEqual(await f.payments.handleWebhook(raw,signature),{ok:true,ignored:true});
+ assert.equal(f.store.profile(f.resident).wallet,f.initial.resident);
+ assert.equal(f.calls.length,1,'a foreign site reference must not trigger provider verification or credit');
+});
 
 test('provider outage and untrusted checkout links never credit game money',async t=>{const f=await fixture(t);f.payments.fetch=async()=>{throw new Error('Explicit provider network fixture');};await assert.rejects(checkout(f),{code:'provider_unavailable'});assert.equal(f.store.profile(f.resident).wallet,f.initial.resident);assert.equal(f.payments.list(f.owner).payments[0].status,'checkout_failed');f.payments.fetch=async()=>({ok:true,json:async()=>({status:'success',data:{link:'https://evil.example/collect-card'}})});await assert.rejects(checkout(f,'checkout_fixture_key_002'),{code:'invalid_checkout'});assert.equal(f.store.profile(f.resident).wallet,f.initial.resident);});
 
@@ -58,4 +81,19 @@ test('verification rejects wallet overflow introduced after checkout without a p
   assert.equal(f.store.transactions(f.resident).length,ledgerCount);
   assert.equal(f.payments.status(f.resident,order.txRef).payment.status,'pending');
   assert.equal(f.payments.status(f.resident,order.txRef).payment.transactionId,null);
+});
+
+
+test('a standard checkout return verifies by saved reference without a transaction ID and still fulfills once',async t=>{
+  const f=await fixture(t),order=await checkout(f);providerSuccess(f,order,'934');
+  const first=await f.payments.verify(f.resident,{txRef:order.txRef});assert.equal(first.profile.wallet,f.initial.resident+order.credits);
+  assert.ok(f.calls.some(call=>new URL(call.url).pathname==='/v3/transactions/verify_by_reference'));
+  f.restart();const replay=await f.payments.verify(f.resident,{txRef:order.txRef});assert.equal(replay.replayed,true);assert.equal(replay.profile.wallet,first.profile.wallet);
+  assert.equal(f.store.transactions(f.resident).filter(row=>row.reason.startsWith('Verified Flutterwave')).length,1);
+});
+
+test('reference recovery rejects unknown and other-resident checkouts before querying the provider',async t=>{
+  const f=await fixture(t),order=await checkout(f),calls=f.calls.length;
+  await assert.rejects(f.payments.verify(f.other,{txRef:order.txRef}),{status:404});
+  await assert.rejects(f.payments.verify(f.resident,{txRef:'abjl_unknown'}),{status:404});assert.equal(f.calls.length,calls);
 });

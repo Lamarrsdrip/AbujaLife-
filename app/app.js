@@ -1,3 +1,10 @@
+import { createHousingReminders } from './housing-reminders.js';
+import { createHousingPanels, housingSummary } from './housing.js';
+import { ORIGIN_META } from '../src/shared/origins.mjs';
+import { INVESTMENT_META } from '../src/shared/life.mjs';
+import {showGameToast as toast,clearGameToasts} from './game-toast.js';
+import {createLocationTray} from './location-tray.js';
+import {createActivityDirector} from './activity-director.js';
 import { apiFetch, createApiEventSource } from './api-client.js';
 import { createWorldPresencePublisher } from './world-presence.js';
 import { consumeAuthLink, createAuthRecovery, loginCredentials } from './auth-recovery.js';
@@ -10,12 +17,15 @@ import { enhanceProductPreviews } from './product-3d.js';
 import { vehicleIllustration } from './vehicle-art.js';
 import { createPhone } from './phone.js';
 import { renderWorld, avatarSVG } from './world.js';
+import { rememberCarDistrict } from './world-simulator.js';
+import { createJourneyArrival } from './journey-arrival.js';
+import { playableSceneKey } from './scene-lifecycle.js';
 import { renderMap } from './map.js';
 import { createHomeEditor } from './home-editor.js';
 import { createFurnitureCatalogue } from './furniture-catalogue.js';
 import { createLifePanels } from './life-panels.js';
 import { jobSchedule, abujaTime } from '../src/shared/simulation.mjs';
-import { investmentView, TRANSPORT_MODES, systemResaleValue } from '../src/shared/life.mjs';
+import { investmentView, investmentPortfolio, TRANSPORT_MODES, systemResaleValue } from '../src/shared/life.mjs';
 import { BANEX_TECH_ITEM_IDS } from '../src/shared/banex.mjs';
 import { variedAppearance } from '../src/shared/avatars.mjs';
 import { appearanceOptions as appearanceValues } from '../src/shared/catalogue.mjs';
@@ -23,16 +33,17 @@ import { appearanceOptions as appearanceValues } from '../src/shared/catalogue.m
 installPageViewport();
 const root = document.querySelector('#app');
 const sheetRoot = document.querySelector('#sheet-root');
-let state = { authenticated:false }, view = (location.hash.slice(1)==='map'?'outside':location.hash.slice(1))||'world', cleanup, stream, refreshTimer, busy=false;
-let authMode='register', selectedJob, marketFilter='all', propertyTab='homes', chatMessages=[], chatOpen=false;
+let state = { authenticated:false }, view = (location.hash.slice(1)==='map'?'outside':location.hash.slice(1))||'world', cleanup, stream, refreshTimer, propertyTimer, busy=false;
+let authMode='register', selectedJob, marketFilter='all', propertyTab='homes', chatMessages=[], chatOpen=false, chatUnread=0;
 let authUsernameEdited=false;
-let authDraft={displayName:'',username:'',email:'',password:''}, authError='', authNotice='', garagePaint={}, garageIntents={};
+let authDraft={displayName:'',username:'',email:'',password:'',originId:'lapo'}, authError='', authNotice='', garagePaint={}, garageIntents={}, propertySearch='', propertyDistrict='all', propertyType='all';
 let authConfig={emailVerificationEnabled:false,passwordResetEnabled:false};
 let stateRequestEpoch=0;
 const referralResident = new URL(location.href).searchParams.get('resident')?.match(/^[A-Za-z0-9:_-]{1,80}$/)?.[0] || null;
 const authRecovery=createAuthRecovery({link:consumeAuthLink(location,history),api:(...args)=>api(...args)});
 let onboardingStep=0, onboardingDraft, pendingVenue;
 let quickHomeNavigating=false,outsideNavigating=false,viewEpoch=0;
+let renderedSceneKey=null;
 let pendingFurnitureItem;
 let serverClockAt=Date.now(), serverClockObservedAt=performance.now();
 function gameNow(){return serverClockAt+Math.max(0,performance.now()-serverClockObservedAt);}
@@ -55,13 +66,26 @@ async function api(path,options={}) {
  if(path==='/api/wallet/transfer'&&opts.body&&typeof opts.body==='object'&&!opts.body.idempotencyKey)opts.body.idempotencyKey=crypto.randomUUID();
  if(opts.body!==undefined&&typeof opts.body!=='string')opts.body=JSON.stringify(opts.body);
  if(opts.body!==undefined)opts.headers['content-type']='application/json';
- const response=await apiFetch(path,{...opts,signal:opts.signal||AbortSignal.timeout(path.startsWith('/api/bootstrap')?8000:15000)}),body=await response.json();
+ const response=await apiFetch(path,{...opts,signal:opts.signal,timeoutMs:opts.timeoutMs||(path.startsWith('/api/bootstrap')?8000:15000)});
+ if((response.headers.get('content-type')||'').includes('text/html')){const error=new Error('The city could not be reached. Try again.');throw error;}
+ const body=await response.json();
  if(!response.ok||body.ok===false){const error=new Error(body.error||'Please try again.');error.status=response.status;error.code=body.code;throw error;}
  return body;
 }
-function toast(message){const el=document.querySelector('#toast');el.textContent=message;el.classList.add('visible');clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.classList.remove('visible'),4000);}
-async function refresh({render=true,startup=true}={}){const epoch=++stateRequestEpoch,next=await api(startup?'/api/entry':'/api/bootstrap');if(epoch!==stateRequestEpoch)return state;state=mergeCoreBootstrap(state,next);serverClockAt=Number(state.serverTime)||Date.now();serverClockObservedAt=performance.now();if(state.profile?.activeTrip)armTripArrival();if(render)renderMain();else{const balance=root.querySelector('.wallet-button');if(balance){balance.querySelector('strong').textContent=`₦${money(state.profile?.wallet)}`;balance.setAttribute('aria-label',`Naira balance, ₦${money(state.profile?.wallet)}. Open wallet`);}cleanup?.updateResidents?.(list(state.nearby));}phone.render();showWorkReminder();void install.refresh();if(startup&&state.profile?.onboardingComplete)hydrateStartup();return state;}
-function expireAccount(){stream?.close();phone.close();stateRequestEpoch++;state={authenticated:false};authMode='login';authDraft.password='';authNotice='Your session has expired. Sign in to continue with your saved resident.';renderMain();}
+async function refresh({render=true,startup=true}={}){
+ const epoch=++stateRequestEpoch,next=await api(startup?'/api/entry':'/api/bootstrap');
+ if(epoch!==stateRequestEpoch)return state;
+ const previousLocation=locationKey();state=mergeCoreBootstrap(state,next);
+ serverClockAt=Number(state.serverTime)||Date.now();serverClockObservedAt=performance.now();
+ if(previousLocation!==locationKey())state.nearby=list(next.nearby);
+ // renderMain preserves the mounted scene when its identity is unchanged and
+ // applies profile/furniture updates through its narrow renderer API.
+ if(render||['world','outside'].includes(view))renderMain();
+ else{syncProfileChrome();cleanup?.updateResidents?.(list(state.nearby));}
+ armTripArrival();phone.render();housingReminders.check();activityDirector.check();void install.refresh();
+ if(startup&&state.profile?.onboardingComplete)hydrateStartup();return state;
+}
+function expireAccount(){clearGameToasts();stream?.close();phone.close();stateRequestEpoch++;state={authenticated:false};authMode='login';authDraft.password='';authNotice='Your session has expired. Sign in to continue with your saved resident.';renderMain();}
 function hydrateStartup(){
  if(!state.authenticated||!state.entry)return;
  const epoch=stateRequestEpoch,owner=state.profile.id;
@@ -77,42 +101,70 @@ let nearbyRefreshTimer=null,nearbyRefreshPromise=null;
 function dispatchLivingCity(type,detail={}){window.dispatchEvent(new CustomEvent('abujalife:living-city',{detail:{type,...detail}}));}
 async function refreshNearbyPresence({fallback=true}={}){
  if(!state.authenticated||document.hidden)return null;if(nearbyRefreshPromise)return nearbyRefreshPromise;
- nearbyRefreshPromise=(async()=>{try{const result=await api('/api/presence/nearby');state.nearby=result.nearby||[];cleanup?.updateResidents?.(list(state.nearby));dispatchLivingCity('snapshot',{nearby:state.nearby,stats:result.stats,serverTime:result.serverTime});return result;}catch(error){if(fallback&&[404,405,501].includes(error.status)){scheduleRealtimeRefresh();return null;}throw error;}finally{nearbyRefreshPromise=null;}})();return nearbyRefreshPromise;
+ const owner=state.profile?.id;
+ nearbyRefreshPromise=(async()=>{try{const result=await api('/api/presence/nearby');if(state.profile?.id!==owner)return null;state.nearby=result.nearby||[];if(result.stats)state.cityStats=result.stats;cleanup?.updateResidents?.(list(state.nearby));updateLocalChatAffordance();dispatchLivingCity('snapshot',{nearby:state.nearby,stats:result.stats,serverTime:result.serverTime});return result;}catch(error){if(fallback&&[404,405,501].includes(error.status)){scheduleRealtimeRefresh();return null;}throw error;}finally{nearbyRefreshPromise=null;}})();return nearbyRefreshPromise;
 }
 function scheduleNearbyPresenceRefresh(delay=80){clearTimeout(nearbyRefreshTimer);nearbyRefreshTimer=setTimeout(()=>void refreshNearbyPresence().catch(()=>{}),delay);}
-const phone=createPhone({root:document.querySelector('#phone-root'),getState:()=>state,api,onUpdate:refresh,onNavigate:navigate,toast});
+const featureDiscoveryRequests=new Map();
+function discoverFeature(feature){
+ const owner=state.profile?.id,key=`${owner}:${feature}`;
+ if(!owner||state.profile.discovery?.features?.[feature]||featureDiscoveryRequests.has(key))return;
+ const request=api('/api/action',{method:'POST',body:{action:'discovery-event',payload:{activityId:`feature:${feature}`,event:'discovered'}}}).then(result=>{if(result.discovery&&state.profile?.id===owner)state.profile.discovery=result.discovery;}).catch(()=>{}).finally(()=>featureDiscoveryRequests.delete(key));
+ featureDiscoveryRequests.set(key,request);
+}
+const phone=createPhone({root:document.querySelector('#phone-root'),getState:()=>state,api,onUpdate:refresh,onNavigate:navigate,toast,onDiscover:()=>discoverFeature('phone')});
 const install=createInstallController({shouldShow:()=>!!(state.authenticated&&state.profile?.onboardingComplete)&&!phone.isOpen?.()&&!document.querySelector('#sheet-root .sheet'),localProgress:()=>!!state.preview,onAvailabilityChange:available=>document.querySelectorAll('[data-install-app]').forEach(button=>button.hidden=!available)});
 const furnitureCatalogue=createFurnitureCatalogue({getState:()=>state,mutate:action,onSelect:beginFurniturePlacement,getFurnitureState:()=>cleanup?.getFurnitureState?.(),toast,enhancePreviews:scope=>enhanceProductPreviews(scope,{appearance:state.profile?.appearance}),onUse:itemId=>{
  furnitureCatalogue.close();const use={'bed':'sleep','king-bed':'sleep','sofa':'relax','premium-sofa':'relax','lounge-chair':'relax','accent-chair':'relax','tv':'relax','game-console':'relax','kitchen-unit':'eat','wardrobe':'wardrobe'}[itemId];
  if(use==='wardrobe')navigate('profile');else if(use)interact(use);
 }});
 const homeEditor=createHomeEditor({getState:()=>state,api,onUpdate:refresh,onArrange:()=>openFurniture(),toast});
-const lifePanels=createLifePanels({getState:()=>state,api,onUpdate:refresh,openSheet,closeSheet,sheetRoot,toast,travelSheet});
+const lifePanels=createLifePanels({getState:()=>state,api,onUpdate:refresh,openSheet,closeSheet,sheetRoot,toast,travelSheet,onDiscover:()=>discoverFeature('visits')});
+const housingPanels=createHousingPanels({getState:()=>state,now:gameNow,api,onUpdate:refresh,onProfile:profile=>{if(profile?.id===state.profile?.id)dispatchEvent(new CustomEvent('abujalife:profile',{detail:{profile}}));},openSheet,closeSheet,sheetRoot,toast,openHomes:()=>navigate('property'),viewHome:()=>goHome(),openLoans:()=>lifePanels.openLoans({suggestedAmount:state.profile?.home?.tenancy?.outstanding||250000}),acknowledgeStory:()=>housingReminders.acknowledgeVisible()});
+addEventListener('abj:civic-ready',()=>discoverFeature('story'));
 function originCard(p){if(!p.origin)return '';const nepo=p.origin.id==='nepo';return `<div class="origin-card ${nepo?'nepo':'lapo'}"><span>${nepo?'✦':'↗'}</span><div><strong>${nepo?'Nepo Baby':'Lapo Baby'}</strong><small>${nepo?'A family head start. Make your own story.':'Self-made, small small. Build your own Abuja story.'}<br>${esc(place(p.origin.residence?.district)?.name||p.origin.residence?.districtName||'Abuja')} · Started with ₦${money(p.origin.startingBalance)}</small></div></div>`;}
-const dismissedWork=new Set();
-function showWorkReminder(){
- if(view!=='world'||!state.authenticated||!state.profile?.job||state.activeChallenge||document.querySelector('[aria-modal="true"]'))return;
- const p=state.profile,schedule=jobSchedule(p.job,p,gameNow()),key=`${p.job}:${schedule.dateKey}:${schedule.currentSlot}`;
- if(!schedule.canStart||dismissedWork.has(key)||root.querySelector('.work-reminder'))return;
- const scene=root.querySelector('#world-scene');if(!scene)return;
- const box=document.createElement('div');box.className='work-reminder';box.innerHTML=`<button type="button" aria-label="Dismiss work reminder">×</button><strong>Your ${esc(schedule.currentSlot)} shift is ready</strong><small>${esc(schedule.dayName)} · Abuja time</small><span>Tap to go to work ↗</span>`;
- box.querySelector('button').onclick=e=>{e.stopPropagation();dismissedWork.add(key);box.remove();};box.onclick=()=>{dismissedWork.add(key);navigate('work',{jobId:p.job});};scene.append(box);
-}
+let lastDiscoveryInput=performance.now();
+addEventListener('pointerdown',()=>{lastDiscoveryInput=performance.now();}, {passive:true});
+const locationTray=createLocationTray({read:()=>state,host:()=>['world','outside'].includes(view)?root.querySelector('.hud-context-slot'):null,run:item=>performDirect(item.action,item.payload||{},item),more:()=>openVenueMenu(currentVenue())});
+const activityDirector=createActivityDirector({
+ read:()=>({profile:state.authenticated?state.profile:null,weather:state.weather,jackpotEligible:state.jackpot?.eligible===true}),now:gameNow,
+ quiet:()=>!locationTray.isExpanded()&&!document.body.classList.contains('hud-toast-active')&&!cleanup?.getMotionState?.().activity&&!root.querySelector('.world-resident-actions,.world-live-popover,.world-furniture-toolbar:not([hidden]),.play-visit-card')&&view==='world'&&state.authenticated&&state.profile?.onboardingComplete&&!busy&&!state.activeChallenge&&!state.profile?.activeTrip&&!cleanup?.getMotionState?.().moving&&!cleanup?.getMotionState?.().driving&&!document.hidden&&!document.querySelector('[aria-modal="true"]')&&document.querySelector('#phone-root')?.hidden&&performance.now()-lastDiscoveryInput>20000,
+ record:async payload=>{const owner=state.profile?.id,result=await api('/api/action',{method:'POST',body:{action:'discovery-event',payload}});if(state.profile?.id===owner&&result.discovery)state.profile.discovery=result.discovery;return result;},
+ host:()=>root.querySelector('.hud-context-slot'),
+ run:suggestion=>{if(suggestion.kind==='travel')travelSheet(suggestion.districtId,false,suggestion.venueId);
+  else if(suggestion.kind==='home')perform(suggestion.action);
+  else if(suggestion.kind==='activity')performDirect('venue-action',{activityId:suggestion.activityId});
+  else if(suggestion.kind==='work')navigate('work',{jobId:state.profile.job});
+  else if(suggestion.kind==='page')navigate(suggestion.page);
+  else if(suggestion.kind==='phone')phone.open();
+  else if(suggestion.kind==='visits')lifePanels.openVisits();
+  else if(suggestion.kind==='destinations')openCityPlaces();
+  else if(suggestion.kind==='story')dispatchEvent(new CustomEvent('abj:open-civic-life'));
+  else if(suggestion.kind==='jackpot')dispatchEvent(new CustomEvent('abj:open-jackpot'));
+ }
+});
+const housingReminders=createHousingReminders({read:()=>state.authenticated?state.profile:null,now:gameNow,show:toast,
+ quiet:()=>['world','outside'].includes(view)&&!busy&&!state.profile?.activeTrip&&!state.activeChallenge&&!document.hidden&&!document.querySelector('[aria-modal="true"]')&&document.querySelector('#phone-root')?.hidden&&!document.body.classList.contains('hud-toast-active')&&!root.querySelector('.activity-discovery-card,.world-resident-actions,.world-live-popover,.world-furniture-toolbar:not([hidden]),.play-visit-card')&&!cleanup?.getMotionState?.().activity&&!cleanup?.getMotionState?.().moving&&!cleanup?.getMotionState?.().driving&&!locationTray.isExpanded()&&performance.now()-lastDiscoveryInput>20000,
+ acknowledge:async(owner,storyId)=>{if(state.profile?.id!==owner)return;const result=await api('/api/action',{method:'POST',body:{action:'dismiss-housing-story',payload:{storyId}}});if(state.profile?.id!==owner)return;const current=state.profile.home?.tenancy?.story||state.profile.home?.housingStory,confirmed=result.profile?.home?.tenancy?.story||result.profile?.home?.housingStory;if(current?.id===storyId&&confirmed?.id===storyId)current.acknowledgedAt=confirmed.acknowledgedAt;}
+});
+addEventListener('pagehide',()=>housingReminders.pause());
+addEventListener('pageshow',()=>housingReminders.check());
 const posePublisher=createWorldPresencePublisher({read:()=>{
- if(!state.authenticated||!['world','outside'].includes(view)||document.hidden)return null;
+ if(!state.authenticated||view!=='world'||state.profile?.activeTrip||document.hidden)return null;
  const motion=cleanup?.getMotionState?.();if(!motion)return null;
  return{key:`${state.profile.id}:${locationKey()}`,pose:{x:motion.x,y:motion.y,angle:motion.angle||0,moving:motion.moving&&!document.querySelector('[aria-modal="true"]'),driving:motion.driving,...(motion.activity?{activity:motion.activity}:{})}};
 },send:pose=>api('/api/presence',{method:'POST',body:{pose}})});
 setInterval(()=>void posePublisher.publish(),500);
+setInterval(()=>{if(state.authenticated&&!document.hidden)void api('/api/presence',{method:'POST',body:{heartbeat:true}}).catch(()=>{});},20000);
+setInterval(()=>{if(state.authenticated&&!document.hidden)void refreshNearbyPresence().catch(()=>{});},30000);
 setInterval(()=>{if(state.authenticated&&!document.hidden&&!document.querySelector('[aria-modal="true"]'))refresh({render:false}).catch(()=>{});},60000);
-let tripArrivalTimer=0,tripArrivalInFlight=false,nextArriveAttempt=0;
-function armTripArrival(retry=false){
- clearTimeout(tripArrivalTimer);tripArrivalTimer=0;
- const trip=state.profile?.activeTrip;
- if(!state.authenticated||!trip)return;
- const wait=Number(trip.arrivesAt)-gameNow();
- tripArrivalTimer=setTimeout(()=>{void completeTrip(trip.id);},Math.max(retry?400:0,wait+60));
-}
+const journeyArrival=createJourneyArrival({
+ readTrip:()=>state.profile?.activeTrip,now:gameNow,isBusy:()=>busy,
+ request:payload=>action('arrive',payload,{throwOnError:true}),
+ reconcile:()=>refresh({render:false}),onError:error=>toast(error.message),
+ onComplete:()=>{pendingVenue=undefined;if(state.profile.location?.kind==='home'&&pendingFurnitureItem){const itemId=pendingFurnitureItem;pendingFurnitureItem=undefined;openFurniture(itemId);}toast(currentVenue()?`You’ve arrived at ${currentVenue().name}.`:'You’ve arrived.');}
+});
+function armTripArrival(){journeyArrival.sync();}
 function showCity(){
  view='world';
  if(location.hash!=='#world')history.replaceState({view:'world'},'',`${location.pathname}${location.search}#world`);
@@ -136,12 +188,15 @@ function navigate(destination,details={}){
  if(destination==='world'&&details.sellItemId)openItemSale(details.sellItemId);
  if(destination==='world'&&details.garage)openGarage();
  if(destination==='world'&&details.homeVisits)lifePanels.openVisits({q:details.visitSearch||''});
+ if(details.housing)housingPanels.openHousing();
+ if(destination==='property'&&details.propertyId)openProperty(list(state.properties).find(h=>h.id===details.propertyId));
 }
 addEventListener('abujalife:profile',event=>{
  const profile=event.detail?.profile;
  if(!profile||profile.id!==state.profile?.id)return;
  const previous=locationKey(state.profile),previousTrip=state.profile.activeTrip?.id||'';
  state.profile=profile;
+ housingReminders.check();
  armTripArrival();
  const tripChanged=(profile.activeTrip?.id||'')!==previousTrip;
  if(tripChanged&&profile.activeTrip){
@@ -162,29 +217,25 @@ addEventListener('hashchange',()=>{
 addEventListener('popstate',()=>{view=(location.hash.slice(1)==='map'?'outside':location.hash.slice(1))||'world';phone.close();closeSheet();renderMain();});
 addEventListener('keydown',event=>{if(event.key==='Escape')closeSheet();});
 function scheduleRealtimeRefresh(){
- const previousLocation=locationKey(state.profile);
- clearTimeout(refreshTimer);
- refreshTimer=setTimeout(()=>{
-  refresh({render:false}).then(next=>{
-   const locationChanged=previousLocation!==locationKey(next.profile);
-   if(locationChanged&&['world','outside'].includes(view)){renderMain();return;}
-   if(!['world','outside'].includes(view)&&locationChanged&&!document.querySelector('.sheet,#shift-form')&&!root.contains(document.activeElement))renderMain();
-   else syncProfileChrome();
-  }).catch(()=>{});
+ clearTimeout(refreshTimer);refreshTimer=setTimeout(()=>{
+  const editing=!['world','outside'].includes(view)&&(root.contains(document.activeElement)||document.querySelector('.sheet,#shift-form'));
+  void refresh({render:!editing}).catch(()=>{});
  },250);
 }
 function connectRealtime(){
  stream?.close();if(!state.authenticated||authRecovery.snapshot().kind&&!['idle','complete'].includes(authRecovery.snapshot().status))return;stream=createApiEventSource('/api/realtime');
- for(const type of ['ready','presence','event','location-chat','typing','message','notification','invitation','profile','receipt','world-pose','player-emote','club-spray','social-post','social-like','social-comment','home-visit','home-visit-request','home-visit-ended'])stream.addEventListener(type,event=>{
+ for(const type of ['ready','presence','city-stats','event','location-chat','typing','message','notification','invitation','profile','receipt','world-pose','player-emote','club-spray','social-post','social-like','social-comment','home-visit','home-visit-request','home-visit-ended'])stream.addEventListener(type,event=>{
   let data;try{data=JSON.parse(event.data);}catch{return;}
   if(type==='presence'&&data.resident?.id){const live=data.resident;state.people=list(state.people).map(person=>person.id===live.id?{...person,...live}:person);}
   phone.handleEvent(type,data);
+  if(type==='receipt'&&data.payment)dispatchLivingCity('receipt',{data});
   if(type==='message'&&!data.receipt&&data.senderId!==state.profile?.id&&data.conversationId)api(`/api/conversations/${encodeURIComponent(data.conversationId)}/delivered`,{method:'POST',body:{...(Number.isSafeInteger(data.seq)?{uptoSeq:data.seq}:{}),createdAt:data.createdAt,uptoMessageId:data.id}}).catch(()=>{});
   if(type==='world-pose'){if(data.residentId!==state.profile?.id)cleanup?.updateResidentPose?.(data);dispatchLivingCity('world-pose',{data});return;}
   if(type==='player-emote'||type==='club-spray'){dispatchLivingCity(type,{data});return;}
+  if(type==='city-stats'){const previousHere=state.cityStats?.hereNow;state.cityStats={...state.cityStats,...data.stats};dispatchLivingCity('stats',{stats:state.cityStats});if(previousHere!==undefined&&data.stats?.hereNow!==previousHere)scheduleNearbyPresenceRefresh();return;}
   if(type==='presence'){scheduleNearbyPresenceRefresh();return;}
-  if(type==='ready'){scheduleNearbyPresenceRefresh(0);return;}
-  if(type==='location-chat'){chatMessages.push(data.message||data);chatMessages=chatMessages.slice(-60);if(chatOpen)renderChat();}
+  if(type==='ready'){scheduleNearbyPresenceRefresh(0);scheduleRealtimeRefresh();return;}
+  if(type==='location-chat'){const message=data.message||data;chatMessages.push(message);chatMessages=chatMessages.slice(-60);if(chatOpen)renderChat();else if(message.senderId!==state.profile?.id){chatUnread++;updateLocalChatAffordance();}}
   if(['event','profile','message','notification','invitation','receipt','home-visit','home-visit-request','home-visit-ended'].includes(type))scheduleRealtimeRefresh();
  });
  stream.onopen=()=>{document.documentElement.dataset.connection='online';};stream.onerror=()=>{document.documentElement.dataset.connection='reconnecting';};
@@ -198,7 +249,7 @@ addEventListener('abujalife:resident-action',async event=>{
   if(residentAction==='visit'){await api('/api/home/visits/request',{method:'POST',body:{residentId:resident.id,idempotencyKey:crypto.randomUUID()}});toast('Visit request sent.');return;}
  }catch(error){toast(error.message);}
 });
-async function action(name,payload={}){
+async function action(name,payload={}, {throwOnError=false}={}){
  if(busy)return;busy=true;const previousLocation=locationKey(state.profile);
  try{
   const result=await api('/api/action',{method:'POST',body:{action:name,payload}});
@@ -214,13 +265,13 @@ async function action(name,payload={}){
    if(view==='outside'&&result.profile.location?.kind!=='public')view='world';
    if(previousLocation!==locationKey(result.profile)&&['world','outside'].includes(view))renderMain();
    else if(!['world','outside'].includes(view))renderMain();
-   else syncProfileChrome();
+   else renderMain();
    armTripArrival();
   }
   void refresh({render:false}).catch(()=>{});
   return result;
  }
- catch(error){if(!(name==='arrive'&&error.code==='trip_in_progress'))toast(error.message);return null;}finally{busy=false;}
+ catch(error){if(throwOnError)throw error;toast(error.message);return null;}finally{busy=false;}
 }
 function syncProfileChrome(){
  const p=state.profile;if(!p)return;
@@ -230,6 +281,7 @@ function syncProfileChrome(){
 function currentVenue(){return list(state.venues).find(v=>v.id===(state.profile?.location?.venueId||state.profile?.location?.venue));}
 function venueActions(venue){const all=list(state.venueActions);return all.filter(a=>a.venueId===venue?.id||(venue?.activities||venue?.actions||[]).includes(a.id));}
 function playTime(){return abujaTime(gameNow()).label;}
+function performDirect(name,payload={},metadata){if(cleanup?.performDirect)return cleanup.performDirect(name,payload,metadata);return interact(name,payload);}
 function perform(name,payload={}){if(cleanup?.perform)return cleanup.perform(name,payload);return interact(name,payload);}
 let previousFocus,sheetCleanup;
 function openSheet(content,{wide=false}={}){
@@ -243,7 +295,7 @@ function openSheet(content,{wide=false}={}){
  sheetRoot.querySelector('button:not([data-close]),input,select')?.focus();
  sheetRoot.querySelector('.sheet').onkeydown=e=>{if(e.key!=='Tab')return;const controls=[...sheetRoot.querySelectorAll('button,input,select,textarea,a[href]')].filter(el=>!el.disabled);if(e.shiftKey&&document.activeElement===controls[0]){e.preventDefault();controls.at(-1)?.focus();}else if(!e.shiftKey&&document.activeElement===controls.at(-1)){e.preventDefault();controls[0]?.focus();}};
 }
-function closeSheet(){sheetCleanup?.();sheetCleanup=undefined;sheetRoot.innerHTML='';chatOpen=false;if(previousFocus?.isConnected)previousFocus.focus();cleanup?.focus?.();}
+function closeSheet(){sheetCleanup?.();sheetCleanup=undefined;sheetRoot.innerHTML='';if(chatOpen){chatOpen=false;document.querySelector('.location-chat-panel')?.classList.add('is-minimized');}if(previousFocus?.isConnected)previousFocus.focus();cleanup?.focus?.();}
 const appearanceOptionsLabels={skinTone:[['deep','Deep'],['brown','Brown'],['warm','Warm'],['light','Light']],hair:[['crop','Low cut'],['afro','Afro'],['locs','Locs'],['braids','Braids'],['bald','Shaved']],top:[['forest','Forest tee'],['ochre','Ochre tee'],['cream','Cream shirt'],['navy','Navy shirt'],['agbada','Agbada']],body:[['regular','Regular'],['slim','Slim'],['broad','Broad']],face:[['oval','Oval'],['round','Round'],['angular','Angular']],presentation:[['feminine','Female'],['masculine','Male'],['neutral','Current style']],facialHair:[['none','Clean shaven'],['beard','Beard']],bottom:[['charcoal','Charcoal'],['denim','Denim'],['cream','Cream']],shoes:[['white','White trainers'],['black','Black shoes']],accessory:[['none','None'],['glasses','Glasses']]};
 const appearanceOptions=Object.fromEntries(Object.entries(appearanceValues).map(([key,values])=>[key,values.map(value=>[value,appearanceOptionsLabels[key]?.find(option=>option[0]===value)?.[1]||({bun:'High bun',long:'Long hair',twists:'Twists',bald:'Bald'})[value]||value]) ]));
 function appearanceFields(appearance,compact=false){const paid={cream:'linen-shirt',navy:'office-shirt',agbada:'traditional-set'};return Object.entries(appearanceOptions).filter(([key])=>!compact||['skinTone','hair','top'].includes(key)).map(([key,options])=>`<label>${({skinTone:'Skin tone',top:'Outfit',facialHair:'Facial hair',bottom:'Trousers',presentation:'Gender'})[key]||key[0].toUpperCase()+key.slice(1)}<select name="${key}" data-appearance>${options.map(([value,label])=>{const locked=key==='top'&&paid[value]&&!state.profile?.inventory?.includes(paid[value]);return `<option value="${value}" ${appearance[key]===value?'selected':''} ${locked?'disabled':''}>${label}${locked?' · Okrika Marketplace':''}</option>`;}).join('')}</select></label>`).join('');}
@@ -260,7 +312,7 @@ function bindPasswordVisibility(form){
 function renderAuth(){
  if(authMode==='forgot'){renderPasswordRequest();return;}
  const registering=authMode==='register';
- renderAuthPage(`<div class="auth-switch" role="group" aria-label="Account access"><button type="button" data-mode="register" aria-pressed="${registering}" class="${registering?'active':''}">Create account</button><button type="button" data-mode="login" aria-pressed="${!registering}" class="${!registering?'active':''}">Sign in</button></div><span class="eyebrow">${registering?'YOUR FIRST CHAPTER':'GOOD TO SEE YOU AGAIN'}</span><h2>${registering?'Make yourself at home.':'Welcome home.'}</h2><p class="auth-intro">${registering?'Your name, a username and a password. Then make the city your own.':'Your people, your place, your progress. Pick up where you left off.'}</p><p class="auth-success" role="status">${esc(authNotice)}</p><form id="auth-form">${registering?`<label>Your name<input name="displayName" required minlength="2" maxlength="40" autocomplete="nickname" placeholder="What should we call you?" value="${esc(authDraft.displayName)}"></label>`:''}<label>${registering?'Username':'Username or email'}<input name="username" required minlength="3" maxlength="${registering?'24':'254'}" ${registering?'pattern="[A-Za-z0-9_]+" title="Use 3–24 letters, numbers or underscores"':''} aria-describedby="username-hint" autocomplete="username" placeholder="${registering?'e.g. zara_abuja':'Your username or email'}" autocapitalize="none" spellcheck="false" value="${esc(authDraft.username)}"><small id="username-hint" class="auth-field-hint">${registering?'We suggest one from your name. Edit it if you like.':'Use the username or email saved with your account.'}</small></label>${registering?`<label>Email <span class="auth-optional">(optional)</span><input name="email" type="email" maxlength="254" autocomplete="email" autocapitalize="none" spellcheck="false" placeholder="you@example.com" value="${esc(authDraft.email)}"><small class="auth-field-hint">${authConfig.emailVerificationEnabled?'We will email a confirmation link. Email also helps you recover your account.':'You can add an email for sign-in. Email confirmation and password recovery are currently unavailable.'}</small></label>`:''}<label>Password<span class="password-input"><input name="password" type="password" required minlength="8" maxlength="128" autocomplete="${registering?'new-password':'current-password'}" placeholder="At least 8 characters" value="${esc(authDraft.password)}"><button type="button" data-show-password aria-label="Show password">Show</button></span></label>${!registering&&authConfig.passwordResetEnabled?'<button class="text-button auth-forgot" type="button" data-forgot-password>Forgot password?</button>':''}<p class="form-error" id="auth-error" role="alert">${esc(authError)}</p><button type="submit" class="primary auth-submit">${registering?'Create my resident':'Sign in'}${icon('arrow')}</button><p class="auth-note">Your progress saves as you play.<br>Naira (NGN) in AbujaLife is game money.</p></form>`);
+ renderAuthPage(`<div class="auth-switch" role="group" aria-label="Account access"><button type="button" data-mode="register" aria-pressed="${registering}" class="${registering?'active':''}">Create account</button><button type="button" data-mode="login" aria-pressed="${!registering}" class="${!registering?'active':''}">Sign in</button></div><span class="eyebrow">${registering?'YOUR FIRST CHAPTER':'GOOD TO SEE YOU AGAIN'}</span><h2>${registering?'Make yourself at home.':'Welcome home.'}</h2><p class="auth-intro">${registering?'Your name, a username and a password. Then make the city your own.':'Your people, your place, your progress. Pick up where you left off.'}</p><p class="auth-success" role="status">${esc(authNotice)}</p><form id="auth-form">${registering?`<label>Your name<input name="displayName" required minlength="2" maxlength="40" autocomplete="nickname" placeholder="What should we call you?" value="${esc(authDraft.displayName)}"></label>`:''}<label>${registering?'Username':'Username or email'}<input name="username" required minlength="3" maxlength="${registering?'24':'254'}" ${registering?'pattern="[A-Za-z0-9_]+" title="Use 3–24 letters, numbers or underscores"':''} aria-describedby="username-hint" autocomplete="username" placeholder="${registering?'e.g. zara_abuja':'Your username or email'}" autocapitalize="none" spellcheck="false" value="${esc(authDraft.username)}"><small id="username-hint" class="auth-field-hint">${registering?'We suggest one from your name. Edit it if you like.':'Use the username or email saved with your account.'}</small></label>${registering?`<label>Email <span class="auth-optional">(optional)</span><input name="email" type="email" maxlength="254" autocomplete="email" autocapitalize="none" spellcheck="false" placeholder="you@example.com" value="${esc(authDraft.email)}"><small class="auth-field-hint">${authConfig.emailVerificationEnabled?'We will email a confirmation link. Email also helps you recover your account.':'You can add an email for sign-in. Email confirmation and password recovery are currently unavailable.'}</small></label>`:''}<label>Password<span class="password-input"><input name="password" type="password" required minlength="8" maxlength="128" autocomplete="${registering?'new-password':'current-password'}" placeholder="At least 8 characters" value="${esc(authDraft.password)}"><button type="button" data-show-password aria-label="Show password">Show</button></span></label>${!registering&&authConfig.passwordResetEnabled?'<button class="text-button auth-forgot" type="button" data-forgot-password>Forgot password?</button>':''}${registering?`<fieldset class="origin-options"><legend>Your starting life</legend>${ORIGIN_META.options.map(origin=>`<label class="origin-option"><input type="radio" name="originId" value="${esc(origin.id)}" ${authDraft.originId===origin.id?'checked':''} required><span><strong>${esc(origin.name)} · ₦${money(origin.startingBalance)}</strong><small>${esc(origin.description)}</small></span></label>`).join('')}<p>Your choice is saved once when your account is created.</p></fieldset>`:''}<p class="form-error" id="auth-error" role="alert">${esc(authError)}</p><button type="submit" class="primary auth-submit">${registering?'Create my resident':'Sign in'}${icon('arrow')}</button><p class="auth-note">Your progress saves as you play.<br>Naira (NGN) in AbujaLife is game money.</p></form>`);
  root.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{authMode=b.dataset.mode;authError='';authNotice='';authDraft.password='';renderMain();});
  root.querySelector('[data-forgot-password]')?.addEventListener('click',()=>{authMode='forgot';authError='';authNotice='';authDraft.password='';renderMain();});
  const form=root.querySelector('#auth-form');form.addEventListener('input',e=>{if(e.target.name)authDraft[e.target.name]=e.target.value;if(e.target.name==='username')authUsernameEdited=!!e.target.value;if(registering&&e.target.name==='displayName'&&!authUsernameEdited){const stem=e.target.value.normalize('NFKD').replace(/\p{Diacritic}/gu,'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');if(stem){authDraft.username=stem.slice(0,20)+'_abj';form.elements.username.value=authDraft.username;}}});
@@ -288,7 +340,7 @@ function renderOnboarding(){
  `${appearanceChoices(onboardingDraft.appearance,['hair','body'])}<details class="appearance-extras"><summary>More details <span>Facial hair & accessories</span></summary>${appearanceChoices(onboardingDraft.appearance,['facialHair','accessory'])}</details>`,
  appearanceChoices(onboardingDraft.appearance,['top','bottom','shoes']),
  `<div class="life-goals">${goals.map((goal,index)=>`<label class="life-goal"><input type="radio" name="lifeGoal" value="${esc(goal.id)}" ${goal.id===onboardingDraft.lifeGoal?'checked':''} required><span class="life-goal-icon">${icon(index===0?'work':index===1?'world':'map')}</span><span><strong>${esc(goal.name||goal.title||goal.label)}</strong><small>${esc(goal.description||goal.detail||'Choose your own pace.')}</small></span>${icon('check')}</label>`).join('')}</div>`,
- `${originCard(p)}<div class="starter-life"><span>${icon('world')}</span><div><strong>${esc(p.home?.name||'Your starter studio')}</strong><p>Your first home and ₦${money(p.wallet)} in game Naira.</p></div></div><div class="control-guide"><div><span class="control-keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><strong>Move through your world</strong><small>Use the joystick on mobile, or WASD and arrow keys.</small></div><div><span class="control-keys"><kbd>E</kbd>${icon('map')}</span><strong>Make the city yours</strong><small>Walk near a door or object to interact. Open Outside to choose a destination.</small></div></div>`][onboardingStep];
+ `${originCard(p)}<div class="starter-life"><span>${icon('world')}</span><div><strong>${esc(p.home?.name||'Your starter studio')}</strong><p>${p.home?.gifted?'Gifted and genuinely owned. No rent.':p.home?.tenure==='starter'?'Rent-free starter accommodation.':'Your saved home.'} ₦${money(p.wallet)} in game Naira.</p></div></div><div class="control-guide"><div><span class="control-keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><strong>Move through your world</strong><small>Use the joystick on mobile, or WASD and arrow keys.</small></div><div><span class="control-keys"><kbd>E</kbd>${icon('map')}</span><strong>Make the city yours</strong><small>Walk near a door or object to interact. Open Outside to choose a destination.</small></div></div>`][onboardingStep];
  root.innerHTML=`<main class="resident-onboarding"><aside class="onboarding-preview"><div class="onboarding-wordmark wordmark">${brandMark()}</div><span class="onboarding-city">YOUR RESIDENT</span><div class="onboarding-avatar" id="onboarding-avatar">${avatarSVG(onboardingDraft.appearance,{size:330,fullBody:true})}</div><div class="onboarding-resident-name" id="onboarding-resident-name">${esc(onboardingDraft.displayName)}</div><p>Made for your next chapter.</p></aside><section class="onboarding-details"><div class="onboarding-progress"><span>MAKE YOUR RESIDENT</span><strong>0${onboardingStep+1}<small> / 05</small></strong><div class="onboarding-progress-track" aria-label="Character setup: step ${onboardingStep+1} of 5">${titles.map((_,i)=>`<i class="${i<=onboardingStep?'complete':''}"></i>`).join('')}</div></div><form id="onboarding-form"><div class="onboarding-card"><h1>${titles[onboardingStep]}</h1><p class="muted">${descriptions[onboardingStep]}</p>${content}</div><p class="form-error" id="onboarding-error" role="alert"></p><div class="onboarding-buttons">${onboardingStep?'<button class="secondary" type="button" data-onboarding-back>Back</button>':''}<button class="primary" type="submit" ${onboardingStep===4?'id="begin-life"':'data-onboarding-next'}>${onboardingStep===4?'Start playing':'Continue'}${icon('arrow')}</button></div></form></section></main>`;
  const form=root.querySelector('#onboarding-form');
  cleanup=mountAvatarPreview(root.querySelector('#onboarding-avatar'),onboardingDraft.appearance);
@@ -301,8 +353,20 @@ function renderOnboarding(){
 function header(){const p=state.profile;const needs=[['Energy','energy','⚡'],['Food','hunger','⌁'],['Fun','fun','◌'],['Toilet','bladder','◒'],['Clean','hygiene','✦'],['Social','social','♧']];return `<header class="game-header"><a href="#world" class="wordmark" data-view="world" aria-label="AbujaLife home">${brandMark({compact:true})}</a><span class="header-edition">YOUR CITY. YOUR STORY.</span><button class="needs-header" data-open-needs aria-label="Open your life needs">${needs.map(([label,key,icon])=>`<span class="needs-header-item"><i aria-hidden="true">${icon}</i><b>${label}</b><em style="--need:${Math.max(0,Math.min(100,Number(p[key]??(key==='bladder'?86:0))))}%"></em></span>`).join('')}</button><button class="wallet-button" data-phone="wallet" aria-label="Naira balance, ₦${money(p.wallet)}. Open wallet"><span>Naira balance</span><strong>₦${money(p.wallet)}</strong></button><button class="earn-header" data-phone="earn" aria-label="Open Earn Game Naira">+ Earn</button><button class="resident-button" data-view="profile" aria-label="Your resident profile">${avatarSVG(p.appearance,{size:40})}</button></header>`;}
 function nav(){const unread=list(state.conversations).reduce((n,c)=>n+Number(c.unread||0),0)+list(state.notifications).filter(n=>!n.readAt&&!n.read).length;return `<nav class="game-nav" aria-label="Game navigation"><button data-view="world" class="${view==='world'?'active':''}" ${view==='world'?'aria-current="page"':''}>${icon('world')}<span>Play</span></button><button data-nav-outside class="${view==='outside'?'active':''}">${icon('map')}<span>Outside</span></button><button data-nav-life class="${['work','market','property','profile'].includes(view)?'active':''}">${icon('sun')}<span>My life</span></button><button data-phone="home" class="phone-launch">${icon('phone')}<span>Phone</span>${unread?`<i class="nav-badge">${unread}</i>`:''}</button></nav>`;}
 function renderMain(){
+ housingReminders.check();
+ clearInterval(propertyTimer);propertyTimer=undefined;
+ const nextSceneKey=playableSceneKey(view,state);
+ if(nextSceneKey&&nextSceneKey===renderedSceneKey&&root.querySelector('#world-scene')){
+  syncProfileChrome();
+  const owner=state.profile?.location?.kind==='visit'?state.homeVisit?.ownerHome:null;
+  const renderProfile=owner?{...state.profile,home:owner.home,inventory:owner.inventory,furnitureLayout:owner.furnitureLayout,storedFurniture:owner.storedFurniture,canDecorate:false}:state.profile;
+  cleanup?.updateProfile?.(renderProfile);
+  cleanup?.updateResidents?.(list(state.nearby));locationTray.sync();return;
+ }
+ if(nextSceneKey!==renderedSceneKey){document.querySelector('.location-chat-panel')?.remove();chatOpen=false;chatUnread=0;}
+ renderedSceneKey=nextSceneKey;
  const epoch=++viewEpoch;
- cleanup?.();cleanup=undefined;const recovery=authRecovery.snapshot();if(recovery.kind&&!['complete','idle'].includes(recovery.status)){renderAuthRecovery();return;}if(!state.authenticated){renderAuth();return;}
+ cleanup?.();cleanup=undefined;locationTray.sync();const recovery=authRecovery.snapshot();if(recovery.kind&&!['complete','idle'].includes(recovery.status)){renderAuthRecovery();return;}if(!state.authenticated){renderAuth();return;}
  if(!state.profile?.onboardingComplete){phone.close();renderOnboarding();return;}
  if(!['world','outside','map','work','market','property','profile'].includes(view))view='world';
  if(view==='outside'&&state.profile.location?.kind!=='public')view='world';
@@ -310,39 +374,49 @@ function renderMain(){
  root.querySelectorAll('[data-view]').forEach(b=>b.onclick=e=>{e.preventDefault();navigate(b.dataset.view);});root.querySelectorAll('[data-phone]').forEach(b=>b.onclick=()=>{furnitureCatalogue.close({restoreFocus:false});phone.open(b.dataset.phone==='home'?undefined:b.dataset.phone);});
  root.querySelector('[data-nav-outside]').onclick=()=>navigate('outside');root.querySelectorAll('[data-open-needs]').forEach(b=>b.onclick=openNeeds);root.querySelector('[data-nav-life]').onclick=openLifeMenu;
  const binder=({world:bindWorld,outside:bindOutside,map:bindMap,work:bindWork,market:bindMarket,property:bindProperties,profile:bindProfile})[view];
- if(view==='world'||view==='outside')requestAnimationFrame(()=>{if(epoch===viewEpoch)binder();});
+ if(view==='world'||view==='outside')requestAnimationFrame(()=>{if(epoch===viewEpoch){binder();dispatchEvent(new Event('abujalife:scene-ready'));}});
  else binder();
  enhanceProductPreviews(root,{appearance:state.profile?.appearance});
  void install.refresh();
 }
-function worldMarkup(){const p=state.profile,visiting=p.location?.kind==='visit',visit=state.homeVisit,visitors=list(state.homeVisitors);const needs=[['Energy','energy','⚡'],['Food','hunger','⌁'],['Fun','fun','◌'],['Toilet','bladder','◒'],['Clean','hygiene','✦'],['Social','social','♧']];const visitName=visiting?visit?.owner?.displayName:'your home';const visitorNames=visitors.map(row=>row.guest?.displayName).filter(Boolean);return `<section class="world-stage playable-stage" aria-label="Your playable location"><div id="world-scene"></div><div class="play-hud" aria-label="Your current life needs"><button class="play-needs" data-open-needs aria-label="Open your life needs">${needs.map(([label,key,icon])=>{const value=Number(p[key]??(key==='bladder'?86:0));return `<span><small><i aria-hidden="true">${icon}</i>${label}</small><i class="need-track"><b style="width:${Math.max(0,Math.min(100,value))}%"></b></i></span>`;}).join('')}</button></div><div class="play-guide"><span class="eyebrow">LIVE CAMERA</span><p>Drag to orbit your space · pinch to zoom · tap the floor to move.</p></div>${visiting||visitorNames.length?`<aside class="play-visit-card" aria-live="polite"><span class="eyebrow">${visiting?'HOME VISIT':'YOUR HOME'}</span><strong>${visiting?`At ${esc(visitName||'your host')}’s home`:`${visitorNames.length} ${visitorNames.length===1?'visitor':'visitors'} in your home`}</strong><small>${visiting?'Walk around, see each other and say hello.':esc(visitorNames.join(' · ')||'Your visitors are here.')}</small><div><button type="button" class="secondary" data-open-local-chat>Talk nearby</button>${visiting?'<button type="button" class="text-button" data-life-leave>Leave</button>':'<button type="button" class="text-button" data-open-visits>Visit details</button>'}</div></aside>`:''}${state.profile.activeTrip?tripMarkup(state.profile.activeTrip):''}</section>`;}
-function tripMarkup(trip){const venue=list(state.venues).find(v=>v.id===trip.venueId),mode=TRANSPORT_MODES.find(m=>m.id===trip.mode);return `<div class="trip-banner" role="status"><span class="trip-route-icon">${icon('arrow')}</span><div><strong>${esc(venue?.name||place(trip.destination)?.name||trip.destination)}</strong><span class="trip-mode">${esc(mode?.name||'Journey')} · ₦${money(trip.cost)}</span><span data-trip-countdown>On the way</span></div><button class="primary" data-arrive disabled>Arrive</button></div>`;}
+function worldMarkup(){
+ const p=state.profile,visiting=p.location?.kind==='visit',visit=state.homeVisit,visitors=list(state.homeVisitors),nearby=list(state.nearby);
+ const needs=[['Energy','energy','⚡'],['Food','hunger','⌁'],['Fun','fun','◌'],['Toilet','bladder','◒'],['Clean','hygiene','✦'],['Social','social','♧']];
+ const visitName=visiting?visit?.owner?.displayName:'your home',visitorNames=visitors.map(row=>row.guest?.displayName).filter(Boolean),chatResidents=new Map();
+ for(const person of nearby)if(person?.id&&person.id!==p.id&&person.online!==false)chatResidents.set(String(person.id),person);
+ for(const row of visitors)if(row.guest?.id&&row.guest.id!==p.id)chatResidents.set(String(row.guest.id),row.guest);
+ const count=chatResidents.size;
+ return `<section class="world-stage playable-stage" aria-label="Your playable location"><div id="world-scene"></div><div class="play-hud" aria-label="Your current life needs"><button class="play-needs" data-open-needs aria-label="Open your life needs">${needs.map(([label,key,icon])=>{const value=Number(p[key]??(key==='bladder'?86:0));return `<span><small><i aria-hidden="true">${icon}</i>${label}</small><i class="need-track"><b style="width:${Math.max(0,Math.min(100,value))}%"></b></i></span>`;}).join('')}</button></div><div class="play-guide"><span class="eyebrow">LIVE CAMERA</span><p>Drag to orbit your space · pinch to zoom · tap the floor to move.</p></div>${visiting||visitorNames.length?`<aside class="play-visit-card" aria-live="polite"><span class="eyebrow">${visiting?'HOME VISIT':'YOUR HOME'}</span><strong>${visiting?`At ${esc(visitName||'your host')}’s home`:`${visitorNames.length} ${visitorNames.length===1?'visitor':'visitors'} in your home`}</strong><small>${visiting?'Walk around and see each other.':esc(visitorNames.join(' · ')||'Your visitors are here.')}</small><div>${visiting?'<button type="button" class="text-button" data-life-leave>Leave</button>':'<button type="button" class="text-button" data-open-visits>Visit details</button>'}</div></aside>`:''}${count?`<button type="button" class="play-chat" data-open-local-chat aria-label="Open nearby location chat with ${count} ${count===1?'resident':'residents'}">Nearby chat · ${count}${chatUnread?`<i data-chat-unread>${chatUnread>9?'9+':chatUnread}</i>`:''}</button>`:''}${state.profile.activeTrip?tripMarkup(state.profile.activeTrip):''}</section>`;
+}
+function tripMarkup(trip){const venue=list(state.venues).find(v=>v.id===trip.venueId),mode=TRANSPORT_MODES.find(m=>m.id===trip.mode);return `<div class="trip-banner" role="status"><span class="trip-route-icon">${icon('arrow')}</span><div><strong>${esc(venue?.name||place(trip.destination)?.name||trip.destination)}</strong><span class="trip-mode">${esc(mode?.name||'Journey')} · ₦${money(trip.cost)}</span><span data-trip-countdown>On the way</span><progress class="world-route-progress" data-trip-progress max="1" value="0" aria-label="Journey progress"></progress></div><button class="primary" data-arrive disabled>Arrive</button></div>`;}
 function openNeeds(){const p=state.profile;openSheet(`<span class="eyebrow">YOUR DAY · ${playTime()}</span><h2 id="sheet-title">A little care goes a long way.</h2><div class="daily-needs">${[['Energy','energy'],['Food','hunger'],['Fun','fun'],['Toilet','bladder'],['Cleanliness','hygiene'],['Social','social'],['Stress','stress']].map(([label,key])=>{const value=Number(p[key]??(key==='bladder'?86:0));return `<div><label>${label}<span>${Math.round(value)}%</span></label><progress max="100" value="${value}" aria-label="${label}"></progress></div>`;}).join('')}</div><p class="muted">Rest at home, get something to eat, freshen up, or spend time in the city. Find a rhythm that works for you.</p>`);}
-function homeDoor(){const p=state.profile;closeSheet();if(view!=='world')navigate('world');if(p.location?.kind==='visit'){perform('leave-visit');return;}if(p.location?.kind==='home'){perform('leave-home');return;}if(currentVenue()){perform('exit-venue');return;}if(p.district===p.home.district){perform('enter-home');return;}travelSheet(p.home.district,true);}
+function homeDoor(){const p=state.profile;closeSheet();if(view!=='world')navigate('world');if(p.location?.kind==='visit'){perform('leave-visit');return;}if(p.location?.kind==='home'){perform('leave-home');return;}if(currentVenue()){perform('exit-venue');return;}if(p.district===p.home.district){if(p.drivingVehicle){void interact('toggle-driving',{vehicleId:null}).then(ok=>{if(ok)perform('enter-home');});return;}perform('enter-home');return;}if(p.drivingVehicle){travelSheet(p.home.district,true,null,'car');return;}travelSheet(p.home.district,true);}
 async function goHome(){
  if(quickHomeNavigating||state.profile.activeTrip)return;
  if(state.profile.location?.kind==='home'){if(view!=='world')navigate('world');return;}
  quickHomeNavigating=true;closeSheet();if(view!=='world')navigate('world');root.querySelector('[data-quick-home]')?.setAttribute('disabled','');
  try{
-  if(!await goOutdoors())return;
+  const takeCar=!!state.profile.drivingVehicle&&state.profile.district!==state.profile.home?.district;
+  if(!await goOutdoors({keepVehicle:takeCar}))return;
   const p=state.profile;
-  if(p.district!==p.home.district){travelSheet(p.home.district,true);return;}
-  toast('Making your way to your own home.');
-  if(cleanup?.performAsync)await cleanup.performAsync('enter-home');else await action('enter-home');
+  if(takeCar){travelSheet(p.home.district,true,null,'car');return;}
+  travelSheet(p.home.district,true);return;
  }finally{quickHomeNavigating=false;const button=root.querySelector('[data-quick-home]');if(button)button.disabled=state.profile.location?.kind==='home'&&view==='world'||!!state.profile.activeTrip;}
 }
 function openLifeMenu(){
  const p=state.profile,venue=currentVenue(),atHome=p.location?.kind==='home',visiting=p.location?.kind==='visit';
- const choices=[['needs','sun','Your needs','Find your balance'],['garage','map','Garage','Your wheels, your way'],['furnish','world','Furnish','Place, turn or store'],['design','world','Home studio','Rooms, walls and floors'],['houses','world','Homes & investing','Your next move'],['market','profile','Okrika Marketplace','Good finds, new looks'],['work','work','Work','Your real-day shifts'],['loans','work','Game loans','Borrow on clear terms'],['visits','profile','Home visits','Welcome your people'],['share','map','Share your home','A photo of your place'],['chat','chat','Around you','Meet your neighbours'],['profile','profile','Your resident','A look that feels like you']];
+ const homeStatus=housingSummary(p,gameNow());
+ const choices=[['housing','world','Home & bills',homeStatus.title],['needs','sun','Your needs','Find your balance'],['garage','map','Garage','Your wheels, your way'],['furnish','world','Furnish','Place, turn or store'],['design','world','Home studio','Rooms, walls and floors'],['houses','world','Homes & investing','Your next move'],['market','profile','Okrika Marketplace','Good finds, new looks'],['work','work','Work','Your real-day shifts'],['loans','work','Game loans','Borrow on clear terms'],['visits','profile','Home visits','Welcome your people'],['share','map','Share your home','A photo of your place'],['chat','chat','Around you','Meet your neighbours'],['profile','profile','Your resident','A look that feels like you']];
  openSheet(`<span class="eyebrow">MAKE TODAY YOURS</span><h2 id="sheet-title">My life</h2>${venue?`<button class="life-feature" data-life="activity"><span>${icon('sun')}</span><div><small>YOU’RE AT ${esc(venue.name)}</small><strong>Do something here</strong></div>${icon('arrow')}</button>`:''}<div class="life-menu-grid">${choices.map(([id,symbol,title,detail])=>`<button data-life="${id}" ${['garage','furnish','houses','work'].includes(id)?`data-world-tool="${id}"`:''}><span>${icon(symbol)}</span><strong>${title}</strong><small>${detail}</small></button>`).join('')}</div><button class="secondary full life-home" id="world-door" data-life="home">${visiting?'Leave this visit':atHome?'Step outside':venue?'Exit to the street':'Go home'}${icon('arrow')}</button>${state.admin?.role?'<a class="admin-entry full" href="/admin.html">Game administration</a>':''}<button type="button" class="text-button app-install-entry" data-install-app ${install.available?'':'hidden'}>${icon('phone')}Add AbujaLife to your Home Screen</button>`);
- const actions={needs:openNeeds,garage:openGarage,furnish:openFurniture,design:()=>{closeSheet();if(!atHome){toast('Head to your own home to design the rooms.');return;}homeEditor.open();},houses:()=>navigate('property'),market:()=>navigate('market'),work:()=>navigate('work'),loans:lifePanels.openLoans,visits:lifePanels.openVisits,share:()=>{closeSheet();phone.open('xshare');},chat:openLocalChat,profile:()=>navigate('profile'),activity:()=>openVenueMenu(venue),home:homeDoor};
+ const actions={housing:housingPanels.openHousing,needs:openNeeds,garage:openGarage,furnish:openFurniture,design:()=>{closeSheet();if(!atHome){toast('Head to your own home to design the rooms.');return;}homeEditor.open();},houses:()=>navigate('property'),market:()=>navigate('market'),work:()=>navigate('work'),loans:lifePanels.openLoans,visits:lifePanels.openVisits,share:()=>{closeSheet();phone.open('xshare');},chat:openLocalChat,profile:()=>navigate('profile'),activity:()=>openVenueMenu(venue),home:homeDoor};
  sheetRoot.querySelectorAll('[data-life]').forEach(button=>button.onclick=()=>actions[button.dataset.life]());
  sheetRoot.querySelector('[data-install-app]').onclick=async()=>{closeSheet();await install.show({manual:true});};
 }
 
 function bindWorld(){
  const p=state.profile,owner=state.homeVisit?.ownerHome,renderProfile=p.location?.kind==='visit'&&owner?{...p,home:owner.home,inventory:owner.inventory,furnitureLayout:owner.furnitureLayout,storedFurniture:owner.storedFurniture,canDecorate:false}:p;
- cleanup=renderWorld(document.querySelector('#world-scene'),{profile:renderProfile,place:place(p.district),people:list(state.nearby),serverNow:gameNow(),weather:state.weather,venues:list(state.venues),venueActions:list(state.venueActions),catalog:list(state.catalog),onInteract:interact,onResident:residentSheet,onFurnitureSelect:itemId=>furnitureCatalogue.showItem(itemId),onDestination:destination=>destination.home?goHome():goToVenue(destination.venueId),onArrive:tripId=>{if(p.activeTrip&&gameNow()>=Number(p.activeTrip.arrivesAt))return completeTrip(tripId||p.activeTrip.id);}});
+ cleanup=renderWorld(document.querySelector('#world-scene'),{profile:renderProfile,place:place(p.district),people:list(state.nearby),atlas:list(state.atlas),serverNow:gameNow(),weather:state.weather,venues:list(state.venues),venueActions:list(state.venueActions),catalog:list(state.catalog),onInteract:interact,onResident:residentSheet,onFurnitureSelect:itemId=>furnitureCatalogue.showItem(itemId),onDestination:destination=>destination.home?goHome():goToVenue(destination.venueId),onArrive:tripId=>{if(p.activeTrip&&gameNow()>=Number(p.activeTrip.arrivesAt))return completeTrip(tripId||p.activeTrip.id);}});
+ updateLocalChatAffordance();
  queueMicrotask(()=>{void posePublisher.publish();void refreshNearbyPresence().catch(()=>{});});
  root.querySelector('[data-open-local-chat]')?.addEventListener('click',openLocalChat);
  root.querySelector('[data-open-visits]')?.addEventListener('click',()=>lifePanels.openVisits());
@@ -355,28 +429,21 @@ function bindWorld(){
  const sprint=root.querySelector('.world-sprint-button');
  if(sprint){
   const atHome=p.location?.kind==='home',row=document.createElement('div'),home=document.createElement('button');
-  row.className='world-action-row';home.type='button';home.className='world-home-shortcut';home.dataset.quickHome='';
-  home.setAttribute('aria-label',atHome?'You are at your own home':'Go to your own home');home.title=atHome?'Your own home':'Head home';
-  home.disabled=atHome||!!p.activeTrip||quickHomeNavigating;home.innerHTML=`${icon('world')}<span>Home</span>`;home.onclick=goHome;
+  row.className='world-action-row';home.type='button';home.className=atHome?'world-home-shortcut world-go-out-shortcut':'world-home-shortcut';home.dataset.quickHome='';
+  home.setAttribute('aria-label',atHome?'Go outside your home':'Go to your own home');home.title=atHome?'Go outside':'Head home';
+  home.disabled=!!p.activeTrip||quickHomeNavigating;home.innerHTML=atHome?`${icon('arrow')}<span>Go Out</span>`:`${icon('world')}<span>Home</span>`;home.onclick=atHome?()=>navigate('outside'):goHome;
   sprint.before(row);row.append(home,sprint);
  }
+ const context=document.createElement('div');context.className='hud-context-slot';root.querySelector('.world-stage')?.append(context);locationTray.sync();
  if(p.activeTrip)bindTrip(p.activeTrip);
+ if(p.location?.kind==='public'){
+  const places=document.createElement('button');places.type='button';places.className='world-catalogue-button';places.dataset.outsideDestinations='';
+  places.innerHTML=`${icon('map')}<span>Destinations</span>`;places.onclick=openCityPlaces;
+  root.querySelector('.world-stage')?.append(places);
+ }
 }
-async function completeTrip(tripId){
- const trip=state.profile?.activeTrip;
- if(!trip||(tripId&&trip.id!==tripId))return !state.profile?.activeTrip;
- if(performance.now()<nextArriveAttempt)return false;
- if(gameNow()+120<Number(trip.arrivesAt)){armTripArrival();return false;}
- if(tripArrivalInFlight||busy){armTripArrival(true);return false;}
- tripArrivalInFlight=true;nextArriveAttempt=performance.now()+350;
- try{
-  const result=await action('arrive',{tripId:trip.id});
-  if(result){pendingVenue=undefined;if(state.profile.location?.kind==='home'&&pendingFurnitureItem){const itemId=pendingFurnitureItem;pendingFurnitureItem=undefined;openFurniture(itemId);}toast(currentVenue()?`You’ve arrived at ${currentVenue().name}.`:'You’ve arrived.');return true;}
-  if(state.profile?.activeTrip?.id===trip.id)armTripArrival(true);
-  return false;
- }finally{tripArrivalInFlight=false;}
-}
-function bindTrip(trip){const update=()=>{const left=Math.max(0,Math.ceil((Number(trip.arrivesAt)-gameNow())/1000));const el=root.querySelector('[data-trip-countdown]'),button=root.querySelector('[data-arrive]');if(el&&button){el.textContent=left?`${left}s to go`:'You’ve arrived';button.disabled=left>0;}if(left===0&&state.profile?.activeTrip?.id===trip.id)void completeTrip(trip.id);};update();const timer=setInterval(update,250),previous=cleanup;cleanup=Object.assign(()=>{clearInterval(timer);previous?.();},previous);root.querySelector('[data-arrive]').onclick=()=>completeTrip(trip.id);}
+function completeTrip(tripId){return journeyArrival.complete(tripId||state.profile?.activeTrip?.id);}
+function bindTrip(trip){const total=Math.max(1,Number(trip.seconds)||1),update=()=>{const left=Math.max(0,Math.ceil((Number(trip.arrivesAt)-gameNow())/1000)),progress=Math.max(0,Math.min(1,(total-left)/total));const el=root.querySelector('[data-trip-countdown]'),button=root.querySelector('[data-arrive]'),bar=root.querySelector('[data-trip-progress]');if(el&&button){el.textContent=left?`${left}s to go`:'You’ve arrived';button.disabled=left>0;}if(bar){bar.value=progress;bar.setAttribute('aria-valuenow',String(Math.round(progress*100)));}if(left===0&&state.profile?.activeTrip?.id===trip.id)void completeTrip(trip.id);};update();const timer=setInterval(update,250),previous=cleanup;cleanup=Object.assign(()=>{clearInterval(timer);previous?.();},previous);root.querySelector('[data-arrive]').onclick=()=>completeTrip(trip.id);}
 async function interact(name,payload={}){
  if(name==='leave-visit'){try{const result=await api('/api/home/visits/leave',{method:'POST',body:{}});await refresh();toast('You stepped outside.');return result;}catch(error){toast(error.message);return false;}}
  if(name==='visit-interact'){
@@ -389,7 +456,7 @@ async function interact(name,payload={}){
  if(name==='play-dice'||name==='dice'){openDice();return;}
  if(name==='venue-menu'||name==='venue-actions'){openVenueMenu(currentVenue());return;}
  if(name==='venue-action'){const activity=list(state.venueActions).find(a=>a.id===payload.activityId);if(!payload.activityId){openVenueMenu(currentVenue());return;}if(await action(name,payload))toast(`${activity?.name||'Activity'} complete.`);return;}
- if(name==='toggle-driving'){const result=await action(name,payload);if(result)toast(state.profile.drivingVehicle?'You’re in your car. Use the controls to drive.':'You’re back on foot.');return result;}
+ if(name==='toggle-driving'){const result=await action(name,payload);if(result){rememberCarDistrict(state.profile.id,state.profile.district);toast(state.profile.drivingVehicle?'You’re in your car. Use the controls to drive.':'You’re back on foot.');}return result;}
  if(name==='place-furniture'){const result=await action(name,payload);if(result)toast('Placed. Tap your piece whenever you want to change it.');return result;}
  if(name==='dealership'||name==='garage'){openGarage();return;}
  if(name==='banex-market'){openBanexMarket();return;}
@@ -402,10 +469,11 @@ async function interact(name,payload={}){
  openSheet(`<span class="eyebrow">${info[0]}</span><h2 id="sheet-title">${info[1]}</h2><p class="muted">${info[2]}</p><div class="detail-line"><span>Virtual cost</span><strong>${costLabel}</strong></div><button class="primary full" id="confirm-interaction">${info[1]}${icon('arrow')}</button>`);
  document.querySelector('#confirm-interaction').onclick=()=>{closeSheet();const complete=async()=>{if(await action(name))toast('A little better than before.');};if(cleanup?.animateActivity)cleanup.animateActivity(name==='relax'?'rest':name,({sleep:18,shower:16,relax:16,eat:15,exercise:18})[name]||15,complete);else complete();};
 }
-async function goOutdoors(){
+async function goOutdoors(options={}){
+ const keepVehicle=options.keepVehicle===true||options.keepDriving===true;
  if(state.profile.activeTrip)return false;
  if(state.profile.location?.kind==='visit'){const result=await(cleanup?.performAsync?cleanup.performAsync('leave-visit'):interact('leave-visit'));return Boolean(result)&&state.profile.location.kind!=='visit';}
- if(state.profile.drivingVehicle){if(!await action('toggle-driving',{vehicleId:null}))return false;}
+ if(state.profile.drivingVehicle&&!keepVehicle){if(!await action('toggle-driving',{vehicleId:null}))return false;if(state.profile?.id)rememberCarDistrict(state.profile.id,state.profile.district);}
  if(state.profile.location?.kind==='home')return Boolean(await (cleanup?.performAsync?cleanup.performAsync('leave-home'):action('leave-home')));
  if(currentVenue())return Boolean(await (cleanup?.performAsync?cleanup.performAsync('exit-venue'):action('exit-venue')));
  return true;
@@ -413,6 +481,7 @@ async function goOutdoors(){
 async function goToVenue(venueId){
  const venue=list(state.venues).find(v=>v.id===venueId);if(!venue)return;
  if(quickHomeNavigating)return;
+ if(currentVenue()?.id===venueId){closeSheet();if(view!=='world')navigate('world');toast(`You’re already inside ${venue.name}.`);return;}
  const district=venue.district||(venue.districts&&!venue.districts.includes(state.profile.district)?venue.districts[0]:state.profile.district);
  travelSheet(district,false,venueId);
 }
@@ -421,7 +490,10 @@ addEventListener('abj:open-map-venue',event=>{
  const venueId=String(event.detail?.venueId||'');if(!venueId)return;
  const venue=list(state.venues).find(place=>place.id===venueId);
  if(!venue){toast('That Abuja destination is not available.');return;}
- goToVenue(venueId);
+ // The restored city map owns this handoff and focuses the exact landmark.
+ // A second travel sheet used to open underneath that map, so confirming the
+ // card could send the player to the district instead of the venue.
+ closeSheet();
 });
 
 function openCityPlaces(){
@@ -436,7 +508,7 @@ function openVenueMenu(venue){
  if(venue.id==='games-lounge'){openDice();return;}if(venue.id==='dealership'){openGarage();return;}if(venue.id==='banex'){openBanexMarket();return;}if(venue.id==='furniture-store'){openMarketplace();return;}if(venue.id==='estate-office'){navigate('property');return;}
  const activities=venueActions(venue),closed=venue.kind==='club'&&!state.clubSchedule?.isOpen;
  openSheet(`<span class="eyebrow">${esc(venue.category||'YOUR DESTINATION')}</span><h2 id="sheet-title">${esc(venue.name)}</h2><p class="muted">${esc(venue.description||'Take your time and enjoy the city.')}</p>${venue.kind==='club'?`<p class="club-schedule-note">${esc(state.clubSchedule?.openingHours||'Wed, Fri & Sat · 20:00–02:00')} Abuja time. ${closed?'House lights are up; explore the room and come back when the night starts.':'DJ live · dance floor active · lights moving.'}</p>`:''}<div class="venue-menu">${activities.map(activity=>`<article class="venue-menu-item"><div><strong>${esc(activity.name||activity.title)}</strong><small>${esc(effectLabel(activity))}</small><span>${activity.cost?`₦${money(activity.cost)}`:'Free'} · ${activity.duration||5}s activity</span></div><button class="primary" data-venue-activity="${esc(activity.id)}" ${closed||state.profile.wallet<(activity.cost||0)?'disabled':''}>${activity.cost?'Choose':'Start'}</button></article>`).join('')||'<p class="muted">Explore the room, then walk to the exit when you are ready.</p>'}</div><p class="economy-note">Virtual game prices. Activities change your resident’s needs.</p>`);
- sheetRoot.querySelectorAll('[data-venue-activity]').forEach(button=>button.onclick=()=>{const activityId=button.dataset.venueActivity;closeSheet();perform('venue-action',{activityId});});
+ sheetRoot.querySelectorAll('[data-venue-activity]').forEach(button=>button.onclick=()=>{const activityId=button.dataset.venueActivity;closeSheet();performDirect('venue-action',{activityId});});
 }
 function openMarketplace(){openSheet(`<span class="eyebrow">GOOD FINDS. YOUR STYLE.</span><h2 id="sheet-title">Okrika Marketplace</h2><p class="muted">A fresh look or a finishing touch for home. Make it yours.</p><div class="market-departments"><button data-department="clothing">${icon('profile')}<strong>Clothes & style</strong><span>Find your next look</span>${icon('arrow')}</button><button data-department="furniture">${icon('world')}<strong>Room & living</strong><span>Pieces for your place</span>${icon('arrow')}</button><button data-department="all">${icon('sun')}<strong>Browse everything</strong><span>A little of everything</span>${icon('arrow')}</button></div>`);sheetRoot.querySelectorAll('[data-department]').forEach(b=>b.onclick=()=>{if(b.dataset.department==='furniture'){openFurniture();return;}marketFilter=b.dataset.department;navigate('market');});}
 function diceFace(value){return `<span class="die-face" aria-label="Die ${value||'rolling'}">${[1,2,3,4,5,6,7,8,9].map(position=>`<i class="${({1:[5],2:[1,9],3:[1,5,9],4:[1,3,7,9],5:[1,3,5,7,9],6:[1,3,4,6,7,9]})[value||5].includes(position)?'pip':''}"></i>`).join('')}</span>`;}
@@ -459,7 +531,7 @@ function openBanexMarket(){
 }
 function openGarage(){
  const cars=list(state.catalog).filter(item=>item.category==='vehicle'),owned=cars.filter(item=>state.profile.inventory.includes(item.id)),colors=list(state.vehicleColors);
- openSheet(`<span class="eyebrow">ABUJA CAR</span><h2 id="sheet-title">Find your drive.</h2><p class="muted">${owned.length?`${owned.length} in your garage. Choose your colour and take the wheel.`:'Something practical. Something special. Your first set of wheels is waiting.'}</p><div class="garage-cars">${cars.map(item=>{const has=state.profile.inventory.includes(item.id),driving=state.profile.drivingVehicle===item.id,paint=garagePaint[item.id]||state.profile.vehicleColors?.[item.id]||item.defaultColor;return `<article class="garage-card ${has?'owned':''}" data-garage-card="${esc(item.id)}"><div class="garage-art" data-product-model="${esc(item.id)}" data-product-color="${esc(paint)}" data-product-name="${esc(item.name)}">${vehicleIllustration(item,paint)}</div><div class="garage-card-heading"><span class="eyebrow">${esc(item.brand||'ABUJA CAR')} · ${item.year||'YOUR NEXT CHAPTER'}</span>${has?'<span class="home-owned">In your garage</span>':''}</div><h3>${esc(item.model||item.name)}</h3><p>${esc(item.description||'Your own way to get around the city.')}</p><fieldset class="vehicle-colors"><legend>Colour <span data-paint-name>${esc(colors.find(c=>c.id===paint)?.name||'')}</span></legend>${colors.map(color=>`<label title="${esc(color.name)}"><input type="radio" name="paint-${esc(item.id)}" data-car-paint="${esc(item.id)}" value="${esc(color.id)}" ${color.id===paint?'checked':''}><i style="--swatch:${esc(color.hex)}"></i><span class="sr-only">${esc(color.name)}</span></label>`).join('')}</fieldset><div class="garage-card-bottom"><strong>${has?'Your vehicle':`₦${money(item.price)}`}</strong>${has?`<button class="primary" data-drive="${esc(item.id)}">${driving?'Park & get out':'Drive'}</button><button class="secondary" data-sell-item="${esc(item.id)}">Sell · ₦${money(systemResaleValue(item))}</button>`:`<button class="primary" data-purchase="${esc(item.id)}" ${state.profile.wallet<item.price?'disabled':''}>Buy car</button>`}</div>${has?'<p class="garage-paint-note" data-paint-status>Colour changes are free.</p>':state.profile.wallet<item.price?`<button class="text-button garage-topup" data-garage-wallet>Add game funds${icon('arrow')}</button>`:''}</article>`;}).join('')}</div><p class="economy-note">Game vehicles and Naira. Choose a colour before buying; repaint an owned car any time.</p>`,{wide:true});
+ openSheet(`<span class="eyebrow">ABUJA CAR</span><h2 id="sheet-title">Find your drive.</h2><p class="muted">${owned.length?`${owned.length} in your garage. Choose your colour and take the wheel.`:'Something practical. Something special. Your first set of wheels is waiting.'}</p><div class="garage-cars">${cars.map(item=>{const has=state.profile.inventory.includes(item.id),driving=state.profile.drivingVehicle===item.id,paint=garagePaint[item.id]||state.profile.vehicleColors?.[item.id]||item.defaultColor;return `<article class="garage-card ${has?'owned':''}" data-garage-card="${esc(item.id)}"><div class="garage-art" data-product-model="${esc(item.id)}" data-product-color="${esc(paint)}" data-product-name="${esc(item.name)}">${vehicleIllustration(item,paint)}</div><div class="garage-card-heading"><span class="eyebrow">${esc(item.brand||'ABUJA CAR')} · ${item.year||'YOUR NEXT CHAPTER'}</span>${has?'<span class="home-owned">In your garage</span>':''}</div><h3>${esc(item.model||item.name)}</h3><p>${esc(item.description||'Your own way to get around the city.')}</p><fieldset class="vehicle-colors"><legend>Colour <span data-paint-name>${esc(colors.find(c=>c.id===paint)?.name||'')}</span></legend>${colors.map(color=>`<label title="${esc(color.name)}"><input type="radio" name="paint-${esc(item.id)}" data-car-paint="${esc(item.id)}" value="${esc(color.id)}" ${color.id===paint?'checked':''}><i style="--swatch:${esc(color.hex)}"></i><span class="sr-only">${esc(color.name)}</span></label>`).join('')}</fieldset><div class="garage-card-bottom"><strong>${has?'Your vehicle':`₦${money(item.price)}`}</strong>${has?`<button class="primary" data-drive="${esc(item.id)}">${driving?'Park & get out':'Drive'}</button><button class="secondary" data-sell-item="${esc(item.id)}">Sell · ₦${money(systemResaleValue(item))}</button>`:`<button class="primary" data-purchase="${esc(item.id)}" ${state.profile.wallet<item.price?'disabled':''}>Buy car</button>`}</div>${has?'<p class="garage-paint-note" data-paint-status>Colour changes are free.</p>':state.profile.wallet<item.price?`<button class="text-button garage-topup" data-garage-wallet>Earn or add game Naira${icon('arrow')}</button>`:''}</article>`;}).join('')}</div><p class="economy-note">Game vehicles and Naira. Choose a colour before buying; repaint an owned car any time.</p>`,{wide:true});
  sheetRoot.querySelectorAll('[data-garage-wallet]').forEach(button=>button.onclick=()=>{closeSheet();phone.open('wallet');});
  sheetRoot.querySelectorAll('[data-car-paint]').forEach(input=>input.onchange=async()=>{const item=cars.find(c=>c.id===input.dataset.carPaint),color=input.value,card=input.closest('.garage-card');garagePaint[item.id]=color;card.querySelector('.garage-art').innerHTML=vehicleIllustration(item,color);card.querySelector('.garage-art').dataset.productColor=color;enhanceProductPreviews(card,{appearance:state.profile?.appearance});card.querySelector('[data-paint-name]').textContent=colors.find(c=>c.id===color)?.name||color;if(state.profile.inventory.includes(item.id)){card.querySelectorAll('[data-car-paint]').forEach(control=>control.disabled=true);try{const signature=`paint:${item.id}:${color}`;garageIntents[signature]||=crypto.randomUUID();const result=await api('/api/action',{method:'POST',body:{action:'paint-vehicle',payload:{itemId:item.id,color,idempotencyKey:garageIntents[signature]}}});delete garageIntents[signature];if(result.profile)state.profile=result.profile;await refresh({render:false});card.querySelector('[data-paint-status]').textContent='Colour saved.';}catch(error){toast(error.message);garagePaint[item.id]=state.profile.vehicleColors?.[item.id]||item.defaultColor;openGarage();}finally{card.querySelectorAll('[data-car-paint]').forEach(control=>control.disabled=false);}}});
  sheetRoot.querySelectorAll('[data-purchase]').forEach(button=>button.onclick=async()=>{button.disabled=true;const item=cars.find(c=>c.id===button.dataset.purchase);const color=garagePaint[item.id]||item.defaultColor,signature=`purchase:${item.id}:${color}`;garageIntents[signature]||=crypto.randomUUID();if(await action('purchase',{itemId:item.id,color,idempotencyKey:garageIntents[signature]})){delete garageIntents[signature];openGarage();toast('Your car is waiting outside.');}else button.disabled=false;});
@@ -510,17 +582,17 @@ function manageOwnedItem(itemId){
 function outsideMarkup(){return worldMarkup();}
 function bindOutside(){
  bindWorld();
- const button=document.createElement('button');button.type='button';button.className='world-catalogue-button';button.dataset.outsideDestinations='';button.innerHTML=`${icon('map')}<span>Destinations</span>`;button.onclick=openCityPlaces;
- root.querySelector('#world-scene')?.append(button);
 }
 function mapMarkup(){return `<div class="page-heading map-page-heading"><span class="eyebrow">ABUJA & THE WIDER FCT</span><h1>See the city. Choose your next chapter.</h1><p>Use this optional district guide, or explore the live 3D city from Outside.</p></div><section class="map-stage" id="map-root" aria-label="Abuja map"></section>`;}
 function bindMap(){cleanup=renderMap(document.querySelector('#map-root'),{atlas:state.atlas,venues:list(state.venues),profile:state.profile,onSelect:()=>{},onTravel:(id,venueId)=>travelSheet(typeof id==='string'?id:id.id,false,venueId||null)});}
-function travelSheet(district,returningHome=false,venueId=null){
+function travelSheet(district,returningHome=false,venueId=null,preferMode=null){
  const destination=place(district);if(!destination)return;
  if(state.profile.activeTrip){toast('Finish this journey before choosing another destination.');return;}
  const venue=list(state.venues).find(v=>v.id===venueId),sameDistrict=district===state.profile.district;
  const ownsCar=list(state.catalog).some(item=>item.category==='vehicle'&&state.profile.inventory.includes(item.id));
- const modes=TRANSPORT_MODES.filter(mode=>mode.id!=='car'||ownsCar),defaultMode=sameDistrict?'walk':'bus';
+ const presence=state.profile.vehiclePresence,locationVenue=state.profile.location?.kind==='home'?'home':state.profile.location?.venue||'neighbourhood';
+ const nearbyVehicleId=state.profile.drivingVehicle||(presence?.state==='parked'&&presence.district===state.profile.district&&presence.venue===locationVenue?presence.vehicleId:null);
+ const modes=TRANSPORT_MODES.filter(mode=>mode.id!=='car'||ownsCar),defaultMode=preferMode&&modes.some(mode=>mode.id===preferMode)?preferMode:nearbyVehicleId?'car':sameDistrict?'walk':'bus';
  openSheet(`<span class="eyebrow">${returningHome?'BACK TO YOUR OWN HOME':'GETTING AROUND'}</span><h2 id="sheet-title">${esc(returningHome?state.profile.home.name:venue?.name||destination.name)}</h2><p class="muted">${esc(destination.name)} · Choose your ride.</p><form id="travel-form"><fieldset class="travel-mode-options"><legend>How are you going?</legend>${modes.map(mode=>`<label class="travel-mode-option"><input type="radio" name="mode" value="${esc(mode.id)}" ${mode.id===defaultMode?'checked':''} ${mode.id==='walk'&&!sameDistrict?'disabled':''}><span><strong>${esc(mode.name)}</strong><small>${mode.id==='walk'&&!sameDistrict?'Available within your current neighbourhood':esc(mode.description)}</small></span></label>`).join('')}</fieldset><div class="detail-line travel-quote" id="travel-quote" aria-live="polite">Checking your fare…</div><p class="travel-fare-note" id="travel-fare-note">Game Naira · compressed journey times.</p><button class="primary full" type="submit" disabled>Start journey${icon('arrow')}</button></form>`);
  const form=sheetRoot.querySelector('#travel-form');let quoteSequence=0,quote=null,submitting=false;
  const getQuote=async()=>{
@@ -537,7 +609,7 @@ function travelSheet(district,returningHome=false,venueId=null){
    const result=await api(`/api/travel/quote?district=${encodeURIComponent(district)}&mode=${encodeURIComponent(mode)}${venueId?`&venueId=${encodeURIComponent(venueId)}`:''}`);
    if(sequence!==quoteSequence||!form.isConnected)return;
    quote=result.quote;const walk=mode==='walk',affordable=quote.cost<=state.profile.wallet;
-   form.querySelector('#travel-quote').innerHTML=`<span>${walk?'Walk to the entrance':`${quote.seconds}s journey`}</span><strong>${quote.cost?`₦${money(quote.cost)}`:'Free'}</strong>`;
+   form.querySelector('#travel-quote').innerHTML=`<span>${walk?'Walk to the entrance':returningHome&&sameDistrict?'Drive to your own home':`${quote.seconds}s journey`}</span><strong>${quote.cost?`₦${money(quote.cost)}`:'Free'}</strong>`;
    form.querySelector('#travel-fare-note').textContent=affordable?'Game Naira · charged when you start. Journey times are compressed.':'You need more game Naira for this fare. Choose Walk or another ride.';
    button.innerHTML=`${walk?'Walk there':quote.cost?`Pay ₦${money(quote.cost)} & go`:'Start journey'}${icon('arrow')}`;button.disabled=!affordable;
   }catch(error){if(sequence===quoteSequence&&form.isConnected)form.querySelector('#travel-quote').textContent=error.message;}
@@ -546,13 +618,14 @@ function travelSheet(district,returningHome=false,venueId=null){
  form.onsubmit=async e=>{
   e.preventDefault();const mode=form.elements.mode.value;
   if(submitting||!quote||quote.mode!==mode||quote.cost>state.profile.wallet)return;
-  submitting=true;closeSheet();if(view!=='world')navigate('world');if(!await goOutdoors())return;
+  submitting=true;const vehicleId=mode==='car'?(nearbyVehicleId||list(state.catalog).find(item=>item.category==='vehicle'&&state.profile.inventory.includes(item.id))?.id):null;
+  closeSheet();if(view!=='world')navigate('world');if(!await goOutdoors({keepDriving:mode==='car'}))return;
   if(mode==='walk'&&sameDistrict&&(venueId||returningHome)){
    pendingVenue=undefined;toast(`Making your way to ${returningHome?'your own home':venue.name}.`);
    if(returningHome){if(cleanup?.performAsync)await cleanup.performAsync('enter-home');else await action('enter-home');}else perform('enter-venue',{venueId});
    return;
   }
-  if(await action(returningHome?'return-home':'travel',{district,mode,...(venueId?{venueId}:{})})){pendingVenue=undefined;navigate('world');toast('Your journey has started.');}
+  if(await action(returningHome?'return-home':'travel',{district,mode,leaveVehicle:mode!=='car',...(vehicleId?{vehicleId}:{}),...(venueId?{venueId}:{})})){if(mode==='car')rememberCarDistrict(state.profile.id,district);pendingVenue=undefined;navigate('world');toast('Your journey has started.');}
  };
 }
 function workMarkup(){
@@ -569,21 +642,56 @@ function bindMarket(){root.querySelectorAll('[data-filter]').forEach(b=>b.onclic
 function houseArt(h){const villa=h.type==='villa',terrace=h.type==='terrace',apartment=h.type==='apartment',floors=apartment?3:villa||terrace?2:1;return `<svg class="house-art" viewBox="0 0 440 205" role="img" aria-label="${esc(h.type||'Home')} exterior illustration"><defs><linearGradient id="sky-${esc(h.id)}" x2="0" y2="1"><stop stop-color="#dae4df"/><stop offset="1" stop-color="#f7f0dc"/></linearGradient></defs><rect width="440" height="205" fill="url(#sky-${esc(h.id)})"/><circle cx="355" cy="44" r="24" fill="#f5d08b"/><path d="M0 152h440v53H0Z" fill="#cbd4b6"/><ellipse cx="230" cy="183" rx="154" ry="10" fill="#52665420"/><path d="M73 80 215 34 361 80Z" fill="${villa?'#5b6565':'#816855'}"/><rect x="88" y="80" width="260" height="99" fill="${villa?'#f8f4e9':terrace?'#d7c7ae':'#ebdebc'}"/><path d="M88 113h260M88 146h260" stroke="#cab998" opacity=".6"/>${Array.from({length:floors},(_,floor)=>Array.from({length:4},(_,i)=>`<rect x="${107+i*59}" y="${89+floor*(floors===3?26:40)}" width="35" height="${floors===3?18:29}" rx="1" fill="#638280"/><path d="M${124+i*59} ${89+floor*(floors===3?26:40)}v${floors===3?18:29}" stroke="#ccd3bd"/>`).join('')).join('')}<rect x="201" y="136" width="37" height="43" fill="#745b49"/><circle cx="230" cy="157" r="2" fill="#ebd28e"/><path d="M47 177v-36M390 178v-49" stroke="#857a52" stroke-width="6"/><circle cx="47" cy="124" r="26" fill="#83976c"/><circle cx="390" cy="111" r="34" fill="#83976c"/><path d="m196 179-30 26h110l-32-26" fill="#d7c8ac"/></svg>`;}
 function investmentDetails(h){return investmentView(state.profile,h,gameNow());}
 function propertyMarkup(){return `<div class="property-tabs" role="group" aria-label="Property section"><button data-property-tab="homes" class="${propertyTab==='homes'?'active':''}" aria-pressed="${propertyTab==='homes'}">Find a home</button><button data-property-tab="investments" class="${propertyTab==='investments'?'active':''}" aria-pressed="${propertyTab==='investments'}">Investments</button></div>${propertyTab==='investments'?investmentMarkup():homeListings()}`;}
-function investmentMarkup(){const properties=list(state.properties).filter(h=>h.tier!==0),investments=Object.values(state.profile.propertyInvestments||{}),total=investments.reduce((sum,i)=>sum+i.purchasePrice,0);return `<div class="page-heading"><span class="eyebrow">BUILD SOMETHING OF YOUR OWN</span><h1>A place in your future.</h1><p>Buy an extra property and collect simulated rent in game Naira.</p></div><div class="investment-summary"><div><small>YOUR PORTFOLIO</small><strong>${investments.length} ${investments.length===1?'property':'properties'}</strong></div><div><small>PURCHASE VALUE</small><strong>₦${money(total)}</strong></div><button class="text-button" data-investment-wallet>Add game funds${icon('arrow')}</button></div><p class="investment-explainer">Game rent: 0.2% of purchase price each minute, accruing for up to 60 minutes. Resale: 90% of purchase value after one minute. Your primary home stays your home.</p><div class="home-hunt">${properties.map(h=>{const inv=investmentDetails(h),isHome=state.profile.home?.propertyId===h.id;return `<article class="home-listing"><div class="house-model-art" data-product-model="home:${esc(h.id)}" data-product-name="${esc(h.name)}">${houseArt(h)}</div><div class="home-listing-body"><div class="home-listing-place"><span class="eyebrow">${esc(place(h.district)?.name||'Abuja')}</span>${inv?'<span class="home-owned">Your investment</span>':isHome?'<span class="home-owned">Your home</span>':''}</div><h2>${esc(h.name)}</h2><div class="home-prices"><div><small>${inv?'READY TO COLLECT':'PURCHASE PRICE'}</small><strong>₦${money(inv?inv.collectable:h.price||h.buy)}</strong></div><div><small>GAME RENT / MINUTE</small><strong>₦${money(inv?.incomePerPeriod||h.investmentIncome||Math.max(1,Math.floor((h.price||h.buy)*.002)))}</strong></div></div><button class="${inv?'primary':'secondary'} full" data-invest-property="${esc(h.id)}" ${isHome?'disabled':''}>${isHome?'Your primary home':inv?'Manage investment':'View investment'}${icon('arrow')}</button></div></article>`;}).join('')}</div>`;}
-function openInvestment(h){
- if(!h)return;const inv=investmentDetails(h),price=h.price||h.buy,isHome=state.profile.home?.propertyId===h.id;
- openSheet(`<span class="eyebrow">${esc(place(h.district)?.name||'Abuja')} · GAME PROPERTY</span><h2 id="sheet-title">${esc(h.name)}</h2><div class="investment-property-art"><div class="house-model-art" data-product-model="home:${esc(h.id)}" data-product-name="${esc(h.name)}">${houseArt(h)}</div></div><div class="detail-line"><span>${inv?'Purchase value':'Purchase price'}</span><strong>₦${money(inv?.purchasePrice||price)}</strong></div><div class="detail-line"><span>Game rent per minute</span><strong>₦${money(inv?.incomePerPeriod||h.investmentIncome||Math.max(1,Math.floor(price*.002)))}</strong></div><div class="detail-line"><span>Resale value</span><strong>₦${money(inv?.resaleValue||h.investmentResale||Math.floor(price*.9))}</strong></div>${inv?`<div class="investment-rent"><span>Ready to collect</span><strong data-rent-amount>₦${money(inv.collectable)}</strong><small data-rent-timing></small></div><button class="primary full" data-collect-rent="${esc(h.id)}" ${!inv.collectable?'disabled':''}>Collect rent${icon('arrow')}</button><button class="secondary full" data-sell-investment="${esc(h.id)}" ${gameNow()<inv.canSellAt?'disabled':''}>Sell for ₦${money(inv.resaleValue)}</button><p class="investment-timing" data-sell-timing></p>`:`<button class="primary full" data-buy-investment="${esc(h.id)}" ${isHome||state.profile.wallet<price?'disabled':''}>${isHome?'Your primary home':`Buy investment · ₦${money(price)}`}${icon('arrow')}</button>${state.profile.wallet<price?'<button class="text-button" data-investment-wallet>Open Naira wallet</button>':''}`}<p class="form-error" data-investment-error role="alert"></p><p class="economy-note">Rent keeps accruing every minute until collected. Selling pays 90% of purchase value plus accrued rent. All prices and returns are simulated in game Naira.</p>`);
- sheetRoot.querySelector('[data-investment-wallet]')?.addEventListener('click',()=>{closeSheet();phone.open('wallet');});
- const update=()=>{if(!inv)return;const current=investmentDetails(h);if(!current)return;const amount=sheetRoot.querySelector('[data-rent-amount]');if(!amount)return;amount.textContent=`₦${money(current.collectable)}`;sheetRoot.querySelector('[data-collect-rent]').disabled=!current.collectable;sheetRoot.querySelector('[data-rent-timing]').textContent=current.collectable?'Rent is ready when you are.':`First rent in ${Math.max(1,Math.ceil((current.nextIncomeAt-gameNow())/1000))}s`;sheetRoot.querySelector('[data-sell-investment]').disabled=gameNow()<current.canSellAt;sheetRoot.querySelector('[data-sell-timing]').textContent=gameNow()<current.canSellAt?`Resale available in ${Math.ceil((current.canSellAt-gameNow())/1000)}s`:'Resale includes any uncollected rent.';};update();const timer=setInterval(update,1000);sheetCleanup=()=>clearInterval(timer);
- for(const [attribute,actionName] of [['buy-investment','buy-investment'],['collect-rent','collect-rent'],['sell-investment','sell-investment']]){const button=sheetRoot.querySelector(`[data-${attribute}]`);if(!button)continue;let intentKey;button.onclick=async()=>{intentKey||=crypto.randomUUID();button.disabled=true;try{const result=await api('/api/action',{method:'POST',body:{action:actionName,payload:{propertyId:h.id,idempotencyKey:intentKey}}});intentKey=undefined;if(result.profile)state.profile=result.profile;await refresh();if(actionName==='sell-investment'){closeSheet();toast('Property sold. Game Naira is in your wallet.');}else{openInvestment(h);toast(actionName==='buy-investment'?'Your investment is ready. Rent begins accruing now.':'Rent collected.');}}catch(error){const errorEl=sheetRoot.querySelector('[data-investment-error]');if(errorEl)errorEl.textContent=error.message;button.disabled=false;}};}
+function investmentMarkup(){
+ const properties=list(state.properties).filter(h=>h.tier>0),portfolio=investmentPortfolio(state.profile,properties,gameNow());
+ const formatted=value=>value===null?'Unavailable':`₦${money(value)}`;
+ return `<div class="page-heading"><span class="eyebrow">BUILD SOMETHING OF YOUR OWN</span><h1>A place in your future.</h1><p>Buy an extra property and collect simulated rent in game Naira.</p></div><div class="investment-summary"><div><small>ACTIVE INVESTMENTS</small><strong data-portfolio-count>${portfolio.count} ${portfolio.count===1?'property':'properties'}</strong></div><div><small>PURCHASE VALUE</small><strong data-portfolio-value="purchase">${formatted(portfolio.purchaseValue)}</strong></div><div><small>CURRENT RESALE VALUE</small><strong data-portfolio-value="resale">${formatted(portfolio.resaleValue)}</strong></div><div><small>UNCLAIMED RENT</small><strong data-portfolio-value="rent">${formatted(portfolio.unclaimedRent)}</strong></div><button class="text-button" data-investment-wallet>Earn or add game Naira${icon('arrow')}</button></div><p class="investment-explainer">Purchase value is the original game Naira spent on active investments. Current resale value is the server-set buyback amount. Unclaimed rent is rent currently ready to collect. Game investment rent accrues weekly; resale unlocks after one real day. Existing purchase values are preserved. Your primary home is excluded.</p>${propertyFilterMarkup(properties)}<div class="home-hunt">${properties.map(h=>{
+  const inv=investmentDetails(h),isHome=state.profile.home?.propertyId===h.id,owned=state.profile.ownedProperties?.includes(h.id),price=h.buy||h.price||0;
+  const status=inv?'Investment owned':isHome?'Primary home':owned?'Owned · ready to invest':'Available investment';
+  return `<article class="home-listing" data-property-search="${esc([h.name,h.type,h.area,place(h.district)?.name||h.district,h.tierLabel].join(' ').toLowerCase())}" data-property-district="${esc(h.district)}" data-property-type="${esc(h.type)}"><div class="house-model-art" data-product-model="home:${esc(h.id)}" data-product-name="${esc(h.name)}">${houseArt(h)}</div><div class="home-listing-body"><div class="home-listing-place"><span class="eyebrow">${esc(place(h.district)?.name||'Abuja')}</span><span class="home-owned">${status}</span></div><h2>${esc(h.name)}</h2><p>${esc(h.area||'Abuja')} · ${esc(h.type||'Home')} · ${h.bedrooms?`${h.bedrooms} bedrooms`:'Studio'} · ${h.bathrooms||1} bathroom${h.bathrooms>1?'s':''}</p><div class="home-prices"><div><small>${inv?'PURCHASE VALUE':'PURCHASE PRICE'}</small><strong>${formatted(inv?.purchasePrice??price)}</strong></div><div><small>CURRENT RESALE VALUE</small><strong>${formatted(inv?.resaleValue??h.investmentResale??Math.floor(price*.9))}</strong></div><div><small>UNCLAIMED RENT</small><strong data-investment-rent="${esc(h.id)}">${inv?(inv.representable?formatted(inv.collectable):'Unavailable'):formatted(0)}</strong></div><div><small>GAME RENT / WEEK</small><strong>₦${money(inv?.incomePerPeriod??h.investmentIncome??Math.max(1,Math.floor(price*INVESTMENT_META.incomeBasisPoints/10000)))}</strong></div></div><button class="${inv?'primary':'secondary'} full" data-invest-property="${esc(h.id)}" ${isHome?'disabled':''}>${isHome?'Primary residence':inv?'Manage investment':owned?'Invest · ₦0':'View investment'}${icon('arrow')}</button></div></article>`;
+ }).join('')}<p class="property-empty-state" hidden>No properties match those filters.</p></div>`;
 }
-function homeListings(){return `<div class="page-heading"><span class="eyebrow">ABUJA HOME FINDER</span><h1>Your next place.</h1><p>From a Garki studio to a Maitama villa. Tour the rooms, compare neighbourhoods and choose the home your game budget can afford.</p></div><div class="home-price-note"><strong>Virtual game prices</strong><span>Rent covers a game year: ${state.economyMeta?.rentPeriodDays||28} real days. Service charges are billed every ${state.economyMeta?.billPeriodDays||7} days.</span></div><div class="home-hunt">${list(state.properties).map(h=>`<article class="home-listing"><div class="house-model-art" data-product-model="home:${esc(h.id)}" data-product-name="${esc(h.name)}">${houseArt(h)}</div><div class="home-listing-body"><div class="home-listing-place"><span class="eyebrow">${esc(place(h.district)?.name||'Abuja')}</span>${state.profile.home?.propertyId===h.id?'<span class="home-owned">Your home</span>':state.profile.ownedProperties?.includes(h.id)?'<span class="home-owned">Owned</span>':''}</div><h2>${esc(h.name)}</h2><p>${h.bedrooms?`${h.bedrooms} bedrooms`:'Studio'} · ${h.bathrooms||1} bathroom${h.bathrooms>1?'s':''}${h.areaM2?` · ${h.areaM2} m²`:''}</p><div class="home-prices">${h.tier===0?'<div><small>YOUR STARTER RESIDENCE</small><strong>Included</strong></div>':`<div><small>RENT / GAME YEAR</small><strong>₦${money(h.rent)}</strong></div><div><small>BUY OUTRIGHT</small><strong>₦${money(h.price||h.buy)}</strong></div>`}</div><button class="secondary full" data-property="${esc(h.id)}">Tour & details${icon('arrow')}</button></div></article>`).join('')}</div>`;}
-function bindProperties(){root.querySelectorAll('[data-property-tab]').forEach(button=>button.onclick=()=>{propertyTab=button.dataset.propertyTab;renderMain();});root.querySelectorAll('[data-property]').forEach(button=>button.onclick=()=>openProperty(list(state.properties).find(h=>h.id===button.dataset.property)));root.querySelectorAll('[data-invest-property]').forEach(button=>button.onclick=()=>openInvestment(list(state.properties).find(h=>h.id===button.dataset.investProperty)));root.querySelector('[data-investment-wallet]')?.addEventListener('click',()=>phone.open('wallet'));}
+function openInvestment(h){
+ if(!h)return;const inv=investmentDetails(h),price=h.price||h.buy,isHome=state.profile.home?.propertyId===h.id,owned=state.profile.ownedProperties?.includes(h.id),cost=owned?0:price;
+ openSheet(`<span class="eyebrow">${esc(place(h.district)?.name||'Abuja')} · GAME PROPERTY</span><h2 id="sheet-title">${esc(h.name)}</h2><div class="investment-property-art"><div class="house-model-art" data-product-model="home:${esc(h.id)}" data-product-name="${esc(h.name)}">${houseArt(h)}</div></div><div class="detail-line"><span>${inv?'Purchase value':'Purchase price'}</span><strong>₦${money(inv?.purchasePrice||price)}</strong></div><div class="detail-line"><span>Game investment rent per week</span><strong>₦${money(inv?.incomePerPeriod||h.investmentIncome||Math.max(1,Math.floor(price*INVESTMENT_META.incomeBasisPoints/10000)))}</strong></div><div class="detail-line"><span>Resale value</span><strong>₦${money(inv?.resaleValue||h.investmentResale||Math.floor(price*.9))}</strong></div>${inv?`<div class="investment-rent"><span>Ready to collect</span><strong data-rent-amount>₦${money(inv.collectable)}</strong><small data-rent-timing></small></div><button class="primary full" data-collect-rent="${esc(h.id)}" ${!inv.collectable?'disabled':''}>Collect rent${icon('arrow')}</button><button class="secondary full" data-sell-investment="${esc(h.id)}" ${gameNow()<inv.canSellAt?'disabled':''}>Sell for ₦${money(inv.resaleValue)}</button><p class="investment-timing" data-sell-timing></p>`:`<button class="primary full" data-buy-investment="${esc(h.id)}" ${isHome||state.profile.wallet<cost?'disabled':''}>${isHome?'Your primary home':`Buy investment · ${cost?`₦${money(cost)}`:'no additional cost'}`}${icon('arrow')}</button>${state.profile.wallet<cost?'<button class="text-button" data-investment-wallet>Open Naira wallet</button>':''}`}<p class="form-error" data-investment-error role="alert"></p><p class="economy-note">Investment rent accrues weekly until collected. Selling pays 90% of purchase value plus accrued rent. All prices and returns are simulated in game Naira.</p>`);
+ sheetRoot.querySelector('[data-investment-wallet]')?.addEventListener('click',()=>{closeSheet();phone.open('wallet');});
+ const update=()=>{if(!inv)return;const current=investmentDetails(h);if(!current)return;const amount=sheetRoot.querySelector('[data-rent-amount]');if(!amount)return;amount.textContent=`₦${money(current.collectable)}`;sheetRoot.querySelector('[data-collect-rent]').disabled=!current.collectable;sheetRoot.querySelector('[data-rent-timing]').textContent=current.collectable?'Rent is ready when you are.':`Next investment rent ${new Date(current.nextIncomeAt).toLocaleDateString('en-NG',{timeZone:'Africa/Lagos'})}`;sheetRoot.querySelector('[data-sell-investment]').disabled=gameNow()<current.canSellAt;sheetRoot.querySelector('[data-sell-timing]').textContent=gameNow()<current.canSellAt?`Resale available ${new Date(current.canSellAt).toLocaleString('en-NG',{timeZone:'Africa/Lagos'})}`:'Resale includes any uncollected rent.';};update();const timer=setInterval(update,1000);sheetCleanup=()=>clearInterval(timer);
+ for(const [attribute,actionName] of [['buy-investment','buy-investment'],['collect-rent','collect-rent'],['sell-investment','sell-investment']]){const button=sheetRoot.querySelector(`[data-${attribute}]`);if(!button)continue;let intentKey;button.onclick=async()=>{intentKey||=crypto.randomUUID();button.disabled=true;try{const result=await api('/api/action',{method:'POST',body:{action:actionName,payload:{propertyId:h.id,idempotencyKey:intentKey}}});intentKey=undefined;if(result.profile)state.profile=result.profile;renderMain();await refresh({render:false});if(actionName==='sell-investment'){closeSheet();toast('Property sold. Game Naira is in your wallet.');}else{openInvestment(h);toast(actionName==='buy-investment'?'Your investment is ready. Rent begins accruing now.':'Rent collected.');}}catch(error){const errorEl=sheetRoot.querySelector('[data-investment-error]');if(errorEl)errorEl.textContent=error.message;button.disabled=false;}};}
+}
+function propertyFilterMarkup(properties){
+ const districts=[...new Map(properties.map(h=>[h.district,place(h.district)?.name||h.district])).entries()].sort((a,b)=>a[1].localeCompare(b[1]));
+ const types=[...new Set(properties.map(h=>h.type).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+ return `<div class="property-filters"><label>Search homes<input type="search" data-property-search value="${esc(propertySearch)}" placeholder="Name, area or district" autocomplete="off"></label><label>District<select data-property-district><option value="all">All districts</option>${districts.map(([id,name])=>`<option value="${esc(id)}" ${propertyDistrict===id?'selected':''}>${esc(name)}</option>`).join('')}</select></label><label>Home type<select data-property-type><option value="all">All types</option>${types.map(type=>`<option value="${esc(type)}" ${propertyType===type?'selected':''}>${esc(type)}</option>`).join('')}</select></label></div><p class="property-results" data-property-results role="status"></p>`;
+}
+function applyPropertyFilters(){
+ const cards=[...root.querySelectorAll('.home-listing[data-property-search]')],query=propertySearch.trim().toLowerCase();let visible=0;
+ for(const card of cards){const match=(!query||card.dataset.propertySearch.includes(query))&&(propertyDistrict==='all'||card.dataset.propertyDistrict===propertyDistrict)&&(propertyType==='all'||card.dataset.propertyType===propertyType);card.hidden=!match;if(match)visible++;}
+ const status=root.querySelector('[data-property-results]'),empty=root.querySelector('.property-empty-state');if(status)status.textContent=`Showing ${visible} of ${cards.length} ${cards.length===1?'property':'properties'}`;if(empty)empty.hidden=visible!==0;
+}
+function homeListings(){const homes=list(state.properties),homeStatus=housingSummary(state.profile,gameNow());return `<button class="housing-summary" data-home-bills><span><strong>${esc(homeStatus.title)}</strong><small>${esc(homeStatus.detail)}</small></span>${icon('arrow')}</button><div class="page-heading"><span class="eyebrow">ABUJA HOME FINDER</span><h1>Your next place.</h1><p>From a Garki studio to a Maitama villa. Tour the rooms, compare neighbourhoods and choose the home your game budget can afford.</p></div><div class="home-price-note"><strong>Virtual game prices</strong><span>Rent is weekly, using saved server dates. Moving in pays the first week plus the disclosed deposit. Service charges are billed every ${state.economyMeta?.billPeriodDays||7} days.</span></div>${propertyFilterMarkup(homes)}<div class="home-hunt">${homes.map(h=>`<article class="home-listing" data-property-search="${esc([h.name,h.type,h.area,place(h.district)?.name||h.district,h.tierLabel].join(' ').toLowerCase())}" data-property-district="${esc(h.district)}" data-property-type="${esc(h.type)}"><div class="house-model-art" data-product-model="home:${esc(h.id)}" data-product-name="${esc(h.name)}">${houseArt(h)}</div><div class="home-listing-body"><div class="home-listing-place"><span class="eyebrow">${esc(place(h.district)?.name||'Abuja')}</span>${state.profile.home?.propertyId===h.id?'<span class="home-owned">Primary home</span>':state.profile.ownedProperties?.includes(h.id)?'<span class="home-owned">Owned</span>':''}</div><h2>${esc(h.name)}</h2><p>${esc(h.area||'Abuja')} · ${esc(h.type||'Home')} · ${h.bedrooms?`${h.bedrooms} bedrooms`:'Studio'} · ${h.bathrooms||1} bathroom${h.bathrooms>1?'s':''}${h.areaM2?` · ${h.areaM2} m²`:''}</p><div class="home-prices">${h.tier===0?'<div><small>YOUR STARTER RESIDENCE</small><strong>Included</strong></div>':`<div><small>RENT / WEEK</small><strong>₦${money(h.rent)}</strong></div><div><small>BUY OUTRIGHT</small><strong>₦${money(h.buy||h.price)}</strong></div>`}</div><button class="secondary full" data-property="${esc(h.id)}">Tour & details${icon('arrow')}</button></div></article>`).join('')}<p class="property-empty-state" hidden>No homes match those filters.</p></div>`;}
+function bindProperties(){
+ root.querySelector('[data-home-bills]')?.addEventListener('click',housingPanels.openHousing);
+ root.querySelectorAll('[data-property-tab]').forEach(button=>button.onclick=()=>{propertyTab=button.dataset.propertyTab;renderMain();});
+ root.querySelectorAll('[data-property]').forEach(button=>button.onclick=()=>openProperty(list(state.properties).find(h=>h.id===button.dataset.property)));
+ root.querySelectorAll('[data-invest-property]').forEach(button=>button.onclick=()=>openInvestment(list(state.properties).find(h=>h.id===button.dataset.investProperty)));
+ root.querySelector('[data-investment-wallet]')?.addEventListener('click',()=>phone.open('wallet'));
+ root.querySelector('[data-property-search]')?.addEventListener('input',event=>{propertySearch=event.target.value;applyPropertyFilters();});
+ root.querySelector('[data-property-district]')?.addEventListener('change',event=>{propertyDistrict=event.target.value;applyPropertyFilters();});
+ root.querySelector('[data-property-type]')?.addEventListener('change',event=>{propertyType=event.target.value;applyPropertyFilters();});
+ applyPropertyFilters();
+ if(propertyTab==='investments'){
+  const update=()=>{const properties=list(state.properties).filter(h=>h.tier>0),portfolio=investmentPortfolio(state.profile,properties,gameNow()),formatted=value=>value===null?'Unavailable':`₦${money(value)}`;
+   const count=root.querySelector('[data-portfolio-count]');if(count)count.textContent=`${portfolio.count} ${portfolio.count===1?'property':'properties'}`;
+   for(const [key,value] of [['purchase',portfolio.purchaseValue],['resale',portfolio.resaleValue],['rent',portfolio.unclaimedRent]]){const node=root.querySelector(`[data-portfolio-value="${key}"]`);if(node)node.textContent=formatted(value);}
+   for(const property of properties){const inv=investmentDetails(property),node=root.querySelector(`[data-investment-rent="${CSS.escape(property.id)}"]`);if(node&&inv)node.textContent=inv.representable?formatted(inv.collectable):'Unavailable';}
+  };update();propertyTimer=setInterval(update,1000);
+ }
+}
 function openProperty(h){
  if(!h)return;const p=state.profile,isHome=p.home?.propertyId===h.id,owned=p.ownedProperties?.includes(h.id),starter=h.tier===0;
- openSheet(`<span class="eyebrow">${esc(place(h.district)?.name||'Abuja')} · VIRTUAL PROPERTY</span><h2 id="sheet-title">${esc(h.name)}</h2><p class="muted">${esc(h.description||'Find a home that fits the life you want.')}</p><div class="house-tour" id="house-tour" aria-label="Free interior viewing of ${esc(h.name)}"></div><p class="house-tour-caption">Free interior viewing · walk around to explore. This is a preview of the home.</p><div class="home-features">${(h.features||[]).map(feature=>`<span>${icon('check')}${esc(feature)}</span>`).join('')}</div><div class="home-view-details"><div class="detail-line"><span>Rent · ${h.rentPeriodDays||28}-day game year</span><strong>₦${money(h.rent)}</strong></div><div class="detail-line"><span>Buy outright</span><strong>₦${money(h.price||h.buy)}</strong></div><div class="detail-line"><span>Service charge · every ${h.billPeriodDays||7} days</span><strong>₦${money(h.serviceCharge??h.bills)}</strong></div>${h.agencyFee||h.cautionDeposit?`<div class="detail-line"><span>Agency & caution deposit</span><strong>₦${money((h.agencyFee||0)+(h.cautionDeposit||0))}</strong></div>`:''}</div><div class="button-pair"><button class="secondary" data-move="rent" ${starter||p.wallet<(h.moveInCost||h.rent)||isHome?'disabled':''}>${isHome?'Your current home':'Rent this home'}</button><button class="primary" data-move="own" ${starter||!owned&&p.wallet<(h.price||h.buy)||isHome&&p.home.tenure==='own'?'disabled':''}>${starter?'Included starter residence':isHome&&p.home.tenure==='own'?'You own this home':owned?'Move into owned home':'Buy this home'}</button></div><p class="economy-note">The prices and floor plans are authored for gameplay. Renting pays one game year upfront. Furniture stays in your inventory when you move.</p>`,{wide:true});
+ openSheet(`<span class="eyebrow">${esc(place(h.district)?.name||'Abuja')} · VIRTUAL PROPERTY</span><h2 id="sheet-title">${esc(h.name)}</h2><p class="muted">${esc(h.description||'Find a home that fits the life you want.')}</p><div class="house-tour" id="house-tour" aria-label="Free interior viewing of ${esc(h.name)}"></div><p class="house-tour-caption">Free interior viewing · walk around to explore. This is a preview of the home.</p><div class="home-features">${(h.features||[]).map(feature=>`<span>${icon('check')}${esc(feature)}</span>`).join('')}</div><div class="home-view-details"><div class="detail-line"><span>Rent · every ${h.rentPeriodDays||7} days</span><strong>₦${money(h.rent)}</strong></div><div class="detail-line"><span>Buy outright</span><strong>₦${money(h.price||h.buy)}</strong></div><div class="detail-line"><span>Service charge · every ${h.billPeriodDays||7} days</span><strong>₦${money(h.serviceCharge??h.bills)}</strong></div>${h.agencyFee||h.cautionDeposit?`<div class="detail-line"><span>Caution deposit</span><strong>₦${money((h.agencyFee||0)+(h.cautionDeposit||0))}</strong></div>`:''}</div>${p.home?.tenancy?.outstanding?`<p class="muted">Your existing rent balance of ₦${money(p.home.tenancy.outstanding)} remains owed when you move.</p><label class="loan-consent"><input type="checkbox" data-move-debt-consent> I understand my existing rent balance remains owed.</label>`:''}<p class="muted">Move-in total: ₦${money(h.moveInCost||h.rent)} for the first week and deposit.</p><div class="button-pair"><button class="secondary" data-move="rent" ${starter||owned||p.wallet<(h.moveInCost||h.rent)||isHome?'disabled':''}>${isHome?'Your current home':'Rent this home'}</button><button class="primary" data-move="own" ${starter||!owned&&p.wallet<(h.price||h.buy)||isHome&&p.home.tenure==='own'?'disabled':''}>${starter?'Included starter residence':isHome&&p.home.tenure==='own'?'You own this home':owned?'Move into owned home':'Buy this home'}</button></div><p class="economy-note">The prices and floor plans are authored for gameplay. Renting pays the first week and the disclosed caution deposit. Future rent is due weekly. Furniture stays yours when you move.</p>`,{wide:true});
  sheetCleanup=renderWorld(sheetRoot.querySelector('#house-tour'),{profile:{...p,location:{kind:'home',district:h.district,venue:'home'},home:{propertyId:h.id,layoutId:h.layoutId||h.id,name:h.name,district:h.district,tenure:'viewing'},furnitureLayout:{}},place:place(h.district),people:[],catalog:list(state.catalog),onInteract:()=>toast('This is a free viewing. Rent or buy to make it your home.'),onResident:()=>{}});
- sheetRoot.querySelectorAll('[data-move]').forEach(button=>button.onclick=async()=>{if(await action('move-home',{propertyId:h.id,tenure:button.dataset.move})){closeSheet();navigate('world');toast(`Your new home is in ${place(h.district)?.name||'Abuja'}. Travel there to move in.`);}});
+ sheetRoot.querySelectorAll('[data-move]').forEach(button=>button.onclick=async()=>{if(p.home?.tenancy?.outstanding&&!sheetRoot.querySelector('[data-move-debt-consent]')?.checked){toast('Confirm the outstanding rent remains owed before moving.');return;}button.disabled=true;button.dataset.intentKey||=crypto.randomUUID();if(await action('move-home',{propertyId:h.id,tenure:button.dataset.move,confirm:true,idempotencyKey:button.dataset.intentKey})){closeSheet();navigate('world');toast(`Your new home is in ${place(h.district)?.name||'Abuja'}. Travel there to move in.`);}else if(button.isConnected)button.disabled=false;});
 }
 function profileMarkup(){const p=state.profile;return `<div class="page-heading"><span class="eyebrow">THIS IS YOU</span><h1>${esc(p.displayName)}</h1><p>@${esc(p.username)} · Reputation ${p.reputation} · Career level ${p.careerLevel||1}</p></div>${originCard(p)}<section class="profile-studio"><div class="profile-portrait">${avatarSVG(p.appearance,{size:280,fullBody:true})}</div><form id="profile-form"><label>Display name<input name="displayName" value="${esc(p.displayName)}" required maxlength="40"></label><div class="profile-choices">${appearanceChoices(p.appearance||{},['skinTone','hair','top','bottom','shoes'])}<details class="appearance-extras"><summary>More details</summary>${appearanceChoices(p.appearance||{},['body','face','presentation','facialHair','accessory'])}</details></div><label>Your next chapter<select name="lifeGoal">${list(state.lifeGoals).map(goal=>`<option value="${esc(goal.id)}" ${p.lifeGoal===goal.id?'selected':''}>${esc(goal.name||goal.title)}</option>`).join('')}</select></label><button class="primary full" type="submit">Save your look${icon('check')}</button></form></section><div class="profile-actions">${!state.preview?'<button class="secondary" type="button" data-account-security>Account &amp; security</button>':''}<button class="secondary" data-phone="settings">Privacy & settings</button><button class="text-button" data-logout>Sign out</button></div>`;}
 async function openAccountSecurity(){
@@ -599,36 +707,68 @@ async function openAccountSecurity(){
   form.onsubmit=async e=>{e.preventDefault();const submit=form.querySelector('[type=submit]'),error=form.querySelector('[role=alert]'),notice=form.querySelector('[role=status]');submit.disabled=true;error.textContent='';notice.textContent='';try{const email=form.elements.email.value.trim(),changing=email.toLowerCase()!==String(account.email||'').toLowerCase();await api('/api/auth/email/request',{method:'POST',body:changing?{email,password:form.elements.password.value}:{}});form.elements.password.value='';notice.textContent='Check your inbox and spam folder for the confirmation link. Your current email remains in place until you confirm a new address.';}catch(failure){error.textContent=failure.message;}finally{submit.disabled=false;}};
  }catch(failure){if(sheet.isConnected){sheet.innerHTML=`<button type="button" class="sheet-close" aria-label="Close account settings">${icon('close')}</button><h2 id="sheet-title">Account &amp; security</h2><p class="form-error" role="alert">${esc(failure.message)}</p><button class="secondary" type="button" data-account-retry>Try again</button>`;sheet.querySelector('.sheet-close').onclick=closeSheet;sheet.querySelector('[data-account-retry]').onclick=openAccountSecurity;}}
 }
-function bindProfile(){root.querySelector('[data-account-security]')?.addEventListener('click',openAccountSecurity);const form=root.querySelector('#profile-form');cleanup=mountAvatarPreview(root.querySelector('.profile-portrait'),state.profile.appearance||{});form.querySelectorAll('[data-appearance]').forEach(s=>s.onchange=()=>{const appearance={...state.profile.appearance,...Object.fromEntries(new FormData(form))},preview=root.querySelector('.profile-portrait');preview.querySelector('svg')?.remove();preview.insertAdjacentHTML('afterbegin',avatarSVG(appearance,{size:280,fullBody:true}));cleanup?.update?.(appearance);});form.onsubmit=async e=>{e.preventDefault();const {displayName,lifeGoal,...appearance}=Object.fromEntries(new FormData(form));try{await api('/api/profile',{method:'POST',body:{displayName,lifeGoal,appearance:{...state.profile.appearance,...appearance}}});await refresh();toast('Looking like yourself.');}catch(error){toast(error.message);}};root.querySelector('[data-logout]').onclick=async()=>{await api('/api/auth/logout',{method:'POST',body:{}});stream?.close();phone.close();state=await api('/api/entry');authMode='login';authNotice='';view='world';if(location.hash)history.replaceState({},'',`${location.pathname}${location.search}`);renderMain();};}
+function bindProfile(){root.querySelector('[data-account-security]')?.addEventListener('click',openAccountSecurity);const form=root.querySelector('#profile-form');cleanup=mountAvatarPreview(root.querySelector('.profile-portrait'),state.profile.appearance||{});form.querySelectorAll('[data-appearance]').forEach(s=>s.onchange=()=>{const appearance={...state.profile.appearance,...Object.fromEntries(new FormData(form))},preview=root.querySelector('.profile-portrait');preview.querySelector('svg')?.remove();preview.insertAdjacentHTML('afterbegin',avatarSVG(appearance,{size:280,fullBody:true}));cleanup?.update?.(appearance);});form.onsubmit=async e=>{e.preventDefault();const {displayName,lifeGoal,...appearance}=Object.fromEntries(new FormData(form));try{await api('/api/profile',{method:'POST',body:{displayName,lifeGoal,appearance:{...state.profile.appearance,...appearance}}});await refresh();toast('Looking like yourself.');}catch(error){toast(error.message);}};root.querySelector('[data-logout]').onclick=async()=>{clearGameToasts();await api('/api/auth/logout',{method:'POST',body:{}});stream?.close();phone.close();state=await api('/api/entry');authMode='login';authNotice='';view='world';if(location.hash)history.replaceState({},'',`${location.pathname}${location.search}`);renderMain();};}
 function residentSheet(resident){
  if(typeof resident==='string')resident=list(state.people).find(p=>p.id===resident);if(!resident)return;
  openSheet(`<div class="resident-sheet-portrait">${avatarSVG(resident.appearance,{size:115})}</div><span class="eyebrow">${resident.online?'ONLINE NOW':'RESIDENT'}</span><h2 id="sheet-title">${esc(resident.displayName)}</h2><p class="muted">@${esc(resident.username)}</p><div class="button-pair"><button class="secondary" id="request-friend">Add friend</button><button class="primary" id="message-resident">Message</button></div>`);
  document.querySelector('#request-friend').onclick=async()=>{try{await api('/api/friends/request',{method:'POST',body:{residentId:resident.id}});toast('Friend request sent.');closeSheet();await refresh();}catch(error){toast(error.message);}};
  document.querySelector('#message-resident').onclick=async()=>{try{const result=await api('/api/conversations',{method:'POST',body:{residentId:resident.id}});closeSheet();await refresh();phone.open('messages',{conversationId:result.conversation.id});}catch(error){toast(error.message);}};
 }
-async function openLocalChat(){
- try{chatMessages=(await api('/api/chat/location')).messages||[];}catch(error){toast(error.message);return;}
- openSheet(`<span class="eyebrow">${esc(place(state.profile.district)?.name||'YOUR NEIGHBOURHOOD')}</span><h2 id="sheet-title">Around you</h2><div class="nearby-list">${list(state.nearby).map(p=>`<button data-resident="${esc(p.id)}">${avatarSVG(p.appearance,{size:40})}<span>${esc(p.displayName)}</span><i class="state-dot"></i></button>`).join('')||'<p class="muted">No other residents nearby right now. Invite a friend to join your neighbourhood.</p>'}</div><div class="local-messages" id="local-messages" aria-live="polite"></div><form id="local-chat-form" class="chat-composer"><label class="sr-only" for="local-text">Say something nearby</label><input id="local-text" name="text" required maxlength="1000" placeholder="Say hello…"><button class="primary" type="submit" aria-label="Send nearby message">${icon('arrow')}</button></form>`);
- chatOpen=true;renderChat();sheetRoot.querySelectorAll('[data-resident]').forEach(b=>b.onclick=()=>residentSheet(b.dataset.resident));document.querySelector('#local-chat-form').onsubmit=async e=>{e.preventDefault();try{await api('/api/chat/location',{method:'POST',body:{text:new FormData(e.currentTarget).get('text')}});e.target.reset();}catch(error){toast(error.message);}};
+function localChatAudience(){
+ const people=new Map();for(const person of list(state.nearby))if(person?.id&&person.id!==state.profile?.id&&person.online!==false)people.set(String(person.id),person);
+ return people;
 }
-function renderChat(){const el=document.querySelector('#local-messages');if(!el)return;el.innerHTML=chatMessages.map(m=>`<div><strong>${esc(m.sender?.displayName||list(state.people).find(p=>p.id===m.senderId)?.displayName||state.profile.displayName)}</strong><p>${esc(m.text)}</p></div>`).join('')||'<p class="muted">The conversation starts with you.</p>';el.scrollTop=el.scrollHeight;}
+function updateLocalChatAffordance(){
+ const stage=root.querySelector('.playable-stage');if(!stage)return;
+ const count=localChatAudience().size;let button=stage.querySelector('.play-chat');const panel=stage.querySelector('.location-chat-panel');
+ if(panel){const audience=panel.querySelector('.location-chat-header small');if(audience)audience.textContent=count?`${count} ${count===1?'resident':'residents'} in this place`:'No one else nearby';}
+ if(!count){button?.remove();return;}
+ if(!button){button=document.createElement('button');button.type='button';button.className='play-chat';button.dataset.openLocalChat='';button.onclick=openLocalChat;stage.append(button);}
+ button.innerHTML=`Nearby chat · ${count}${chatUnread?`<i data-chat-unread>${chatUnread>9?'9+':chatUnread}</i>`:''}`;
+ button.setAttribute('aria-label',`Open nearby location chat with ${count} ${count===1?'resident':'residents'}${chatUnread?`, ${chatUnread} unread`:''}`);
+}
+async function openLocalChat(){
+ const stage=root.querySelector('.playable-stage');if(!stage)return;
+ const existing=stage.querySelector('.location-chat-panel');
+ if(existing){chatOpen=true;chatUnread=0;existing.classList.remove('is-minimized');renderChat();existing.querySelector('#local-text')?.focus();updateLocalChatAffordance();return;}
+ if(sheetRoot.querySelector('.sheet'))closeSheet();
+ try{chatMessages=(await api('/api/chat/location')).messages||[];}catch(error){toast(error.message);return;}
+ const panel=document.createElement('aside');panel.className='location-chat-panel';panel.setAttribute('aria-label','Nearby location chat');panel.innerHTML=`<header class="location-chat-header"><div><strong>Nearby chat</strong><small>${localChatAudience().size} residents in this place</small></div><button type="button" data-chat-minimize aria-label="Minimize nearby chat">−</button><button type="button" data-chat-close aria-label="Close nearby chat">×</button></header><div class="location-chat-content"><div class="local-messages" id="local-messages" aria-live="polite"></div><form id="local-chat-form" class="chat-composer"><label class="sr-only" for="local-text">Say something nearby</label><input id="local-text" name="text" required maxlength="1000" placeholder="Say hello…"><button class="primary" type="submit" aria-label="Send nearby message">${icon('arrow')}</button></form></div>`;
+ stage.append(panel);chatOpen=true;chatUnread=0;renderChat();updateLocalChatAffordance();
+ panel.querySelector('[data-chat-minimize]').onclick=()=>{chatOpen=false;panel.classList.add('is-minimized');updateLocalChatAffordance();};
+ panel.querySelector('[data-chat-close]').onclick=()=>{chatOpen=false;panel.remove();updateLocalChatAffordance();};
+ panel.querySelector('.location-chat-header').ondblclick=()=>{chatOpen=false;panel.classList.add('is-minimized');updateLocalChatAffordance();};
+ panel.querySelector('#local-chat-form').onsubmit=async event=>{event.preventDefault();const form=event.currentTarget,button=form.querySelector('[type=submit]');button.disabled=true;try{await api('/api/chat/location',{method:'POST',body:{text:new FormData(form).get('text')}});form.reset();}catch(error){toast(error.message);}finally{button.disabled=false;form.querySelector('input')?.focus();}};
+}
+function renderChat(){const el=document.querySelector('#local-messages');if(!el)return;const messages=chatMessages.slice(-12);el.innerHTML=messages.map(message=>`<div class="location-chat-message"><strong>${esc(message.resident?.displayName||message.sender?.displayName||message.senderName||list(state.people).find(person=>person.id===message.senderId)?.displayName||(message.senderId===state.profile?.id?state.profile.displayName:'Resident'))}</strong><p>${esc(message.text)}</p></div>`).join('')||'<p class="muted">Say hello to start the conversation.</p>';el.scrollTop=el.scrollHeight;}
+
 async function boot(){
  root.innerHTML=`<div class="loading-state" role="status" aria-busy="true"><span class="wordmark">${brandMark()}</span><p>Opening your city…</p></div>`;
  // Optional account features never hold the city behind a second request.
- void api('/api/auth/config',{signal:AbortSignal.timeout(5000)}).then(config=>{authConfig=config;}).catch(()=>{});
- try{
-  await refresh({render:false,startup:true});
-  renderMain();connectRealtime();hydrateStartup();
-  if(authRecovery.snapshot().kind==='verify-email'&&authRecovery.snapshot().status==='pending'){
-   try{await authRecovery.verify();authNotice='Your email address is confirmed.';if(state.authenticated)toast(authNotice);renderMain();}catch{}
+ void api('/api/auth/config',{timeoutMs:5000}).then(config=>{authConfig=config;}).catch(()=>{});
+ let error;
+ for(let attempt=0;attempt<3;attempt++){
+  try{
+   await refresh({render:false,startup:true});
+   renderMain();connectRealtime();hydrateStartup();
+   if(authRecovery.snapshot().kind==='verify-email'&&authRecovery.snapshot().status==='pending'){
+    try{await authRecovery.verify();authNotice='Your email address is confirmed.';if(state.authenticated)toast(authNotice);renderMain();}catch{}
+   }
+   const paymentParams=new URLSearchParams(location.search),paymentRef=paymentParams.get('payment_ref') || paymentParams.get('tx_ref');
+   if(state.authenticated && /^abjl_[a-f0-9-]+$/.test(paymentRef || ''))void phone.open('paymentcheckout');
+   return;
+  }catch(failure){
+   if(failure.status===401){expireAccount();return;}
+   error=failure;
+   // A refused connection fails immediately. Retry that. A timeout already
+   // waited out its own deadline, so do not stack more of those.
+   if(failure.name!=='TypeError'||attempt===2)break;
+   await new Promise(resolve=>setTimeout(resolve,400*(attempt+1)));
   }
-  if(state.authenticated&&new URLSearchParams(location.search).get('payment')==='return')phone.open('paymentcheckout');
- }catch(error){
-  if(error.status===401){expireAccount();return;}
-  const slow=error.name==='TimeoutError'||error.name==='AbortError';
-  root.innerHTML=`<div class="loading-state"><span class="wordmark">${brandMark()}</span><h1>${slow?'The city is taking too long.':'Let’s try that again.'}</h1><p>${slow?'Your connection timed out. Reconnect to pick up where you left off.':error.status?esc(error.message):'We can’t reach the city right now. Check your connection and try again.'}</p><button class="primary" id="retry-start">Reconnect</button></div>`;
-  root.querySelector('#retry-start').onclick=boot;
  }
+ const slow=error.name==='TimeoutError'||error.name==='AbortError';
+ root.innerHTML=`<div class="loading-state"><span class="wordmark">${brandMark()}</span><h1>${slow?'The city is taking too long.':'Let’s try that again.'}</h1><p>${slow?'Your connection timed out. Reconnect to pick up where you left off.':error.status?esc(error.message):'We can’t reach the city right now. Check your connection and try again.'}</p><button class="primary" id="retry-start">Reconnect</button></div>`;
+ root.querySelector('#retry-start').onclick=boot;
 }
 // Registration belongs in the same-origin module so the production CSP can
 // reject inline scripts. The self-contained browser preview has no worker.

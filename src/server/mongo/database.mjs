@@ -52,10 +52,19 @@ export const MONGO_VALIDATORS = Object.freeze({
   members: generic({ conversationId: string, residentId: string, joinSeq: whole, readSeq: whole, deliveredSeq: whole }, ['conversationId', 'residentId']),
   messages: { $jsonSchema: {
     bsonType: 'object', required: ['id', 'conversationId', 'senderId', 'text', 'seq', 'createdAt'],
-    properties: { id: string, conversationId: string, senderId: string, text: { bsonType: 'string', minLength: 1, maxLength: 4000 }, seq: whole, createdAt: timestamp, kind: { enum: ['text', 'transfer'] }, transferId: string,
+    properties: { id: string, conversationId: string, senderId: string, text: { bsonType: 'string', minLength: 1, maxLength: 4000 }, seq: whole, createdAt: timestamp, kind: { enum: ['text', 'transfer', 'image', 'voice'] }, transferId: string,
+      media: { bsonType: 'object', required: ['id','kind','mime','size'], properties: { id: string, kind: { enum: ['image','voice'] }, mime: string, size: { ...whole, minimum: 1, maximum: 8*1024*1024 }, durationMs: { ...whole, minimum: 1, maximum: 120000 }, contentHash: { bsonType: 'string', pattern: '^[a-f0-9]{64}$' } } },
       transfer: { bsonType: 'object', required: ['id', 'from', 'to', 'amount', 'note', 'createdAt'], properties: { id: string, from: string, to: string, amount: { ...whole, minimum: 1 }, note: { bsonType: 'string', maxLength: 120 }, createdAt: timestamp, virtual: { enum: [true] }, currency: { enum: ['game-naira'] } } },
     },
-    anyOf: [ { required: ['kind', 'transferId', 'transfer'], properties: { kind: { enum: ['transfer'] } } }, { properties: { kind: { enum: ['text'] } }, not: { anyOf: [{ required: ['transferId'] }, { required: ['transfer'] }] } } ]
+    anyOf: [
+      { required: ['kind', 'transferId', 'transfer'], properties: { kind: { enum: ['transfer'] } } },
+      { properties: { kind: { enum: ['text','image','voice'] } }, not: { anyOf: [{ required: ['transferId'] }, { required: ['transfer'] }] }, anyOf: [
+        { properties: { kind: { enum: ['text'] } } },
+        { required: ['kind','media'], properties: { kind: { enum: ['image'] }, media: { properties: { kind: { enum: ['image'] }, mime: { enum: ['image/jpeg','image/png','image/webp'] } } } } },
+        { required: ['kind','media'], properties: { kind: { enum: ['voice'] }, media: { required: ['durationMs'], properties: { kind: { enum: ['voice'] }, mime: { enum: ['audio/webm','audio/mp4','audio/mpeg','audio/ogg'] } } } } },
+        { required: ['kind','deletedAt','deletedBy'], properties: { kind: { enum: ['image','voice'] }, deletedAt: { ...timestamp, minimum: 1 }, deletedBy: string } },
+      ] },
+    ]
   } },
   friendships: generic({ id: string, pair: string, sender: string, recipient: string, status: string }, ['id', 'pair', 'sender', 'recipient', 'status']),
   moderation: generic({ owner: string, target: string, kind: { enum: ['block', 'mute'] } }, ['owner', 'target', 'kind']),
@@ -76,6 +85,7 @@ export const MONGO_VALIDATORS = Object.freeze({
 export const MONGO_INDEXES = Object.freeze({
   residents: [[{ id: 1 }, { unique: true }], [{ username: 1 }, { unique: true }], [{ email: 1 }, { unique: true, partialFilterExpression: { email: { $type: 'string' } } }], [{ displayName: 1, _id: 1 }, {}]],
   ...Object.fromEntries(['appearances', 'needs', 'progression', 'player_state', 'homes', 'origins', 'wallets'].map(name => [name, [[{ residentId: 1 }, { unique: true }]]])),
+  homes: [[{residentId:1},{unique:true}],[{tenure:1,nextTenancyCheckAt:1,residentId:1},{name:'tenancy_check_due'}]],
   ledger: [[{ residentId: 1, sequence: 1 }, { unique: true }], [{ residentId: 1, createdAt: -1, _id: -1 }, {}], [{ residentId: 1, operationId: 1 }, { unique: true }], [{ operationId: 1 }, {}]],
   wallet_transfers: [[{ senderId: 1, operationKey: 1 }, { unique: true }], [{ senderId: 1, createdAt: -1, id: -1 }, {}], [{ recipientId: 1, createdAt: -1, id: -1 }, {}], [{ conversationId: 1, createdAt: -1, id: -1 }, {}]],
   messages: [[{ transferId: 1 }, { unique: true, partialFilterExpression: { transferId: { $type: 'string' } } }]],

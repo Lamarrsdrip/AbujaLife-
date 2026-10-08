@@ -1,3 +1,4 @@
+import { ECONOMY_CONFIG } from '../src/shared/economy.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -30,7 +31,7 @@ test('each origin uses an unbiased two-way random draw and an atlas-backed autho
         randomInt: (min, max) => { calls.push([min, max]); return calls.length === 1 ? branch : index; }, properties, atlas: ABUJA_ATLAS });
       assert.deepEqual(calls, [[0, 2], [0, ORIGIN_HOMES[originId].length]]);
       assert.equal(origin.id, originId);
-      assert.equal(origin.startingBalance, originId === 'nepo' ? 1000000 : 100000);
+      assert.equal(origin.startingBalance, ECONOMY_CONFIG.startingMoney[originId]);
       assert.equal(origin.residence.district, expected.district);
       assert.equal(origin.residence.layoutId, expected.layoutId);
       assert.ok(ABUJA_ATLAS.some(place => place.id === origin.residence.district));
@@ -42,9 +43,9 @@ test('each origin uses an unbiased two-way random draw and an atlas-backed autho
   }
 });
 
-test('new registrations cannot choose or rewrite their origin and retain their personal home after restart', async t => {
+test('legacy registrations use a random fallback and cannot rewrite their origin and retain their personal home after restart', async t => {
   const f = await fixture(t), before = f.store.profile(f.id);
-  assert.equal(before.origin.id, 'lapo'); assert.equal(before.wallet, 100000);
+  assert.equal(before.origin.id, 'lapo'); assert.equal(before.wallet, ECONOMY_CONFIG.startingMoney.lapo);
   assert.equal(before.district, 'lugbe'); assert.equal(before.home.layoutId, 'garki-studio');
   const update = f.store.updateProfile(f.id, { origin: { id: 'nepo' }, home: { district: 'maitama' }, wallet: 1000000 });
   assert.deepEqual(update.origin, before.origin); assert.deepEqual(update.home, before.home); assert.equal(update.wallet, before.wallet);
@@ -57,11 +58,11 @@ test('new registrations cannot choose or rewrite their origin and retain their p
 
 test('Nepo balances and gifted homes are owned without buying the authored listing', async t => {
   const f = await fixture(t, () => 0), p = f.store.profile(f.id);
-  assert.equal(p.origin.id, 'nepo'); assert.equal(p.wallet, 1000000); assert.equal(p.home.district, 'jabi');
+  assert.equal(p.origin.id, 'nepo'); assert.equal(p.wallet, ECONOMY_CONFIG.startingMoney.nepo); assert.equal(p.home.district, 'jabi');
   assert.equal(p.home.tenure, 'own'); assert.equal(p.home.gifted, true);
   assert.deepEqual(p.ownedProperties, [p.home.propertyId]); assert.ok(!p.ownedProperties.includes('jabi-apartment'));
   const borrowed = f.store.action(f.id, 'borrow-loan', { amount: 1000, consent: true, consentVersion: LOAN_META.consentVersion, idempotencyKey: operationKey() });
-  assert.equal(borrowed.profile.wallet, 1001000);
+  assert.equal(borrowed.profile.wallet, ECONOMY_CONFIG.startingMoney.nepo + 1000);
 });
 
 test('loans require versioned consent, calculate fees on the server and replay one ledger mutation across restarts', async t => {
@@ -70,7 +71,7 @@ test('loans require versioned consent, calculate fees on the server and replay o
   rejects(() => f.store.action(f.id, 'borrow-loan', { ...request, consentVersion: 'forged' }), 'loan_consent_required');
   assert.equal(f.store.all('SELECT * FROM economy_operations').length, 0);
   const result = f.store.action(f.id, 'borrow-loan', request);
-  assert.equal(result.profile.wallet, 300000); assert.equal(result.loan.fee, 10000); assert.equal(result.loan.outstanding, 210000);
+  assert.equal(result.profile.wallet, ECONOMY_CONFIG.startingMoney.lapo + request.amount); assert.equal(result.loan.fee, 10000); assert.equal(result.loan.outstanding, 210000);
   assert.equal(result.loan.dueAt, f.now + LOAN_META.termMs); assert.equal(result.loan.consentedAt, f.now);
   assert.equal(f.store.action(f.id, 'borrow-loan', request).loan.id, result.loan.id);
   rejects(() => f.store.action(f.id, 'borrow-loan', { ...request, amount: 1000 }), 'idempotency_conflict');
@@ -107,13 +108,13 @@ test('partial loan repayments remain exact, reject overpayments atomically, and 
   const f = await fixture(t);
   const loan = f.store.action(f.id, 'borrow-loan', { amount: 200000, consent: true, consentVersion: LOAN_META.consentVersion, idempotencyKey: operationKey() }).loan;
   const partial = { loanId: loan.id, amount: 50000, idempotencyKey: operationKey(), outstanding: 0 };
-  const paid = f.store.action(f.id, 'repay-loan', partial); assert.equal(paid.loan.outstanding, 160000); assert.equal(paid.profile.wallet, 250000);
+  const paid = f.store.action(f.id, 'repay-loan', partial); assert.equal(paid.loan.outstanding, 160000); assert.equal(paid.profile.wallet, ECONOMY_CONFIG.startingMoney.lapo + 150000);
   const before = [f.store.profile(f.id), f.store.all('SELECT * FROM ledger').length];
   rejects(() => f.store.action(f.id, 'repay-loan', { ...partial, amount: 160001, idempotencyKey: operationKey() }), 'invalid_repayment');
   assert.deepEqual([f.store.profile(f.id), f.store.all('SELECT * FROM ledger').length], before);
   f.reopen(); assert.equal(f.store.action(f.id, 'repay-loan', partial).replayed, true);
   const settled = f.store.action(f.id, 'repay-loan', { loanId: loan.id, amount: 160000, idempotencyKey: operationKey() });
-  assert.equal(settled.loan.outstanding, 0); assert.equal(settled.loan.repaid, 210000); assert.equal(settled.profile.wallet, 90000);
+  assert.equal(settled.loan.outstanding, 0); assert.equal(settled.loan.repaid, 210000); assert.equal(settled.profile.wallet, ECONOMY_CONFIG.startingMoney.lapo - 10000);
   f.store.action(f.id, 'borrow-loan', { amount: 1, consent: true, consentVersion: LOAN_META.consentVersion, idempotencyKey: operationKey() });
   assert.deepEqual(loanQuote(1), { principal: 1, fee: 1, totalRepayment: 2, termDays: 28 });
 });
@@ -121,7 +122,7 @@ test('partial loan repayments remain exact, reject overpayments atomically, and 
 test('economy removes former business ceilings while exact-integer overflow rolls back and preserves retry keys', async t => {
   const f = await fixture(t);
   for (let index = 0; index < 5; index++) f.store.topup(f.id, { amount: 25000000, idempotencyKey: operationKey() });
-  assert.equal(f.store.profile(f.id).wallet, 125100000);
+  assert.equal(f.store.profile(f.id).wallet, ECONOMY_CONFIG.startingMoney.lapo + 125000000);
   const retry = { amount: Number.MAX_SAFE_INTEGER, idempotencyKey: operationKey() }, before = [f.store.profile(f.id).wallet, f.store.all('SELECT * FROM ledger').length];
   rejects(() => f.store.topup(f.id, retry), 'numeric_limit'); assert.deepEqual([f.store.profile(f.id).wallet, f.store.all('SELECT * FROM ledger').length], before);
   assert.equal(f.store.get('SELECT count(*) n FROM economy_operations WHERE operation_key=?', retry.idempotencyKey).n, 0);
@@ -137,7 +138,7 @@ test('large transfers and dice stakes remain uncapped while representational ove
   const f = await fixture(t), recipient = (await f.store.register({ username: 'wealthy_recipient', password: 'a-test-password' })).residentId;
   f.store.topup(f.id, { amount: 250000000, idempotencyKey: operationKey() });
   const transfer = f.store.transfer(f.id, { residentId: recipient, amount: 200000000, idempotencyKey: operationKey() });
-  assert.equal(transfer.profile.wallet, 50100000); assert.equal(f.store.profile(recipient).wallet, 200100000);
+  assert.equal(transfer.profile.wallet, ECONOMY_CONFIG.startingMoney.lapo + 50000000); assert.equal(f.store.profile(recipient).wallet, ECONOMY_CONFIG.startingMoney.lapo + 200000000);
   f.store.topup(recipient, { amount: Number.MAX_SAFE_INTEGER - 100 - f.store.profile(recipient).wallet, idempotencyKey: operationKey() });
   const before = [f.store.profile(f.id).wallet, f.store.profile(recipient).wallet, f.store.all('SELECT * FROM ledger').length];
   const request = { residentId: recipient, amount: 101, idempotencyKey: operationKey() };

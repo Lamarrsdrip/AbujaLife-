@@ -1,3 +1,4 @@
+import {installActivityDiscovery} from './activityDiscovery.mjs';
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -30,6 +31,7 @@ export function createServer(options={}) {
   const admin=options.admin||new AdminStore({store,bootstrapUsername:options.adminUsername}),social=options.social||new SocialStore(store),directory=new ResidentDirectory(store);
   const payments=options.payments||new PaymentStore({store,admin,fetchImpl:options.paymentFetch||fetch,configKey:options.configKey,publicOrigin:options.publicOrigin});
   const rewards=options.rewards||new RewardStore({store,admin,publicWebUrl:options.publicOrigin||'https://abujacity.life'});
+  installActivityDiscovery(store);
   social.authorizeModeration=id=>admin.requirePermission(id,'moderation');
   let closed=false;
   const writeEvent=(res,event,data)=>{if(!res.writableEnded)res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);};
@@ -51,12 +53,12 @@ export function createServer(options={}) {
     return {...publicBootstrap(),...base,nearby:base.nearby.map(person=>({...person,pose:poses.get(person.id)?.zone===store.zone(id)?poses.get(person.id).pose:null})),properties:store.propertiesFor?.(id)||properties,workSchedules:Object.fromEntries(Object.keys(store.publicJobs()).map(key=>[key,jobSchedule(key,base.profile,store.clock())])),homeVisit:visits.visit,homeVisitRequests:visits.requests,homeVisitors:visits.visitors,admin:admin.status(id)};
   };
   const sessionOrigin=options.publicWebUrl||'http://localhost';
-  const sessionRuntime=createSessionRuntime({store,admin,social,corsOrigins:options.corsOrigins||[sessionOrigin],publicWebUrl:sessionOrigin,secureCookies:false});
+  const sessionRuntime=createSessionRuntime({store,admin,social,directory,corsOrigins:options.corsOrigins||[sessionOrigin],publicWebUrl:sessionOrigin,secureCookies:false,env:options.env||process.env,fetchImpl:options.fetchImpl||fetch});
   const server=http.createServer(async(req,res)=>{
     if(await sessionRuntime.handle(req,res))return;
     try{
       const url=new URL(req.url,'http://localhost'),pathname=url.pathname,method=req.method||'GET';
-      if(pathname==='/api/payments/webhook'&&method==='POST')return json(res,200,await payments.handleWebhook(await readRawBody(req),req.headers['flutterwave-signature']));
+      if(pathname==='/api/payments/webhook'&&method==='POST')return json(res,200,await payments.handleWebhook(await readRawBody(req),req.headers['flutterwave-signature'],req.headers['verif-hash']));
       if(method==='POST')writeAllowed(req);
       const token=tokenFor(req),id=store.session(token);
       if(id&&admin.isSuspended(id))throw new GameError('This account is suspended. Contact the game administrator.',403,'account_suspended');
@@ -123,7 +125,7 @@ export function createServer(options={}) {
         if(pathname==='/api/wallet/topup'&&method==='POST'){if(options.allowGameTopups!==true&&!admin.publicSettings().gameTopupsEnabled)throw new GameError('Free funds are available in the browser preview. Use Flutterwave for a full-game top-up when configured.',403,'provider_required');return json(res,200,store.topup(id,body));}
         if(pathname==='/api/wallet/transfer'&&method==='POST')return json(res,200,store.transfer(id,body));
         if(pathname==='/api/action'&&method==='POST'){social.reconcileVisits(id);if(['topup','demo-topup'].includes(body.action)&&options.allowGameTopups!==true&&!admin.publicSettings().gameTopupsEnabled)throw new GameError('Use the configured payment provider to add game Naira.',403,'provider_required');const oldZone=store.zone(id),result=store.action(id,body.action,body.payload||{});social.reconcileVisits(id);if(store.zone(id)!==oldZone)broadcastPresence(id,oldZone);return json(res,200,result);}
-        if(pathname==='/api/presence'&&method==='POST'){lastSeen.set(id,Date.now());reindex(id);if(body.pose){const raw=body.pose;const valid=raw&&['x','y','angle'].every(key=>Number.isFinite(raw[key]))&&raw.x>=0&&raw.y>=0&&raw.x<=20000&&raw.y<=20000&&Math.abs(raw.angle)<=36000;if(!valid)throw new GameError('Invalid world position');const pose={x:raw.x,y:raw.y,angle:raw.angle,moving:raw.moving===true,driving:raw.driving===true},zone=store.zone(id);poses.set(id,{zone,pose});if(store.profile(id).settings.presenceVisible)store.emitZone(id,'world-pose',{residentId:id,pose,zone,at:store.clock()});return json(res,200,{ok:true});}broadcastPresence(id);return json(res,200,{ok:true,people:store.people(id),nearby:store.nearby(id)});}
+        if(pathname==='/api/presence'&&method==='POST'){lastSeen.set(id,Date.now());reindex(id);if(body.heartbeat===true)return json(res,200,{ok:true,serverTime:store.clock()});if(body.pose){const raw=body.pose;const valid=raw&&['x','y','angle'].every(key=>Number.isFinite(raw[key]))&&raw.x>=0&&raw.y>=0&&raw.x<=20000&&raw.y<=20000&&Math.abs(raw.angle)<=36000;if(!valid)throw new GameError('Invalid world position');const pose={x:raw.x,y:raw.y,angle:raw.angle,moving:raw.moving===true,driving:raw.driving===true},zone=store.zone(id);poses.set(id,{zone,pose});if(store.profile(id).settings.presenceVisible)store.emitZone(id,'world-pose',{residentId:id,pose,zone,at:store.clock()});return json(res,200,{ok:true});}broadcastPresence(id);return json(res,200,{ok:true,people:store.people(id),nearby:store.nearby(id)});}
         if(pathname==='/api/presence/nearby'&&method==='GET'){
           const nearbyPeople=store.nearby(id),nowMs=Date.now(),onlineIds=new Set([id]);
           for(const [residentId,seen] of lastSeen)if(nowMs-seen<45000)onlineIds.add(residentId);

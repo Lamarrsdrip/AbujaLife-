@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import * as THREE from '../app/vendor/three.module.js';
 import { VEHICLE_CATALOG, VEHICLE_COLORS, vehicleFor, vehicleColorHex } from '../src/shared/vehicles.mjs';
+import { VEHICLE_PRICES } from '../src/shared/economy.mjs';
 import { catalog } from '../src/shared/catalogue.mjs';
 import { vehicleIllustration } from '../app/vehicle-art.js';
 import { buildThreeEnvironment } from '../app/world-3d-scenes.js';
@@ -20,9 +21,8 @@ function geometricSignature(model) {
   return createHash('sha256').update(points.sort().join(';')).digest('hex');
 }
 
-test('new named cars enter the same authoritative catalogue without changing existing cars or colours',()=>{
-  const legacy=[['used-hatchback',28000],['starter-hatchback',95000],['compact-car',240000],['city-sedan',380000],['premium-suv',890000],['mercedes-c-class',520000],['bmw-x5',1150000],['mercedes-g63',1650000]];
-  for(const[id,price]of legacy)assert.equal(vehicleFor(id).price,price);
+test('named cars retain identifiers and colours while using the authoritative economy ladder',()=>{
+  for(const[id,price]of Object.entries(VEHICLE_PRICES))assert.equal(vehicleFor(id).price,price);
   assert.equal(new Set(VEHICLE_CATALOG.map(i=>i.id)).size,VEHICLE_CATALOG.length);
   for(const car of models){assert.ok(car);assert.equal(catalog.find(i=>i.id===car.id),car);assert.equal(car.category,'vehicle');assert.ok(Number.isSafeInteger(car.price)&&car.price>0);assert.ok(car.dimensions.wheelbaseMm<car.dimensions.lengthMm);assert.deepEqual(car.availableColors,VEHICLE_COLORS.map(c=>c.id));assert.ok(car.availableColors.includes(car.defaultColor));assert.match(car.description,/virtual/i);assert.match(car.description,/approximation/i);for(const sections of[car.renderShape.body,car.renderShape.cabin])for(const section of sections)assert.ok(section[1]>section[2],car.id+' positive panel thickness');}
   assert.deepEqual(new Set(models.map(i=>i.brand)),new Set(['Ferrari','Lamborghini','Bugatti','Porsche']));

@@ -48,3 +48,26 @@ body{font-size:14px}button,input,select,textarea{font-size:14px}button:focus-vis
 .needs-header{gap:7px}.needs-header-item{min-width:39px}.needs-header-item em{width:27px}.play-needs{gap:9px}.play-needs>span{width:45px}.play-needs small{font-size:7px}
 @media(max-width:1050px){.needs-header{gap:4px;padding-inline:6px}.needs-header-item{min-width:30px}.needs-header-item b{font-size:5px}.needs-header-item em{width:22px}.play-needs{gap:6px}.play-needs>span{width:34px}}
 @media(max-width:650px){.needs-header{max-width:calc(100vw - 153px);overflow:hidden}.needs-header-item{min-width:24px}.needs-header-item em{width:21px}.is-playing .play-hud{overflow-x:auto}.is-playing .play-needs{max-width:100%;gap:6px}.is-playing .play-needs>span{flex:0 0 34px}}
+
+
+/* Compact location chat stays inside the play scene and yields to its controls. */
+.play-chat{display:flex;align-items:center;gap:7px;min-height:40px;padding:9px 13px;font-family:inherit;font-size:11px;font-weight:650;line-height:1.2;cursor:pointer;backdrop-filter:blur(10px)}
+.play-chat [data-chat-unread]{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 4px;border-radius:999px;background:#bd7857;color:#fff;font-size:9px;font-style:normal}
+.playable-stage:has(.location-chat-panel:not(.is-minimized)) .play-chat{display:none}
+.location-chat-panel{position:absolute;right:16px;bottom:160px;z-index:12;width:min(300px,calc(100% - 32px));max-height:min(290px,calc(100% - 115px));display:flex;flex-direction:column;overflow:hidden;border:1px solid #fff9;border-radius:16px;background:#faf8f0f2;box-shadow:0 12px 35px #17342124;color:#334c38;backdrop-filter:blur(14px)}
+.location-chat-panel.is-minimized{display:none}
+.location-chat-header{display:flex;align-items:center;gap:7px;min-height:48px;padding:8px 10px 8px 14px;border-bottom:1px solid #dfe5d8}
+.location-chat-header>div{display:grid;gap:3px;flex:1;min-width:0}
+.location-chat-header strong{font-size:11px;font-weight:700}
+.location-chat-header small{font-size:8px;color:#819078}
+.location-chat-header button{display:grid;place-items:center;width:30px;height:30px;border:1px solid #dce3d6;border-radius:9px;background:#fff9;color:#526950;font-size:17px;cursor:pointer}
+.location-chat-content{display:flex;min-height:0;flex-direction:column;padding:9px 10px 10px}
+.local-messages{display:flex;min-height:54px;max-height:157px;flex-direction:column;gap:7px;overflow:auto;padding:2px 2px 8px;overscroll-behavior:contain}
+.location-chat-message{align-self:flex-start;max-width:92%;padding:7px 9px;border-radius:10px 10px 10px 3px;background:#edf0e5}
+.location-chat-message strong{display:block;font-size:8px;color:#6f835e}
+.location-chat-message p{margin:3px 0 0;font-size:10px;line-height:1.4;overflow-wrap:anywhere;color:#455647}
+.location-chat-content>.muted,.local-messages>.muted{margin:auto;font-size:9px;color:#87927e}
+.location-chat-panel .chat-composer{display:flex;gap:7px;padding-top:7px;border-top:1px solid #e2e6dc}
+.location-chat-panel .chat-composer input{min-width:0;min-height:36px;flex:1;padding:8px 10px;border:1px solid #dce3d6;border-radius:10px;background:#fff;color:#344c39;font-size:11px}
+.location-chat-panel .chat-composer button{display:grid;place-items:center;width:38px;min-height:36px;padding:8px;border-radius:10px}
+@media(max-width:650px){.play-chat{right:12px;bottom:134px;min-height:38px;padding:8px 10px;font-size:10px}.location-chat-panel{right:10px;bottom:122px;width:min(300px,calc(100% - 20px));max-height:min(275px,calc(100% - 110px));border-radius:14px}.local-messages{max-height:145px}}

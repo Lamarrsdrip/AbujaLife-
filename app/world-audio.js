@@ -24,7 +24,7 @@ export function createClubAudio({enabled=true,onState=()=>{},mode='club'}={}) {
     if([0,3,6,8,11,14].includes(beat)){const tones=[65.41,77.78,87.31,98];note(tones[Math.floor(step/16)%4],next,.18,'triangle',.085);}
     step++;next+=60/102/4;
   }}
-  function sync(){const run=optedIn&&active&&!disposed;if(run){context.resume().catch(()=>{});next=context.currentTime+.04;if(!timer)timer=setInterval(schedule,25);}else{clearInterval(timer);timer=null;context?.suspend().catch(()=>{});}onState(run);}
+  function sync(){const playing=optedIn&&active&&!disposed;if(playing){context.resume().catch(()=>{});next=context.currentTime+.04;if(!timer)timer=setInterval(schedule,25);}else{clearInterval(timer);timer=null;context?.suspend().catch(()=>{});}onState({enabled:optedIn&&!disposed,playing});}
   return {
     async toggle(){if(!enabled||disposed)return false;const Audio=globalThis.AudioContext||globalThis.webkitAudioContext;if(!Audio)return false;
       if(!context){context=new Audio();master=context.createGain();master.gain.value=.48;master.connect(context.destination);}

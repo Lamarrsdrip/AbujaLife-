@@ -3,6 +3,8 @@
 import { HOME_ITEM_MODELS } from '../src/shared/home-items.mjs';
 import { vehicleFor } from '../src/shared/vehicles.mjs';
 import { createWorldMaterialLibrary } from './world-materials.js';
+import { WORLD_LANDMARK_FACADES } from '../src/shared/world-landmark-sizes.mjs';
+import { worldVehicleState } from './world-vehicle-state.js';
 
 // Combine rigid, opaque pieces with identical materials. Vertex normals, UVs,
 // triangles and joints are preserved; moving parts and transparent surfaces stay separate.
@@ -50,6 +52,7 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
   group.name = 'AbujaLife authored 3D environment';
   const geometries = new Map(), materials = new Map(), textures = [];
   const mergedGeometries=new Set(),furnitureGeometries=new WeakMap();
+  let contactShadowMesh=null;
   function batch(parent,options){const result=batchRigidMeshes(T,parent,options);for(const geometry of result)mergedGeometries.add(geometry);return result;}
   let released=false;
   function disposeResources(){
@@ -65,7 +68,7 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
   const water = [], movingCars = [], nightBeams=[], clubLights=[];
   const ds = depthScale;
   const isClub=venue?.kind==='club'||['club','club-cage','magic-city','bear-barn'].includes(venue?.id);
-  const indoor = kind === 'home' || kind === 'visit' || (kind === 'venue' && !['park', 'jabi-lake'].includes(venue?.id));
+  const indoor = kind === 'home' || kind === 'visit' || (kind === 'venue' && !layout.venueLayout?.outdoor && !['park', 'jabi-lake'].includes(venue?.id));
   const mat = (color, roughness = .76, metalness = 0, extra = {}) => {
     const key = JSON.stringify([color, roughness, metalness, extra]);
     if (!materials.has(key)) materials.set(key, new T.MeshStandardMaterial({color, roughness, metalness, ...extra}));
@@ -194,6 +197,17 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     const p=new T.Group();p.name=type||'fixture';
     const spec=HOME_ITEM_MODELS[type];if(spec){type=spec.modelKind;source={...spec,...source};}
     switch(type) {
+      case 'cinema-screen': {
+        const height=Math.min(190,w*.16),center=145;
+        box(p,0,center,0,w,height+16,12,mat('#293b38',.7),true,false);
+        const screen=box(p,0,center,7,w-24,height,2,mat('#c8dbcc',.65,0,{emissive:'#7b998e',emissiveIntensity:.22}),false,false);
+        screen.name='Cinema projection screen';
+        // Original Abuja skyline illustration: no stream, video decode or
+        // additional high-resolution texture allocation in the render loop.
+        for(let i=0;i<7;i++){const bw=w*.075,bh=height*(.2+(i%3)*.1);box(p,-w*.31+i*w*.1,center-height*.28+bh/2,9,bw,bh,1,mat(i%2?'#718d80':'#839b85'),false,false);}
+        box(p,w*.29,center+height*.18,9,height*.18,height*.18,1,mat('#d8bc76'),false,false);
+        break;
+      }
       case 'tech-laptop-stall':case 'tech-console-stall':case 'tech-repair-bench':case 'tech-accessory-stall':case 'tech-power-stall':case 'tech-parts-shelf':techStallModel(p,type,w,h);break;
       case 'sleeping-mat': {
         box(p,0,5,0,w,10,h,fabric('#8d9a89'),true);
@@ -397,6 +411,32 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
       case 'car': {
         const car=carModel('#d5d8d2','sedan');p.add(car.group);car.group.scale.set(w/210,.95,h/90);break;
       }
+      case 'departures-board': {
+        box(p,0,116,0,w,78,10,'#243f49',true);
+        sign(p,'DEPARTURES · GATES',w*.88,34,0,120,6);
+        for(const side of[-1,1])box(p,side*w*.4,42,0,8,84,8,metal);break;
+      }
+      case 'gallery-panel': {
+        box(p,0,93,0,w*.86,155,14,wood,true);
+        box(p,0,93,9,w*.73,135,4,mat('#82998a'));
+        sign(p,source.name||'ABUJA GALLERY',w*.72,30,0,91,12);break;
+      }
+      case 'sports-goal': {
+        for(const side of[-1,1])box(p,0,48,side*h*.43,7,96,7,cream);
+        box(p,0,96,0,7,7,h*.91,cream);
+        for(let row=1;row<5;row++)box(p,-w*.35,row*18,0,2,2,h*.9,linen);
+        for(let col=-3;col<=3;col++)box(p,-w*.35,48,col*h*.13,2,92,2,linen);break;
+      }
+      case 'amusement-wheel': {
+        const radius=w*.36,paint=mat('#b97568'),wheel=mesh(p,geo(`amusement-wheel-${w}`,()=>new T.TorusGeometry(radius,6,8,32)),paint,0,radius+30,0);
+        for(const side of[-1,1])box(p,side*w*.19,69,0,12,138,16,metal);
+        for(let index=0;index<10;index++){const angle=index*Math.PI*2/10,cx=Math.cos(angle)*radius,cy=radius+30+Math.sin(angle)*radius;
+          const spoke=box(p,cx*.5,radius+30+(cy-radius-30)*.5,0,radius,4,4,metal);spoke.rotation.z=angle;
+          box(p,cx,cy-11,0,33,28,36,mat(['#d0a457','#789a93','#98788b'][index%3]),true);
+          box(p,cx,cy+6,0,35,4,39,cream);
+        }
+        wheel.name='Magicland observation wheel';break;
+      }
       case 'tree':tree(p,w*.9);break;
       case 'rug':box(p,0,1,0,w,2,h,surfaces.material('rug',source.color||'#b9a78e'));box(p,0,2,0,w-12,1,h-12,surfaces.material('rug',source.color||'#c5b394'));for(const z of[-h*.45,h*.45])box(p,0,2.8,z,w*.92,.7,2,linen,false,false);break;
       default:box(p,0,28,0,w,55,h,'#a9997d',true);break;
@@ -586,7 +626,7 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     p.name='Original Abuja bike ride';batch(p);return {group:p,wheels};
   }
   function createFurnitureModel(item) {
-    const type=item.kind||item.itemId||'fixture';
+    const type=item.modelKind||item.kind||item.itemId||'fixture';
     const transposed=item.rotation%180===90&&!['plant','floor-lamp','portable-ac','power-inverter','art-piece'].includes(type);
     const model=objectModel(type,transposed?item.h:item.w,transposed?item.w:item.h,item),p=new T.Group();p.add(model);
     if(item.rotation)model.rotation.y=-item.rotation*Math.PI/180;
@@ -638,25 +678,29 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     group.add(wall);cutawayWalls.push(wall);return wall;
   }
   function contactShadows(items) {
+    contactShadowMesh?.removeFromParent();contactShadowMesh=null;contactInstances.clear();
     const solid=items.filter(item=>item.w>15&&item.h>15&&!['rug','lake','lawn'].includes(item.kind));
     if(!solid.length)return;
-    const size=64,data=new Uint8Array(size*size*4);
-    for(let y=0;y<size;y++)for(let x=0;x<size;x++){
-      const radius=Math.hypot((x+.5-size/2)/(size/2),(y+.5-size/2)/(size/2)),i=(y*size+x)*4;
-      data[i]=42;data[i+1]=35;data[i+2]=26;data[i+3]=Math.round(70*Math.pow(Math.max(0,1-radius),1.35));
+    let material=materials.get('contact-shadows');
+    if(!material){
+      const size=64,data=new Uint8Array(size*size*4);
+      for(let y=0;y<size;y++)for(let x=0;x<size;x++){
+        const radius=Math.hypot((x+.5-size/2)/(size/2),(y+.5-size/2)/(size/2)),i=(y*size+x)*4;
+        data[i]=42;data[i+1]=35;data[i+2]=26;data[i+3]=Math.round(70*Math.pow(Math.max(0,1-radius),1.35));
+      }
+      const texture=new T.DataTexture(data,size,size,T.RGBAFormat);texture.name='Authored soft contact shadow';texture.colorSpace=T.SRGBColorSpace;
+      texture.magFilter=texture.minFilter=T.LinearFilter;texture.needsUpdate=true;textures.push(texture);
+      material=new T.MeshBasicMaterial({map:texture,transparent:true,depthWrite:false,toneMapped:false});materials.set('contact-shadows',material);
     }
-    const texture=new T.DataTexture(data,size,size,T.RGBAFormat);texture.name='Authored soft contact shadow';texture.colorSpace=T.SRGBColorSpace;
-    texture.magFilter=texture.minFilter=T.LinearFilter;texture.needsUpdate=true;textures.push(texture);
-    const material=new T.MeshBasicMaterial({map:texture,transparent:true,depthWrite:false,toneMapped:false});materials.set('contact-shadows',material);
     // One instanced draw for the whole room, rather than one extra light or
     // shadow pass per chair, table, appliance or bed.
     const geometry=geo('contact-shadow-plane',()=>new T.PlaneGeometry(1,1));
     const shadows=new T.InstancedMesh(geometry,material,solid.length),matrix=new T.Matrix4(),rotation=new T.Quaternion().setFromAxisAngle(new T.Vector3(1,0,0),-Math.PI/2);
     solid.forEach((item,index)=>{matrix.compose(new T.Vector3(item.x+item.w/2,(Number(item.elevation)||0)+(item.elevation?.45:2.6),(item.y+item.h/2)*ds),rotation,new T.Vector3(item.w*1.12,item.h*ds*1.12,1));shadows.setMatrixAt(index,matrix);if(item.itemId)contactInstances.set(item.itemId,{mesh:shadows,index,matrix:matrix.clone()});});
-    shadows.name='Soft furniture contact depth';shadows.renderOrder=1;group.add(shadows);
+    shadows.name='Soft furniture contact depth';shadows.renderOrder=1;group.add(shadows);contactShadowMesh=shadows;
   }
   function interiorSet() {
-    const outdoor=['park','jabi-lake'].includes(venue?.id);
+    const outdoor=layout.venueLayout?.outdoor||['park','jabi-lake'].includes(venue?.id);
     if(!outdoor){
       box(group,layout.width/2,-18,layout.height*ds/2,layout.width+6,24,layout.height*ds+6,'#8f785c',true,false);
       box(group,layout.width/2,-5,layout.height*ds/2,layout.width+10,4,layout.height*ds+10,'#cfb999',false,false);
@@ -767,11 +811,45 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     }
     floor(group,1820,0,254,layout.height,'road',0);
     for(let y=0;y<layout.height;y+=100)box(group,1947,1,(y+25)*ds,4,1,51*ds,'#d4cbb2',false,false);
+    // These avenues already belong to the authored free-roam layout. Render
+    // them in WebGL too, so the expanded quarter has connected walkable streets.
+    for(const x of[3740,4440,5140,5840,6540,7240,7940,8540,9380,10220,11000]){
+      if(x>=layout.width)continue;floor(group,x,0,96,layout.height,'road',0);
+      for(let y=0;y<layout.height;y+=160)box(group,x+48,1,(y+38)*ds,3,1,48*ds,'#ddd5b8',false,false);
+    }
+    const renderLandmarkBuilding=(parent,b)=>{
+      const w=Math.max(120,b.w||260),d=Math.max(100,(b.h||210)*ds),builder=b.landmarkBuilder,plaster=surfaces.material('plaster','#ded8c8'),glassLandmark=mat('#76979a',.38,.08),greenLandmark=mat('#6f9368'),stone=mat('#b9b19f');
+      const slab=(x,y,z,bw,bh,bd,color=plaster)=>box(parent,x,y,z,bw,bh,bd,color,true);
+      switch(builder){
+        case'airport':slab(0,34,0,w,68,d*.42);slab(0,57,d*.22,w*.82,28,5,glassLandmark);slab(w*.34,82,-d*.18,34,118,34,stone);slab(0,2,d*.62,w*1.35,4,55,mat('#46575a'));for(let i=-4;i<=4;i++)slab(i*44,4,d*.62,22,1,2,cream);break;
+        case'cityGate':for(const side of[-1,1]){slab(side*w*.22,55,0,w*.16,110,d*.32,plaster);slab(side*w*.16,102,0,w*.11,26,d*.28,plaster);}slab(0,91,0,w*.58,18,d*.30,plaster);break;
+        case'stadium':cylinder(parent,0,34,0,w*.35,58,stone,w*.35,32);cylinder(parent,0,66,0,w*.28,10,greenLandmark,w*.28,32);slab(0,71,0,w*.46,4,d*.18,greenLandmark);break;
+        case'magicland':slab(-w*.24,28,0,w*.32,56,d*.35,mat('#d4b27f'));cylinder(parent,w*.16,62,0,5,120,metal,5,12);for(let i=0;i<10;i++){const a=i*Math.PI*2/10;ball(parent,w*.16+Math.cos(a)*w*.18,72+Math.sin(a)*58,0,7,7,7,[mat('#d59f54'),mat('#6f9fa0'),mat('#b8766f')][i%3],8);}break;
+        case'wtc':slab(-w*.19,130,0,w*.34,260,d*.46,glassLandmark);slab(w*.19,146,0,w*.30,292,d*.42,glassLandmark);slab(0,9,0,w*.86,18,d*.72,stone);break;
+        case'cbn':slab(0,125,0,w*.66,250,d*.52,plaster);slab(0,132,d*.27,w*.52,214,4,glassLandmark);for(const x of[-.27,-.13,0,.13,.27])slab(x*w,134,d*.30,5,220,7,cream);break;
+        case'assembly':slab(0,28,0,w*.46,56,d*.44,plaster);slab(-w*.31,22,0,w*.24,44,d*.38,plaster);slab(w*.31,22,0,w*.24,44,d*.38,plaster);ball(parent,0,62,0,w*.15,24,d*.14,greenLandmark,12);break;
+        case'eagle':slab(0,5,0,w*.70,10,d*.58,stone);for(const side of[-1,1]){slab(side*w*.24,28,0,w*.13,56,d*.18,plaster);cylinder(parent,side*w*.24,66,0,7,28,mat('#d2aa5c'),7,8);}break;
+        case'mosque':slab(0,30,0,w*.42,60,d*.36,plaster);ball(parent,0,70,0,w*.16,30,d*.15,mat('#d7ac4e'),12);for(const x of[-w*.27,w*.27])for(const z of[-d*.20,d*.20]){cylinder(parent,x,64,z,6,128,plaster,6,10);cylinder(parent,x,131,z,9,12,mat('#d7ac4e'),1,10);}break;
+        case'church':slab(0,34,0,w*.48,68,d*.40,plaster);slab(0,82,-d*.12,w*.16,96,d*.18,stone);cylinder(parent,0,147,-d*.12,5,34,mat('#9d855f'),1,6);break;
+        case'transcorp':slab(0,72,0,w*.82,144,d*.36,plaster);for(let y=24;y<132;y+=24)slab(0,y,d*.19,w*.68,5,4,glassLandmark);slab(0,8,d*.34,w*.48,16,d*.18,mat('#b79b74'));break;
+        case'millennium':slab(0,2,0,w*.82,4,d*.76,greenLandmark);for(const[x,z]of[[-.28,-.24],[-.08,.16],[.23,-.12],[.28,.24],[-.30,.22]]){cylinder(parent,x*w,14,z*d,3,28,mat('#765f45'),3,7);ball(parent,x*w,34,z*d,22,18,22,mat('#567d54'),8);}break;
+        case'aso':for(const[x,y,z,rx,ry,rz]of[[-.18,55,0,.28,.32,.22],[.10,66,-.08,.34,.38,.27],[.28,42,.12,.21,.24,.18]])ball(parent,x*w,y,z*d,rx*w,ry*150,rz*d,mat('#8e8b78'),9);break;
+        case'jabiLake':slab(0,1,0,w*.92,2,d*.76,mat('#78a9a4',.6,0));break;
+        case'mall':slab(0,48,0,w*.84,96,d*.48,plaster);slab(0,56,d*.25,w*.70,50,4,glassLandmark);break;
+        case'conference':slab(0,36,0,w*.78,72,d*.48,plaster);ball(parent,0,72,0,w*.24,24,d*.20,stone,12);break;
+        case'inec':case'efcc':case'court':slab(0,68,0,w*.76,136,d*.46,plaster);slab(0,72,d*.24,w*.58,94,4,glassLandmark);for(const x of[-.28,-.14,0,.14,.28])slab(x*w,74,d*.27,4,100,6,stone);break;
+        case'farmCity':case'banex':slab(0,34,0,w*.82,68,d*.50,mat('#d8cbb3'));slab(0,44,d*.26,w*.68,42,4,glassLandmark);break;
+        default:slab(0,58,0,w*.76,116,d*.46,plaster);slab(0,62,d*.24,w*.56,72,4,glassLandmark);
+      }
+    };
     const buildings=layout.buildings||(layout.obstacles||[]).filter(o=>o.w>200&&o.h>180).map(o=>({...o,y:o.y+o.h,frontY:true,floors:2,name:''}));
     for(const b of buildings) {
-      const p=new T.Group(),bottom=b.frontY===false?b.y:b.y-b.h,height=b.id==='hotel'?250:b.id==='home'?145:b.floors>1?140:103;
+      const p=new T.Group(),bottom=b.frontY===false?b.y:b.y-b.h,height=b.id==='hotel'||b.landmarkBuilder==='transcorp'?250:b.landmarkBuilder==='wtc'?292:b.id==='home'?145:b.floors>1?140:103;
       p.position.set(b.x+b.w/2,0,(bottom+b.h/2)*ds);group.add(p);
       p.name=`Authored building: ${b.id||b.name||'residence'}`;
+      // Comparable hotels, retail, civic and faith buildings use the original
+      // detailed façade owner. Keep CBN/EFCC and outdoor monuments unchanged.
+      if(b.landmarkBuilder&&!WORLD_LANDMARK_FACADES[b.landmarkBuilder]){renderLandmarkBuilding(p,b);continue;}
       box(p,0,height/2,0,b.w,height,b.h*ds,surfaces.material('plaster',affluent?'#e5decc':b.wall||'#d6d1bc'));
       const facadeTrim=mat(affluent?'#d8d1bd':'#c9c5b0');
       // Plinth, cornice and intermediate floor bands continue around the building;
@@ -830,8 +908,8 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
         }
         batch(p);
       }
-      if(b.id==='mosque') {const dome=ball(p,0,height+11,0,b.w*.3,70,b.h*ds*.3,'#749180');const minaret=cylinder(p,b.w*.36,height*.85,-b.h*.2*ds,19,height*1.7,'#dcd1b6',17);cylinder(p,b.w*.36,height*1.73,-b.h*.2*ds,27,21,'#729180',15);}
-      if(b.id==='church'){box(p,0,height+34,b.h*.12*ds,7,72,7,'#796c52');box(p,0,height+51,b.h*.12*ds,47,7,7,'#796c52');}
+      if(b.id==='mosque'||b.landmarkBuilder==='mosque') {ball(p,0,height+11,0,b.w*.3,70,b.h*ds*.3,'#749180');cylinder(p,b.w*.36,height*.85,-b.h*.2*ds,19,height*1.7,'#dcd1b6',17);cylinder(p,b.w*.36,height*1.73,-b.h*.2*ds,27,21,'#729180',15);}
+      if(b.id==='church'||b.landmarkBuilder==='church'){box(p,0,height+34,b.h*.12*ds,7,72,7,'#796c52');box(p,0,height+51,b.h*.12*ds,47,7,7,'#796c52');}
       if(affluent&&b.id==='home') {
         for(const x of [-b.w*.42,b.w*.42]){box(p,x,20,b.h*ds*.56,b.w*.23,40,15,'#e3dbc5');box(p,x,43,b.h*ds*.56,b.w*.25,6,19,'#87967a');}
         for(const x of [-b.w*.43,b.w*.43]){const planter=new T.Group();planter.position.set(x,0,b.h*ds*.63);plant(planter,35,30);p.add(planter);}
@@ -861,8 +939,8 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
   // dynamic, while avoiding thousands of identical local matrix multiplications.
   group.traverse(part=>{if(part!==group&&(part.isMesh||part.isGroup)&&!part.userData.cameraCutaway){part.updateMatrix();part.matrixAutoUpdate=false;}});
   let ownCar,parkedCar;
-  if(profile.drivingVehicle||profile.activeTrip||profile.inventory?.some(id=>vehicleFor(id))) {
-    const ownId=profile.drivingVehicle||profile.activeTrip?.vehicleId||profile.inventory?.find(id=>vehicleFor(id));
+  const {vehicleId:ownId}=worldVehicleState(profile);
+  if(ownId||profile.activeTrip) {
     const item=vehicleFor(ownId);
     ownCar=profile.activeTrip?.mode==='bike'?bikeModel():carModel('#d8d8ca',profile.activeTrip?.mode==='bus'?'bus':profile.activeTrip?.mode==='taxi'?'taxi':item?.bodyStyle||'sedan',ownId);group.add(ownCar.group);
     if(kind==='public'){parkedCar=carModel('#d8d8ca',item?.bodyStyle||'sedan',ownId);group.add(parkedCar.group);}
@@ -899,16 +977,30 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     setFurnitureHidden(itemId,hidden){const item=furniture.get(itemId);if(item)item.visible=!hidden;
       const shadow=contactInstances.get(itemId);if(shadow){shadow.mesh.setMatrixAt(shadow.index,hidden?new T.Matrix4().makeScale(0,0,0):shadow.matrix);shadow.mesh.instanceMatrix.needsUpdate=true;}},
     furnitureObjects:()=>[...furniture.values()],
+    updateFurniture(nextLayout){
+      if(released||!nextLayout)return false;
+      for(const model of furniture.values()){
+        model.removeFromParent();
+        for(const geometry of furnitureGeometries.get(model)||[]){geometry.dispose();mergedGeometries.delete(geometry);}
+      }
+      furniture.clear();layout=nextLayout;
+      const desired=new Map();
+      for(const item of nextLayout.objects||[])if(item.itemId)desired.set(String(item.itemId),item);
+      for(const item of nextLayout.furniturePlacements||[])if(item.itemId)desired.set(String(item.itemId),{...item,kind:item.itemId});
+      for(const item of desired.values())placeObject(item);
+      if(!layout.venueLayout?.outdoor&&!['park','jabi-lake'].includes(venue?.id))contactShadows([...desired.values()]);
+      return true;
+    },
     updateView,
     playerModel:()=>ownCar?.group,
-    update({clock,weather,clubOpen,elapsed=0,player,angle=0,transport,driving,carColor,parked,trafficPositions=[],trip}) {
+    update({clock,weather,clubOpen,elapsed=0,player,angle=0,transport,driving,carColor,ownVehicle=ownId,carWithYou=true,parked,trafficPositions=[],trip}) {
       const night=!!clock?.isNight;if(night!==lastNight){for(const glow of glowingMaterials)glow.material.emissiveIntensity=night?Math.max(.9,glow.day*5):glow.day;for(const beams of nightBeams)beams.visible=night;lastNight=night;}
       clubLights.forEach((light,i)=>{light.intensity=clubOpen?21000+Math.sin(elapsed*2+i)*5000:0;light.target.position.set(580+i*180+Math.sin(elapsed*.55+i)*150,0,(630+Math.cos(elapsed*.4+i)*160)*ds);});
       if(carColor&&carColor!==appliedColor) {
         for(const car of [ownCar,parkedCar])if(car)car.group.traverse(o=>{if(o.material?.metalness===.28)o.material.color.set(carColor);});appliedColor=carColor;
       }
       positionCar(ownCar,player,trip?0:angle,!!transport,true,elapsed);
-      positionCar(parkedCar,parked||player,0,!transport&&!indoor,false,elapsed);
+      positionCar(parkedCar,parked||player,0,!transport&&!indoor&&!!ownVehicle&&carWithYou,false,elapsed);
       trafficPositions.forEach((p,i)=>positionCar(movingCars[i],p,p.angle,true,true,elapsed));
       for(const material of water)material.opacity=.91+Math.sin(elapsed*.7)*.025;
     },

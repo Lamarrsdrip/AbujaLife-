@@ -4,31 +4,33 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
   <meta name="theme-color" content="#204b3c" />
-  <meta name="description" content="Make Abuja home. Create a resident, find your people, and build a life in AbujaLife." />
+  <meta name="description" content="Explore Abuja. Build your life. Meet people, discover the city and create your own Abuja story." />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="AbujaLife" />
-  <meta property="og:title" content="AbujaLife · Your city, your story" />
-  <meta property="og:description" content="Make Abuja home. Create a resident, find your people, and build a life in AbujaLife." />
+  <meta property="og:title" content="AbujaLife — Live the City" />
+  <meta property="og:description" content="Explore Abuja. Build your life. Meet people, discover the city and create your own Abuja story." />
   <meta property="og:url" content="https://abujacity.life/" />
-  <meta property="og:image" content="https://abujacity.life/social/abujalife-share-v2.png" />
-  <meta property="og:image:secure_url" content="https://abujacity.life/social/abujalife-share-v2.png" />
-  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image" content="https://abujacity.life/social/abujalife-x-card-20261008.jpg" />
+  <meta property="og:image:secure_url" content="https://abujacity.life/social/abujalife-x-card-20261008.jpg" />
+  <meta property="og:image:type" content="image/jpeg" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="AbujaLife — multiplayer Abuja, your city, your story" />
+  <meta property="og:image:alt" content="AbujaLife — Live the City: Abuja city gate, skyline and residents" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="AbujaLife · Your city, your story" />
-  <meta name="twitter:description" content="Make Abuja home. Create a resident, find your people, and build a life in AbujaLife." />
-  <meta name="twitter:image" content="https://abujacity.life/social/abujalife-share-v2.png" />
-  <meta name="twitter:image:alt" content="AbujaLife — multiplayer Abuja, your city, your story" />
-  <title>AbujaLife · Your city, your story</title>
+  <meta name="twitter:title" content="AbujaLife — Live the City" />
+  <meta name="twitter:description" content="Explore Abuja. Build your life. Meet people, discover the city and create your own Abuja story." />
+  <meta name="twitter:image" content="https://abujacity.life/social/abujalife-x-card-20261008.jpg" />
+  <meta name="twitter:image:alt" content="AbujaLife — Live the City: Abuja city gate, skyline and residents" />
+  <title>AbujaLife — Live the City</title>
+  <link rel="canonical" href="https://abujacity.life/" />
   <link rel="dns-prefetch" href="//api.abujacity.life" />
   <link rel="preconnect" href="https://api.abujacity.life" crossorigin />
-  <link rel="icon" href="/icon.svg?v=abuja-brand-v2" type="image/svg+xml" />
-  <link rel="icon" href="/icons/icon-192.png?v=abuja-brand-v2" sizes="192x192" type="image/png" />
-  <link rel="manifest" href="/manifest.webmanifest?v=abuja-brand-v2" />
-  <link rel="apple-touch-icon" sizes="180x180" type="image/png" href="/icons/apple-touch-icon.png?v=abuja-brand-v2" />
-  <link rel="apple-touch-icon-precomposed" sizes="180x180" type="image/png" href="/icons/apple-touch-icon.png?v=abuja-brand-v2" />
+  <link rel="icon" href="/icon.svg?v=abuja-brand-v3" type="image/svg+xml" />
+  <link rel="icon" href="/icons/abujalife-city-gate-48-v3.png" sizes="48x48" type="image/png" />
+  <link rel="shortcut icon" href="/favicon.ico?v=abuja-brand-v3" type="image/x-icon" />
+  <link rel="manifest" href="/manifest.webmanifest?v=abuja-brand-v3" />
+  <link rel="apple-touch-icon" sizes="180x180" type="image/png" href="/icons/abujalife-city-gate-180-v3.png" />
+  <link rel="apple-touch-icon-precomposed" sizes="180x180" type="image/png" href="/icons/abujalife-city-gate-180-v3.png" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="AbujaLife" />
@@ -58,40 +60,19 @@
   <link rel="stylesheet" href="/game-realm-2026.css" />
   <link rel="stylesheet" href="/abuja-game-polish-2026.css" />
   <link rel="stylesheet" href="/civic-life.css" />
+  <link rel="stylesheet" href="/phone-hardware-2026.css" />
+  <link rel="stylesheet" href="/login-home-2026.css" />
+  <link rel="stylesheet" href="/game-hud.css" />
 </head>
 <body>
   <div id="app" class="app-shell"></div>
   <div id="phone-root"></div>
   <div id="sheet-root"></div>
   <div id="toast" role="status" aria-live="polite"></div>
-  <script>
-    // iOS Safari can strand an async hosted-checkout pre-open on about:blank.
-    // Keep the existing payment API flow, but send that exact pre-open handoff
-    // through the current AbujaLife tab once Flutterwave returns its checkout URL.
-    (() => {
-      const nativeOpen = window.open.bind(window);
-      window.open = (url = '', target = '', features = '') => {
-        if (url === 'about:blank' && target === '_blank') {
-          let closed = false;
-          return {
-            opener: null,
-            get closed() { return closed; },
-            close() { closed = true; },
-            location: {
-              replace(nextUrl) {
-                if (!closed && typeof nextUrl === 'string' && /^https:\/\//i.test(nextUrl)) {
-                  window.location.assign(nextUrl);
-                }
-              }
-            }
-          };
-        }
-        return nativeOpen(url, target, features);
-      };
-    })();
-  </script>
+  <script src="/checkout-window.js"></script>
   <script type="module" src="/app.js"></script>
   <script type="module" src="/phone-chat-pro.js"></script>
+  <script type="module" src="/civic-life.js"></script>
   <script type="module" src="/game-ui-kit.js"></script>
   <script type="module" src="/ads.js"></script>
   <script type="module" src="/integrations.js"></script>

@@ -3,14 +3,16 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { generateBrandRasterAssets } from './brand-raster.mjs';
 
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const publicAssetExtensions = new Set(['.css', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.avif', '.ico', '.woff', '.woff2', '.ttf', '.otf', '.eot', '.mp3', '.wav', '.ogg', '.glb', '.gltf', '.bin']);
 export const productionEntryPoints = Object.freeze({
+  'checkout-window': 'app/checkout-window.js',
   app: 'app/app.js',
   admin: 'app/admin.js',
+  'admin-house-ads': 'app/admin-house-ads.js',
   'phone-chat-pro': 'app/phone-chat-pro.js',
+  'civic-life': 'app/civic-life.js',
   'game-ui-kit': 'app/game-ui-kit.js',
   ads: 'app/ads.js',
   integrations: 'app/integrations.js',
@@ -99,11 +101,7 @@ export async function buildProduction({ environment = process.env, outputDirecto
     if (Object.keys(result.metafile.inputs).some(filename => /(?:^|\/)(?:server|preview)\//.test(filename))) throw new Error('A server or preview module was included in the production client.');
     await fs.mkdir(path.join(staging, 'licenses'), { recursive: true });
     await fs.copyFile(path.join(repository, 'node_modules/three/LICENSE'), path.join(staging, 'licenses/three.txt'));
-    for (const [filename, content] of Object.entries(generateBrandRasterAssets())) {
-      const destination = path.join(staging, filename);
-      await fs.mkdir(path.dirname(destination), { recursive: true });
-      await fs.writeFile(destination, content);
-    }
+    // Branding exports are public source assets; never replace them with a different design.
     await fs.writeFile(path.join(staging, 'runtime-config.js'), `// Public configuration only; rebuild to change origins.\nglobalThis.ABUJA_PUBLIC_CONFIG=Object.freeze(${JSON.stringify(configuration)});\n`);
     await fs.writeFile(path.join(staging, 'index.html'), configureHTML(await fs.readFile(path.join(sourceDirectory, 'index.html'), 'utf8')));
     const adminHTML = configureHTML(await fs.readFile(path.join(sourceDirectory, 'admin.html'), 'utf8'));
@@ -114,6 +112,7 @@ export async function buildProduction({ environment = process.env, outputDirecto
     manifest.id = '/'; manifest.start_url = '/?source=homescreen'; manifest.scope = '/';
     await fs.writeFile(path.join(staging, 'manifest.webmanifest'), `${JSON.stringify(manifest, null, 2)}\n`);
     await fs.copyFile(path.join(repository, 'deploy/hostinger.htaccess'), path.join(staging, '.htaccess'));
+    await fs.copyFile(path.join(sourceDirectory, 'robots.txt'), path.join(staging, 'robots.txt'));
     const allFiles = await filesBelow(staging);
     const shell = allFiles.filter(filename => !filename.startsWith('.') && !filename.startsWith('admin') && filename !== 'runtime-config.js').map(filename => `/${filename.split(path.sep).join('/')}`);
     const fingerprint = createHash('sha256');

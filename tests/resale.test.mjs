@@ -18,21 +18,22 @@ async function fixture(t,branch=1){
   return{id,get store(){return store;},advance:ms=>{time+=ms;},reopen(){store.close();store=new GameStore({dataDir,clock:()=>time});}};
 }
 const sell=(f,itemId,key='resale_item_key',extra={})=>f.store.action(f.id,'sell-item',{itemId,idempotencyKey:key,...extra});
+const buyback=itemId=>Math.floor(catalog.find(item=>item.id===itemId).price/2);
 
 test('system resale pays the authoritative half price, clears placement and replays without another credit',async t=>{
   const f=await fixture(t);
-  f.store.action(f.id,'purchase',{itemId:'plant'});f.store.action(f.id,'place-furniture',{itemId:'plant',x:.4,y:.5});
+  f.store.action(f.id,'purchase',{idempotencyKey:crypto.randomUUID(),itemId:'plant'});f.store.action(f.id,'place-furniture',{itemId:'plant',x:.4,y:.5});
   const before=f.store.profile(f.id),ledger=f.store.transactions(f.id).length;
   const result=sell(f,'plant','resale_plant_key',{amount:999999999,price:999999999,wallet:999999999});
-  assert.equal(result.sale.amount,1150);assert.equal(result.sale.itemId,'plant');assert.equal(result.sale.virtual,true);
-  assert.equal(result.profile.wallet,before.wallet+1150);assert.equal(result.profile.inventory.includes('plant'),false);
+  assert.equal(result.sale.amount,buyback('plant'));assert.equal(result.sale.itemId,'plant');assert.equal(result.sale.virtual,true);
+  assert.equal(result.profile.wallet,before.wallet+buyback('plant'));assert.equal(result.profile.inventory.includes('plant'),false);
   assert.equal(result.profile.furnitureLayout.plant,undefined);assert.equal(result.profile.storedFurniture.includes('plant'),false);
   assert.equal(f.store.transactions(f.id).length,ledger+1);
   f.reopen();const repeated=sell(f,'plant','resale_plant_key');
-  assert.equal(repeated.replayed,true);assert.equal(repeated.profile.wallet,before.wallet+1150);
+  assert.equal(repeated.replayed,true);assert.equal(repeated.profile.wallet,before.wallet+buyback('plant'));
   assert.equal(f.store.transactions(f.id).filter(row=>row.reason==='System resale · Indoor plant').length,1);
   assert.throws(()=>sell(f,'plant','resale_second_key'),error=>error.code==='item_not_owned');
-  assert.equal(f.store.profile(f.id).wallet,before.wallet+1150);
+  assert.equal(f.store.profile(f.id).wallet,before.wallet+buyback('plant'));
 });
 
 test('selling stored furniture removes storage ownership and fresh gifts can be sold without reseeding',async t=>{
@@ -47,15 +48,15 @@ test('selling stored furniture removes storage ownership and fresh gifts can be 
 });
 
 test('selling an equipped paid outfit returns to the starter outfit and removes the entitlement',async t=>{
-  const f=await fixture(t);f.store.action(f.id,'purchase',{itemId:'traditional-set'});f.store.action(f.id,'equip',{itemId:'traditional-set'});
+  const f=await fixture(t);f.store.action(f.id,'purchase',{idempotencyKey:crypto.randomUUID(),itemId:'traditional-set'});f.store.action(f.id,'equip',{itemId:'traditional-set'});
   const before=f.store.profile(f.id).wallet,result=sell(f,'traditional-set');
-  assert.equal(result.sale.amount,6000);assert.equal(result.profile.wallet,before+6000);assert.equal(result.profile.appearance.top,'forest');
+  assert.equal(result.sale.amount,buyback('traditional-set'));assert.equal(result.profile.wallet,before+buyback('traditional-set'));assert.equal(result.profile.appearance.top,'forest');
   assert.throws(()=>f.store.action(f.id,'equip',{itemId:'traditional-set'}),/own/);
 });
 
 test('driving vehicles and active journeys reject resale until parked or arrived',async t=>{
   const f=await fixture(t);
-  f.store.action(f.id,'purchase',{itemId:'used-hatchback',color:'blue'});f.store.action(f.id,'purchase',{itemId:'plant'});f.store.action(f.id,'leave-home');
+  f.store.action(f.id,'purchase',{idempotencyKey:crypto.randomUUID(),itemId:'used-hatchback',color:'blue'});f.store.action(f.id,'purchase',{idempotencyKey:crypto.randomUUID(),itemId:'plant'});f.store.action(f.id,'leave-home');
   f.store.action(f.id,'toggle-driving',{vehicleId:'used-hatchback'});
   const before=f.store.profile(f.id);
   assert.throws(()=>sell(f,'used-hatchback','resale_drive_key'),error=>error.code==='vehicle_driving');
@@ -66,8 +67,8 @@ test('driving vehicles and active journeys reject resale until parked or arrived
   f.advance(trip.seconds*1000);f.store.action(f.id,'arrive',{tripId:trip.id});
   assert.throws(()=>sell(f,'used-hatchback','resale_drive_key'),error=>error.code==='vehicle_driving');
   f.store.action(f.id,'toggle-driving',{vehicleId:null});const result=sell(f,'used-hatchback','resale_drive_key');
-  assert.equal(result.sale.amount,14000);assert.equal(result.profile.vehicleColors['used-hatchback'],undefined);assert.equal(result.profile.drivingVehicle,null);
-  assert.equal(sell(f,'plant','resale_trip_key').sale.amount,1150);
+  assert.equal(result.sale.amount,buyback('used-hatchback'));assert.equal(result.profile.vehicleColors['used-hatchback'],undefined);assert.equal(result.profile.drivingVehicle,null);
+  assert.equal(sell(f,'plant','resale_trip_key').sale.amount,buyback('plant'));
 });
 
 test('unknown items, missing ownership and reused operation keys cannot create credits',async t=>{
@@ -76,20 +77,20 @@ test('unknown items, missing ownership and reused operation keys cannot create c
   assert.throws(()=>sell(f,'plant'),error=>error.code==='item_not_owned');
   assert.throws(()=>f.store.action(f.id,'sell-item',{itemId:'plant'}),error=>error.code==='idempotency_required');
   assert.equal(f.store.profile(f.id).wallet,before);
-  f.store.action(f.id,'purchase',{itemId:'plant'});sell(f,'plant','resale_conflict_key');
-  f.store.action(f.id,'purchase',{itemId:'rug'});
+  f.store.action(f.id,'purchase',{idempotencyKey:crypto.randomUUID(),itemId:'plant'});sell(f,'plant','resale_conflict_key');
+  f.store.action(f.id,'purchase',{idempotencyKey:crypto.randomUUID(),itemId:'rug'});
   assert.throws(()=>sell(f,'rug','resale_conflict_key'),error=>error.code==='idempotency_conflict');
   assert.equal(f.store.profile(f.id).inventory.includes('rug'),true);
 });
 
 test('a wallet overflow rolls back ownership, placement, ledger and operation key atomically',async t=>{
-  const f=await fixture(t);f.store.action(f.id,'purchase',{itemId:'plant'});f.store.action(f.id,'place-furniture',{itemId:'plant',x:.4,y:.5});
+  const f=await fixture(t);f.store.action(f.id,'purchase',{idempotencyKey:crypto.randomUUID(),itemId:'plant'});f.store.action(f.id,'place-furniture',{itemId:'plant',x:.4,y:.5});
   const profile=f.store.profile(f.id);profile.wallet=Number.MAX_SAFE_INTEGER;f.store.save(profile);
   const before=f.store.profile(f.id),ledger=f.store.transactions(f.id).length;
   assert.throws(()=>sell(f,'plant','resale_overflow_key'),error=>error.code==='numeric_limit');
   assert.deepEqual(f.store.profile(f.id),before);assert.equal(f.store.transactions(f.id).length,ledger);
   assert.equal(f.store.get('SELECT count(*) n FROM economy_operations WHERE resident_id=? AND operation_key=?',f.id,'resale_overflow_key').n,0);
-  const retry=f.store.profile(f.id);retry.wallet-=1150;f.store.save(retry);
+  const retry=f.store.profile(f.id);retry.wallet-=buyback('plant');f.store.save(retry);
   assert.equal(sell(f,'plant','resale_overflow_key').profile.wallet,Number.MAX_SAFE_INTEGER);
 });
 
@@ -109,7 +110,7 @@ function preview(storage=new Map()){
 test('the actual browser adapter keeps keyed purchases stored and restores exact property and support references',async()=>{
   const f=preview(),before=(await f.request('/api/bootstrap')).profile.wallet;
   const purchase={itemId:'coffee-table',idempotencyKey:'preview_furniture_purchase'};
-  const bought=await f.action('purchase',purchase);assert.equal(bought.profile.wallet,before-8000);assert.deepEqual(bought.profile.storedFurniture,['coffee-table']);
+  const bought=await f.action('purchase',purchase);assert.equal(bought.profile.wallet,before-catalog.find(item=>item.id==='coffee-table').price);assert.deepEqual(bought.profile.storedFurniture,['coffee-table']);
   const retry=await f.action('purchase',purchase);assert.equal(retry.replayed,true);assert.equal(retry.profile.wallet,bought.profile.wallet);
   await f.action('place-furniture',{itemId:'coffee-table',x:.4,y:.5,rotation:90});await f.action('purchase',{itemId:'plant',idempotencyKey:'preview_surface_plant'});
   // A small plant can sit on a real table, and supplied client elevation is ignored.
@@ -121,23 +122,23 @@ test('the actual browser adapter keeps keyed purchases stored and restores exact
 });
 
 test('the actual preview resale clears placed and stored pieces and remains idempotent after reload',async()=>{
-  const f=preview();await f.action('purchase',{itemId:'plant'});await f.action('place-furniture',{itemId:'plant',x:.4,y:.5});
+  const f=preview();await f.action('purchase',{idempotencyKey:crypto.randomUUID(),itemId:'plant'});await f.action('place-furniture',{itemId:'plant',x:.4,y:.5});
   const before=(await f.request('/api/bootstrap')).profile.wallet;
   const result=await f.action('sell-item',{itemId:'plant',idempotencyKey:'preview_resale_key',amount:999999999});
-  assert.equal(result.sale.amount,1150);assert.equal(result.profile.wallet,before+1150);assert.equal(result.profile.furnitureLayout.plant,undefined);assert.deepEqual(result.profile.inventory,[]);
+  assert.equal(result.sale.amount,buyback('plant'));assert.equal(result.profile.wallet,before+buyback('plant'));assert.equal(result.profile.furnitureLayout.plant,undefined);assert.deepEqual(result.profile.inventory,[]);
   const again=preview(f.storage),replay=await again.action('sell-item',{itemId:'plant',idempotencyKey:'preview_resale_key'});
-  assert.equal(replay.replayed,true);assert.equal(replay.profile.wallet,before+1150);
+  assert.equal(replay.replayed,true);assert.equal(replay.profile.wallet,before+buyback('plant'));
   const denied=await again.action('sell-item',{itemId:'plant',idempotencyKey:'preview_resale_second'},403);assert.equal(denied.code,'item_not_owned');
-  await again.action('purchase',{itemId:'rug'});await again.action('store-furniture',{itemId:'rug'});
+  await again.action('purchase',{idempotencyKey:crypto.randomUUID(),itemId:'rug'});await again.action('store-furniture',{itemId:'rug'});
   const sold=await again.action('sell-item',{itemId:'rug',idempotencyKey:'preview_resale_stored'});assert.equal(sold.profile.storedFurniture.includes('rug'),false);
 });
 
 test('preview resale restores starter clothing and rejects driving or travelling sales',async()=>{
-  const f=preview();await f.action('purchase',{itemId:'traditional-set'});await f.action('equip',{itemId:'traditional-set'});
-  const outfit=await f.action('sell-item',{itemId:'traditional-set',idempotencyKey:'preview_resale_outfit'});assert.equal(outfit.profile.appearance.top,'forest');assert.equal(outfit.sale.amount,6000);
-  await f.action('purchase',{itemId:'used-hatchback',color:'red'});await f.action('leave-home');await f.action('toggle-driving',{vehicleId:'used-hatchback'});
+  const f=preview();await f.action('purchase',{idempotencyKey:crypto.randomUUID(),itemId:'traditional-set'});await f.action('equip',{itemId:'traditional-set'});
+  const outfit=await f.action('sell-item',{itemId:'traditional-set',idempotencyKey:'preview_resale_outfit'});assert.equal(outfit.profile.appearance.top,'forest');assert.equal(outfit.sale.amount,buyback('traditional-set'));
+  await f.action('purchase',{idempotencyKey:crypto.randomUUID(),itemId:'used-hatchback',color:'red'});await f.action('leave-home');await f.action('toggle-driving',{vehicleId:'used-hatchback'});
   const parked=await f.action('sell-item',{itemId:'used-hatchback',idempotencyKey:'preview_resale_car'},409);assert.equal(parked.code,'vehicle_driving');
-  await f.action('toggle-driving',{vehicleId:null});const sold=await f.action('sell-item',{itemId:'used-hatchback',idempotencyKey:'preview_resale_car'});assert.equal(sold.sale.amount,14000);assert.equal(sold.profile.vehicleColors['used-hatchback'],undefined);
-  await f.action('purchase',{itemId:'plant'});await f.action('travel',{district:'jabi',mode:'bus'});
+  await f.action('toggle-driving',{vehicleId:null});const sold=await f.action('sell-item',{itemId:'used-hatchback',idempotencyKey:'preview_resale_car'});assert.equal(sold.sale.amount,buyback('used-hatchback'));assert.equal(sold.profile.vehicleColors['used-hatchback'],undefined);
+  await f.action('purchase',{idempotencyKey:crypto.randomUUID(),itemId:'plant'});await f.action('travel',{district:'jabi',mode:'bus'});
   const transit=await f.action('sell-item',{itemId:'plant',idempotencyKey:'preview_resale_trip'},409);assert.equal(transit.code,'trip_active');
 });

@@ -1,4 +1,8 @@
 import crypto from 'node:crypto';
+import { ECONOMY_CONFIG } from '../../shared/economy.mjs';
+import { economyTransactionType } from '../../shared/transactions.mjs';
+import { TENANCY_RULES, recordHousingLifeEvent, syncHomeTenancy, nextTenancyCheck } from '../../shared/tenancy.mjs';
+import { HOUSING_ACTIONS, HOUSING_MONEY_ACTIONS, applyHousingAction } from '../housingActions.mjs';
 import { ABUJA_ATLAS } from '../../shared/atlas.mjs';
 import * as life from '../../shared/life.mjs';
 import { vehicleColorFor } from '../../shared/vehicles.mjs';
@@ -12,7 +16,7 @@ import { jobs, catalog, properties, appearanceOptions, transportModes, resalePri
 import { GameError } from '../errors.mjs';
 import { MongoAuthStore } from './authStore.mjs';
 import { residentSearchPrefixes } from './directoryStore.mjs';
-const { LIFE_GOALS, GAME_YEAR_MS, GAME_BILL_PERIOD_MS, WALLET_META, INVESTMENT_META, DICE_META, LOAN_META, travelPricing, homeBenefits, investmentView, loanView, loanQuote, venueFor, venueAvailable, venueActionFor, ownsVehicle, applyNeedEffects, furniturePlacement } = life;
+const { LIFE_GOALS, GAME_BILL_PERIOD_MS, WALLET_META, INVESTMENT_META, DICE_META, LOAN_META, travelPricing, homeBenefits, investmentView, normalizeInvestmentRecords, loanView, loanQuote, venueFor, venueAvailable, venueActionFor, ownsVehicle, applyNeedEffects, furniturePlacement } = life;
 export { jobs, catalog, properties, appearanceOptions, GameError, transportModes };
 const uid=()=>crypto.randomUUID(),clean=(value,max=80)=>String(value??'').trim().slice(0,max),clamp=n=>Math.max(0,Math.min(100,Math.round(n)));
 const locations=new Map(ABUJA_ATLAS.map(place=>[place.id,place]));
@@ -43,7 +47,7 @@ export class MongoGameStore {
   collection(name){return this.db.collection(name);}
   async close(){await this.client.close();}
   async transaction(fn){const session=this.client.startSession();try{return await session.withTransaction(()=>fn(session),{readConcern:{level:'snapshot'},writeConcern:{w:'majority'},readPreference:'primary'});}finally{await session.endSession();}}
-  async profile(id,{session=null}={}){
+  async profile(id,{session=null,reconcileHousing=true}={}){
     check(typeof id==='string'&&id.length>0&&id.length<=80,'Choose a valid resident');const opts=session?{session}:{};
     // A driver session cannot run parallel transaction operations.
     const resident=await this.collection('residents').findOne({id},opts);check(resident,'Resident not found',404);
@@ -62,13 +66,19 @@ export class MongoGameStore {
     const strip=row=>{const {_id,residentId,sequence,...value}=row;return value;};
     const home=strip(entities.homes),{furnitureLayout={},storedFurniture=[],billsPaidAt,rentPaidAt,...homeFields}=home;
     const p={id,username:resident.username,...pick(resident,residentKeys),createdAt:resident.createdAt,origin:entities.origins.origin,appearance:strip(entities.appearances),...strip(entities.needs),...strip(entities.progression),...strip(entities.player_state),home:homeFields,wallet:entities.wallets.balance,inventory:rows.inventory.map(row=>row.itemId),vehicleColors:Object.fromEntries(rows.vehicles.map(row=>[row.itemId,row.color])),ownedProperties:rows.properties.filter(row=>row.owned).map(row=>row.propertyId),propertyInvestments:Object.fromEntries(rows.properties.filter(row=>row.investment).map(row=>[row.propertyId,row.investment])),loans:rows.loans.sort((a,b)=>b.borrowedAt-a.borrowedAt).map(strip),gambleHistory:rounds.map(strip),lastGambleRound:rounds[0]?strip(rounds[0]):null,workDays:{},furnitureLayout,storedFurniture,billsPaidAt,rentPaidAt};
-    stateMetadata.set(p,{walletVersion:entities.wallets.version,initialBalance:p.wallet});return p;
+    p.propertyInvestments=normalizeInvestmentRecords(p,properties);
+    stateMetadata.set(p,{walletVersion:entities.wallets.version,initialBalance:p.wallet});
+    if(reconcileHousing){
+      const changed=this.syncHousing(p);
+      if(changed&&!session)return this.reconcileHousing(id);
+    }return p;
   }
   async save(p,{session=null,persistEconomy=false}={}){
     check(session,'Profile writes require a MongoDB transaction',500,'transaction_required');
     const opts={session};check(integer(p.wallet),'Wallet must use exact whole Naira',409,'numeric_limit');
     await this.collection('residents').updateOne({id:p.id},{$set:{...pick(p,residentKeys),searchPrefixes:residentSearchPrefixes(p.username,p.displayName)}},opts);
-    for(const [name,value] of [['appearances',p.appearance],['needs',pick(p,needsKeys)],['progression',pick(p,progressionKeys)],['player_state',pick(p,stateKeys)],['homes',{...p.home,furnitureLayout:p.furnitureLayout,storedFurniture:p.storedFurniture,billsPaidAt:p.billsPaidAt,rentPaidAt:p.rentPaidAt}]])await this.collection(name).updateOne({residentId:p.id},{$set:value},opts);
+    for(const [name,value] of [['appearances',p.appearance],['needs',pick(p,needsKeys)],['progression',pick(p,progressionKeys)],['player_state',pick(p,stateKeys)]])await this.collection(name).updateOne({residentId:p.id},{$set:value},opts);
+    await this.collection('homes').replaceOne({residentId:p.id},{_id:p.id,residentId:p.id,...p.home,nextTenancyCheckAt:p.home.tenancy?nextTenancyCheck(p.home.tenancy,this.clock()):null,furnitureLayout:p.furnitureLayout,storedFurniture:p.storedFurniture,billsPaidAt:p.billsPaidAt,rentPaidAt:p.rentPaidAt},opts);
     if(persistEconomy){
       const meta=stateMetadata.get(p);check(meta,'Load the persisted wallet before changing it',500,'wallet_not_loaded');
       const changed=await this.collection('wallets').updateOne({residentId:p.id,version:meta.walletVersion,balance:meta.initialBalance},{$set:{balance:p.wallet},$inc:{version:1}},opts);
@@ -87,9 +97,45 @@ export class MongoGameStore {
   }
   propertiesFor(id){if(typeof id==='string')return this.profile(id).then(p=>this.propertiesFor(p));return id?.origin?.residence?[...properties,id.origin.residence]:[...properties];}
   propertyFor(p,propertyId=p.home.propertyId){return this.propertiesFor(p).find(item=>item.id===propertyId);}
+  syncHousing(p){
+    const before=JSON.stringify(p.home),property=this.propertyFor(p),temporaryProperty=properties.find(row=>row.id===TENANCY_RULES.temporaryPropertyId);
+    syncHomeTenancy(p,{property,temporaryProperty,now:this.clock(),id:uid(),seed:uid()});
+    return before!==JSON.stringify(p.home);
+  }
+  async initHousing(){
+    const indexes=await this.collection('homes').listIndexes().toArray();
+    check(indexes.some(row=>row.name==='tenancy_check_due'),'Housing migration must run before startup',503,'housing_migration_required');
+    return this;
+  }
+  async reconcileHousing(id){
+    let changed=false;
+    const result=await this.transaction(async session=>{const p=await this.profile(id,{session,reconcileHousing:false}),before=p.wallet;changed=this.syncHousing(p);const homeRecord=await this.collection('homes').findOne({residentId:id},{session,projection:{nextTenancyCheckAt:1}});if(changed||p.home.tenure==='rent'&&(!homeRecord.nextTenancyCheckAt||homeRecord.nextTenancyCheckAt<=this.clock()))await this.save(p,{session,persistEconomy:p.wallet!==before});if(p.wallet!==before)await this.appendLedger(id,p.wallet-before,'Housing deposit returned',this.clock(),`${p.home.housingHistory?.[0]?.id}:deposit-return`,stateMetadata.get(p).walletVersion,session,'PROPERTY_DEPOSIT_REFUND');return p;});
+    if(changed){await this.emitUser(id,'profile',{profile:result});await this.social?.reconcileVisits?.(id);}
+    return result;
+  }
+  async reconcileHousingBatch({limit=50}={}){
+    const now=this.clock(),size=Math.min(100,Math.max(1,limit));
+    const filter={tenure:'rent',$or:[{nextTenancyCheckAt:{$lte:now}},{nextTenancyCheckAt:{$exists:false}}]};
+    const rows=await this.collection('homes').find(filter,{projection:{residentId:1}}).sort({tenure:1,nextTenancyCheckAt:1,residentId:1}).limit(size).toArray();
+    for(const row of rows){if(this.housingStopping)break;await this.reconcileHousing(row.residentId);}
+    return {checked:rows.length};
+  }
+  startHousingReconciliation({log=()=>{}}={}){
+    if(this.housingTimer)return;this.housingStopping=false;
+    const run=()=>{if(this.housingRun)return;this.housingRun=this.reconcileHousingBatch().catch(error=>log('housing_reconciliation_failure',{code:error.code||'storage_error'})).finally(()=>{this.housingRun=null;});};
+    this.housingTimer=setInterval(run,60000);this.housingTimer.unref?.();run();
+  }
+  async stopHousingReconciliation(){this.housingStopping=true;clearInterval(this.housingTimer);this.housingTimer=null;await this.housingRun;}
+  async housingAction(id,action,payload={}){
+    const kind=action==='renew-rent'?'pay-rent':action;
+    const normalized=Object.fromEntries(Object.entries(payload).filter(([key])=>key!=='idempotencyKey').sort(([a],[b])=>a.localeCompare(b)));
+    const result=await this.economyOperation(id,kind,payload,normalized,(p,now)=>applyHousingAction(p,kind,payload,{now,properties:this.propertiesFor(p)}),{requireKey:HOUSING_MONEY_ACTIONS.has(action)});
+    if(!result.replayed&&['move-home','move-out'].includes(kind))await this.social?.reconcileVisits?.(id);return result;
+  }
   async register(body={}){
     const credentials=await this.auth.credentials(body),id=uid(),timestamp=this.clock();
-    const origin=createOrigin({residentId:id,now:timestamp,randomInt:this.originRandomInt,properties,atlas:ABUJA_ATLAS}),home=originHome(origin),seed=life.starterHomeSeed(origin);
+    check(body.originId===undefined||ORIGIN_META.options.some(option=>option.id===body.originId),'Choose a listed life background',400,'invalid_origin');
+    const origin=createOrigin({residentId:id,now:timestamp,originId:body.originId,randomInt:this.originRandomInt,properties,atlas:ABUJA_ATLAS}),home=originHome(origin),seed=life.starterHomeSeed(origin);
     const p={id,username:credentials.username,displayName:credentials.displayName,origin,appearance:appearance(variedAppearance({presentation:appearanceOptions.presentation.includes(body.appearance?.presentation)?body.appearance.presentation:'neutral',randomInt:max=>crypto.randomInt(max)}),body.appearance),wallet:origin.startingBalance,energy:82,hunger:72,hygiene:88,social:58,fun:64,stress:12,mood:76,reputation:0,district:home.district,location:{kind:'home',district:home.district,venue:'home'},home:{...home,...seed.homeStyle},job:null,careerLevel:1,skills:{},inventory:seed.inventory,ownedProperties:origin.giftedHome?[home.propertyId]:[],propertyInvestments:{},vehicleColors:{},gambleHistory:[],lastGambleRound:null,loans:[],workDays:{},furnitureLayout:seed.furnitureLayout,storedFurniture:seed.storedFurniture,drivingVehicle:null,onboardingComplete:false,lifeGoal:'explore',settings:{presenceVisible:true,allowInvites:true,soundEnabled:true},activeTrip:null,activeShift:null,completedShifts:0,nextShiftAt:0,lastActionAt:timestamp,billsPaidAt:timestamp,rentPaidAt:timestamp,createdAt:timestamp};
     let token;try{token=await this.transaction(async session=>{
       await this.collection('residents').insertOne({_id:id,id,...credentials,...pick(p,residentKeys),searchPrefixes:residentSearchPrefixes(p.username,p.displayName),createdAt:timestamp},{session});
@@ -98,7 +144,7 @@ export class MongoGameStore {
       for(const propertyId of p.ownedProperties)await this.collection('properties').insertOne({_id:`${id}:${propertyId}`,residentId:id,propertyId,owned:true},{session});
       const referrerId=/^[A-Za-z0-9:_-]{1,80}$/.test(String(body.referrerId||''))?String(body.referrerId):null;
       if(referrerId&&referrerId!==id&&await this.collection('residents').findOne({id:referrerId},{session}))await this.collection('friendships').updateOne({pair:[referrerId,id].sort().join(':')},{$set:{sender:referrerId,recipient:id,status:'accepted',createdAt:timestamp},$setOnInsert:{id:uid(),pair:[referrerId,id].sort().join(':')}},{upsert:true,session});
-      await this.appendLedger(id,p.wallet,'Resident starting balance',timestamp,`registration:${id}`,0,session,'starting_balance');
+      await this.appendLedger(id,p.wallet,'Resident starting balance',timestamp,`registration:${id}`,0,session,'STARTING_MONEY');
       return this.auth.createSession(id,{session});
     });}catch(error){if(error.code===11000)throw new GameError('That username or email is already taken',409,'account_exists');throw error;}
     if(this.notify)await this.notify(id,'welcome','Welcome home',`Your ${home.name} is ready. Settle in, then explore your neighbourhood.`,'home');
@@ -119,12 +165,12 @@ export class MongoGameStore {
     check(key===undefined||typeof key==='string'&&/^[A-Za-z0-9_-]{8,100}$/.test(key),'Use a valid request key',400,'idempotency_required');const operationKey=key||uid(),fingerprint=JSON.stringify(normalized);let replayed=false;
     const result=await this.transaction(async session=>{
       const existing=await this.collection('economy_operations').findOne({residentId:id,operationKey},{session});if(existing){check(existing.kind===kind&&existing.fingerprint===fingerprint,'This request key was already used for a different action',409,'idempotency_conflict');replayed=true;return{ok:true,profile:await this.profile(id,{session}),...existing.result};}
-      const p=await this.profile(id,{session}),before=p.wallet,timestamp=this.clock();const extra=await mutate(p,timestamp,session,operationKey);check(integer(p.wallet),'This action cannot be represented as exact whole Naira',409,'numeric_limit');p.lastActionAt=timestamp;await this.save(p,{session,persistEconomy:true});
-      const {ledgerReason,ledgerTransferId,...publicExtra}=extra||{};if(p.wallet!==before)await this.appendLedger(id,p.wallet-before,ledgerReason||kind,timestamp,operationKey,stateMetadata.get(p).walletVersion,session,kind,ledgerTransferId?{transferId:ledgerTransferId}:{});
+      const p=await this.profile(id,{session}),before=p.wallet,timestamp=this.clock();const extra=await mutate(p,timestamp,session,operationKey);recordHousingLifeEvent(p,{kind,extra,now:timestamp,beforeBalance:before});check(integer(p.wallet),'This action cannot be represented as exact whole Naira',409,'numeric_limit');p.lastActionAt=timestamp;await this.save(p,{session,persistEconomy:true});
+      const {ledgerReason,ledgerTransferId,ledgerType,...publicExtra}=extra||{};if(p.wallet!==before)await this.appendLedger(id,p.wallet-before,ledgerReason||kind,timestamp,operationKey,stateMetadata.get(p).walletVersion,session,ledgerType||economyTransactionType(kind,normalized,catalog),ledgerTransferId?{transferId:ledgerTransferId}:{});
       await this.collection('economy_operations').insertOne({_id:`${id}:${operationKey}`,residentId:id,operationKey,kind,fingerprint,result:publicExtra,createdAt:timestamp},{session});return{ok:true,profile:p,...publicExtra};
     });if(!replayed)await this.emitUser(id,'profile',{profile:result.profile});return{...result,replayed};
   }
-  async transactions(id){return(await this.collection('ledger').find({residentId:id}).sort({createdAt:-1,sequence:-1,_id:-1}).limit(60).toArray()).map(({id,amount,reason,createdAt})=>({id,amount,reason,createdAt}));}
+  async transactions(id){return(await this.collection('ledger').find({residentId:id}).sort({createdAt:-1,sequence:-1,_id:-1}).limit(60).toArray()).map(({id,amount,reason,createdAt,type,balanceAfter,operationId})=>({id,amount,reason,createdAt,type,balanceAfter,operationId}));}
   async wallet(id){const p=await this.profile(id);return{ok:true,profile:p,walletMeta:{...WALLET_META,demoTopupEnabled:this.allowGameTopups},loanMeta:LOAN_META,loans:loanView(p,this.clock()),workSchedule:await this.workSchedule(p),transactions:await this.transactions(id)};}
   async topup(id,payload={}){check(this.allowGameTopups,'Client balance grants are disabled in production',403,'topup_disabled');check(!Object.hasOwn(payload,'verified'),'Real-money payments require a verified payment provider',403,'payments_unavailable');check(Number.isSafeInteger(payload.amount)&&payload.amount>0,'Choose a positive whole Naira game top-up',400,'invalid_topup');return this.economyOperation(id,'demo-topup',payload,{amount:payload.amount},(p,timestamp)=>{p.wallet+=payload.amount;return{topup:{id:uid(),amount:payload.amount,virtual:true,createdAt:timestamp},ledgerReason:'Free game Naira top-up'};});}
   async transfer(id,payload={}){
@@ -198,7 +244,7 @@ export class MongoGameStore {
       const investment=investmentView(p,property,timestamp);
       check(investment.representable,'This rental income cannot be represented as exact whole Naira',409,'numeric_limit');
       if(action==='collect-rent'){
-        check(investment.collectable>0,'Rent is not ready yet; it accrues every minute',409,'rent_not_ready');
+        check(investment.collectable>0,'Rent is not ready yet; it accrues every week',409,'rent_not_ready');
         p.wallet+=investment.collectable;
         const periods=Math.max(0,Math.floor((timestamp-investment.lastCollectedAt)/INVESTMENT_META.periodMs));
         p.propertyInvestments[property.id].lastCollectedAt+=periods*INVESTMENT_META.periodMs;
@@ -271,6 +317,7 @@ export class MongoGameStore {
     if(['buy-investment','collect-rent','sell-investment'].includes(action))return this.investmentAction(id,action,payload);
     if(action==='play-dice')return this.playDice(id,payload);
     if(['borrow-loan','repay-loan'].includes(action))return this.loanAction(id,action,payload);
+    if(HOUSING_ACTIONS.has(action))return this.housingAction(id,action,payload);
     if(['paint-vehicle'].includes(action)||(action==='purchase'&&catalog.some(item=>item.id===payload.itemId&&item.category==='vehicle')))return this.vehicleAction(id,action,payload);
     const moneyActions=new Set(['eat','hangout','exercise','cinema','venue-action','travel','return-home','purchase','sell-item','move-home','pay-bills','renew-rent']);
     const normalized=Object.fromEntries(Object.entries(payload).filter(([key])=>key!=='idempotencyKey').sort(([a],[b])=>a.localeCompare(b)));
@@ -280,13 +327,13 @@ export class MongoGameStore {
       if(p.activeTrip&&!['arrive','topup'].includes(action))throw new GameError('Your journey is still in progress');
       if(p.location.kind==='visit'&&['travel','return-home','move-home'].includes(action))throw new GameError('Leave your visit before travelling or moving home',409,'visit_active');
       switch(action){
-        case 'eat':home();debit(1200);p.hunger=clamp(p.hunger+34);p.mood=clamp(p.mood+4);break;
+        case 'eat':home();debit(ECONOMY_CONFIG.basicActivities.eat);p.hunger=clamp(p.hunger+34);p.mood=clamp(p.mood+4);break;
         case 'sleep':home();p.energy=clamp(p.energy+46+comfort.sleepEnergyBonus);p.hunger=clamp(p.hunger-9);p.stress=clamp(p.stress-12);break;
         case 'shower':home();p.hygiene=clamp(p.hygiene+42);p.mood=clamp(p.mood+2);break;
         case 'relax':home();p.fun=clamp(p.fun+22+comfort.relaxFunBonus);p.stress=clamp(p.stress-14-comfort.relaxStressReduction);p.energy=clamp(p.energy+8);break;
-        case 'hangout':publicPlace();debit(2400);p.social=clamp(p.social+28);p.fun=clamp(p.fun+20);p.energy=clamp(p.energy-8);break;
-        case 'exercise':publicPlace();debit(800);p.fun=clamp(p.fun+12);p.stress=clamp(p.stress-18);p.energy=clamp(p.energy-14);p.hygiene=clamp(p.hygiene-10);break;
-        case 'cinema':publicPlace();debit(3800);p.fun=clamp(p.fun+34);p.stress=clamp(p.stress-16);p.energy=clamp(p.energy-5);break;
+        case 'hangout':publicPlace();debit(ECONOMY_CONFIG.basicActivities.hangout);p.social=clamp(p.social+28);p.fun=clamp(p.fun+20);p.energy=clamp(p.energy-8);break;
+        case 'exercise':publicPlace();debit(ECONOMY_CONFIG.basicActivities.exercise);p.fun=clamp(p.fun+12);p.stress=clamp(p.stress-18);p.energy=clamp(p.energy-14);p.hygiene=clamp(p.hygiene-10);break;
+        case 'cinema':publicPlace();debit(ECONOMY_CONFIG.basicActivities.cinema);p.fun=clamp(p.fun+34);p.stress=clamp(p.stress-16);p.energy=clamp(p.energy-5);break;
         case 'leave-home':home();p.drivingVehicle=null;p.location={kind:'public',district:p.district,venue:'neighbourhood'};break;
         case 'enter-home':check(p.district===p.home.district,'Travel to your home neighbourhood first');check(!p.drivingVehicle,'Park your car before entering');check(['public','home'].includes(p.location.kind),'Head outside before entering your home');p.location={kind:'home',district:p.district,venue:'home'};break;
         case 'enter-venue':{publicPlace();const venue=venueFor(payload.venueId);check(venue&&venueAvailable(venue.id,p.district),'Choose a place in your neighbourhood');check(!payload.district||payload.district===p.district,'Travel to this neighbourhood first');check(!p.drivingVehicle,'Park your car before entering');p.location={kind:'venue',district:p.district,venue:venue.id};extra.venue=venue;break;}
@@ -311,10 +358,12 @@ export class MongoGameStore {
           const venueId=action==='travel'&&payload.venueId!=null?clean(payload.venueId,80):null;
           if(venueId!==null)publicPlace();
           const {mode,cost,seconds}=await this.quoteTravel(p,{district:destination,mode:payload.mode,venueId});
-          const vehicleId=mode==='car'?(ownsVehicle(p,catalog,p.drivingVehicle)?p.drivingVehicle:catalog.find(item=>ownsVehicle(p,catalog,item.id))?.id):null;
-          debit(cost);p.drivingVehicle=null;p.activeTrip={id:uid(),destination,mode,cost,seconds,vehicleId,...(venueId?{venueId}:{}),arrivesAt:timestamp+seconds*1000,returningHome:action==='return-home'};extra.trip=p.activeTrip;p.location={kind:'transit',district:p.district,venue:'journey'};break;
+          const requestedVehicle=payload.vehicleId??p.drivingVehicle??(p.vehiclePresence?.district===p.district?p.vehiclePresence.vehicleId:null);
+          if(mode==='car'&&payload.vehicleId!=null)check(ownsVehicle(p,catalog,payload.vehicleId),'Buy this car before choosing it');
+          const vehicleId=mode==='car'?(ownsVehicle(p,catalog,requestedVehicle)?requestedVehicle:catalog.find(item=>ownsVehicle(p,catalog,item.id))?.id):null;
+          debit(cost);p.drivingVehicle=null;p.activeTrip={id:uid(),fromLocation:{...p.location},destination,mode,cost,seconds,vehicleId,...(venueId?{venueId}:{}),arrivesAt:timestamp+seconds*1000,returningHome:action==='return-home'};extra.trip=p.activeTrip;p.location={kind:'transit',district:p.district,venue:'journey'};break;
         }
-        case 'arrive':{const trip=p.activeTrip;check(trip&&trip.id===payload.tripId,'This journey is no longer active');check(timestamp>=trip.arrivesAt,'Your journey is still in progress',409,'trip_in_progress');if(trip.venueId)check(venueAvailable(trip.venueId,trip.destination),'This destination is no longer available');p.district=trip.destination;p.location={kind:trip.returningHome?'home':trip.venueId?'venue':'public',district:trip.destination,venue:trip.returningHome?'home':trip.venueId||'neighbourhood'};p.drivingVehicle=!trip.returningHome&&!trip.venueId&&trip.mode==='car'&&ownsVehicle(p,catalog,trip.vehicleId)?trip.vehicleId:null;p.activeTrip=null;p.energy=clamp(p.energy-3);break;}
+        case 'arrive':{const trip=p.activeTrip;check(trip&&trip.id===payload.tripId,'This journey is no longer active',409,'trip_not_active');check(timestamp>=trip.arrivesAt,'Your journey is still in progress',409,'trip_in_progress');if(trip.venueId)check(venueAvailable(trip.venueId,trip.destination),'This destination is no longer available');p.district=trip.destination;p.location={kind:trip.returningHome?'home':trip.venueId?'venue':'public',district:trip.destination,venue:trip.returningHome?'home':trip.venueId||'neighbourhood'};p.drivingVehicle=!trip.returningHome&&!trip.venueId&&trip.mode==='car'&&ownsVehicle(p,catalog,trip.vehicleId)?trip.vehicleId:null;p.activeTrip=null;p.energy=clamp(p.energy-3);break;}
         case 'take-job':check(typeof payload.jobId==='string'&&Object.hasOwn(jobs,payload.jobId),'Choose a listed job');check(!await this.activeChallenge(id,{session}),'Finish your current shift before switching careers');p.job=payload.jobId;break;
         case 'start-shift':{
           const job=jobs[p.job];check(job,'Choose a job before starting a shift');publicPlace();check(p.district===job.district,`Travel to ${locations.get(job.district)?.name||job.district} for your shift`);
@@ -342,9 +391,7 @@ export class MongoGameStore {
         case 'purchase':{const item=catalog.find(item=>item.id===payload.itemId);check(item,'Choose an item from Okrika Marketplace');check(!p.inventory.includes(item.id),'You already own this item',409);if(item.category==='vehicle'){const color=payload.color??item.defaultColor;check(vehicleColorFor(color)&&item.availableColors.includes(color),'Choose an available car colour');p.vehicleColors[item.id]=color;}debit(item.price);p.inventory.push(item.id);if(item.category==='furniture'&&!p.storedFurniture.includes(item.id))p.storedFurniture.push(item.id);extra.item=item;break;}
         case 'paint-vehicle':{const item=catalog.find(item=>item.id===payload.itemId&&item.category==='vehicle');check(item&&p.inventory.includes(item.id),'You can repaint a car you own',403,'vehicle_not_owned');check(vehicleColorFor(payload.color)&&item.availableColors.includes(payload.color),'Choose an available car colour');p.vehicleColors[item.id]=payload.color;extra.item=item;break;}
         case 'equip':{const item=catalog.find(item=>item.id===payload.itemId);check(item?.category==='clothing'&&p.inventory.includes(item.id),'You can wear clothing you own');p.appearance[item.slot]=item.value;break;}
-        case 'move-home':{const property=this.propertyFor(p,payload.propertyId);check(property&&(property.tier>0||property.originHome),'Choose a listed home');check(['rent','own'].includes(payload.tenure),'Choose rent or ownership');check(!property.originHome||payload.tenure==='own','Your starting home is available to move into without rent');check(p.home.propertyId!==property.id||p.home.tenure!==payload.tenure,'You already live here');check(!(payload.tenure==='rent'&&p.ownedProperties.includes(property.id)),'You already own this property; choose Move in',409,'already_owned');debit(property.originHome?0:payload.tenure==='rent'?property.rent:p.ownedProperties.includes(property.id)?0:property.buy);if(payload.tenure==='own'&&!p.ownedProperties.includes(property.id))p.ownedProperties.push(property.id);if(p.propertyInvestments[property.id]){const investment=investmentView(p,property,timestamp);p.wallet+=investment.collectable;extra.settledIncome=investment.collectable;delete p.propertyInvestments[property.id];}const previousHome=p.home;p.home={...(previousHome.starterVersion===1?{starterVersion:1,furnishingPreset:previousHome.furnishingPreset}:{}),...((previousHome.layoutId||previousHome.propertyId)===(property.layoutId||property.id)&&previousHome.roomStyle?{roomStyle:previousHome.roomStyle}:{}),propertyId:property.id,layoutId:property.layoutId||property.id,name:property.name,district:property.district,tenure:property.originHome?property.gifted?'own':'starter':payload.tenure,gifted:Boolean(property.gifted),rentDueAt:payload.tenure==='rent'?timestamp+GAME_YEAR_MS:null};if(p.district===property.district){p.drivingVehicle=null;p.location={kind:'home',district:p.district,venue:'home'};}else if(p.location.kind==='home')p.location={kind:'public',district:p.district,venue:'neighbourhood'};p.billsPaidAt=timestamp;p.rentPaidAt=timestamp;break;}
         case 'pay-bills':{check(timestamp-p.billsPaidAt>=GAME_BILL_PERIOD_MS,'Your home bills are up to date');const property=this.propertyFor(p);check(property,'Home property not found',404);const amount=Math.round(property.bills*(100-comfort.billDiscountPercent)/100);debit(amount);p.billsPaidAt=timestamp;extra.bill={amount,baseAmount:property.bills,discountPercent:comfort.billDiscountPercent};break;}
-        case 'renew-rent':{check(p.home.tenure==='rent','Your home is not rented');check(timestamp-p.rentPaidAt>=GAME_YEAR_MS,'Your rent is already paid for this game year');const property=this.propertyFor(p);check(property,'Home property not found',404);debit(property.rent);p.rentPaidAt=timestamp;p.home.rentDueAt=timestamp+GAME_YEAR_MS;break;}
         default:throw new GameError('Unknown action');
       }
       return {...extra,ledgerReason:action};

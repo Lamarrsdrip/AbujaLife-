@@ -13,8 +13,9 @@
 .outside-city .outside-roof-label{font-size:11px;font-weight:900;line-height:1.2}.outside-city .outside-venue-label{font-size:13px;font-weight:900;min-height:32px}.outside-city .outside-travel{font-size:12px;font-weight:800;min-height:44px}.outside-city .outside-selection-close{width:44px;height:44px;font-size:20px;right:5px;top:5px}.outside-selection>span,.outside-selection h3{padding-right:20px}.outside-city .outside-results strong{font-size:12px;font-weight:800}.outside-city .outside-tools span{font-size:11px;font-weight:800}.outside-city .outside-search button{font-size:20px}
 @media(max-width:700px){.outside-city .outside-roof-label{font-size:10px}.outside-city .outside-venue-label{font-size:12px;min-height:36px}.outside-city .outside-heading h2{max-width:170px}.outside-city .outside-tools{max-width:150px;top:12px;right:12px}}
 .outside-city .outside-venue-label{min-height:44px}.outside-city .outside-selection{box-sizing:border-box}
-/* Advertising land stays discoverable at a glance without overpowering district names. */
-.outside-city .outside-ad-label{font-size:10px;font-weight:800;min-height:28px;padding:5px 8px;background:#f5f0d7e8;color:#6c5832;border-color:#d2b86b;box-shadow:0 4px 12px #495b4420}
-@media(max-width:700px){.outside-city .outside-ad-label{font-size:9px;min-height:30px;padding:5px 7px}}
+/* Advertising land is represented by the map-native parcel tile itself, never a CTA pill. */
+.outside-city .outside-ad-label{display:none!important}
 
 .outside-ad-creative{width:96px!important;height:60px!important;min-height:0!important;padding:0!important;border:0!important;border-radius:7px!important;background:transparent!important;overflow:hidden;box-shadow:0 4px 12px #17382b22!important}.outside-ad-creative img{display:block;width:100%;height:100%;object-fit:cover;border-radius:7px}
+
+.outside-city.is-journey :is(.outside-heading,.outside-directory,.outside-selection,.outside-hint,[data-outside-action="ads"],[data-outside-action="mode"],[data-outside-action="home"]){display:none}.outside-city.is-journey .outside-tools{top:16px}.outside-city.is-journey .outside-status{bottom:28px;left:16px;right:auto;background:#f8f5e5e8;padding:10px 14px;border-radius:16px;color:#244f3a;font-size:12px}

@@ -475,7 +475,8 @@ async def main():
                         await a.locator('#shift-form [type="submit"]').click()
                         state = await wait_state(a, lambda s:s['profile']['completedShifts']==1)
                         earned = state['profile']['wallet']-before['profile']['wallet']
-                        assert earned==5600, earned
+                        expected_pay = before['jobs']['restaurant-host']['pay']
+                        assert earned==expected_pay, {'earned':earned,'authoritativeJobPay':expected_pay}
                         replay=await a.request.post(f'{BASE}/api/action',data={'action':'complete-shift','payload':{
                             'challengeId':challenge['id'],'answers':[{'taskId':key,'optionId':value} for key,value in answers.items()]}})
                         assert replay.ok, await replay.text()
@@ -494,7 +495,8 @@ async def main():
                         await a.locator('[data-ph-action="item"][data-id="linen-shirt"]').click()
                         await a.locator('[data-ph-action="purchase"]').click()
                         state = await wait_state(a, lambda s:'linen-shirt' in s['profile']['inventory'])
-                        assert before['profile']['wallet']-state['profile']['wallet']==4200
+                        expected_price = next(item['price'] for item in before['catalog'] if item['id']=='linen-shirt')
+                        assert before['profile']['wallet']-state['profile']['wallet']==expected_price
                         duplicate=await a.request.post(f'{BASE}/api/action',data={'action':'purchase','payload':{'itemId':'linen-shirt'}})
                         assert duplicate.status==409
                         assert (await bootstrap(a))['profile']['wallet']==state['profile']['wallet']
@@ -504,7 +506,7 @@ async def main():
                         await expect(a.locator('.game-nav')).to_be_visible()
                         state = await bootstrap(a)
                         assert 'linen-shirt' in state['profile']['inventory']
-                        return {'virtualItem':'linen-shirt','charged':4200,'duplicateRejected':True,'persists':True,'okrikaMarketplace':True}
+                        return {'virtualItem':'linen-shirt','charged':expected_price,'duplicateRejected':True,'persists':True,'okrikaMarketplace':True}
                     await qa.check('Virtual item purchase, authoritative charge, duplicate rejection and persistence', market_purchase)
 
                     async def map_travel_and_return():

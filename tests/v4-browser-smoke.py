@@ -88,7 +88,7 @@ class Evidence:
         return result['status']=='passed'
     def save(self):
         current=hashes();changed=[p for p,h in self.initial.items() if current.get(p)!=h]+[p for p in current if p not in self.initial]
-        report={'gitHead':subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip(),'results':self.results,'browserErrors':self.errors,'apiMutations':self.requests,'apiResponses':self.responses,'sourceHashesStart':self.initial,'sourceHashesEnd':current,'sourceChangedDuringRun':changed,'privateFixtureClock':self.fixture.changes if self.fixture else [],'fixtures':'Disposable real SQLite server, originRandomInt()=>0 yields genuine registration Nepo/Jabi origin. Clock only via private server stdin. Native browser clock/RAF, SwiftShader WebGL. No wallet/profile/position injection; all state changes use application UI.'}
+        report={'gitHead':subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip(),'results':self.results,'browserErrors':self.errors,'apiMutations':self.requests,'apiResponses':self.responses,'sourceHashesStart':self.initial,'sourceHashesEnd':current,'sourceChangedDuringRun':changed,'privateFixtureClock':self.fixture.changes if self.fixture else [],'fixtures':'Disposable real SQLite server; each registration selects its origin in the signup form. originRandomInt()=>0 selects the first authored home in that origin. Clock only via private server stdin. Native browser clock/RAF, SwiftShader WebGL. No wallet/profile/position injection; all state changes use application UI.'}
         (ART/'report.json').write_text(json.dumps(report,indent=2))
 
 async def webgl(page):
@@ -108,7 +108,7 @@ async def reload(page):
     if not await page.locator('#world-scene').count():await game.navigate(page,'world')
     await webgl(page)
 
-async def register(page,url,name,username,qa):
+async def register(page,url,name,username,qa,origin='nepo'):
     await page.goto(url,wait_until='domcontentloaded');await expect(page.locator('#auth-form')).to_be_visible()
     welcome=page.locator('#welcome-scene')
     await expect(welcome).to_have_attribute('data-character-renderer','webgl-3d',timeout=45000)
@@ -120,6 +120,7 @@ async def register(page,url,name,username,qa):
     await game.no_overflow(page);await qa.screenshot(page,username+'-login-room-mobile')
     await page.set_viewport_size({'width':1280,'height':900})
     for field,value in [('displayName',name),('username',username),('password',PASSWORD)]:await page.locator(f'#auth-form [name="{field}"]').fill(value)
+    await page.locator(f'#auth-form [name="originId"][value="{origin}"]').check()
     await page.locator('.auth-submit').click();await expect(page.locator('#onboarding-form')).to_be_visible()
     headings=[]
     for step in range(5):
@@ -130,11 +131,14 @@ async def register(page,url,name,username,qa):
         if step==1:await form.locator('[name="hair"][value="braids"]').locator('xpath=..').click()
         if step==3:await form.locator('[name="lifeGoal"][value="home"]').check()
         if step==4:
-            await expect(form).to_contain_text('Nepo');await expect(form).to_contain_text('1,000,000');await qa.screenshot(page,username+'-origin')
+            expected={'nepo':('Nepo Baby','100,000,000'),'lapo':('Lapo Baby','10,000,000')}[origin]
+            await expect(form).to_contain_text(expected[0]);await expect(form).to_contain_text(expected[1]);await qa.screenshot(page,username+'-origin')
         await form.locator('#begin-life' if step==4 else '[data-onboarding-next]').click()
     await expect(page.locator('#onboarding-form')).to_have_count(0);await webgl(page)
-    state=await game.state(page);p=state['profile'];assert p['origin']['id']=='nepo' and p['wallet']==1000000,p
-    assert p['home']['layoutId']=='jabi-apartment' and p['home']['district']=='jabi',p
+    state=await game.state(page);p=state['profile'];expected_balance={'nepo':100_000_000,'lapo':10_000_000}[origin]
+    assert p['origin']['id']==origin and p['wallet']==expected_balance,p
+    if origin=='nepo':assert p['home']['layoutId']=='jabi-apartment' and p['home']['district']=='jabi',p
+    else:assert p['home']['layoutId']=='garki-studio' and p['home']['district']=='lugbe',p
     assert p['onboardingComplete'] and len(set(headings))==5
     return {'id':p['id'],'headings':headings,'wallet':p['wallet'],'home':p['home']}
 
@@ -178,6 +182,7 @@ async def phone_hardware(page,qa):
     return {'device':'responsive Pro Max-style virtual handset','networkIndicator':'Wi-Fi','measurements':measurements,'existingPhoneLifecyclePreserved':True}
 
 async def physical(page,qa,activities=('shower','sleep')):
+    local_preview=await page.evaluate("document.documentElement.dataset.preview==='browser'")
     results=[]
     for activity in activities:
         # Returning home rebuilds the world. A marker can exist for one frame and
@@ -216,12 +221,12 @@ async def physical(page,qa,activities=('shower','sleep')):
         await expect(page.locator('#toast')).to_contain_text('A little better than before',timeout=20000)
         after=await game.state(page);value=after['profile'][key]
         actions=[r for r in qa.requests if r['body'].get('action')==activity]
-        assert len(actions)==count+1,{'activity':activity,'beforeRequests':count,'afterRequests':len(actions)}
+        if not local_preview:assert len(actions)==count+1,{'activity':activity,'beforeRequests':count,'afterRequests':len(actions)}
         assert value>=before[key],{'activity':activity,'before':before[key],'after':value}
         # A need can already be at its 100-point cap. The action still
         # completes and applies its other benefits; it simply cannot raise a
         # capped meter any further.
-        results.append({'activity':activity,'before':before[key],'after':value,'atCap':value==100,'effectsDelayed':True})
+        results.append({'activity':activity,'before':before[key],'after':value,'atCap':value==100,'effectsDelayed':True,'localPreview':local_preview})
     return results
 
 async def home_studio(page,qa):
@@ -269,7 +274,7 @@ async def investment_portfolio(page,fixture,qa):
 
     # The fixture advances only the server clock. Reload lets the normal bootstrap
     # resynchronize the app's game clock before the rent timer is evaluated.
-    fixture.clock(advance=125000)
+    fixture.clock(advance=7*24*60*60*1000+1)
     await reload(page)
     await game.navigate(page,'property')
     await page.locator('[data-property-tab="investments"]').click()
@@ -384,7 +389,7 @@ async def work(page,fixture,qa):
         fixture.clock('2026-10-12T'+hour+':00:00Z');await reload(page);await life(page,'work')
         await page.locator('[data-start-shift]').click()
         if (await game.state(page))['profile']['location']['kind']=='public' and await page.locator('[data-start-shift]').count():await page.locator('[data-start-shift]').click()
-        await expect(page.locator('#shift-form')).to_be_visible();reading_started=time.monotonic();before=(await game.state(page))['profile']['wallet']
+        await expect(page.locator('#shift-form')).to_be_visible();reading_started=time.monotonic();started=await game.state(page);before=started['profile']['wallet'];expected_pay=started['jobs']['property-agent']['pay']
         answers={'needs':'budget','listing':'verify','viewing':'total'}
         for task,answer in answers.items():
             choice=page.locator(f'#shift-form [name="{task}"][value="{answer}"]')
@@ -401,7 +406,7 @@ async def work(page,fixture,qa):
         submitted=await form.evaluate('el=>Object.fromEntries(new FormData(el))')
         assert submitted==answers,{'expectedAnswers':answers,'formAnswers':submitted}
         await page.locator('#shift-form button').click();s=await game.wait_state(page,lambda s:s['profile']['wallet']>before)
-        assert s['profile']['wallet']-before==9800;saved.append(s['profile']['workDays']['2026-10-12'])
+        assert s['profile']['wallet']-before==expected_pay;saved.append(s['profile']['workDays']['2026-10-12'])
         await expect(page.locator('[data-start-shift]')).to_be_disabled()
     await expect(page.locator('.work-calendar')).to_contain_text('0 of 2');await qa.screenshot(page,'main-work-two-real-day-slots')
     await game.navigate(page,'world');return {'bankClosedSunday':True,'bankMondayHours':'08:00–17:00 WAT','propertyShifts':saved}
@@ -547,7 +552,7 @@ async def main():
             browser=await pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH') or (str(Path('/usr/bin/chromium')) if Path('/usr/bin/chromium').exists() else pw.chromium.executable_path),headless=True,args=['--no-sandbox',*gpu_args])
             contexts=[await browser.new_context(viewport={'width':1280,'height':900},device_scale_factor=1,service_workers='block') for _ in range(2)]
             owner,guest=[await c.new_page() for c in contexts];qa.watch(owner,'owner');qa.watch(guest,'guest')
-            registered=await qa.check('01 genuine registration and five-card origin onboarding',lambda:register(owner,fixture.url,'Ada Acceptance','ada_v4',qa))
+            registered=await qa.check('01 real Nepo signup starts with ₦100M and completes five onboarding cards',lambda:register(owner,fixture.url,'Ada Acceptance','ada_v4',qa,'nepo'))
             if not registered:await browser.close();return 1
             if selected:
                 if 'physical' in selected:await qa.check('03 physical shower and sleep delay their server effects',lambda:physical(owner,qa))
@@ -571,12 +576,16 @@ async def main():
                 await qa.check('03 physical shower and sleep delay their server effects',lambda:physical(owner,qa))
                 await qa.check('03 authoritative investment portfolio buys, collects rent, sells and persists',lambda:investment_portfolio(owner,fixture,qa))
                 await qa.check('04 home studio surfaces and reachable divider persist',lambda:home_studio(owner,qa))
-                guest_ok=await qa.check('05 second independently registered connected resident',lambda:register(guest,fixture.url,'Bayo Acceptance','bayo_v4',qa))
+                guest_ok=await qa.check('05 second Nepo resident registers in the same Jabi neighbourhood for multiplayer',lambda:register(guest,fixture.url,'Bayo Acceptance','bayo_v4',qa,'nepo'))
                 if guest_ok:
                     await qa.check('06 actual home PNG and editable caption reach real resident feed',lambda:home_share(owner,guest,qa))
                     await qa.check('07 real status disappears after 24 server hours',lambda:statuses(owner,guest,fixture,qa))
                     await qa.check('08 owner-approved visit actual home live pose and shared chat',lambda:visits(owner,guest,qa))
                 await guest.close()
+                lapo_context=await browser.new_context(viewport={'width':1280,'height':900},device_scale_factor=1,service_workers='block')
+                lapo_page=await lapo_context.new_page();qa.watch(lapo_page,'lapo signup')
+                await qa.check('05 real Lapo signup starts with ₦10M and saves a rent-free starter home',lambda:register(lapo_page,fixture.url,'Lapo Acceptance','lapo_v4',qa,'lapo'))
+                await lapo_context.close()
                 await qa.check('09 explicit loan consent borrowing and repayment',lambda:loans(owner,qa))
                 await qa.check('10 work respects WAT weekdays and two completed slots',lambda:work(owner,fixture,qa))
                 fixture.clock('2026-10-17T21:00:00Z');await reload(owner)

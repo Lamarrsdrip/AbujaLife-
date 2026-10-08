@@ -68,13 +68,15 @@ test('Mongo discovery claims, atomic visit counters and existing SSE reconcile u
   await app.store.emitCityStats();
   await sa.wait(e=>e.type==='city-stats'&&e.data.stats.onlineNow===2&&e.data.stats.hereNow===1);
   const action=(account,name,payload={})=>request('/api/action',account,{action:name,payload});
-  await action(a,'leave-home');await action(b,'leave-home');sa.events.length=0;await app.store.emitCityStats();
+  // Clear before each mutation: its real broadcast may arrive before the HTTP
+  // response, and the server correctly suppresses identical repeat snapshots.
+  sa.events.length=0;await action(a,'leave-home');await action(b,'leave-home');await app.store.emitCityStats();
   await sa.wait(e=>e.type==='city-stats'&&e.data.stats.onlineNow===2&&e.data.stats.hereNow===2);
-  await action(b,'enter-venue',{venueId:'restaurant'});sa.events.length=0;await app.store.emitCityStats();
+  sa.events.length=0;await action(b,'enter-venue',{venueId:'restaurant'});await app.store.emitCityStats();
   await sa.wait(e=>e.type==='city-stats'&&e.data.stats.onlineNow===2&&e.data.stats.hereNow===1);
-  await request('/api/profile',b,{settings:{presenceVisible:false}});sa.events.length=0;await app.store.emitCityStats();
+  sa.events.length=0;await request('/api/profile',b,{settings:{presenceVisible:false}});await app.store.emitCityStats();
   await sa.wait(e=>e.type==='city-stats'&&e.data.stats.onlineNow===1);
-  await request('/api/profile',b,{settings:{presenceVisible:true}});sa.events.length=0;await app.store.emitCityStats();
+  sa.events.length=0;await request('/api/profile',b,{settings:{presenceVisible:true}});await app.store.emitCityStats();
   await sa.wait(e=>e.type==='city-stats'&&e.data.stats.onlineNow===2);
 
   const shown=await Promise.all(['venue:jabi-lake','venue:magicland'].map(activityId=>action(a,'discovery-event',{activityId,event:'shown'})));

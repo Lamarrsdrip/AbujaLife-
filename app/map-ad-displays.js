@@ -1,14 +1,15 @@
 import * as THREE from './vendor/three.module.js';
 import {adSpaceFromId} from '../src/shared/advertising.mjs';
 import {okrikaHouseCreativeDataUrl} from './okrika-house-creative.js';
+import {adCampaignId,isHouseAd,activeAdAt} from './ad-state.js';
 
 function creativeVersion(source=''){let hash=2166136261;for(let i=0;i<source.length;i++)hash=Math.imul(hash^source.charCodeAt(i),16777619);return `${source.length}-${hash>>>0}`;}
-const campaignRef=ad=>String(ad?.txRef||ad?.campaignId||ad?.id||'campaign');
-const activeAt=(ad,now)=>(ad?.startAt==null||Number(ad.startAt)<=now)&&(ad?.endAt==null||Number(ad.endAt)>now);
+const campaignRef=adCampaignId;
+const activeAt=activeAdAt;
 const creativeSource=ad=>String(ad?.imageDataUrl||((ad?.campaignType==='house'||ad?.creativeType==='okrika-house')?okrikaHouseCreativeDataUrl(ad):''));
 export function mapAdPlacements(campaigns=[],now=Date.now()){
  const seen=new Set();
- return campaigns.filter(ad=>activeAt(ad,now)).flatMap(ad=>(ad.slots||[]).flatMap(id=>{
+ return campaigns.filter(ad=>activeAt(ad,now)).sort((a,b)=>Number(isHouseAd(a))-Number(isHouseAd(b))).flatMap(ad=>(ad.slots||[]).flatMap(id=>{
   const space=adSpaceFromId(id);if(!space||space.eligible===false||seen.has(id))return [];seen.add(id);
   const source=creativeSource(ad);
   return [{...space,key:`paid-ad:${id}`,campaign:ad,creativeSource:source,creativeVersion:creativeVersion(source),z:space.y}];

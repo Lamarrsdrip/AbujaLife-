@@ -27,4 +27,5 @@ test('house campaigns do not expire and paid inventory wins a shared slot withou
  const alone=mapAdPlacements([house],Date.now());assert.equal(alone.length,1);assert.equal(alone[0].campaign.campaignType,'house');
  const paid={txRef:'abjl_ad_test',kind:'plot',slots:[slot],title:'Paid advertiser',imageDataUrl:'data:image/png;base64,fixture',startAt:1,endAt:Date.now()+60000};
  const mixed=mapAdPlacements([paid,house],Date.now());assert.equal(mixed.length,1);assert.equal(mixed[0].campaign.txRef,'abjl_ad_test');
+ const reverse=mapAdPlacements([house,paid],Date.now());assert.equal(reverse.length,1);assert.equal(reverse[0].campaign.txRef,'abjl_ad_test');
 });

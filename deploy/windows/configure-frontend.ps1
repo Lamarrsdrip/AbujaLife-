@@ -54,6 +54,8 @@ abujacity.life {
         not path /assets/*
     }
     header @noCache Cache-Control "no-cache, no-store, must-revalidate"
+    @manifest path /manifest.webmanifest
+    header @manifest Content-Type "application/manifest+json; charset=utf-8"
     @immutable path /assets/*
     header @immutable Cache-Control "public, max-age=31536000, immutable"
     @static {

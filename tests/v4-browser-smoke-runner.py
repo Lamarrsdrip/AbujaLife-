@@ -4,7 +4,7 @@
 This runner changes no production behavior. It teaches the acceptance harness about
 current real-player contracts that are intentionally dynamic in test:
 - the exact ephemeral localhost origin used by the disposable server;
-- the current Lapo starter economy and Lugbe starter home;
+- origin selection and economy assertions from the canonical V4 registration flow;
 - AbujaLife's one-per-tab returning-resident welcome gate;
 - the current compact world navigation/zoom guidance;
 - the deliberate resident deep-link appended when sharing a home; and
@@ -80,47 +80,6 @@ async def dismiss_returning_welcome(page):
     await control.first.click()
     await v4.expect(page.locator('.abj-welcome-back')).to_have_count(0)
     return True
-
-
-async def register_current_origin(page,url,name,username,qa):
-    """Exercise the genuine five-card onboarding against the current Lapo contract."""
-    await page.goto(url,wait_until='domcontentloaded');await v4.expect(page.locator('#auth-form')).to_be_visible()
-    welcome=page.locator('#welcome-scene')
-    await v4.expect(welcome).to_have_attribute('data-character-renderer','webgl-3d',timeout=45000)
-    await v4.expect(welcome).to_have_attribute('data-environment-renderer','webgl-3d')
-    quality=await welcome.evaluate('''el=>{const canvas=el.querySelector('canvas.world-character-layer'),r=canvas?.getBoundingClientRect();return {width:canvas?.width,height:canvas?.height,cssWidth:r?.width,cssHeight:r?.height,environmentMeshes:Number(el.dataset.environmentMeshes||0),webgl:!!(canvas&&(canvas.getContext('webgl2')||canvas.getContext('webgl')))}}''')
-    assert quality['webgl'] and quality['environmentMeshes']>0 and quality['width']+1>=quality['cssWidth'] and quality['height']+1>=quality['cssHeight'],quality
-    await qa.screenshot(page,username+'-login-room-desktop')
-    await page.set_viewport_size({'width':390,'height':844})
-    await v4.game.no_overflow(page);await qa.screenshot(page,username+'-login-room-mobile')
-    await page.set_viewport_size({'width':1280,'height':900})
-    for field,value in [('displayName',name),('username',username),('password',v4.PASSWORD)]:await page.locator(f'#auth-form [name="{field}"]').fill(value)
-    await page.locator('.auth-submit').click();await v4.expect(page.locator('#onboarding-form')).to_be_visible()
-    headings=[]
-    for step in range(5):
-        form=page.locator('#onboarding-form');headings.append(await form.locator('h1').inner_text())
-        if step==0:
-            await form.locator('[name="displayName"]').fill(name)
-            await form.locator('[name="presentation"][value="feminine"]').check()
-        if step==1:await form.locator('[name="hair"][value="braids"]').locator('xpath=..').click()
-        if step==3:await form.locator('[name="lifeGoal"][value="home"]').check()
-        if step==4:
-            await v4.expect(form).to_contain_text('Lapo Baby');await v4.expect(form).to_contain_text('10,000,000');await qa.screenshot(page,username+'-origin')
-        await form.locator('#begin-life' if step==4 else '[data-onboarding-next]').click()
-    await v4.expect(page.locator('#onboarding-form')).to_have_count(0);await v4.webgl(page)
-    state=await v4.game.state(page);p=state['profile'];assert p['origin']['id']=='lapo' and p['wallet']==10_000_000,p
-    assert p['home']['layoutId']=='garki-studio' and p['home']['district']=='lugbe',p
-    assert p['onboardingComplete'] and len(set(headings))==5
-    return {'id':p['id'],'headings':headings,'wallet':p['wallet'],'home':p['home']}
-
-
-_original_evidence_save=v4.Evidence.save
-def evidence_save_current_origin(self):
-    _original_evidence_save(self)
-    report_path=v4.ART/'report.json'
-    report=json.loads(report_path.read_text())
-    report['fixtures']='Disposable real SQLite server with the genuine current five-card onboarding: Lapo Baby, ₦10,000,000 and the Lugbe starter studio. Clock only via private server stdin. Native browser clock/RAF, SwiftShader WebGL. No wallet/profile/position injection; all state changes use application UI.'
-    report_path.write_text(json.dumps(report,indent=2))
 
 
 _original_life=v4.life
@@ -220,8 +179,6 @@ async def home_share_with_resident_deep_link(owner,guest,qa):
 
 
 v4.Fixture=SameOriginFixture
-v4.Evidence.save=evidence_save_current_origin
-v4.register=register_current_origin
 v4.reload=reload_like_player
 v4.life=life_like_player
 v4.game.navigate=navigate_like_player

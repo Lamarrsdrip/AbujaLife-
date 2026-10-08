@@ -100,6 +100,8 @@ body:has(.world-resident-actions,.world-live-popover,.world-furniture-toolbar:no
 .location-tray-actions strong{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 /* Map owns a measured world row and dock row too. Search/selection use one
    lower context lane; selecting a destination yields the search controls. */
+/* Shared sheets opened from this fixed map must win the global modal stack. */
+#sheet-root{position:relative;z-index:10000}
 .abj-restored-map{inset:auto;top:var(--game-viewport-top,0px);left:0;width:100%;height:var(--game-viewport-height,100dvh);display:grid;grid-template-rows:minmax(0,1fr) auto}
 .abj-restored-map-stage{position:relative;inset:auto;min-height:0}
 .abj-restored-map .abj-map-bottom-nav{position:relative;left:auto;bottom:auto;transform:none;width:100%;max-width:none;box-sizing:border-box;border-radius:0;margin:0;padding:5px 10px calc(5px + env(safe-area-inset-bottom))}

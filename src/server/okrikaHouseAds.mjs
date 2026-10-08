@@ -2,6 +2,8 @@ import {OKRIKA_HOUSE_CAMPAIGNS,okrikaHouseCampaignById,isSafeHouseSlot} from '..
 import {adSpaceFromId} from '../shared/advertising.mjs';
 
 const COLLECTION='ad_house_campaigns';
+const INVENTORY_ID='okrika-house-inventory-v1';
+const CACHE_MS=5000;
 const TOKEN_COOKIE='abujalife_session=';
 const SECURITY_HEADERS=Object.freeze({'x-content-type-options':'nosniff','referrer-policy':'no-referrer','x-frame-options':'DENY','strict-transport-security':'max-age=31536000','cache-control':'no-store'});
 const clean=(value,max=200)=>String(value??'').trim().slice(0,max);
@@ -41,25 +43,83 @@ export async function installOkrikaHouseAds(ads,{database,log=()=>{}}={}){
  if(!ads||ads.__okrikaHouseAdsInstalled)return ads;
  const db=database?.db||ads.db;fail(db?.collection,'House ads require the production database',500,'house_ads_unavailable');
  const collection=db.collection(COLLECTION);
- try{await collection.createIndex({updatedAt:-1});}catch(error){log('house_ads_index_error',{code:error.code||'index_failed'});}
- let cache={at:0,rows:null};
- async function campaigns({fresh=false}={}){
-  const now=Date.now();
-  if(!fresh&&cache.rows&&now-cache.at<5000)return cache.rows;
-  let overrides=[];
-  try{overrides=await collection.find({_id:{$in:OKRIKA_HOUSE_CAMPAIGNS.map(c=>c.id)}}).toArray();}
-  catch(error){log('house_ads_read_error',{code:error.code||'read_failed'});}
-  const byId=new Map(overrides.map(row=>[row._id,row]));
-  const rows=OKRIKA_HOUSE_CAMPAIGNS.map(item=>merged(item,byId.get(item.id))).map(publicCampaign);
-  cache={at:now,rows};return rows;
+ const clock=()=>ads.clock?.()??Date.now();
+ let cache={at:0,rows:null,version:0},slotCache=null,slotRead=null,slotGeneration=0;
+ function invalidateSlots(){slotCache=null;slotRead=null;slotGeneration++;}
+ function validateRows(rows){
+  fail(Array.isArray(rows)&&rows.length===OKRIKA_HOUSE_CAMPAIGNS.length,'House campaign configuration is unavailable',503,'house_ads_unavailable');
+  const byId=new Map(rows.map(row=>[row.id,row]));
+  fail(byId.size===OKRIKA_HOUSE_CAMPAIGNS.length&&OKRIKA_HOUSE_CAMPAIGNS.every(row=>byId.has(row.id)),'House campaign configuration is unavailable',503,'house_ads_unavailable');
+  const normalized=OKRIKA_HOUSE_CAMPAIGNS.map(row=>publicCampaign(merged(row,byId.get(row.id)))),slots=new Set();
+  for(const row of normalized){
+   fail(isSafeHouseSlot(row.slotId),'House campaign placement is unavailable',503,'house_ads_unavailable');
+   if(!row.enabled)continue;
+   fail(!slots.has(row.slotId),'Another enabled house campaign already uses this placement',409,'house_slot_conflict');slots.add(row.slotId);
+  }
+  return normalized;
+ }
+ // One small versioned document makes slot assignment atomic across processes.
+ // The existing application role needs no DDL or new index permissions. Legacy
+ // per-campaign overrides remain intact and are copied only on first creation.
+ async function configuration(){
+  let document=await collection.findOne({_id:INVENTORY_ID});
+  if(!document){
+   const overrides=await collection.find({_id:{$in:OKRIKA_HOUSE_CAMPAIGNS.map(c=>c.id)}}).toArray(),byId=new Map(overrides.map(row=>[row._id,row]));
+   const rows=validateRows(OKRIKA_HOUSE_CAMPAIGNS.map(row=>publicCampaign(merged(row,byId.get(row.id)))));
+   try{await collection.updateOne({_id:INVENTORY_ID},{$setOnInsert:{version:1,campaigns:rows,createdAt:clock()}},{upsert:true});}
+   catch(error){if(error.code!==11000)throw error;}
+   document=await collection.findOne({_id:INVENTORY_ID});
+  }
+  fail(document&&Number.isSafeInteger(document.version)&&document.version>0,'House campaign configuration is unavailable',503,'house_ads_unavailable');
+  return {rows:validateRows(document.campaigns),version:document.version};
+ }
+ function remember(result){
+  if(result.version>=cache.version)cache={...result,at:clock()};
+  return cache.rows;
+ }
+ async function campaigns({fresh=false,strict=false}={}){
+  const now=clock();if(!fresh&&cache.rows&&now-cache.at<CACHE_MS)return cache.rows;
+  try{return remember(await configuration());}
+  catch(error){
+   log('house_ads_read_error',{code:error.code||'read_failed'});
+   if(strict)throw Object.assign(new Error('House campaigns are temporarily unavailable. Please try again.'),{status:503,code:'house_ads_unavailable'});
+   // Never substitute enabled defaults after a failed read. A running process
+   // retains its last verified settings; a cold process displays no house ads.
+   return cache.rows||[];
+  }
+ }
+ async function lockedSlots(rows){
+  const ids=rows.map(row=>row.slotId),key=ids.join('|'),now=clock();
+  if(slotCache?.key===key&&now-slotCache.at<CACHE_MS)return slotCache.ids;
+  if(slotRead?.key===key)return slotRead.promise;
+  const pending={key},generation=slotGeneration;
+  pending.promise=(async()=>{
+   try{
+    const locks=await db.collection('ad_slots').find({_id:{$in:ids},expiresAt:{$gt:new Date(now)}},{projection:{_id:1}}).toArray();
+    const blocked=new Set(locks.map(row=>row._id));if(generation===slotGeneration)slotCache={key,at:now,ids:blocked};return blocked;
+   }catch(error){log('house_ads_reservation_read_error',{code:error.code||'read_failed'});return new Set(ids);}
+   finally{if(slotRead===pending)slotRead=null;}
+  })();slotRead=pending;return pending.promise;
+ }
+ async function effectiveHouseCampaigns(result){
+  await campaigns();const revision=cache.version,all=(cache.rows||[]).filter(row=>row.enabled),blocked=new Set(await lockedSlots(all));
+  for(const campaign of result.active||[])for(const slot of campaign.slots||[])blocked.add(slot);
+  for(const space of result.spaces||[])if(space.available===false)blocked.add(space.id);
+  return {all,house:all.filter(row=>!blocked.has(row.slotId)),revision};
+ }
+ // Reservations and payment activation can change before the short read cache
+ // expires. Invalidate immediately for commerce on this application instance.
+ for(const name of ['checkout','activateVerified'])if(typeof ads[name]==='function'){
+  const original=ads[name].bind(ads);ads[name]=async(...args)=>{try{return await original(...args);}finally{invalidateSlots();}};
  }
  const baseWorld=ads.world.bind(ads),basePublicState=ads.publicState.bind(ads),baseInventory=ads.inventory.bind(ads);
 
  ads.houseCampaigns=campaigns;
  ads.world=async options=>{
-  const result=await baseWorld(options),all=(await campaigns()).filter(c=>c.enabled);
-  const paid=result.active||[],paidSlots=new Set(paid.flatMap(c=>c.slots||[]));
-  let house=all.filter(c=>!paidSlots.has(c.slotId));
+  const result=await baseWorld(options),paid=result.active||[],effective=await effectiveHouseCampaigns(result),all=effective.all;
+  let house=effective.house;
+  result.houseRevision=effective.revision;
+  result.housePlacements=house.map(({id,campaignId,slotId})=>({id,campaignId,slotId}));
   if(options?.bounds&&['x','y','width','height'].every(k=>Number.isFinite(Number(options.bounds[k])))){
    const b={x:Number(options.bounds.x),y:Number(options.bounds.y),width:Number(options.bounds.width),height:Number(options.bounds.height)};
    house=house.filter(c=>boundsHit(adSpaceFromId(c.slotId),b));
@@ -78,8 +138,8 @@ export async function installOkrikaHouseAds(ads,{database,log=()=>{}}={}){
   return result;
  };
  ads.publicState=async()=>{
-  const result=await basePublicState(),all=(await campaigns()).filter(c=>c.enabled),paid=result.active||[],paidSlots=new Set(paid.flatMap(c=>c.slots||[])),house=all.filter(c=>!paidSlots.has(c.slotId));
-  return {...result,houseCampaigns:all.length,inventory:{...(result.inventory||{}),houseCampaigns:all.length},active:[...paid,...house]};
+  const result=await basePublicState(),{all,house,revision}=await effectiveHouseCampaigns(result),paid=result.active||[];
+  return {...result,houseCampaigns:all.length,houseRevision:revision,housePlacements:house.map(({id,campaignId,slotId})=>({id,campaignId,slotId})),inventory:{...(result.inventory||{}),houseCampaigns:all.length},active:[...paid,...house]};
  };
  ads.inventory=async id=>{
   const result=await baseInventory(id),house=await campaigns();
@@ -87,13 +147,16 @@ export async function installOkrikaHouseAds(ads,{database,log=()=>{}}={}){
  };
  ads.houseInventory=async id=>{
   await ads.admin.requirePermission(id,'payments');
-  const rows=await campaigns({fresh:true});
+  const rows=await campaigns({fresh:true,strict:true});
   return {ok:true,ownerType:'platform',campaignType:'house',billing:false,count:rows.length,enabled:rows.filter(c=>c.enabled).length,campaigns:rows.map(c=>({...c,placement:adSpaceFromId(c.slotId)}))};
  };
  ads.saveHouseCampaign=async(id,body={})=>{
   await ads.admin.requirePermission(id,'payments');
   const base=okrikaHouseCampaignById(clean(body.id,80));fail(base,'Choose a valid Okrika house campaign',404,'house_campaign_not_found');
-  const current=(await campaigns({fresh:true})).find(c=>c.id===base.id),next={...current};
+  let saved;
+  for(let attempt=0;attempt<8;attempt++){
+  let config;try{config=await configuration();}catch(error){log('house_ads_read_error',{code:error.code||'read_failed'});throw Object.assign(new Error('House campaigns are temporarily unavailable. Please try again.'),{status:503,code:'house_ads_unavailable'});}
+  const current=config.rows.find(c=>c.id===base.id),next={...current};
   if(Object.hasOwn(body,'enabled')){fail(typeof body.enabled==='boolean','Choose whether this campaign is enabled');next.enabled=body.enabled;}
   if(Object.hasOwn(body,'title')){next.title=clean(body.title,70);fail(next.title.length>=2,'Add a campaign title');}
   if(Object.hasOwn(body,'eyebrow'))next.eyebrow=clean(body.eyebrow,36);
@@ -105,13 +168,17 @@ export async function installOkrikaHouseAds(ads,{database,log=()=>{}}={}){
   if(Object.hasOwn(body,'email'))next.email=normalizeEmail(body.email);
   if(Object.hasOwn(body,'slotId')){next.slotId=clean(body.slotId,120);fail(isSafeHouseSlot(next.slotId),'Choose an eligible Advertising Land placement');}
   if(Object.hasOwn(body,'imageDataUrl'))next.imageDataUrl=normalizeImage(body.imageDataUrl);
-  const others=(await campaigns({fresh:true})).filter(c=>c.id!==next.id&&c.enabled);
+  const others=config.rows.filter(c=>c.id!==next.id&&c.enabled);
   if(next.enabled)fail(!others.some(c=>c.slotId===next.slotId),'Another enabled house campaign already uses this placement',409,'house_slot_conflict');
-  const stored={_id:next.id,enabled:next.enabled,title:next.title,eyebrow:next.eyebrow,headline:next.headline,body:next.body,cta:next.cta,link:next.link,domain:next.domain,email:next.email,slotId:next.slotId,imageDataUrl:next.imageDataUrl||null,fit:'contain',updatedAt:Date.now(),updatedBy:id};
-  await collection.updateOne({_id:next.id},{$set:stored},{upsert:true});cache={at:0,rows:null};
-  await ads.admin.record(id,'update-house-ad',next.id,{enabled:next.enabled,slotId:next.slotId,title:next.title,link:next.link,customCreative:Boolean(next.imageDataUrl)});
-  log('house_ad_updated',{campaignId:next.id,actor:id,enabled:next.enabled,slotId:next.slotId});
-  return {ok:true,campaign:(await campaigns({fresh:true})).find(c=>c.id===next.id)};
+  const row=publicCampaign(next),rows=validateRows(config.rows.map(c=>c.id===row.id?row:c));
+  const result=await collection.updateOne({_id:INVENTORY_ID,version:config.version},{$set:{campaigns:rows,updatedAt:clock(),updatedBy:id},$inc:{version:1}});
+  if(result.matchedCount!==1)continue;
+  remember({rows,version:config.version+1});invalidateSlots();saved=row;break;
+  }
+  fail(saved,'House campaigns changed while saving. Please try again.',409,'house_campaign_changed');
+  await ads.admin.record(id,'update-house-ad',saved.id,{enabled:saved.enabled,slotId:saved.slotId,title:saved.title,link:saved.link,customCreative:Boolean(saved.imageDataUrl)});
+  log('house_ad_updated',{campaignId:saved.id,actor:id,enabled:saved.enabled,slotId:saved.slotId});
+  return {ok:true,campaign:saved};
  };
  ads.__okrikaHouseAdsInstalled=true;
  return ads;

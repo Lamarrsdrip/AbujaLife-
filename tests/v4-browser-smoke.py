@@ -520,6 +520,9 @@ async def club(page,venue,activity,kind,fixture,qa):
         authored=next(a for a in current['venueActions'] if a['id']==activity);cost=authored['cost'];before=current['profile']
         count=len([r for r in qa.requests if r['body'].get('action')=='venue-action' and r['body'].get('payload',{}).get('activityId')==activity])
         button=page.locator(f'[data-venue-activity="{activity}"]');await expect(button).to_be_enabled()
+        # Completion is deliberately brief. Capture actual DOM notifications
+        # while the action runs, before waiting for the persisted wallet effect.
+        await page.evaluate('''()=>{window.__qaActivityToasts=[];window.__qaToastObserver?.disconnect();window.__qaToastObserver=new MutationObserver(()=>{const text=document.querySelector('#toast')?.textContent||'';if(text)window.__qaActivityToasts.push(text);});window.__qaToastObserver.observe(document.querySelector('#toast'),{childList:true,subtree:true,characterData:true});}''')
         await button.click()
         # Native approach/activity animation finishes before the server mutation.
         # Charge/effect evidence is authoritative; a home-sleep progress bar is
@@ -533,7 +536,8 @@ async def club(page,venue,activity,kind,fixture,qa):
         for need in ('fun','hygiene','stress','mood'):
             if need in authored['effects']:
                 assert after[need]==max(0,min(100,before[need]+authored['effects'][need])),{'need':need,'before':before[need],'after':after[need],'effect':authored['effects'][need]}
-        await expect(page.locator('#toast')).to_contain_text('complete')
+        await page.wait_for_function("()=>window.__qaActivityToasts.some(text=>text.toLowerCase().includes('complete'))",timeout=20000)
+        await page.evaluate('window.__qaToastObserver.disconnect()')
         outcomes.append({'attempt':attempt+1,'cost':cost,'balanceAfter':after['wallet'],'effects':authored['effects']})
     await life(page,'home')
     outside=await game.wait_state(page,lambda s:s['profile']['location']['kind']=='public',60)

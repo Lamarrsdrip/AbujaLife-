@@ -466,6 +466,7 @@ function previewPayments(){return{ok:true,enabled:false,provider:'Flutterwave',m
 async function handleApi(url,method,body) {
   const route=url.pathname;
   if(route==='/api/health'&&method==='GET')return{ok:true,service:'AbujaLife browser preview',storage:storageAvailable?'localStorage':'memory'};
+  if(route==='/api/entry'&&method==='GET')return{...bootstrap(),entry:true};
   if(route==='/api/bootstrap'&&method==='GET')return bootstrap();
   if(route==='/api/wallet'&&method==='GET')return{ok:true,profile:clone(state.profile),transactions:clone(state.transactions).slice(-60).reverse(),walletMeta:{...clone(WALLET_META),transferEnabled:false,topupMode:'preview',demoTopupEnabled:true},loanMeta:clone(LOAN_META),loans:loanView(state.profile,Date.now()),workSchedule:jobSchedule(state.profile.job,state.profile,Date.now())};
   if(route==='/api/residents'&&method==='GET')return{ok:true,people:[],nextCursor:null,local:true};

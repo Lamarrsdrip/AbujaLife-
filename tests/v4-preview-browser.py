@@ -3,7 +3,7 @@
 Uses native crypto origin randomness, browser time/frames and actual local saves.
 No server, browser clock mock, wallet/state edits or substituted modules.
 """
-import asyncio, functools, hashlib, importlib.util, json
+import asyncio, functools, hashlib, importlib.util, json, os
 from pathlib import Path
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import threading, sys
@@ -16,7 +16,7 @@ class Quiet(SimpleHTTPRequestHandler):
     def log_message(self,*args):pass
 async def entry(page,url,qa):
     await page.goto(url,wait_until='domcontentloaded');await expect(page.locator('#onboarding-form')).to_be_visible();names=[]
-    initial=(await v.game.state(page))['profile'];origin=initial['origin'];assert origin['id'] in ('nepo','lapo') and initial['wallet']==({'nepo':1000000,'lapo':100000}[origin['id']])
+    initial=(await v.game.state(page))['profile'];origin=initial['origin'];assert origin['id'] in ('nepo','lapo') and initial['wallet']==({'nepo':100_000_000,'lapo':10_000_000}[origin['id']])
     for step in range(5):
         form=page.locator('#onboarding-form');names.append(await form.locator('h1').inner_text())
         if step==0:
@@ -45,7 +45,7 @@ async def share(page,qa):
     raw=base64.b64decode((await img.get_attribute('src')).split(',')[1]);assert raw[:8]==b'\x89PNG\r\n\x1a\n' and len(raw)<=512*1024
     (v.ART/'preview-owned-home.png').write_bytes(raw)
     caption='My own home, made my way in this browser.';await page.locator('#ph-shareCaption').fill(caption);await page.locator('[data-ph-action="home-share-social"]').click()
-    await expect(page.locator('#ph-socialText')).to_have_value(caption);await page.locator('[data-ph-form="social-compose"] [type="submit"]').click()
+    shared_caption=await page.locator('#ph-socialText').input_value();assert shared_caption.startswith(caption+'\n') and 'resident=browser-preview' in shared_caption,shared_caption;await page.locator('[data-ph-form="social-compose"] [type="submit"]').click()
     await expect(page.locator('.ph-social-card').filter(has_text=caption)).to_be_visible();await expect(page.locator('.ph-social-local')).to_contain_text('Local preview')
     await qa.screenshot(page,'preview-own-local-home-post');await v.game.close_phone(page);await v.reload(page);await v.game.open_phone(page,'social')
     await expect(page.locator('.ph-social-card').filter(has_text=caption)).to_be_visible()
@@ -64,7 +64,8 @@ async def main():
     v.ART.mkdir(parents=True,exist_ok=True);qa=v.Evidence();server=ThreadingHTTPServer(('127.0.0.1',0),functools.partial(Quiet,directory=str(v.REPO/'preview')));threading.Thread(target=server.serve_forever,daemon=True).start()
     try:
         async with async_playwright() as pw:
-            browser=await pw.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'])
+            chromium=os.environ.get('CHROMIUM_PATH') or (str(Path('/usr/bin/chromium')) if Path('/usr/bin/chromium').exists() else pw.chromium.executable_path)
+            browser=await pw.chromium.launch(executable_path=chromium,headless=True,args=['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'])
             context=await browser.new_context(viewport={'width':1280,'height':900},device_scale_factor=1,service_workers='block');page=await context.new_page();qa.watch(page,'anonymous preview')
             ok=await qa.check('preview 01 native random origin and five onboarding cards',lambda:entry(page,'http://127.0.0.1:'+str(server.server_port),qa))
             if ok:

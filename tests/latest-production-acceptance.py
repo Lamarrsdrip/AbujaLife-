@@ -199,11 +199,11 @@ async def run_browser(report, certificate_spki):
                 kinds = json.loads(await page.locator('#world-scene').get_attribute('data-environment-objects'))
                 owned = await page.locator('#world-scene [data-furniture-item]').evaluate_all('nodes=>[...new Set(nodes.map(n=>n.dataset.furnitureItem))]')
                 if origin(current) == 'lapo':
-                    assert current['wallet'] == 100000 and current['inventory'] == []
+                    assert current['wallet'] == 10_000_000 and current['inventory'] == []
                     assert owned == [] and 'sleeping-mat' in kinds
                     assert not any(k in kinds for k in ['bed','sofa','fridge','tv','wardrobe','kitchen'])
                 else:
-                    assert current['wallet'] == 1000000 and set(current['inventory']) == {'bed','sofa','dining-table','fridge'}
+                    assert current['wallet'] == 100_000_000 and set(current['inventory']) == {'bed','sofa','dining-table','fridge'}
                     assert set(owned) == set(current['inventory'])
                     assert not any(k in kinds for k in ['tv','wardrobe','kitchen'])
                 fresh[origin(current)] = {'home':current['home'],'inventory':current['inventory'],'objects':kinds}

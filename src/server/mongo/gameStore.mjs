@@ -244,7 +244,7 @@ export class MongoGameStore {
       const investment=investmentView(p,property,timestamp);
       check(investment.representable,'This rental income cannot be represented as exact whole Naira',409,'numeric_limit');
       if(action==='collect-rent'){
-        check(investment.collectable>0,'Rent is not ready yet; it accrues every minute',409,'rent_not_ready');
+        check(investment.collectable>0,'Rent is not ready yet; it accrues every week',409,'rent_not_ready');
         p.wallet+=investment.collectable;
         const periods=Math.max(0,Math.floor((timestamp-investment.lastCollectedAt)/INVESTMENT_META.periodMs));
         p.propertyInvestments[property.id].lastCollectedAt+=periods*INVESTMENT_META.periodMs;

@@ -123,7 +123,8 @@ test('street view is wired without removing the overview camera or its controls'
   assert.match(sim, /const streetOn=\(\)=>streetPreferred&&oblique&&!preview&&!furnitureMode;/, 'arranging furniture and previews keep the overview');
   assert.match(sim, /characterRenderer\?\.screenToGround\?\.\(e\.clientX,e\.clientY\)/, 'taps are resolved against the real ground plane');
   assert.match(scenes, /exitDoors/);
-  assert.match(css, /\[data-street-view="on"\] \.is-out-of-view\{display:none\}/);
+  assert.match(css, /\[data-street-view="on"\] \.is-out-of-view\{opacity:0;pointer-events:none\}/, 'hidden markers remain focusable');
+  assert.doesNotMatch(css, /\.is-out-of-view\{display:none\}/);
   // The frame-rate governor may only judge consecutive gameplay frames.
   assert.match(renderer, /playerBusy&&gap>0&&gap<120/);
   assert.doesNotMatch(renderer, /setPixelRatio\(1\);qualityStart/);

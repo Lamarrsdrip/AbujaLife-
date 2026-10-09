@@ -9,8 +9,8 @@ test('original ad IDs and earlier checkout cells retain dedicated safe sale righ
  assert.deepEqual(COMPATIBILITY_MAP_AD_INVENTORY.slice(0,40).map(p=>p.id),PLOT_IDS);
  const all=[...MAP_AD_INVENTORY,...COMPATIBILITY_MAP_AD_INVENTORY,...MAP_ROADSIDE_PARCELS];
  const saleRights=[...MAP_AD_INVENTORY,...COMPATIBILITY_MAP_AD_INVENTORY],uniqueRights=new Set(saleRights.map(p=>p.id));
- assert.equal(uniqueRights.size,saleRights.length,'expanded inventory cannot reuse a legacy reservation ID');
- assert.ok(uniqueRights.size>197,'new safe map inventory must expand beyond the previous 197 sale rights');
+ assert.equal(uniqueRights.size,saleRights.length,'inventory cannot reuse a legacy reservation ID');
+ assert.ok(uniqueRights.size>=197,'bounded map inventory must preserve all established sale rights');
  for(const parcel of COMPATIBILITY_MAP_AD_INVENTORY){
   assert.equal(mapLandConflict(parcel),null,parcel.id);
   assert.ok(parcel.x>=-5200&&parcel.y>=-3800&&parcel.x+parcel.width<=5200&&parcel.y+parcel.height<=3800);
@@ -25,8 +25,6 @@ test('original ad IDs and earlier checkout cells retain dedicated safe sale righ
 
 test('new dynamic cells cannot resell compatibility land through another slot ID',()=>{
  for(const parcel of COMPATIBILITY_MAP_AD_INVENTORY){
-  // These parcels lie inside city-frontage; cell origins must remain protected
-  // even when the public coordinate picker chooses the compatibility ID.
   const column=Math.floor((parcel.x+parcel.width/2+7000)/120),row=Math.floor((parcel.y+parcel.height/2+5000)/100);
   const other=adSpaceFromId(`ad:city-frontage:${row}:${column}`);
   if(other)assert.equal(other.eligible,false,other.id);

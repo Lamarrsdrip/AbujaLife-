@@ -11,6 +11,28 @@ const element=(tag,className,text)=>{const el=document.createElement(tag);if(cla
 const normalize=s=>String(s||'').trim().toLowerCase().replace(/\s+/g,' ');
 const currentId=p=>p?.district||p?.location?.id||p?.location;
 
+// The full OSM tile pyramid: level 0 is the whole world in one tile. Buttons,
+// pinch, wheel and keyboard all share this single range.
+export const MAP_ZOOM=Object.freeze({min:0,max:17,initial:12,buildingMin:11,placeMarkerMin:8});
+export const clampMapZoom=value=>clamp(Math.round(Number.isFinite(Number(value))?Number(value):MAP_ZOOM.initial),MAP_ZOOM.min,MAP_ZOOM.max);
+/** Local building cards and per-district pins carry no information once the city is a few pixels wide. */
+export const mapLayers=zoom=>({buildings:zoom>=MAP_ZOOM.buildingMin,placeMarkers:zoom>=MAP_ZOOM.placeMarkerMin});
+/** Keep the centre on the real globe so wide views pan and wrap without losing markers. */
+export function normalizeMapCenter(point){
+  const lat=clamp(Number.isFinite(point?.lat)?point.lat:0,-85,85),raw=Number.isFinite(point?.lon)?point.lon:0;
+  return {lat,lon:((raw+180)%360+360)%360-180};
+}
+/** Tiles covering a viewport. Columns repeat east-west at wide zoom; rows never leave the pyramid. */
+export function visibleMapTiles({center,zoom,width,height}){
+  const origin=project(center,zoom),left=origin.x-width/2,top=origin.y-height/2,n=2**zoom,tiles=[];
+  for(let tx=Math.floor(left/TILE_SIZE);tx<=Math.floor((left+width)/TILE_SIZE);tx++)for(let ty=Math.floor(top/TILE_SIZE);ty<=Math.floor((top+height)/TILE_SIZE);ty++){
+    if(ty<0||ty>=n)continue;
+    tiles.push({key:`${zoom}/${tx}/${ty}`,path:`${zoom}/${((tx%n)+n)%n}/${ty}`,x:Math.round(tx*TILE_SIZE-left),y:Math.round(ty*TILE_SIZE-top)});
+  }
+  return {origin,tiles};
+}
+export const projectMapPoint=project,unprojectMapPoint=unproject;
+
 /** Render source-backed OSM tiles and location selection. Call cleanup before removing the host.
  * onSelect receives the atlas record; onTravel receives its id and is allowed to return a Promise.
  * Source points are location reference points, never a claim about player GPS or legal boundaries.
@@ -19,7 +41,7 @@ export function renderMap(container,{atlas=ABUJA_ATLAS,venues=[],profile={},onTr
   if(!document.querySelector('link[data-abuja-map-styles]')){
     const link=element('link');link.rel='stylesheet';link.href=new URL('./map.css',import.meta.url).href;link.dataset.abujaMapStyles='';document.head.append(link);
   }
-  let disposed=false,zoom=12,center={...SETTLEMENT_POINTS.abuja.coordinates},selectedId=currentId(profile),filter='',frame=0,tilesLoaded=0,tilesFailed=0,travelBusy=false,travelError='';
+  let disposed=false,zoom=MAP_ZOOM.initial,center={...SETTLEMENT_POINTS.abuja.coordinates},selectedId=currentId(profile),filter='',frame=0,tilesLoaded=0,tilesFailed=0,travelBusy=false,travelError='';
   const venuePlaces=venues.filter(v=>v.districts?.length).map(v=>({id:`venue:${v.id}`,venueId:v.id,name:v.name,kind:'game-venue',district:v.districts.includes(currentId(profile))?currentId(profile):v.districts[0],vibe:v.description,category:v.category}));
   const destinations=[...atlas,...venuePlaces];
   const positions=new Map(),requests=new Map(),attempted=new Set(),listeners=[],tiles=new Map();
@@ -95,29 +117,30 @@ export function renderMap(container,{atlas=ABUJA_ATLAS,venues=[],profile={},onTr
   function renderMarkers(w,h,origin){
     const fragment=document.createDocumentFragment();
     const known=[{id:'__abuja-city',name:'Abuja',kind:'city-reference',coordinates:SETTLEMENT_POINTS.abuja.coordinates},...atlas.filter(p=>positions.has(p.id)).map(p=>({...p,coordinates:positions.get(p.id).coordinates}))];
-    const seen=new Set();
-    for(const p of known){const point=project(p.coordinates,zoom),x=point.x-origin.x+w/2,y=point.y-origin.y+h/2;if(x<0||x>w||y<0||y>h)continue;const key=`${p.coordinates.lat},${p.coordinates.lon}`;if(seen.has(key))continue;seen.add(key);const marker=element('button','abuja-map-marker');marker.type='button';marker.style.transform=`translate(${Math.round(x-7)}px,${Math.round(y-19)}px)`;marker.classList.toggle('is-selected',p.id===selectedId);marker.classList.toggle('is-current',p.id===currentId(profile));marker.setAttribute('aria-label',p.kind==='city-reference'?'Abuja city reference point':p.name);marker.title=p.name;marker.append(element('span','abuja-map-pin'),element('span','abuja-map-marker-label',p.name));marker.addEventListener('click',()=>{const place=atlas.find(a=>a.id===p.id);if(place)selectPlace(place);else{center={...p.coordinates};zoom=12;schedule();}});fragment.append(marker);}
+    const seen=new Set(),layers=mapLayers(zoom);
+    for(const p of known){if(!layers.placeMarkers&&p.id!=='__abuja-city'&&p.id!==selectedId&&p.id!==currentId(profile))continue;const point=project(p.coordinates,zoom),x=point.x-origin.x+w/2,y=point.y-origin.y+h/2;if(x<0||x>w||y<0||y>h)continue;const key=`${p.coordinates.lat},${p.coordinates.lon}`;if(seen.has(key))continue;seen.add(key);const marker=element('button','abuja-map-marker');marker.type='button';marker.style.transform=`translate(${Math.round(x-7)}px,${Math.round(y-19)}px)`;marker.classList.toggle('is-selected',p.id===selectedId);marker.classList.toggle('is-current',p.id===currentId(profile));marker.setAttribute('aria-label',p.kind==='city-reference'?'Abuja city reference point':p.name);marker.title=p.name;marker.append(element('span','abuja-map-pin'),element('span','abuja-map-marker-label',p.name));marker.addEventListener('click',()=>{const place=atlas.find(a=>a.id===p.id);if(place)selectPlace(place);else{center={...p.coordinates};zoom=MAP_ZOOM.initial;schedule();}});fragment.append(marker);}
     markerLayer.replaceChildren(fragment);
     const buildings=document.createDocumentFragment();
-    const buildingPlaces=known.filter(p=>p.id!=='__abuja-city'&&safeCoordinate(p.coordinates));
+    const buildingPlaces=layers.buildings?known.filter(p=>p.id!=='__abuja-city'&&safeCoordinate(p.coordinates)):[];
     for(const p of buildingPlaces){const point=project(p.coordinates,zoom),x=point.x-origin.x,y=point.y-origin.y;if(x<-90||x>w+90||y<-90||y>h+90)continue;const building=element('button','abuja-map-building');building.type='button';building.style.transform=`translate(${Math.round(x-32)}px,${Math.round(y-55)}px)`;building.classList.toggle('is-selected',p.id===selectedId);building.setAttribute('aria-label',`Open ${p.name}`);building.innerHTML=`<span class="map-building-roof"></span><span class="map-building-body"><i></i><i></i><i></i></span><strong>${p.name}</strong>`;building.addEventListener('click',()=>{const place=atlas.find(a=>a.id===p.id);if(place)selectPlace(place);});buildings.append(building);}
     buildingLayer.replaceChildren(buildings);
   }
   function render(){
     if(disposed)return;
     frame=0;const w=viewport.clientWidth,h=viewport.clientHeight;if(!w||!h)return;
-    const origin=project(center,zoom),left=origin.x-w/2,top=origin.y-h/2,n=2**zoom,visible=new Set();
-    for(let tx=Math.floor(left/TILE_SIZE);tx<=Math.floor((left+w)/TILE_SIZE);tx++)for(let ty=Math.floor(top/TILE_SIZE);ty<=Math.floor((top+h)/TILE_SIZE);ty++){
-      if(ty<0||ty>=n)continue;const x=((tx%n)+n)%n,key=`${zoom}/${x}/${ty}`;visible.add(key);let tile=tiles.get(key);
-      if(!tile){tile=element('img','abuja-map-tile');tile.alt='';tile.setAttribute('aria-hidden','true');tile.draggable=false;tile.decoding='async';tile.onload=()=>{if(disposed)return;tile.dataset.state='loaded';updateSourceState();};tile.onerror=()=>{if(disposed)return;tile.dataset.state='failed';tile.style.opacity='0';updateSourceState();};tile.src=`https://tile.openstreetmap.org/${key}.png`;tiles.set(key,tile);tileLayer.append(tile);}
-      tile.style.transform=`translate(${Math.round(tx*TILE_SIZE-left)}px,${Math.round(ty*TILE_SIZE-top)}px)`;
+    center=normalizeMapCenter(center);
+    const {origin,tiles:wanted}=visibleMapTiles({center,zoom,width:w,height:h}),visible=new Set();
+    for(const {key,path,x,y} of wanted){
+      visible.add(key);let tile=tiles.get(key);
+      if(!tile){tile=element('img','abuja-map-tile');tile.alt='';tile.setAttribute('aria-hidden','true');tile.draggable=false;tile.decoding='async';tile.onload=()=>{if(disposed)return;tile.dataset.state='loaded';updateSourceState();};tile.onerror=()=>{if(disposed)return;tile.dataset.state='failed';tile.style.opacity='0';updateSourceState();};tile.src=`https://tile.openstreetmap.org/${path}.png`;tiles.set(key,tile);tileLayer.append(tile);}
+      tile.style.transform=`translate(${x}px,${y}px)`;
     }
     for(const [key,tile] of tiles)if(!visible.has(key)){tile.onload=null;tile.onerror=null;tile.remove();tiles.delete(key);}
-    renderMarkers(w,h,origin);zoomOut.disabled=zoom<=7;zoomIn.disabled=zoom>=17;updateSourceState();
+    renderMarkers(w,h,origin);zoomOut.disabled=zoom<=MAP_ZOOM.min;zoomIn.disabled=zoom>=MAP_ZOOM.max;viewport.dataset.mapZoom=String(zoom);updateSourceState();
   }
   function schedule(){if(!frame&&!disposed)frame=requestAnimationFrame(render);}
-  function changeZoom(delta,screenPoint){const next=clamp(zoom+delta,7,17);if(next===zoom)return;if(screenPoint){const w=viewport.clientWidth,h=viewport.clientHeight,old=project(center,zoom),under=unproject({x:old.x+screenPoint.x-w/2,y:old.y+screenPoint.y-h/2},zoom),now=project(under,next);center=unproject({x:now.x-screenPoint.x+w/2,y:now.y-screenPoint.y+h/2},next);}zoom=next;schedule();}
-  listen(zoomIn,'click',()=>changeZoom(1));listen(zoomOut,'click',()=>changeZoom(-1));listen(recenter,'click',()=>{const p=atlas.find(a=>a.id===currentId(profile));if(p)selectPlace(p);else{center={...SETTLEMENT_POINTS.abuja.coordinates};zoom=12;schedule();}});
+  function changeZoom(delta,screenPoint){const next=clampMapZoom(zoom+delta);if(next===zoom)return;if(screenPoint){const w=viewport.clientWidth,h=viewport.clientHeight,old=project(center,zoom),under=unproject({x:old.x+screenPoint.x-w/2,y:old.y+screenPoint.y-h/2},zoom),now=project(under,next);center=normalizeMapCenter(unproject({x:now.x-screenPoint.x+w/2,y:now.y-screenPoint.y+h/2},next));}zoom=next;schedule();}
+  listen(zoomIn,'click',()=>changeZoom(1));listen(zoomOut,'click',()=>changeZoom(-1));listen(recenter,'click',()=>{const p=atlas.find(a=>a.id===currentId(profile));if(p)selectPlace(p);else{center={...SETTLEMENT_POINTS.abuja.coordinates};zoom=MAP_ZOOM.initial;schedule();}});
   listen(input,'input',()=>{filter=normalize(input.value);updateList();});
   listen(retry,'click',()=>{for(const tile of tiles.values()){tile.onload=null;tile.onerror=null;tile.remove();}tiles.clear();tilesLoaded=0;tilesFailed=0;for(const request of requests.values())request.abort();requests.clear();attempted.clear();sourceMessage.textContent='Loading Abuja streets…';retry.hidden=true;schedule();void locatePlace(selectedPlace());});
   const pointers=new Map();let drag=null,pinchDistance=0;

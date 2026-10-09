@@ -15,7 +15,8 @@ test('City Story and INEC experience is actually loaded into the phone',()=>{
 
 test('playable World can frame the full Abuja landmark city',()=>{
  const camera=read('app/world-camera.js'),sim=read('app/world-simulator.js'),city=citySource();
- assert.match(camera,/min: \.06, max: 10/);
+ // The floor was lowered from .06 so the whole authored World plus context is always reachable.
+ assert.match(camera,/min: \.01, max: 10/);
  assert.match(sim,/scene\.width\/2,y:scene\.height\/2/);
  assert.match(sim,/atOne\.baseWidth\/Math\.max\(scene\.width\*1\.32/);
  assert.match(city,/CITY_LANDMARKS\.map\(landmarkWorldPoint\)/);

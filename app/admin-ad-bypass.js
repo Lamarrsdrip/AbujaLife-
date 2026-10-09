@@ -6,6 +6,8 @@ const sheetRoot=document.querySelector('#sheet-root');
 let accessPromise=null;
 const access=()=>accessPromise||(accessPromise=(async()=>{try{const response=await apiFetch('/api/admin/status',{timeoutMs:7000});if(!response.ok)return null;const body=await response.json();return body?.role&&body?.permissions?.includes('payments')?body:null;}catch{return null;}})());
 
+const ADMIN_SUBMIT_LABEL='Publish to AbujaLife · No charge',ADMIN_READY_NOTE='Ready to publish. This administrator placement is free and stays live until you remove it.';
+const setText=(node,text)=>{if(node.textContent!==text)node.textContent=text;};
 function selectedIds(studio){return [...studio.querySelectorAll('[data-ad-selected] [data-ad-remove]')].map(node=>node.dataset.adRemove).filter(Boolean);}
 function validAdminForm(form,studio){
  const title=form.elements.title?.value.trim()||'',link=form.elements.link?.value.trim()||'',file=form.elements.image?.files?.[0];
@@ -15,8 +17,11 @@ function validAdminForm(form,studio){
 function refresh(form,studio){
  if(form.dataset.adminAdMode!=='1'||form.dataset.adminBusy==='1')return;
  const submit=form.querySelector('.abj-ad-submit');if(!submit)return;
- submit.disabled=!validAdminForm(form,studio);submit.textContent='Publish to AbujaLife · No charge';
- const note=form.querySelector('[data-ad-note]');if(note&&validAdminForm(form,studio))note.textContent='Ready to publish. This administrator placement is free and stays live until you remove it.';
+ // refresh() runs from a MutationObserver on this studio. Assigning textContent
+ // always records a new mutation, even when the text is identical, so every
+ // write here must be conditional or the observer re-triggers itself forever.
+ const valid=validAdminForm(form,studio);if(submit.disabled===valid)submit.disabled=!valid;setText(submit,ADMIN_SUBMIT_LABEL);
+ const note=form.querySelector('[data-ad-note]');if(note&&valid)setText(note,ADMIN_READY_NOTE);
 }
 async function publish(form,studio){
  if(form.dataset.adminBusy==='1'||!validAdminForm(form,studio))return;

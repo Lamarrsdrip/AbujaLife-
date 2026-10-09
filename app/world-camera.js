@@ -1,5 +1,7 @@
 // Camera preferences are local presentation only; they never change player state.
-export const WORLD_ZOOM = Object.freeze({min: .06, max: 10, step: 1.3, default: 1});
+// min is a safe, non-zero floor: the viewport divides by zoom, and at .01 the
+// view is 100x the default frame, far beyond any authored scene plus context.
+export const WORLD_ZOOM = Object.freeze({min: .01, max: 10, step: 1.3, default: 1});
 // A fixed, original dollhouse angle makes wall height and furniture sides visible.
 // The authored floor and server coordinates stay unchanged.
 export const WORLD_CAMERA = Object.freeze({yaw: 31 * Math.PI / 180, elevation: 38 * Math.PI / 180,

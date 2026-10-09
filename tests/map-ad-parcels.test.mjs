@@ -5,19 +5,24 @@ import {createMapAdParcels} from '../app/map-ad-parcels.js';
 import {MAP_AD_INVENTORY,COMPATIBILITY_MAP_AD_INVENTORY} from '../src/shared/advertising.mjs';
 
 function camera(x=0,z=0){const view=new THREE.OrthographicCamera(-6000,6000,4500,-4500,1,20000);view.position.set(x,9000,z);view.up.set(0,0,-1);view.lookAt(x,0,z);view.updateProjectionMatrix();view.updateMatrixWorld();return view;}
-test('vacant map inventory has bounded visible tiles without creatives or fabricated campaigns',()=>{
+test('vacant map inventory stays bounded without creatives or fabricated campaigns',()=>{
  const world=new THREE.Group(),parcels=[...MAP_AD_INVENTORY,...COMPATIBILITY_MAP_AD_INVENTORY];let time=1000;
  const layer=createMapAdParcels(world,parcels,{now:()=>time,maxVisible:12});layer.setView(camera(),{width:1440,height:900});
- assert.equal(world.children.length,2);assert.equal(layer.diagnostics.visibleParcels,12);assert.equal(layer.diagnostics.totalParcels,parcels.length);assert.ok(parcels.length>197,'expanded Abuja map must expose more real inventory than the previous 197-placement catalogue');
- assert.equal(world.children[0].material.opacity,.66,'available plots remain visible as map-native ad tiles during normal city exploration');
+ assert.equal(world.children.length,2);assert.equal(layer.diagnostics.visibleParcels,12);assert.equal(layer.diagnostics.totalParcels,parcels.length);assert.ok(parcels.length>=197,'authored and compatibility inventory remains available');
+ assert.equal(world.children[0].material.opacity,.58,'available plots stay discoverable without expensive heavy fill');
  assert.equal(world.children[1].material.opacity,1,'plot boundaries stay crisp without floating labels');
  assert.ok(world.children[0].instanceColor,'tile fill has per-plot state colour');
  for(const mesh of world.children){assert.equal(mesh.material.map,null);assert.equal(mesh.userData.adParcelIds.length,mesh.count);}
  const picked=parcels[Math.min(150,parcels.length-1)].id;time+=250;layer.setView(camera(),{width:1440,height:900},{selectedId:picked,advertiseMode:true});
- assert.equal(world.children[0].material.opacity,.82,'advertise mode strengthens the tile without adding CTA cards');assert.equal(world.children[1].material.opacity,1);
+ assert.equal(world.children[0].material.opacity,.72,'advertise mode strengthens the tile without adding CTA cards');assert.equal(world.children[1].material.opacity,1);
  assert.equal(world.children[0].userData.adParcelIds[0],picked,'selected visible parcel keeps priority at rendering capacity');
  time+=250;layer.setView(camera(25000,25000),{width:1440,height:900});assert.equal(layer.diagnostics.visibleParcels,0);
  layer.dispose();layer.dispose();assert.equal(world.children.length,0);
+});
+test('phone rendering caps visible vacant parcels below the desktop budget',()=>{
+ const world=new THREE.Group(),parcels=[...MAP_AD_INVENTORY,...COMPATIBILITY_MAP_AD_INVENTORY];
+ const layer=createMapAdParcels(world,parcels,{maxVisible:96});layer.setView(camera(),{width:390,height:844});
+ assert.ok(layer.diagnostics.visibleParcels<=64);layer.dispose();
 });
 test('native ray hits identify the exact visible parcel rather than arbitrary surrounding grass',()=>{
  const parcel=MAP_AD_INVENTORY[0],world=new THREE.Group();const layer=createMapAdParcels(world,[parcel]);

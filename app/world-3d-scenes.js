@@ -64,7 +64,7 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     for(const texture of new Set(textures))texture.dispose();surfaces.dispose();
     geometries.clear();mergedGeometries.clear();materials.clear();furniture.clear();
   }
-  const surfaces = createWorldMaterialLibrary(T), furniture = new Map(), cutawayWalls = [], contactInstances = new Map();
+  const surfaces = createWorldMaterialLibrary(T), furniture = new Map(), cutawayWalls = [], exitDoors = [], contactInstances = new Map();
   const water = [], movingCars = [], nightBeams=[], clubLights=[];
   const ds = depthScale;
   const isClub=venue?.kind==='club'||['club','club-cage','magic-city','bear-barn'].includes(venue?.id);
@@ -784,7 +784,7 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     const plane=mesh(parent,geo(`sign:${width}:${height}`,()=>new T.PlaneGeometry(width,height)),material,x,y,z,false);return plane;
   }
   function frontDoor(parent,x,y,label='Head outside') {
-    const door=new T.Group();door.name='Front door exit';door.position.set(x,0,y*ds);parent.add(door);
+    const door=new T.Group();door.name='Front door exit';door.position.set(x,0,y*ds);parent.add(door);exitDoors.push(door);
     const frame=mat('#315943',.72),panel=mat('#8fb39a',.7),trim=mat('#f2e5bd',.68),handle=mat('#e8d09a',.46,.12);
     box(door,0,96,0,156,192,18,frame,true);
     box(door,0,96,-11,120,176,6,trim,true);
@@ -951,7 +951,7 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
   for(const geometry of mergedGeometries)if(!attachedGeometry.has(geometry)){geometry.dispose();mergedGeometries.delete(geometry);}
   // WebGL scene metadata supports acceptance checks without replacing gameplay.
   group.userData={environment:'true-3d',indoor,objects:(layout.objects||[]).map(o=>o.kind),materials:'authored wood grain, woven fabric, stone, tile, glass and metal',surfaceTextures:surfaces.stats().textures};
-  function updateView({yaw=31*Math.PI/180,elevation=38*Math.PI/180,delta=0}={}) {
+  function updateView({yaw=31*Math.PI/180,elevation=38*Math.PI/180,delta=0,street=false}={}) {
     const viewX=Math.sin(yaw),viewZ=Math.cos(yaw),centerX=layout.width/2,centerZ=layout.height*ds/2;
     const mix=delta>0?1-Math.exp(-Math.min(delta,.1)*14):1;
     for(const wall of cutawayWalls){const c=wall.userData.center;
@@ -959,6 +959,9 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
       const target=inFront?Math.max(.19,Math.min(.32,.20+(elevation-.35)*.1)):1;
       wall.scale.y+=(target-wall.scale.y)*mix;
     }
+    // A full-height exit door between the street camera and the resident would
+    // hide them; its floor marker and prompt remain while the leaf steps aside.
+    for(const door of exitDoors)door.visible=!(street&&((door.position.x-centerX)*viewX+(door.position.z-centerZ)*viewZ>0));
     group.userData.viewYaw=yaw;
   }
   updateView();

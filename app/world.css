@@ -121,3 +121,17 @@
 .world-go-out-shortcut{background:linear-gradient(145deg,#f5c75f,#e2a93d)!important;color:#213d31!important;box-shadow:0 14px 32px #7a5a1738!important;min-width:126px!important;font-weight:850!important}
 .world-go-out-shortcut svg{width:20px;height:20px}
 .world-go-out-shortcut span{font-size:15px;letter-spacing:-.02em}
+
+/* Third-person street view. The WebGL canvas owns the picture; the SVG layer is a
+   screen-space overlay that keeps markers, labels and tap targets. */
+.world-canvas.world-canvas[data-street-view="on"]{background:linear-gradient(#f3ead9,#d9cfbb)!important}
+.world-canvas[data-street-view="on"] .world-character-layer{filter:none}
+.world-canvas[data-street-view="on"] .world-art,.world-canvas[data-street-view="on"] .world-traffic,.world-canvas[data-street-view="on"] .world-ambient,.world-canvas[data-street-view="on"] .world-route,.world-canvas[data-street-view="on"] .world-player,.world-canvas[data-street-view="on"] .world-minimap{display:none}
+.world-canvas[data-street-view="on"] .is-out-of-view{display:none}
+.world-canvas[data-street-view="on"] .world-parked-car>.vehicle-figure{display:none}
+#app .world-camera-tools .world-view-toggle,.world-camera-tools .world-view-toggle{color:#1f4a3a!important}
+#app .world-camera-tools .world-view-toggle[aria-pressed="true"],.world-camera-tools .world-view-toggle[aria-pressed="true"]{background:#1f4a3a!important;color:#f6f1df!important}
+.world-camera-tools{display:flex;gap:6px;pointer-events:none}
+.world-camera-tools>button{display:grid;place-items:center;padding:0;pointer-events:auto}
+.world-camera-tools .world-view-toggle svg{width:20px;height:20px}
+.world-hud:has(.world-camera-tools) .world-location-chip{max-width:calc(100% - 108px)!important}

@@ -33,7 +33,8 @@ test('premium 3D quality keeps soft shadows on capable phones with a constrained
   assert.match(world3d,/const shadows=!constrained/);
   assert.match(world3d,/PCFSoftShadowMap/);
   assert.match(world3d,/powerPreference:constrained\?'low-power':'high-performance'/);
-  assert.match(world3d,/mobile\?1\.3:1\.8/);
+  // Street view raised the phone ceiling from 1.3x to 1.75x; constrained devices stay at 1x.
+  assert.match(world3d,/constrained\?1:mobile\?1\.75:2/);
 });
 
 test('canonical renderer uses a local prefiltered environment instead of pretending hemisphere light is GI',()=>{

@@ -37,7 +37,9 @@ target keeps working.
   pinned the old `1.3:1.8` pixel ratio was updated to the new ceiling; nothing else changed in existing tests.
 - `npm run build`: passes.
 - `tests/city-entry-webkit.py` (mobile WebKit city entry gate): passes.
-- `tests/game-hud-browser.py`: see the hand-off note for the latest result.
+- `tests/game-hud-browser.py` (HUD layout at 390x844, 320x568, 412x915, 844x390, 1440x900 plus venue and
+  multiplayer steps): Chromium passes in full. WebKit failed once late in a combined run with "network connection
+  was lost" while other suites were using the machine, then passed in full when run alone with a clean console.
 - Manual, headless Chromium 390x844 @2x with GPU: street walk, tap-to-walk, drag-look, enter home, interior
   walk, overview toggle, buy car, drive. No page errors.
 - Frame time while driving in rain on this Mac (682x1258 buffer, 104 draw calls, ~122k triangles): 17.2 ms

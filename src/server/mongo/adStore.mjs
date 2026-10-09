@@ -149,8 +149,12 @@ export class MongoAdStore {
   collection(name) { return this.db.collection(name); }
   async init({ ensureIndexes = true } = {}) { if (ensureIndexes) await ensureMongoAdSchema(this.db); return this; }
   async purgeExpiredSlots({ session = null } = {}) { await this.collection('ad_slots').deleteMany({ expiresAt:{ $lte:nowDate(this.clock()) } }, session ? { session } : {}); }
+  // Public read paths are hit by every open map and studio page. Their queries
+  // already ignore expired locks (expiresAt > now), so the cleanup write only
+  // needs to run occasionally here. Checkout and admin keep the exact purge.
+  async purgeExpiredSlotsForRead() { const now=this.clock(); if(now-(this.lastReadPurgeAt??-Infinity)<15000)return; this.lastReadPurgeAt=now; await this.purgeExpiredSlots(); }
   async world({zoneId=null,page=0,limit=96,zoom=1,bounds=null}={}) {
-    await this.purgeExpiredSlots();
+    await this.purgeExpiredSlotsForRead();
     const zones=AD_ZONES.map(zone=>({id:zone.id,name:zone.name,subtitle:zone.subtitle,region:zone.region,tier:zone.tier,bounds:{x:zone.x,y:zone.y,width:zone.width,height:zone.height}}));
     if(bounds&&['x','y','width','height'].every(key=>Number.isFinite(Number(bounds[key])))){
       const x=Number(bounds.x),y=Number(bounds.y),width=Math.min(80000,Math.max(1,Number(bounds.width))),height=Math.min(80000,Math.max(1,Number(bounds.height)));
@@ -213,7 +217,7 @@ export class MongoAdStore {
     return {ok:true,ads:rows.map(row=>orderView(row,now)),serverTime:now};
   }
   async publicState() {
-    const now = this.clock(); await this.purgeExpiredSlots();
+    const now = this.clock(); await this.purgeExpiredSlotsForRead();
     const [locks, active] = await Promise.all([
       this.collection('ad_slots').find({ _id:{$in:ALL_SPACES.map(space=>space.id)},expiresAt:{ $gt:nowDate(now) } }).toArray(),
       this.collection('ad_orders').find({ status:'active', endAt:{ $gt:now } }).sort({ startAt:-1,txRef:-1 }).limit(60).toArray(),

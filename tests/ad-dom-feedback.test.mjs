@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import {PLOT_IDS} from '../src/shared/advertising.mjs';
+// The client's imports are stripped for this sandbox, so its studio data helpers are supplied explicitly.
+import * as studioData from '../app/ad-studio-data.js';
 
 const source=readFileSync(new URL('../app/ads.js',import.meta.url),'utf8').replace(/^import .*;\r?\n/gm,'');
 async function fixture({renderer}={}){
@@ -51,7 +53,7 @@ async function fixture({renderer}={}){
   const app=new Element('main'),sheet=new Element('main'),body=new Element('body');
   function scene(){const canvas=new Element('div','world-canvas');canvas.dataset.sceneKind='public';if(renderer)canvas.dataset.environmentRenderer=renderer;const svg=new Element('svg','world-scene world-public'),art=new Element('g','world-art'),building=new Element('g','city-building');building.setAttribute('data-world-target','garki-home');art.append(building);svg.append(art);canvas.append(svg);return{canvas,svg,art,building};}
   const current=scene();app.append(current.canvas);
-  const context=vm.createContext({PLOT_IDS,document:{hidden:false,body,querySelector:selector=>selector==='#app'?app:selector==='#sheet-root'?sheet:null,createElement:tag=>new Element(tag),createElementNS:(_,tag)=>new Element(tag)},MutationObserver,WeakMap,Intl,URL,URLSearchParams,AbortSignal,location:{search:'',href:'https://abujacity.life/'},history:{},window:{},addEventListener(){},setInterval(){},setTimeout(){},clearTimeout(){},apiFetch:async()=>({ok:true,json:async()=>({enabled:false,ads:{spaces:[]}})})});
+  const context=vm.createContext({...studioData,PLOT_IDS,document:{hidden:false,body,querySelector:selector=>selector==='#app'?app:selector==='#sheet-root'?sheet:null,createElement:tag=>new Element(tag),createElementNS:(_,tag)=>new Element(tag)},MutationObserver,WeakMap,Intl,URL,URLSearchParams,AbortSignal,location:{search:'',href:'https://abujacity.life/'},history:{},window:{},addEventListener(){},setInterval(){},setTimeout(){},clearTimeout(){},apiFetch:async()=>({ok:true,json:async()=>({enabled:false,ads:{spaces:[]}})})});
   await vm.runInContext(`(async()=>{${source}\nglobalThis.controls={decorateWorld,observeWorldBoundary,renderWorldAds,setState:value=>{adsState=value}};})()`,context);
   function flush(){let count=0;while(pending.size){if(++count>20)throw Error('Decoration observer did not settle');const batch=[...pending];pending.clear();for(const observer of batch){stats.callbacks++;observer.callback([]);}}}
   flush();

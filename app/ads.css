@@ -12,3 +12,7 @@
 @media(min-width:701px){.abj-ad-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.abj-ad-studio #ad-title{font-size:30px}}
 .outside-city.outside-city-v4 .outside-ad-label{min-height:44px;max-width:126px;padding:6px 9px!important;border-radius:9px!important;background:#204b3ceb!important;color:#fff8e6!important;border:1px solid #e4c98b!important;font-size:10px!important;letter-spacing:.1px}
 .outside-city.outside-city-v4 .outside-ad-label::after{content:none}
+.abj-ad-map[aria-busy="true"]{min-height:132px;display:grid;place-items:center;color:#5b7263;font-size:12px}
+.abj-ad-grid,.abj-ad-billboards{overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.abj-ad-empty button{min-height:36px;margin-left:6px;padding:6px 12px;border-radius:10px;border:1px solid #cbd8cc;background:#f8f7ee;font:inherit}
+.abj-ad-studio{overscroll-behavior:contain;-webkit-overflow-scrolling:touch}

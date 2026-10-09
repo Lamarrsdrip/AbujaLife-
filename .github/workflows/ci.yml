@@ -67,6 +67,10 @@ jobs:
         env:
           ABUJALIFE_OPEN_LAND_AD_ARTIFACTS: ${{ runner.temp }}/abujalife-open-land-ads
         run: python tests/open-land-ads-browser.py
+      - name: Advertising studio opens instantly and stays responsive (resident and admin)
+        env:
+          ABUJALIFE_AD_STUDIO_ARTIFACTS: ${{ runner.temp }}/abujalife-ad-studio
+        run: python tests/ad-studio-browser.py
       - name: Current V4 full-client browser acceptance
         env:
           ABUJALIFE_V4_ARTIFACTS: ${{ runner.temp }}/abujalife-v4
@@ -84,6 +88,7 @@ jobs:
             ${{ runner.temp }}/abujalife-hud
             ${{ runner.temp }}/abujalife-ads
             ${{ runner.temp }}/abujalife-open-land-ads
+            ${{ runner.temp }}/abujalife-ad-studio
             ${{ runner.temp }}/abujalife-v4
 
   windows:

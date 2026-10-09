@@ -369,7 +369,7 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
   if(oblique&&!preview){const screen=worldToScreen(player,{left:0,top:0,width:1,height:1},camera,view);if(screen.x<.15||screen.x>.85||screen.y<.12||screen.y>.88)camera=constrainWorldCamera({x:player.x,y:player.y-55},view,scene);}
   container.dataset.cameraZoom=zoom.toFixed(3);container.dataset.cameraYaw=orientation().yaw.toFixed(5);container.dataset.cameraElevation=orientation().elevation.toFixed(5);
   container.dataset.cameraViewWidth=viewWidth.toFixed(2);container.dataset.cameraViewHeight=viewHeight.toFixed(2);
-  const target=orientation().targetZoom;container.querySelector('[data-world-control="zoom-out"]').disabled=target<=WORLD_ZOOM.min+.001;container.querySelector('[data-world-control="zoom-in"]').disabled=target>=WORLD_ZOOM.max-.001;
+  const target=orientation().targetZoom,streetLimits=streetOn();container.querySelector('[data-world-control="zoom-out"]').disabled=target<=(streetLimits?STREET_VIEW.minZoom:WORLD_ZOOM.min)+.0005;container.querySelector('[data-world-control="zoom-in"]').disabled=target>=(streetLimits?STREET_VIEW.maxZoom:WORLD_ZOOM.max)-.001;
  };
  const setZoom=(next,{announce=false,immediate=false}={})=>{
   if(streetOn())next=clamp(next,STREET_VIEW.minZoom,STREET_VIEW.maxZoom);

@@ -1,0 +1,22 @@
+/* Advert details: a modal above the world and the Map. */
+.ad-details-layer{position:fixed;inset:0;z-index:2147483000;display:grid;place-items:center;padding:max(16px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom));background:rgba(7,31,25,.56);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);overscroll-behavior:contain}
+.ad-details{position:relative;width:min(440px,100%);max-height:100%;overflow:auto;border-radius:22px;background:#fbf7eb;color:#1f3d31;box-shadow:0 24px 60px rgba(7,31,25,.4);animation:ad-details-in .18s ease-out}
+@keyframes ad-details-in{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.ad-details{animation:none}}
+.ad-details-close{position:absolute;top:10px;right:10px;z-index:1;width:40px;height:40px;border:0;border-radius:50%;background:rgba(16,32,26,.72);color:#fff;font-size:22px;line-height:1;cursor:pointer}
+.ad-details-creative{display:grid;place-items:center;aspect-ratio:2/1;background:#10201a;border-radius:22px 22px 0 0;overflow:hidden}
+.ad-details-creative img{display:block;width:100%;height:100%;object-fit:contain}
+.ad-details-creative.is-empty span{padding:0 20px;color:#f2c14e;font:800 22px/1.15 inherit;letter-spacing:1px;text-align:center}
+.ad-details-body{padding:16px 18px 18px}
+.ad-details-eyebrow{display:block;font-size:10px;font-weight:700;letter-spacing:1.2px;color:#8a6d1c}
+.ad-details h2{margin:4px 0 0;font-size:21px;line-height:1.2;overflow-wrap:anywhere}
+.ad-details-sponsor{margin:4px 0 0;font-size:13px;color:#587062}
+.ad-details-copy{margin:10px 0 0;font-size:14px;line-height:1.5;overflow-wrap:anywhere}
+.ad-details-contact{display:block;margin-top:8px;font-size:12px;color:#587062;overflow-wrap:anywhere}
+.ad-details-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+.ad-details-visit,.ad-details-advertise{flex:1 1 150px;display:grid;place-items:center;min-height:46px;padding:0 14px;border-radius:14px;font:650 14px/1.2 inherit;text-align:center;text-decoration:none;cursor:pointer}
+.ad-details-visit,.ad-details-advertise.is-primary{border:0;background:#1f6b4a;color:#fff}
+.ad-details-advertise{border:1px solid #c9d3c4;background:#fff;color:#1f3d31}
+.outside-ad-preview{display:block;width:100%;margin:8px 0 2px;padding:0;border:0;border-radius:12px;overflow:hidden;background:#10201a;cursor:pointer}
+.outside-ad-preview img{display:block;width:100%;max-height:76px;object-fit:contain}
+.outside-ad-preview span{display:block;padding:6px 8px;background:#1f3d31;color:#fff;font:600 12px/1 inherit}

@@ -1,4 +1,5 @@
 import {renderTripWorld} from './world-trip.js';
+import {openAdDetails} from './ad-details.js';
 import { canUseFurnitureSurface } from '../src/shared/furniture-metadata.mjs';
 // Original AbujaLife scenery. These are authored social spaces, not geographic maps.
 let serial = 0;
@@ -391,6 +392,8 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
  const touch=bindWorldTouch({surface:svg,enabled:()=>!inputBlocked()&&!trip,orbit,placing:()=>!!furnitureMode,onStart:stop,onItemDrag:e=>paintFurniture(furniturePointer(e)),onZoom:next=>setZoom(next),onChange:()=>{zoom=orientation().zoom;updateViewport();}});
  on(svg,'click',e=>{
   if(inputBlocked()||trip||touch.blocksClick())return;const person=e.target.closest('[data-world-resident]');if(person){const resident=neighbours.find(p=>String(p.id)===person.dataset.worldResident);if(resident)onResident(resident);return;}
+  // A tap on a street billboard opens that advert instead of walking towards it.
+  if(!furnitureMode){const board=characterRenderer?.pickBillboard?.(e.clientX,e.clientY);if(board){openAdDetails(board.ad,{source:'street'});return;}}
   const p=toWorld(e);if(furnitureMode){paintFurniture(furniturePointer(e));return;}
   const itemId=atHome&&canDecorate?characterRenderer?.pickFurniture?.(e.clientX,e.clientY):null;
   if(itemId){stop();onFurnitureSelect(itemId);return;}

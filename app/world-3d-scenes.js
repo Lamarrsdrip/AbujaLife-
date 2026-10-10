@@ -1016,6 +1016,7 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
       return true;
     },
     updateView,
+    pickBillboard:raycaster=>streetBoards?.pick(raycaster)||null,
     playerModel:()=>ownCar?.group,
     update({clock,weather,clubOpen,elapsed=0,player,angle=0,transport,driving,carColor,ownVehicle=ownId,carWithYou=true,parked,trafficPositions=[],trip,vehicleScale:nextVehicleScale=1}) {
       vehicleScale=nextVehicleScale;

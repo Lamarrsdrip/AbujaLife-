@@ -258,7 +258,7 @@ async def main():
             probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             probe.bind(('127.0.0.1', PORT))
         with (ARTIFACTS/'server.log').open('w') as server_log:
-            env = dict(os.environ, PORT=str(PORT), ABUJALIFE_DATA_DIR=data_dir)
+            env = dict(os.environ, PORT=str(PORT), ABUJALIFE_DATA_DIR=data_dir, ABUJALIFE_QA_ORIGIN='lapo')
             server = subprocess.Popen(['node', 'scripts/dev.mjs'], cwd=REPO, env=env,
                 stdout=server_log, stderr=subprocess.STDOUT)
             qa = Acceptance()

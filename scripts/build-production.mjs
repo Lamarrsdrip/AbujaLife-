@@ -23,6 +23,7 @@ export const productionEntryPoints = Object.freeze({
   'game-map': 'app/game-map.js',
   'open-land-ads': 'app/open-land-ads.js',
   'street-gigs': 'app/street-gigs.js',
+  'daily-hustle': 'app/daily-hustle.js',
   'game-experience': 'app/game-experience.js',
   'game-realm-2026': 'app/game-realm-2026.js',
   'abuja-game-polish-2026': 'app/abuja-game-polish-2026.js',

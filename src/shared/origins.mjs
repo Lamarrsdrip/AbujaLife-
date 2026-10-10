@@ -1,9 +1,9 @@
 import { ECONOMY_CONFIG } from './economy.mjs';
-// Origin is chosen once by the server. These are fictional starting lives,
+// Origin is drawn once, at random, by the server; residents never pick it. These are fictional starting lives,
 // not statements about everyone living in an Abuja neighbourhood.
 export const ORIGIN_META = {
-  random: false, selectable: true, immutable: true, equalProbability: true,
-  description: 'Choose your starting background once. Your balance and first home are saved with your resident.',
+  random: true, selectable: false, immutable: true, equalProbability: true,
+  description: 'Abuja deals your starting background once, at random. Your balance and first home are saved with your resident.',
   options: [
     { id: 'nepo', name: 'Nepo Baby', startingBalance: ECONOMY_CONFIG.startingMoney.nepo, description: `₦${ECONOMY_CONFIG.startingMoney.nepo.toLocaleString('en-NG')} and a genuinely gifted, owned home in Jabi, Guzape or Maitama. No rent on your gifted home.` },
     { id: 'lapo', name: 'Lapo Baby', startingBalance: ECONOMY_CONFIG.startingMoney.lapo, description: `₦${ECONOMY_CONFIG.startingMoney.lapo.toLocaleString('en-NG')} and a practical rent-free starter studio. Earn, explore and build your own Abuja story.` },

@@ -16,7 +16,7 @@ async function fixture(t){const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'ab
 
 test('starting backgrounds share one authoritative exact balance and never imply rental gifted homes',()=>{
   assert.deepEqual(ECONOMY_CONFIG.startingMoney,{lapo:10_000_000,nepo:100_000_000});
-  assert.equal(ORIGIN_META.selectable,true);
+  assert.equal(ORIGIN_META.selectable,false);assert.equal(ORIGIN_META.random,true);
   for(const option of ORIGIN_META.options){const calls=[],origin=createOrigin({residentId:'one',now:123,originId:option.id,randomInt:(a,b)=>{calls.push([a,b]);return 0;},properties,atlas:ABUJA_ATLAS});assert.equal(origin.startingBalance,ECONOMY_CONFIG.startingMoney[option.id]);assert.equal(origin.residence.ownerId,'one');assert.equal(origin.residence.rent,0);assert.equal(origin.residence.cautionDeposit,0);assert.equal(calls.length,1);}
   assert.throws(()=>createOrigin({residentId:'one',now:123,originId:'hacked',randomInt:()=>0,properties,atlas:ABUJA_ATLAS}),/origin selection/);
 });

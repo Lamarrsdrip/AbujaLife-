@@ -22,7 +22,7 @@ async def run(pw,size,admin=False):
     browser=await pw.chromium.launch(headless=True,args=['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist'] if sys.platform=='darwin' else [])
     c=await browser.new_context(viewport=size,has_touch=True,is_mobile=True,device_scale_factor=2)
     user='ads_'+uuid.uuid4().hex[:12]
-    for path,body in [('/api/auth/register',{'username':user,'displayName':'Ads QA','password':'Ads QA fixture 2026!','appearance':APPEARANCE,'originId':'lapo'}),('/api/profile',{'displayName':'Ads QA','appearance':APPEARANCE,'lifeGoal':'explore','onboardingComplete':True})]:
+    for path,body in [('/api/auth/register',{'username':user,'displayName':'Ads QA','password':'Ads QA fixture 2026!','appearance':APPEARANCE}),('/api/profile',{'displayName':'Ads QA','appearance':APPEARANCE,'lifeGoal':'explore','onboardingComplete':True})]:
         r=await c.request.post(BASE+path,data=body);assert r.ok,(path,r.status,await r.text())
     p=await c.new_page();errors=[];world=[];aborted=[];checkout=[]
     p.on('pageerror',lambda e:errors.append(str(e)))
@@ -156,7 +156,7 @@ async def run(pw,size,admin=False):
 async def main():
     ART.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory() as data,open(ART/'server.log','w') as log:
-        server=subprocess.Popen(['node','scripts/dev.mjs'],cwd=REPO,env={**os.environ,'PORT':str(PORT),'ABUJALIFE_DATA_DIR':data},stdout=log,stderr=subprocess.STDOUT)
+        server=subprocess.Popen(['node','scripts/dev.mjs'],cwd=REPO,env={**os.environ,'PORT':str(PORT),'ABUJALIFE_DATA_DIR':data,'ABUJALIFE_QA_ORIGIN':'lapo'},stdout=log,stderr=subprocess.STDOUT)
         try:
             for _ in range(100):
                 try:

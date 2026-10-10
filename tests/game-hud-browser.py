@@ -22,7 +22,7 @@ async def action(context,name,payload=None):
 async def resident(browser,size):
     c=await browser.new_context(viewport=size,has_touch=size['width']<800)
     user='hud_'+uuid.uuid4().hex[:12]
-    await api(c,'/api/auth/register',{'username':user,'displayName':'HUD QA','password':'Hud QA fixture 2026!','appearance':APPEARANCE,'originId':'lapo'})
+    await api(c,'/api/auth/register',{'username':user,'displayName':'HUD QA','password':'Hud QA fixture 2026!','appearance':APPEARANCE})
     await api(c,'/api/profile',{'displayName':'HUD QA','appearance':APPEARANCE,'lifeGoal':'explore','onboardingComplete':True})
     p=await c.new_page();p.set_default_timeout(60000)
     errors=[];wire=[]
@@ -143,7 +143,7 @@ async def main():
     ART.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='abuja-hud-db-') as data:
         with (ART/'server.log').open('w') as log:
-            server=subprocess.Popen(['node','scripts/dev.mjs'],cwd=REPO,env={**os.environ,'PORT':str(PORT),'ABUJALIFE_DATA_DIR':data},stdout=log,stderr=subprocess.STDOUT)
+            server=subprocess.Popen(['node','scripts/dev.mjs'],cwd=REPO,env={**os.environ,'PORT':str(PORT),'ABUJALIFE_DATA_DIR':data,'ABUJALIFE_QA_ORIGIN':'lapo'},stdout=log,stderr=subprocess.STDOUT)
             try:
                 for _ in range(100):
                     try:

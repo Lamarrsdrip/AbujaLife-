@@ -53,7 +53,7 @@ async def signup(page,origin,label):
     await page.locator('#auth-form [name="displayName"]').fill(f'Housing QA {label}')
     await page.locator('#auth-form [name="username"]').fill(username)
     await page.locator('#auth-form [name="password"]').fill(password)
-    await page.locator(f'#auth-form [name="originId"][value="{origin}"]').check()
+    # Starting lives are dealt at random by the server; this journey needs a private fixture whose origin draw is pinned.
     await page.locator('#auth-form [type="submit"]').click()
     for index in range(5):
         await expect(page.locator('#onboarding-form')).to_be_visible()

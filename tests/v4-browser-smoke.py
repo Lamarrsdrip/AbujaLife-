@@ -32,7 +32,8 @@ class Fixture:
 import readline from 'node:readline';
 let base=Date.parse(process.argv[3]),anchor=Date.now();
 const clock=()=>base+Date.now()-anchor;
-const server=createServer({dataDir:process.argv[2],clock,originRandomInt:()=>0});
+let originDraws=0;
+const server=createServer({dataDir:process.argv[2],clock,originRandomInt:(min,max)=>min===0&&max===2?(originDraws++<2?0:1):0});
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 console.log(JSON.stringify({port:server.address().port,serverTime:clock()}));
 readline.createInterface({input:process.stdin}).on('line',line=>{
@@ -120,7 +121,8 @@ async def register(page,url,name,username,qa,origin='nepo'):
     await game.no_overflow(page);await qa.screenshot(page,username+'-login-room-mobile')
     await page.set_viewport_size({'width':1280,'height':900})
     for field,value in [('displayName',name),('username',username),('password',PASSWORD)]:await page.locator(f'#auth-form [name="{field}"]').fill(value)
-    await page.locator(f'#auth-form [name="originId"][value="{origin}"]').check()
+    # Residents no longer pick a starting life; the fixture's origin RNG deals Nepo twice, then Lapo.
+    await expect(page.locator('#auth-form [name="originId"]')).to_have_count(0)
     await page.locator('.auth-submit').click();await expect(page.locator('#onboarding-form')).to_be_visible()
     headings=[]
     for step in range(5):

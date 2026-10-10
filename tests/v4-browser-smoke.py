@@ -32,12 +32,12 @@ class Fixture:
 import readline from 'node:readline';
 let base=Date.parse(process.argv[3]),anchor=Date.now();
 const clock=()=>base+Date.now()-anchor;
-let originDraws=0;
-const server=createServer({dataDir:process.argv[2],clock,originRandomInt:(min,max)=>min===0&&max===2?(originDraws++<2?0:1):0});
+let originDeal=0; // 0 deals Nepo, 1 deals Lapo; the test sets it over stdin
+const server=createServer({dataDir:process.argv[2],clock,originRandomInt:(min,max)=>min===0&&max===2?originDeal:0});
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 console.log(JSON.stringify({port:server.address().port,serverTime:clock()}));
 readline.createInterface({input:process.stdin}).on('line',line=>{
-try { const request=JSON.parse(line);if(request.set){base=Date.parse(request.set);anchor=Date.now();}else if(request.advance){base=clock()+request.advance;anchor=Date.now();}
+try { const request=JSON.parse(line);if(request.origin){originDeal=request.origin==='lapo'?1:0;}else if(request.set){base=Date.parse(request.set);anchor=Date.now();}else if(request.advance){base=clock()+request.advance;anchor=Date.now();}
 console.log(JSON.stringify({serverTime:clock()})); } catch(error){console.log(JSON.stringify({error:error.message}));}
 });
 process.on('SIGTERM',()=>{server.closeRealtime();server.close(()=>process.exit(0));});
@@ -49,6 +49,9 @@ process.on('SIGTERM',()=>{server.closeRealtime();server.close(()=>process.exit(0
         command={'set':stamp} if stamp else {'advance':advance}
         self.process.stdin.write(json.dumps(command)+'\n');self.process.stdin.flush()
         result=json.loads(self.process.stdout.readline());self.changes.append({**command,**result});return result
+    def deal(self,origin):
+        self.process.stdin.write(json.dumps({'origin':origin})+'\n');self.process.stdin.flush()
+        result=json.loads(self.process.stdout.readline());self.changes.append({'origin':origin,**result});return result
     def close(self):
         self.process.terminate()
         try:self.process.wait(timeout=10)
@@ -121,7 +124,7 @@ async def register(page,url,name,username,qa,origin='nepo'):
     await game.no_overflow(page);await qa.screenshot(page,username+'-login-room-mobile')
     await page.set_viewport_size({'width':1280,'height':900})
     for field,value in [('displayName',name),('username',username),('password',PASSWORD)]:await page.locator(f'#auth-form [name="{field}"]').fill(value)
-    # Residents no longer pick a starting life; the fixture's origin RNG deals Nepo twice, then Lapo.
+    # Residents no longer pick a starting life; the fixture's origin RNG deals whatever the test last asked for.
     await expect(page.locator('#auth-form [name="originId"]')).to_have_count(0)
     await page.locator('.auth-submit').click();await expect(page.locator('#onboarding-form')).to_be_visible()
     headings=[]
@@ -592,7 +595,9 @@ async def main():
                 await guest.close()
                 lapo_context=await browser.new_context(viewport={'width':1280,'height':900},device_scale_factor=1,service_workers='block')
                 lapo_page=await lapo_context.new_page();qa.watch(lapo_page,'lapo signup')
+                fixture.deal('lapo')
                 await qa.check('05 real Lapo signup starts with ₦10M and saves a rent-free starter home',lambda:register(lapo_page,fixture.url,'Lapo Acceptance','lapo_v4',qa,'lapo'))
+                fixture.deal('nepo')
                 await lapo_context.close()
                 await qa.check('09 explicit loan consent borrowing and repayment',lambda:loans(owner,qa))
                 await qa.check('10 work respects WAT weekdays and two completed slots',lambda:work(owner,fixture,qa))

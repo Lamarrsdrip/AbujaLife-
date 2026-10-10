@@ -36,11 +36,12 @@ import readline from 'node:readline';
 const port=Number(process.argv[4]),origin=`http://127.0.0.1:${port}`;
 let base=Date.parse(process.argv[3]),anchor=Date.now();
 const clock=()=>base+Date.now()-anchor;
-const server=createServer({dataDir:process.argv[2],clock,originRandomInt:()=>0,publicWebUrl:origin,corsOrigins:[origin]});
+let originDeal=0; // 0 deals Nepo, 1 deals Lapo; the test sets it over stdin
+const server=createServer({dataDir:process.argv[2],clock,originRandomInt:(min,max)=>min===0&&max===2?originDeal:0,publicWebUrl:origin,corsOrigins:[origin]});
 await new Promise(resolve=>server.listen(port,'127.0.0.1',resolve));
 console.log(JSON.stringify({port:server.address().port,serverTime:clock(),origin}));
 readline.createInterface({input:process.stdin}).on('line',line=>{
-try { const request=JSON.parse(line);if(request.set){base=Date.parse(request.set);anchor=Date.now();}else if(request.advance){base=clock()+request.advance;anchor=Date.now();}
+try { const request=JSON.parse(line);if(request.origin){originDeal=request.origin==='lapo'?1:0;}else if(request.set){base=Date.parse(request.set);anchor=Date.now();}else if(request.advance){base=clock()+request.advance;anchor=Date.now();}
 console.log(JSON.stringify({serverTime:clock()})); } catch(error){console.log(JSON.stringify({error:error.message}));}
 });
 process.on('SIGTERM',()=>{server.closeRealtime();server.close(()=>process.exit(0));});
@@ -56,6 +57,10 @@ process.on('SIGTERM',()=>{server.closeRealtime();server.close(()=>process.exit(0
         command={'set':stamp} if stamp else {'advance':advance}
         self.process.stdin.write(json.dumps(command)+'\n');self.process.stdin.flush()
         result=json.loads(self.process.stdout.readline());self.changes.append({**command,**result});return result
+
+    def deal(self,origin):
+        self.process.stdin.write(json.dumps({'origin':origin})+'\n');self.process.stdin.flush()
+        result=json.loads(self.process.stdout.readline());self.changes.append({'origin':origin,**result});return result
 
     def close(self):
         process=getattr(self,'process',None)

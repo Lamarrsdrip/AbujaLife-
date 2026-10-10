@@ -3,6 +3,7 @@ import { ECONOMY_CONFIG } from '../../shared/economy.mjs';
 import { economyTransactionType } from '../../shared/transactions.mjs';
 import { TENANCY_RULES, recordHousingLifeEvent, syncHomeTenancy, nextTenancyCheck } from '../../shared/tenancy.mjs';
 import { HOUSING_ACTIONS, HOUSING_MONEY_ACTIONS, applyHousingAction } from '../housingActions.mjs';
+import { GIG_ACTIONS, GIG_MONEY_ACTIONS, applyServerGigAction } from '../streetGigs.mjs';
 import { ABUJA_ATLAS } from '../../shared/atlas.mjs';
 import * as life from '../../shared/life.mjs';
 import { vehicleColorFor } from '../../shared/vehicles.mjs';
@@ -34,7 +35,7 @@ function appearance(current,incoming,inventory=[]){
 }
 const pick=(source,keys)=>Object.fromEntries(keys.filter(key=>source[key]!==undefined).map(key=>[key,source[key]]));
 const needsKeys=['energy','hunger','hygiene','social','fun','stress','mood','lastActionAt'];
-const progressionKeys=['reputation','careerLevel','skills','completedShifts','nextShiftAt','job','activeShift'];
+const progressionKeys=['reputation','careerLevel','skills','completedShifts','nextShiftAt','job','activeShift','gig','gigDays','gigStats','gigCooldownUntil'];
 const stateKeys=['district','location','activeTrip','drivingVehicle'];
 const residentKeys=['displayName','settings','lifeGoal','onboardingComplete'];
 
@@ -126,6 +127,11 @@ export class MongoGameStore {
     this.housingTimer=setInterval(run,60000);this.housingTimer.unref?.();run();
   }
   async stopHousingReconciliation(){this.housingStopping=true;clearInterval(this.housingTimer);this.housingTimer=null;await this.housingRun;}
+  // Street gigs share the atomic, idempotent economy operation used by wages.
+  async gigAction(id,action,payload={}){
+    const normalized=Object.fromEntries(Object.entries(payload).filter(([key])=>key!=='idempotencyKey').sort(([a],[b])=>a.localeCompare(b)));
+    return this.economyOperation(id,action,payload,normalized,(p,now)=>applyServerGigAction(p,action,payload,{now,randomInt:this.gigRandomInt}),{requireKey:GIG_MONEY_ACTIONS.has(action)});
+  }
   async housingAction(id,action,payload={}){
     const kind=action==='renew-rent'?'pay-rent':action;
     const normalized=Object.fromEntries(Object.entries(payload).filter(([key])=>key!=='idempotencyKey').sort(([a],[b])=>a.localeCompare(b)));
@@ -318,6 +324,7 @@ export class MongoGameStore {
     if(action==='play-dice')return this.playDice(id,payload);
     if(['borrow-loan','repay-loan'].includes(action))return this.loanAction(id,action,payload);
     if(HOUSING_ACTIONS.has(action))return this.housingAction(id,action,payload);
+    if(GIG_ACTIONS.has(action))return this.gigAction(id,action,payload);
     if(['paint-vehicle'].includes(action)||(action==='purchase'&&catalog.some(item=>item.id===payload.itemId&&item.category==='vehicle')))return this.vehicleAction(id,action,payload);
     const moneyActions=new Set(['eat','hangout','exercise','cinema','venue-action','travel','return-home','purchase','sell-item','move-home','pay-bills','renew-rent']);
     const normalized=Object.fromEntries(Object.entries(payload).filter(([key])=>key!=='idempotencyKey').sort(([a],[b])=>a.localeCompare(b)));

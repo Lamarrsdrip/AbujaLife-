@@ -17,9 +17,11 @@ export const STREET_VIEW = Object.freeze({
   interior: Object.freeze({distance: 400, target: 78, pitch: 34 * RAD}),
   // Street view draws residents at building scale; the overview keeps its larger figures.
   residentScale: 1.02,
+  // A saloon is about 0.83 of a person tall and 2.6 people long; the overview models are larger.
+  vehicleScale: .78,
   minPitch: 3 * RAD, maxPitch: 66 * RAD, wallPitch: 72 * RAD, minDistance: 70,
   // Zooming out past 1x lifts the eye into an aerial view of the district.
-  minZoom: .1, maxZoom: 2.6, aerialPitch: 58 * RAD, clearPitch: 30 * RAD,
+  minZoom: .1, maxZoom: 2.6, aerialPitch: 58 * RAD, clearPitch: 30 * RAD, overPitch: 38 * RAD,
   followWalk: .9, followPath: 2.2, followDrive: 3.4,
 });
 
@@ -68,33 +70,31 @@ export function streetCameraPose({player, yaw = WORLD_CAMERA.yaw, elevation, zoo
   const px = finite(player?.x, 0), py = finite(player?.y, 0);
   // Unit ground direction from the resident back toward the camera, in 3D then world 2D.
   const backX = Math.sin(yaw), backZ = Math.cos(yaw);
-  let distance = wanted;
+  // A building behind the resident lifts the eye over the rooftops at full
+  // distance. Closing in instead left the camera staring at a wall or a car roof.
+  let distance = wanted, raised = false;
   if (typeof blocked === 'function') {
     const ground = wanted * Math.cos(pitch), step = 18;
     for (let travelled = step; travelled <= ground; travelled += step) {
       if (!blocked(px + backX * travelled, py + backZ * travelled / depthScale)) continue;
-      // Rise over the obstacle before closing in: the eye keeps most of its
-      // distance and looks down more steeply, so the resident stays in frame.
-      const allowed = Math.max(0, travelled - step - 8), keep = wanted * .6;
-      const steep = clamp(Math.acos(clamp(allowed / keep, 0, 1)), pitch, STREET_VIEW.wallPitch);
-      pitch = steep; distance = Math.max(STREET_VIEW.minDistance, allowed / Math.max(.2, Math.cos(steep)));
+      pitch = Math.max(pitch, STREET_VIEW.overPitch); raised = true;
       break;
     }
   }
   const tx = px, ty = profile.target, tz = py * depthScale;
   const ground = distance * Math.cos(pitch);
   return {
-    mode: 'street', fov: STREET_VIEW.fov, yaw, pitch, distance, shortened: distance < wanted - .5,
+    mode: 'street', fov: STREET_VIEW.fov, yaw, pitch, distance, raised,
     target: {x: tx, y: ty, z: tz},
     position: {x: tx + backX * ground, y: ty + distance * Math.sin(pitch), z: tz + backZ * ground},
   };
 }
 
-/** Re-seat an existing pose at an eased distance so wall avoidance never pops. */
-export function streetPoseAtDistance(pose, distance) {
-  const reach = Math.max(STREET_VIEW.minDistance, finite(distance, pose.distance));
-  const ground = reach * Math.cos(pose.pitch), backX = Math.sin(pose.yaw), backZ = Math.cos(pose.yaw);
-  return {...pose, distance: reach, position: {x: pose.target.x + backX * ground, y: pose.target.y + reach * Math.sin(pose.pitch), z: pose.target.z + backZ * ground}};
+/** Re-seat an existing pose at an eased distance and pitch so camera changes never pop. */
+export function streetPoseAtDistance(pose, distance, pitch = pose.pitch) {
+  const reach = Math.max(STREET_VIEW.minDistance, finite(distance, pose.distance)), tilt = clamp(finite(pitch, pose.pitch), STREET_VIEW.minPitch, STREET_VIEW.wallPitch);
+  const ground = reach * Math.cos(tilt), backX = Math.sin(pose.yaw), backZ = Math.cos(pose.yaw);
+  return {...pose, distance: reach, pitch: tilt, position: {x: pose.target.x + backX * ground, y: pose.target.y + reach * Math.sin(tilt), z: pose.target.z + backZ * ground}};
 }
 
 export function readStreetPreference(storage = globalThis.localStorage) {

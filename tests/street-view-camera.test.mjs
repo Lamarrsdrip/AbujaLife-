@@ -44,21 +44,25 @@ test('follow yaw places the camera behind the direction of travel', () => {
   near(easeYaw(.2, 1.2, .5), .7, 1e-9);
 });
 
-test('obstacles pull the eye in and raise it rather than leaving it inside a building', () => {
+test('a building behind the resident lifts the eye over the rooftops instead of closing in', () => {
   const player = {x: 500, y: 500}, open = streetCameraPose({player, yaw: 0});
   // A building directly behind the resident (camera sits at +y for yaw 0).
   const blocked = (x, y) => y > 500 + 90;
-  const tight = streetCameraPose({player, yaw: 0, blocked});
-  assert.equal(open.shortened, false);
-  assert.equal(tight.shortened, true);
-  assert.ok(tight.distance < open.distance);
-  assert.ok(tight.pitch > open.pitch, 'a shortened camera looks down more steeply');
-  const eyeGroundY = tight.position.z / DS;
-  assert.ok(eyeGroundY < 500 + 90, `eye ${eyeGroundY} must stay in front of the wall`);
-  assert.ok(tight.distance >= STREET_VIEW.minDistance);
+  const lifted = streetCameraPose({player, yaw: 0, blocked});
+  assert.equal(open.raised, false);
+  assert.equal(lifted.raised, true);
+  near(lifted.distance, open.distance, 1e-9);
+  assert.ok(lifted.pitch >= STREET_VIEW.overPitch && lifted.pitch > open.pitch, 'the lifted camera looks down over the roof');
+  assert.ok(lifted.position.y > 250, `eye height ${lifted.position.y} clears a two-storey building`);
+  near(lifted.target.x, open.target.x); near(lifted.target.z, open.target.z);
+  // Driving sits further back and so ends up higher still.
+  assert.ok(streetCameraPose({player, yaw: 0, blocked, driving: true}).position.y > lifted.position.y);
   const eased = streetPoseAtDistance(open, open.distance * .5);
   near(eased.distance, open.distance * .5); near(eased.target.x, open.target.x);
   assert.ok(Math.hypot(eased.position.x - eased.target.x, eased.position.z - eased.target.z) < Math.hypot(open.position.x - open.target.x, open.position.z - open.target.z));
+  // Distance and pitch are eased together so the lift never pops.
+  const tilted = streetPoseAtDistance(open, open.distance, lifted.pitch);
+  near(tilted.position.y, lifted.position.y, 1e-6);
 });
 
 test('zoom, pitch and field of view stay inside playable bounds on every screen shape', () => {

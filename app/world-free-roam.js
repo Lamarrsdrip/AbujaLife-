@@ -27,10 +27,14 @@ function renderWithPresentation(container,options){
     streetPresence?.dispose();
     disposePresentation();
     cleanup?.();
+    if(globalThis.__ABJ_WORLD__?.handle===wrapped){globalThis.__ABJ_WORLD__=null;globalThis.dispatchEvent?.(new CustomEvent('abujalife:world-unmounted'));}
     if(container.dataset.multiplayerPresence==='resident-avatars')delete container.dataset.multiplayerPresence;
   };
   if(cleanup&&typeof cleanup==='function'){
     Object.assign(wrapped,cleanup);
+    // Guided-task layers (street gigs) attach to whichever world is mounted.
+    globalThis.__ABJ_WORLD__={handle:wrapped,container,profile};
+    queueMicrotask(()=>globalThis.dispatchEvent?.(new CustomEvent('abujalife:world-mounted',{detail:{handle:wrapped,container}})));
     if(tagsOnly){
       const simulatorUpdateResidents=cleanup.updateResidents?.bind(cleanup);
       wrapped.updateResidents=next=>{

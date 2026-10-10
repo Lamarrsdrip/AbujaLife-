@@ -1,6 +1,7 @@
 // Original, procedural AbujaLife sets. All models and surface textures are local.
 // Floor coordinates remain identical to the gameplay/collision coordinates.
 import { HOME_ITEM_MODELS } from '../src/shared/home-items.mjs';
+import { buildCityFabric } from './world-city-fabric.js';
 import { vehicleFor } from '../src/shared/vehicles.mjs';
 import { createWorldMaterialLibrary } from './world-materials.js';
 import { WORLD_LANDMARK_FACADES } from '../src/shared/world-landmark-sizes.mjs';
@@ -558,7 +559,20 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     batch(p);for(const wheel of wheels)batch(wheel);
     return{group:p,wheels};
   }
+  // Keke NAPEP: the three-wheeled commercial tricycle of Abuja's satellite towns.
+  function kekeModel(color='#e2b93b') {
+    const p=new T.Group(),wheels=[],paint=mat(color,.42,.12),dark=mat('#1f2a2c',.85),canopy=mat('#243f33',.7),chrome=mat('#adb7b9',.3,.6),glass=mat('#3f5a63',.2,.3);
+    box(p,-6,30,0,118,26,74,paint,true);box(p,-58,44,0,22,34,70,paint,true);box(p,46,34,0,34,30,46,paint,true);
+    box(p,-6,92,0,128,6,82,canopy,true);
+    for(const [x,z] of [[-62,-35],[-62,35],[20,-35],[20,35]])box(p,x,62,z,4,58,4,dark);
+    box(p,24,66,0,3,44,62,glass);box(p,-30,50,0,44,10,66,dark,true);box(p,-58,66,0,6,22,66,dark);
+    const lamp=mat('#fff0ce',.2,.05,{emissive:'#ead3a2',emissiveIntensity:.3});box(p,64,40,0,4,9,12,lamp,true);box(p,-70,38,-26,3,8,10,'#a85546',true);box(p,-70,38,26,3,8,10,'#a85546',true);
+    for(const [x,z] of [[52,0],[-44,-39],[-44,39]]){const wheel=new T.Group();wheel.position.set(x,16,z);p.add(wheel);const rubber=cylinder(wheel,0,0,0,16,10,dark,16,14);rubber.rotation.x=Math.PI/2;const rim=cylinder(wheel,0,0,z>=0?6:-6,8,2,chrome,8,10);rim.rotation.x=Math.PI/2;wheels.push(wheel);}
+    p.name='Keke';batch(p);for(const wheel of wheels)batch(wheel);
+    return {group:p,wheels};
+  }
   function carModel(color,style='sedan',vehicleId) {
+    if(style==='keke')return kekeModel(color);
     const item=vehicleFor(vehicleId);if(item?.renderShape&&!['bus','taxi'].includes(style))return sculptedCarModel(color,item);
     const p=new T.Group(),wheels=[];
     const offroad=style==='offroad',suv=style==='suv'||offroad,bus=style==='bus',hatch=style==='hatchback';
@@ -594,7 +608,8 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
       wheels.push(wheel);
     }
     if(offroad){const spare=cylinder(p,-length*.55,50,0,21,14,tire);spare.rotation.z=Math.PI/2;box(p,0,64,-width*.51,length*.78,4,5,chrome);box(p,0,64,width*.51,length*.78,4,5,chrome);}
-    if(style==='taxi')box(p,-5,98,0,29,11,20,'#d7c083',true);
+    // Abuja painted taxi: green body with the white band along both sides and a roof sign.
+    if(style==='taxi'){box(p,-5,98,0,29,11,20,'#f2efe2',true);for(const z of [-width*.505,width*.505])box(p,0,40,z,length*.96,9,2,'#f4f1e6');}
     const beams=new T.Group(),beamMat=new T.MeshBasicMaterial({color:'#fff0b5',transparent:true,opacity:.035,depthWrite:false,side:T.DoubleSide});materials.set(`beams:${materials.size}`,beamMat);for(const z of [-width*.34,width*.34]){const cone=mesh(beams,geo('headlightcone',()=>new T.ConeGeometry(39,170,12,1,true)),beamMat,length/2+85,33,z,false);cone.rotation.z=Math.PI/2;cone.userData.excludeFromBounds=true;}beams.visible=false;if(!modelOnly){p.add(beams);nightBeams.push(beams);}
     p.name=vehicleFor(vehicleId)?.name||style;
     batch(p);for(const wheel of wheels)batch(wheel);
@@ -798,9 +813,11 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     const arrow=box(door,0,10,-27,7,4,34,handle,true);arrow.rotation.z=Math.PI/4;
     return door;
   }
+  let cityFabric=null;
   function citySet() {
     const affluent=/maitama|asokoro|guzape|jabi/i.test(profile.district||place?.name||'');
     floor(group,0,0,layout.width,layout.height,'grass',-6);
+    if(layout.fabric){const coarse=globalThis.matchMedia?.('(pointer: coarse)').matches===true;cityFabric=buildCityFabric(T,layout.fabric,{ds,light:coarse});group.add(cityFabric.group);}
     floor(group,0,610,layout.width,132,'tile',-1);floor(group,0,1390,layout.width,144,'tile',-1);floor(group,0,2170,layout.width,114,'tile',-1);
     for(const [y,h] of [[722,252],[1534,234],[2284,234],[3170,234]]) {
       floor(group,0,y,layout.width,h,'road',0);
@@ -965,8 +982,11 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     group.userData.viewYaw=yaw;
   }
   updateView();
+  // The overview draws enlarged figures and vehicles; street view asks for building scale.
+  let vehicleScale=1;
   function positionCar(car,p,angle=0,visible=true,moving=false,time=0) {
     if(!car)return;car.group.visible=visible;if(!visible)return;
+    if(car.group.scale.x!==vehicleScale)car.group.scale.setScalar(vehicleScale);
     car.group.position.set(p.x,0,p.y*ds);car.group.rotation.y=-Math.atan2(Math.sin(angle*Math.PI/180)*ds,Math.cos(angle*Math.PI/180));
     for(const wheel of car.wheels)wheel.rotation.z=moving?-time*9:0;
   }
@@ -996,8 +1016,9 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     },
     updateView,
     playerModel:()=>ownCar?.group,
-    update({clock,weather,clubOpen,elapsed=0,player,angle=0,transport,driving,carColor,ownVehicle=ownId,carWithYou=true,parked,trafficPositions=[],trip}) {
-      const night=!!clock?.isNight;if(night!==lastNight){for(const glow of glowingMaterials)glow.material.emissiveIntensity=night?Math.max(.9,glow.day*5):glow.day;for(const beams of nightBeams)beams.visible=night;lastNight=night;}
+    update({clock,weather,clubOpen,elapsed=0,player,angle=0,transport,driving,carColor,ownVehicle=ownId,carWithYou=true,parked,trafficPositions=[],trip,vehicleScale:nextVehicleScale=1}) {
+      vehicleScale=nextVehicleScale;
+      const night=!!clock?.isNight;cityFabric?.update({night});if(night!==lastNight){for(const glow of glowingMaterials)glow.material.emissiveIntensity=night?Math.max(.9,glow.day*5):glow.day;for(const beams of nightBeams)beams.visible=night;lastNight=night;}
       clubLights.forEach((light,i)=>{light.intensity=clubOpen?21000+Math.sin(elapsed*2+i)*5000:0;light.target.position.set(580+i*180+Math.sin(elapsed*.55+i)*150,0,(630+Math.cos(elapsed*.4+i)*160)*ds);});
       if(carColor&&carColor!==appliedColor) {
         for(const car of [ownCar,parkedCar])if(car)car.group.traverse(o=>{if(o.material?.metalness===.28)o.material.color.set(carColor);});appliedColor=carColor;

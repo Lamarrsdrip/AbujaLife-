@@ -51,9 +51,18 @@ window.qaReady=true;
 </script></body></html>'''
 
 
+def authored_inventory():
+    # The real authored and compatibility city plots, in the order the server pages them.
+    script = "import {MAP_AD_INVENTORY,COMPATIBILITY_MAP_AD_INVENTORY} from './src/shared/advertising.mjs';console.log(JSON.stringify([...MAP_AD_INVENTORY,...COMPATIBILITY_MAP_AD_INVENTORY]));"
+    return json.loads(subprocess.check_output(['node','--input-type=module','-e',script], cwd=REPO, text=True))
+
+
 def zone_data():
     script = "import {AD_ZONES} from './src/shared/advertising.mjs';console.log(JSON.stringify(AD_ZONES));"
     return {row['id']: row for row in json.loads(subprocess.check_output(['node','--input-type=module','-e',script], cwd=REPO, text=True))}
+
+
+AUTHORED = authored_inventory()
 
 
 class Fixture:
@@ -66,7 +75,14 @@ class Fixture:
         query = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
         zone_id = query.get('zone', [None])[0]
         now = int(time.time() * 1000)
-        if not zone_id or zone_id == 'map-parcels' or zone_id == 'legacy' or zone_id not in self.zones:
+        if zone_id == 'map-parcels':
+            # The Map opens framed on the city, where the first open land is an authored plot.
+            limit = min(180, max(12, int(query.get('limit', ['96'])[0])))
+            page = max(0, int(query.get('page', ['0'])[0]))
+            rows = AUTHORED[page * limit:(page + 1) * limit]
+            return {'ok': True, 'zones': list(self.zones.values()), 'spaces': [{**row, 'available': True, 'eligible': row.get('eligible', True) is not False} for row in rows], 'active': [],
+                    'nextPage': page + 1 if (page + 1) * limit < len(AUTHORED) else None, 'serverTime': now}
+        if not zone_id or zone_id == 'legacy' or zone_id not in self.zones:
             return {'ok': True, 'zones': list(self.zones.values()), 'spaces': [], 'active': [], 'nextPage': None, 'serverTime': now}
         zone = self.zones[zone_id]
         limit = min(180, max(12, int(query.get('limit', ['96'])[0])))

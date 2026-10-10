@@ -62,7 +62,7 @@ async def layout(p,label):
     await p.wait_for_timeout(100)
     d=await p.evaluate('''()=>{
       const box=s=>{const e=document.querySelector(s),r=e.getBoundingClientRect();return{x:r.x,y:r.y,w:r.width,h:r.height,bottom:r.bottom,right:r.right};};
-      const selectors=['.world-joystick','.world-actions','.world-context-action','.play-chat','.club-life-dock','.location-activity-tray','.world-live-stats','.world-time-chip','.world-location-chip','.world-zoom-controls','.abj-whole-city-button','.world-sound-toggle','.world-catalogue-button','.world-motion-status.is-activity'];
+      const selectors=['.world-joystick','.world-actions','.world-context-action','.play-chat','.club-life-dock','.location-activity-tray','.street-gigs','.hustle-chip','.needs-coach-card','.activity-discovery-card','.world-live-stats','.world-time-chip','.world-location-chip','.world-zoom-controls','.abj-whole-city-button','.world-sound-toggle','.world-catalogue-button','.world-motion-status.is-activity'];
       const cards=selectors.flatMap(s=>{const e=document.querySelector(s);if(!e||getComputedStyle(e).display==='none'||getComputedStyle(e).visibility==='hidden'||e.closest('[hidden]'))return[];return[{s,...box(s)}];});
       const controls=['.world-home-shortcut','.world-sprint-button','.world-interact-button','.world-exit-shortcut'].flatMap(s=>document.querySelector(s)?[{s,...box(s)}]:[]);
       return{viewport:{w:innerWidth,h:innerHeight,vh:visualViewport.height},shell:box('.game-shell'),header:box('.game-header'),world:box('#world-scene'),stage:box('.world-stage'),nav:box('.game-nav'),scroll:{w:document.documentElement.scrollWidth,h:document.documentElement.scrollHeight},cards,controls,renderer:document.querySelector('#world-scene').dataset.environmentRenderer};
@@ -117,6 +117,14 @@ async def go_outside(c,p,venue):
     assert after['location']['exteriorEntry']['venueId']==venue,(venue,'wrong exterior door',after['location'])
     assert not await p.locator('.world-exit-shortcut').count()
     stage('native-go-outside',{'venue':venue,'district':after['district'],'walletUnchanged':True,'correctExteriorDoor':after['location']['exteriorEntry']})
+    if venue=='restaurant':
+        # On the street the gig bar shares the bottom of the screen with Nearby Chat
+        # and the movement controls: none of them may cover another, on any size.
+        await p.wait_for_selector('.street-gigs:not([hidden])',timeout=15000)
+        assert await p.locator('.hud-context-slot .street-gigs').count()==1,'the gig bar must live in the shared context slot'
+        for size in [(390,844),(320,568),(430,932),(844,390),(1440,900)]:
+            await p.set_viewport_size({'width':size[0],'height':size[1]});await layout(p,'street-gig-bar-'+str(size))
+        await p.set_viewport_size({'width':390,'height':844})
 async def timed_activity(c,p,activity,seconds):
     before=(await api(c,'/api/bootstrap'))['profile'];pose=await p.locator('#world-scene').get_attribute('data-player-x')
     await p.locator(f'[data-location-activity="{activity}"]').click()

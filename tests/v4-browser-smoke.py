@@ -506,7 +506,9 @@ async def club(page,venue,activity,kind,fixture,qa):
     await page.locator('.club-spray-button').click();await expect(page.locator('.club-spray-menu')).to_be_visible()
     await expect(page.locator('.club-spray-menu button').first).to_be_visible()
     await page.locator('.club-spray-button').click();await expect(page.locator('.club-spray-menu')).to_be_hidden()
-    audio=page.locator('.world-sound-toggle');await expect(audio).to_have_attribute('aria-pressed','false')
+    # Sound is part of the world now: on by default after the first touch, with this button as a remembered mute.
+    audio=page.locator('.world-sound-toggle');await expect(audio).to_have_attribute('aria-pressed','true')
+    await audio.click();await expect(audio).to_have_attribute('aria-pressed','false')
     await audio.click();await expect(audio).to_have_attribute('aria-pressed','true')
     await qa.screenshot(page,'main-club-'+venue)
     outcomes=[]

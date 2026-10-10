@@ -20,6 +20,7 @@ export const GIG_RULES = Object.freeze({
   executiveVehiclePrice: 90_000_000,
   executiveBasisPoints: 2500,
   maxPlaces: 60,
+  effort: Object.freeze({ onFoot: Object.freeze({ energy: 4, hunger: 3 }), driving: Object.freeze({ energy: 2, hunger: 2 }) }),
 });
 // [minimum, maximum] fare in game Naira, in ₦2,000 steps.
 export const GIG_KINDS = Object.freeze({
@@ -128,6 +129,11 @@ export function applyGigAction(profile, action, payload = {}, { now, randomInt }
   p.gigDays[dateKey] += 1;
   p.gigStats = { completed: (p.gigStats?.completed || 0) + 1, earned: (p.gigStats?.earned || 0) + paid };
   p.reputation = (p.reputation || 0) + 1;
+  // Work takes something out of you: a little energy and appetite per trip, more on foot.
+  const tired = gig.kind === 'errand' ? GIG_RULES.effort.onFoot : GIG_RULES.effort.driving;
+  if (Number.isFinite(p.energy)) p.energy = Math.max(0, p.energy - tired.energy);
+  if (Number.isFinite(p.hunger)) p.hunger = Math.max(0, p.hunger - tired.hunger);
+  if (gig.kind === 'ride' && Number.isFinite(p.social)) p.social = Math.min(100, p.social + 2);
   p.gigCooldownUntil = now + GIG_RULES.cooldownMs;
   p.gig = null;
   const label = gig.kind === 'ride' ? 'Ride fare' : gig.kind === 'delivery' ? 'Delivery fee' : 'Errand fee';

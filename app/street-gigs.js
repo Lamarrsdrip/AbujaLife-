@@ -11,7 +11,7 @@ const naira = value => `₦${new Intl.NumberFormat('en-NG', { maximumFractionDig
 const ICON = { ride: '🚕', delivery: '📦', errand: '🧺' };
 const EXCLUDED_POINTS = new Set(['home', 'your-car']);
 
-let world = null, bar = null, arrow = null, gig = null, summary = null, busy = false, timer = 0, reporting = false, lastError = '';
+let docker = () => {}, world = null, bar = null, arrow = null, gig = null, summary = null, busy = false, timer = 0, reporting = false, lastError = '';
 
 async function act(action, payload = {}) {
   const response = await apiFetch('/api/action', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, payload }), timeoutMs: 15000 });
@@ -79,6 +79,7 @@ async function arrive() {
     else if (gig.state === 'onboard') {
       const key = (arrive.keys ||= new Map()).get(gig.id) || crypto.randomUUID(); arrive.keys.set(gig.id, key);
       const done = await act('gig-complete', { gigId: gig.id, idempotencyKey: key });
+      if (done.payout) dispatchEvent(new Event('abj:game-success'));
       if (done.payout) toast(`${done.payout.tip ? `On time! ${naira(done.payout.fare)} + ${naira(done.payout.tip)} tip` : `Paid ${naira(done.payout.paid)}`} · ${summary.today}/${summary.dailyLimit} today`);
     }
     lastError = '';
@@ -107,14 +108,20 @@ function mount(detail) {
   bar = document.createElement('div'); bar.className = 'street-gigs'; bar.setAttribute('aria-live', 'polite'); bar.hidden = true;
   bar.addEventListener('click', event => { const button = event.target.closest('[data-gig]'); if (button && !button.disabled) void run(button.dataset.gig); });
   arrow = document.createElement('div'); arrow.className = 'street-gig-arrow'; arrow.hidden = true; arrow.setAttribute('aria-hidden', 'true'); arrow.textContent = '➤';
-  stage.append(bar); detail.container.append(arrow);
+  // The bar lives in the stage's shared context slot, the one region that is
+  // already coordinated with Nearby Chat, the activity tray, toasts and popovers.
+  // Pinning it at its own fixed height is what let Nearby Chat sit on top of it.
+  const dock = () => { const slot = stage.querySelector('.hud-context-slot'); if (slot && bar && bar.parentElement !== slot) slot.prepend(bar); return Boolean(slot); };
+  if (!dock()) { stage.append(bar); bar.dataset.undocked = ''; }
+  docker = () => { if (bar && dock()) delete bar.dataset.undocked; };
+  detail.container.append(arrow);
   const profile = globalThis.__ABJ_WORLD__?.profile;
   if (profile?.gig && !gig) gig = { ...profile.gig, fromName: point(profile.gig.from)?.label || profile.gig.from, toName: point(profile.gig.to)?.label || profile.gig.to };
   syncWaypoint(); render();
   timer = setInterval(() => {
     // Server time, advanced locally since the last reply, decides when a request has lapsed.
     if (gig && summary && gig.expiresAt <= summary.serverTime + (Date.now() - summary.receivedAt)) { gig = null; syncWaypoint(); }
-    render(); guide();
+    docker(); render(); guide();
   }, 300);
 }
 function unmount() { clearInterval(timer); timer = 0; bar?.remove(); arrow?.remove(); bar = arrow = null; world = null; }

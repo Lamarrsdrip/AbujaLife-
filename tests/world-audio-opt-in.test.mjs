@@ -1,38 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createClubAudio } from '../app/world-audio.js';
+import fs from 'node:fs';
 
-class FakeAudioContext {
-  constructor(){this.currentTime=0;this.destination={};this.state='suspended';}
-  createGain(){return{gain:{value:0,setValueAtTime(){},exponentialRampToValueAtTime(){}},connect(){},disconnect(){}};}
-  createOscillator(){return{frequency:{setValueAtTime(){},exponentialRampToValueAtTime(){}},connect(){},disconnect(){},start(){},stop(){}};}
-  async resume(){this.state='running';}
-  async suspend(){this.state='suspended';}
-  async close(){this.state='closed';}
-}
+// Sound used to be opt-in per scene. It is now part of the world: on after the
+// first touch, with the HUD button acting as a remembered mute. The director's
+// behaviour is covered in audio-director.test.mjs; this file guards the wiring.
+const read = file => fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
 
-test('audio opt-in stays enabled while playback is paused and can be switched off',async()=>{
-  const original=globalThis.AudioContext,states=[];globalThis.AudioContext=FakeAudioContext;
-  try{
-    const audio=createClubAudio({onState:state=>states.push(state)});
-    assert.equal(await audio.toggle(),true);
-    assert.deepEqual(states.at(-1),{enabled:true,playing:false});
-    audio.setActive(true);
-    assert.deepEqual(states.at(-1),{enabled:true,playing:true});
-    audio.setActive(false);
-    assert.deepEqual(states.at(-1),{enabled:true,playing:false});
-    assert.equal(await audio.toggle(),false);
-    assert.deepEqual(states.at(-1),{enabled:false,playing:false});
-    audio.dispose();
-  }finally{if(original===undefined)delete globalThis.AudioContext;else globalThis.AudioContext=original;}
-});
-
-test('audio stays off when the browser has no Web Audio support',async()=>{
-  const original=globalThis.AudioContext,states=[];delete globalThis.AudioContext;
-  try{
-    const audio=createClubAudio({onState:state=>states.push(state)});
-    assert.equal(await audio.toggle(),false);
-    assert.deepEqual(states,[]);
-    audio.dispose();
-  }finally{if(original!==undefined)globalThis.AudioContext=original;}
+test('each scene hands its soundscape to the shared director instead of owning a synth', () => {
+  const handle = read('app/world-audio.js'), sim = read('app/world-simulator.js');
+  assert.match(handle, /import \{ audioDirector \} from '\.\/audio-director\.js';/);
+  assert.doesNotMatch(handle, /new (?:Audio|webkitAudio)Context|createOscillator/, 'no second audio graph per scene');
+  assert.match(handle, /director\.setScene\(open \? scene : closedScene\)/); assert.match(handle, /director\.setDucked\(!active\)/);
+  assert.match(sim, /scene:preview\?null:soundscapeFor\(\{kind:trip\?'transit':kind,venueId:venue\?\.id,venueKind:venue\?\.kind,night:abujaTime\(now\(\)\)\.isNight\}\)/, 'the login preview stays silent');
+  assert.match(sim, /sound\.setActive\(!blocked,!isClub\|\|clubSchedule\(currentNow\)\.isOpen\);/, 'a closed club plays the quiet room, an open sheet ducks the music');
+  assert.match(sim, /enabled:profile\.settings\?\.soundEnabled!==false/, 'the account sound setting still applies');
 });

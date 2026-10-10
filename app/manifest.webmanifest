@@ -9,7 +9,7 @@
     "standalone",
     "minimal-ui"
   ],
-  "orientation": "any",
+  "orientation": "portrait",
   "background_color": "#f4f2eb",
   "theme_color": "#173d2c",
   "description": "Make Abuja home. Create a resident and build a life with your people.",

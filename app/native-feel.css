@@ -1,0 +1,24 @@
+/* App-like surface: no selection, callouts or tap flashes on the game itself. */
+.game-shell,.outside-city,.sheet,.game-nav,.world-stage{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+.game-shell :is(input,textarea,[contenteditable="true"],.allow-select,.ph-message,.chat-message),.sheet :is(input,textarea){-webkit-user-select:text;user-select:text}
+.game-shell button,.sheet button,.game-nav button{touch-action:manipulation}
+html,body{overscroll-behavior:none}
+html.is-native-shell,html.is-standalone{background:#173d2c}
+/* Needs notification card (lives in the shared context slot). */
+.hud-context-slot:has(.needs-coach-card){flex-direction:column;align-items:center;gap:8px}
+/* One contextual card at a time: a needs notice owns the slot until it is answered or dismissed. */
+.hud-context-slot:has(.needs-coach-card) :is(.street-gigs,.location-activity-tray){display:none}
+@media(max-height:600px){#app .world-stage:has(.needs-coach-card) .hustle-chip{display:none}}
+@media(max-width:799px){#app .world-stage:has(.play-chat,.club-life-dock) .hud-context-slot:has(.needs-coach-card){bottom:calc(var(--hud-context) + 52px)}}
+.needs-coach-card{pointer-events:auto;display:flex;align-items:center;gap:10px;width:min(440px,100%);padding:9px 10px 9px 12px;border-radius:16px;border:1px solid rgba(255,255,255,.75);background:rgba(251,247,235,.96);color:#1f3d31;box-shadow:0 6px 20px rgba(16,42,34,.2)}
+.needs-coach-card.is-low{border-color:#e0b84a}.needs-coach-card.is-critical{border-color:#c8553d;background:rgba(255,244,238,.97)}
+.needs-coach-icon{flex:none;display:grid;place-items:center;width:34px;height:34px;border-radius:11px;background:#e3efdf;font-size:18px}
+.needs-coach-card>div{flex:1;min-width:0}.needs-coach-card small{display:block;font-size:9px;letter-spacing:.7px;text-transform:uppercase;color:#6a7f71}
+.needs-coach-card strong{display:block;font-size:12.5px;line-height:1.3}
+.needs-coach-go{flex:none;min-height:40px;padding:0 12px;border:0;border-radius:12px;background:#1f6b4a;color:#fff;font:600 12px/1 inherit;cursor:pointer}
+.needs-coach-close{flex:none;width:32px;height:40px;border:0;background:transparent;color:#6a7f71;font-size:18px;cursor:pointer}
+/* Sound settings sheet. */
+.abj-sound h2{margin:6px 0 12px}.sound-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 2px;border-bottom:1px solid #e3e5d8}
+.sound-row span{min-width:0}.sound-row strong{display:block;font-size:14px}.sound-row small{display:block;font-size:11px;color:#6a7f71;margin-top:2px}
+.sound-row input[type=range]{flex:1;max-width:190px;min-height:44px;accent-color:#1f6b4a}.sound-row input[type=checkbox]{width:26px;height:26px;accent-color:#1f6b4a}
+.abj-sound .muted{margin-top:12px;font-size:11px;line-height:1.5}

@@ -67,6 +67,7 @@ import { vehicleColorHex, vehicleFor } from '../src/shared/vehicles.mjs';
 import { createCharacterRenderer } from './world-3d.js';
 import { abujaTime, clubSchedule, seasonalWeather } from '../src/shared/simulation.mjs';
 import { createClubAudio } from './world-audio.js';
+import { soundscapeFor } from './audio-director.js';
 import { WORLD_ZOOM, clampWorldZoom, worldViewport, constrainWorldCamera, screenToWorld, worldToScreen, worldFloorTransform, screenVectorToWorld } from './world-camera.js';
 import { worldEntryState } from './world-spawn.js';
 import { createWorldOrbit } from './world-orbit.js';
@@ -235,7 +236,7 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
  if(driving)container.querySelector('[data-world-target="your-car"].world-point')?.setAttribute('display','none');
  const timeChip=document.createElement('div');timeChip.className='world-time-chip';timeChip.setAttribute('aria-label','Actual Abuja time and weather');container.append(timeChip);
  let clock=abujaTime(now()),weather=reportedWeather||seasonalWeather(now()),lastClockSecond=-1;
- const sound=createClubAudio({enabled:profile.settings?.soundEnabled!==false,mode:isClub?'club':'ambient',onState:state=>{const button=container.querySelector('.world-sound-toggle');if(button){const label=isClub?'Music':'Ambience';button.textContent=state.playing?`${label} on`:state.enabled?`${label} paused`:`${label} off`;button.setAttribute('aria-pressed',String(state.enabled));}}});
+ const sound=createClubAudio({enabled:profile.settings?.soundEnabled!==false,mode:isClub?'club':'ambient',scene:preview?null:soundscapeFor({kind:trip?'transit':kind,venueId:venue?.id,venueKind:venue?.kind,night:abujaTime(now()).isNight}),onState:state=>{const button=container.querySelector('.world-sound-toggle');if(button){const label=isClub?'Music':'Ambience';button.textContent=state.playing?`${label} on`:state.enabled?`${label} paused`:`${label} off`;button.setAttribute('aria-pressed',String(state.enabled));}}});
  {const button=document.createElement('button');button.className='world-sound-toggle';button.type='button';button.textContent=isClub?'Music off':'Ambience off';button.setAttribute('aria-pressed','false');button.setAttribute('aria-label',isClub?'Toggle original synthesized club music':'Toggle original Abuja city ambience');button.disabled=profile.settings?.soundEnabled===false;button.title=button.disabled?'Enable sound in Settings first':isClub?'Original club beats · tap to listen':'Original Abuja ambience · tap to listen';button.onclick=()=>sound.toggle();container.append(button);}
  let characterRenderer=null;
  const mountCharacterRenderer=()=>{
@@ -513,7 +514,7 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
   raf=0;if(disposed)return;if(playbackBlocked()){syncPlayback();return;}const frameDt=lastTime?Math.min(1,(time-lastTime)/1000):0;let dt=Math.min(.12,frameDt);lastTime=time;frameCount++;
   const currentNow=now();if(Math.floor(currentNow/1000)!==lastClockSecond){lastClockSecond=Math.floor(currentNow/1000);clock=abujaTime(currentNow);weather=reportedWeather||seasonalWeather(currentNow);const musicButton=container.querySelector('.world-sound-toggle');if(musicButton){const closed=isClub&&!clubSchedule(currentNow).isOpen;musicButton.disabled=closed||profile.settings?.soundEnabled===false;if(closed){musicButton.textContent='DJ off duty';musicButton.title=clubSchedule(currentNow).openingHours;}else if(musicButton.textContent==='DJ off duty'){musicButton.textContent=isClub?'Music off':'Ambience off';musicButton.title=isClub?'Original club beats · tap to listen':'Original Abuja ambience · tap to listen';}}container.dataset.timeOfDay=clock.isNight?'night':'day';container.dataset.abujaTime=clock.label;container.dataset.weather=weather.condition||'clear';timeChip.innerHTML=`<time datetime="${new Date(currentNow).toISOString()}">${clock.label} WAT</time><span title="${escape(weather.label||'Seasonal game weather')}">${weather.condition==='rain'?'Rain':weather.condition==='cloudy'?'Cloudy':weather.condition==='hazy'?'Hazy':'Clear'} · ${Math.round(weather.temperatureC??28)}° <small>${weather.source==='seasonal-simulation'?'game weather':'weather'}</small></span>`;}
   if(oblique&&container.dataset.environmentRenderer!=='webgl-3d'){oblique=false;updateViewport();}
-  const blocked=inputBlocked();sound.setActive(!blocked&&(!isClub||clubSchedule(currentNow).isOpen));if(blocked&&!preview)dt=0;elapsed+=dt;if(blocked){keyboard.clear();joy.x=joy.y=0;}
+  const blocked=inputBlocked();sound.setActive(!blocked,!isClub||clubSchedule(currentNow).isOpen);if(blocked&&!preview)dt=0;elapsed+=dt;if(blocked){keyboard.clear();joy.x=joy.y=0;}
   const orbitState=orbit.tick(dt);zoom=orbitState.zoom;if(orbitState.changed)updateViewport();
   const old={...player};moving=false;
   if(!blocked&&!furnitureMode&&!activity){let dx=(keyboard.has('d')||keyboard.has('arrowright')?1:0)-(keyboard.has('a')||keyboard.has('arrowleft')?1:0)+joy.x,dy=(keyboard.has('s')||keyboard.has('arrowdown')?1:0)-(keyboard.has('w')||keyboard.has('arrowup')?1:0)+joy.y;

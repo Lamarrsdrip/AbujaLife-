@@ -1,7 +1,13 @@
 /* Street gigs: one slim bar above the movement controls, outdoors only. */
-.street-gigs{position:absolute;left:12px;right:12px;bottom:122px;z-index:4;display:flex;justify-content:center;pointer-events:none;font:inherit}
+.street-gigs{position:relative;z-index:1;display:flex;justify-content:center;width:min(440px,100%);pointer-events:none;font:inherit}
 .street-gigs[hidden]{display:none}
-.street-gigs>*{pointer-events:auto;max-width:440px;width:100%}
+.street-gigs>*{pointer-events:auto;width:100%}
+/* Before the shared slot exists (first frame only) keep clear of the bottom controls and chat. */
+.street-gigs[data-undocked]{position:absolute;left:12px;right:12px;margin:auto;bottom:calc(var(--hud-context,124px) + 52px);z-index:4}
+/* Inside the shared context slot: stack with any other contextual card instead of sharing a row. */
+.hud-context-slot:has(.street-gigs:not([hidden])){flex-direction:column;align-items:center;gap:8px}
+/* On phones Nearby Chat sits at the slot's own height on the left; lift the slot above it. */
+@media(max-width:799px){#app .world-stage:has(.play-chat,.club-life-dock) .hud-context-slot:has(.street-gigs:not([hidden])){bottom:calc(var(--hud-context) + 52px)}}
 .gig-find,.gig-card{display:flex;align-items:center;gap:10px;width:100%;min-height:52px;padding:8px 12px;border:1px solid rgba(255,255,255,.7);border-radius:16px;background:rgba(251,247,235,.94);color:#1f3d31;box-shadow:0 6px 20px rgba(16,42,34,.2);text-align:left;font:inherit}
 .gig-find{cursor:pointer}.gig-find:disabled{opacity:.72;cursor:default}
 .gig-card{flex-direction:column;align-items:stretch;gap:8px}
@@ -17,5 +23,7 @@
 .gig-live{border-color:rgba(95,224,138,.8)}
 .street-gig-arrow{position:absolute;left:0;top:0;z-index:3;width:34px;height:34px;margin:-17px 0 0 -17px;display:grid;place-items:center;border-radius:50%;background:#ffd35a;color:#3b2f08;font-size:17px;box-shadow:0 3px 12px rgba(0,0,0,.28);pointer-events:none;will-change:transform}
 .street-gig-arrow[hidden]{display:none}
-@media(max-height:620px){.street-gigs{bottom:116px}.gig-find,.gig-card{min-height:46px;padding:6px 10px}}
-@media(min-width:1000px){.street-gigs{bottom:140px}}
+@media(max-height:620px){.gig-find,.gig-card{min-height:46px;padding:6px 10px}}
+/* Short landscape screens: the left edge is full (place chip, Destinations, joystick),
+   so Nearby Chat moves beside the joystick and the context slot starts after it. */
+@media(max-height:550px){#app .is-playing .play-chat{left:124px}#app .world-stage:has(.play-chat) .hud-context-slot{left:252px}}

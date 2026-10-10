@@ -213,7 +213,8 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
  const orientation=()=>orbit.getState();
  // Third-person street view is the default presentation. The overview (dollhouse)
  // camera remains for arranging furniture, previews and as a player choice.
- let streetPreferred=readStreetPreference(),streetDistance=0,streetShown=false;
+ let streetPreferred=readStreetPreference(),streetDistance=0,streetTilt=0,streetShown=false;
+ let waypoint=null;
  const streetOn=()=>streetPreferred&&oblique&&!preview&&!furnitureMode;
  const viewport=()=>({width:viewWidth,height:viewHeight,oblique,...orientation()});
  const usablePose=p=>p&&Number.isFinite(p.x)&&Number.isFinite(p.y)&&p.x>=0&&p.y>=0&&p.x<=scene.width&&p.y<=scene.height;
@@ -240,6 +241,7 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
  const mountCharacterRenderer=()=>{
   if(disposed||characterRenderer)return;
   characterRenderer=createCharacterRenderer(container,{appearance:profile.appearance,pedestrians:scene.pedestrians,neighbours,scene,profile,kind,venue,place});
+  if(waypoint)characterRenderer?.setBeacon?.(waypoint);
   if(container.dataset.environmentRenderer==='webgl-3d'){oblique=true;updateViewport();}
   armLoop();
  };
@@ -570,9 +572,10 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
   let streetPose=null;
   if(street){
    const view=orientation(),raw=streetCameraPose({player,yaw:view.yaw,elevation:view.elevation,zoom:view.zoom,driving:transport,interior,blocked:interior?null:cameraBlocked});
-   if(!streetDistance)streetDistance=raw.distance;
-   streetDistance+=(raw.distance-streetDistance)*(1-Math.exp(-dt*(raw.distance<streetDistance?16:3.2)));
-   streetPose=streetPoseAtDistance(raw,streetDistance);
+   if(!streetDistance){streetDistance=raw.distance;streetTilt=raw.pitch;}
+   streetDistance+=(raw.distance-streetDistance)*(1-Math.exp(-dt*5));
+   streetTilt+=(raw.pitch-streetTilt)*(1-Math.exp(-dt*(raw.pitch>streetTilt?7:2.4)));
+   streetPose=streetPoseAtDistance(raw,streetDistance,streetTilt);
   }
   if(!blocked||preview)characterRenderer?.draw({player,camera,width:viewWidth,height:viewHeight,orientation:orientation(),street:streetPose,angle,phase:walkPhase,time:elapsed,moving,transport,driving,activity,clock,weather,clubOpen:isClub&&clubSchedule(currentNow).isOpen,carColor,carStyle,ownVehicle,carWithYou,parked,trafficPositions,trip,npcPositions,onlinePositions:neighbours.map(person=>{const pose=residentPoses.get(String(person.id))||person.pose||{};return{...pose,phase:elapsed*8,activity:pose.activity?{name:pose.activity,elapsed:elapsed*1000}:null};})});
   if(frameCount%6===0&&roofEntries.length){
@@ -645,6 +648,12 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
   if(['dealership','estate-office','banex-market','furniture-store','play-dice'].includes(action)&&kind==='venue'){stop();dispatch(action,payload);return true;}
   return false;
  };
- cleanup.walkTo=moveTo;cleanup.perform=perform;cleanup.performAsync=(action,payload={})=>new Promise(resolve=>{if(!perform(action,payload,resolve))resolve(false);});cleanup.setFurnitureMode=setFurnitureMode;cleanup.cancelNavigation=stop;cleanup.focus=()=>container.focus({preventScroll:true});cleanup.getFurnitureState=()=>({placed:[...container.querySelectorAll('[data-furniture-item],[data-home-item]')].map(n=>n.dataset.furnitureItem||n.dataset.homeItem).filter((id,i,a)=>a.indexOf(id)===i),stored:scene.storedFurniture||[],placements:scene.furniturePlacements||[]});cleanup.getMotionState=()=>({...player,angle,cameraX:camera.x,cameraY:camera.y,zoom,viewWidth,viewHeight,moving,driving,activity:activity?.name||null,pathLength:path.length,nearby:nearby?.id,travelDistance,scene:kind});cleanup.animateAction=animateActivity;cleanup.animateActivity=animateActivity;cleanup.setZoom=setZoom;cleanup.resetZoom=resetZoom;cleanup.getCameraState=()=>({x:camera.x,y:camera.y,...orientation(),zoom,width:viewWidth,height:viewHeight,oblique,minZoom:WORLD_ZOOM.min,maxZoom:WORLD_ZOOM.max});cleanup.worldToScreen=point=>worldToScreen(point,svg.getBoundingClientRect(),camera,viewport());
+ cleanup.walkTo=moveTo;cleanup.perform=perform;cleanup.performAsync=(action,payload={})=>new Promise(resolve=>{if(!perform(action,payload,resolve))resolve(false);});cleanup.setFurnitureMode=setFurnitureMode;cleanup.cancelNavigation=stop;cleanup.focus=()=>container.focus({preventScroll:true});cleanup.getFurnitureState=()=>({placed:[...container.querySelectorAll('[data-furniture-item],[data-home-item]')].map(n=>n.dataset.furnitureItem||n.dataset.homeItem).filter((id,i,a)=>a.indexOf(id)===i),stored:scene.storedFurniture||[],placements:scene.furniturePlacements||[]});// Guided tasks (street gigs) read the scene's own interaction points and ask for
+ // a destination beacon. They never move the resident or change authoritative state.
+ cleanup.getScenePoints=()=>scene.interactables.map(point=>({id:point.id,x:point.x,y:point.y,label:point.label,radius:point.radius||76}));
+ cleanup.setWaypoint=point=>{waypoint=point&&Number.isFinite(point.x)&&Number.isFinite(point.y)?{x:point.x,y:point.y,color:point.color}:null;characterRenderer?.setBeacon?.(waypoint);poke();};
+ cleanup.projectPoint=point=>{const rect=container.getBoundingClientRect(),seen=characterRenderer?.projectWorld?.(point);if(seen)return{x:seen.x-rect.left,y:seen.y-rect.top,visible:seen.z>-1&&seen.z<1,width:rect.width,height:rect.height};const flat=worldToScreen(point,{left:0,top:0,width:rect.width,height:rect.height},camera,viewport());return{...flat,visible:true,width:rect.width,height:rect.height};};
+ cleanup.getMotionState=()=>({...player,angle,cameraX:camera.x,cameraY:camera.y,zoom,viewWidth,viewHeight,moving,driving,activity:activity?.name||null,pathLength:path.length,nearby:nearby?.id,travelDistance,scene:kind});cleanup.animateAction=animateActivity;cleanup.animateActivity=animateActivity;cleanup.setZoom=setZoom;cleanup.resetZoom=resetZoom;cleanup.getCameraState=()=>({x:camera.x,y:camera.y,...orientation(),zoom,width:viewWidth,height:viewHeight,oblique,minZoom:WORLD_ZOOM.min,maxZoom:WORLD_ZOOM.max});// Street view needs the real perspective projection; the flat overview maths would misplace name tags.
+ cleanup.worldToScreen=point=>{if(streetOn()){const seen=characterRenderer?.projectWorld?.({x:point.x,y:point.y,elevation:point.elevation||0});if(seen)return seen.z>-1&&seen.z<1?{x:seen.x,y:seen.y}:{x:-9999,y:-9999};}return worldToScreen(point,svg.getBoundingClientRect(),camera,viewport());};
  return cleanup;
 }

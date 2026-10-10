@@ -1,4 +1,5 @@
 import { CITY_LANDMARKS } from '../src/shared/city-landmarks.mjs';
+import { generateCityFabric, cityFabricArt } from './world-city-fabric.js';
 import { WORLD_LANDMARK_SIZES, WORLD_LANDMARK_FACADES } from '../src/shared/world-landmark-sizes.mjs';
 // Authored Abuja-inspired game blocks. This is a playable set, not a street map.
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -47,6 +48,9 @@ function building({id,x,y,w,h,name,tag,wall='#e7dcc1',accent='#4b705d',floors=1,
 }
 
 const ellipse = (cx,cy,rx,ry,fill,extra='') => `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="${fill}" ${extra}/>`;
+// Game interpretation of Abuja's tricycle restrictions: keke work the satellite
+// towns and outer districts, not the city-centre districts listed here.
+const KEKE_FREE_DISTRICTS=new Set(['central-area','garki-i','garki-ii','wuse-i','wuse-ii-a07','wuse-ii-a08','asokoro','asokoro-extension','maitama','maitama-ii','maitama-extension','guzape','wuye','jabi','utako','mabushi','katampe','katampe-extension','jahi','kado','gudu','durumi']);
 const WORLD_LANDMARK_LAYOUT=Object.freeze({
   'airport-hub':[4050,3800],'efcc-hq':[4850,3720],
   'city-gate-plaza':[4020,3010],'national-stadium-hub':[4800,3000],'magicland':[5580,3010],
@@ -203,6 +207,10 @@ export function buildCity({profile={},place={},id='city',venues=[]}={}) {
  const visibleLegacyBuildings=specs.map(spec=>spec.id==='home'||localVenueIds.has(spec.id)?spec:{...spec,id:`context-spec-${spec.id}`,name:'',context:true});
  const safeLandmarkBuildings=landmarkBuildings.map(b=>localVenueIds.has(b.id)?b:{...b,id:`context-landmark-${b.id}`,name:'',context:true});
  const visibleBuildings=[...visibleLegacyBuildings,...contextBuildings,...safeLandmarkBuildings];
+ // Fill every remaining block with the district's own built character. The fabric
+ // avoids roads, authored buildings and the approach to each interaction point.
+ const fabric=generateCityFabric({width,height,placeId:place.id||profile.district||'abuja',obstacles,interactables,spawn:{x:445,y:679}});
+ art+=cityFabricArt(fabric);obstacles.push(...fabric.obstacles);
 
- return {width,height,art,obstacles,interactables,buildings:visibleBuildings,spawn:{x:445,y:679},title:place.name||'Abuja',subtitle:'Neighbourhood · free roam',traffic:[{axis:'x',lane:798,speed:115,color:'#d5b88c',type:'taxi',offset:190},{axis:'x',lane:902,speed:-96,color:'#e6dfc9',offset:2350},{axis:'x',lane:1601,speed:106,color:'#8baba2',offset:1200},{axis:'x',lane:1705,speed:-85,color:'#d3cdb0',type:'bus',offset:2780},{axis:'y',lane:1890,speed:94,color:'#b98761',offset:260},{axis:'y',lane:2011,speed:-112,color:'#dfe2d0',offset:1700},{axis:'x',lane:902,speed:78,color:'#f1f3e9',type:'suv',offset:3200,role:'FCT Patrol'}],pedestrians:[{x:640,y:681,toX:1190,toY:681},{x:2140,y:677,toX:2760,toY:677},{x:1320,y:1490,toX:1700,toY:1490},{x:2230,y:1490,toX:2800,toY:1490},{x:790,y:1040,toX:1720,toY:1040},{x:2960,y:1040,toX:3310,toY:1040},{x:1030,y:1040,toX:1180,toY:1040,role:'FCT Patrol'},{x:2470,y:1490,toX:2590,toY:1490,role:'City Security'}]};
+ return {width,height,art,obstacles,interactables,fabric,buildings:visibleBuildings,spawn:{x:445,y:679},title:place.name||'Abuja',subtitle:'Neighbourhood · free roam',traffic:[{axis:'x',lane:798,speed:115,color:'#1f7a4a',type:'taxi',offset:190},{axis:'x',lane:902,speed:-96,color:'#e6dfc9',offset:2350},{axis:'x',lane:1601,speed:106,color:'#8baba2',offset:1200},{axis:'x',lane:1705,speed:-85,color:'#d3cdb0',type:'bus',offset:2780},{axis:'y',lane:1890,speed:94,color:'#b98761',offset:260},{axis:'y',lane:2011,speed:-112,color:'#dfe2d0',offset:1700},{axis:'x',lane:902,speed:78,color:'#f1f3e9',type:'suv',offset:3200,role:'FCT Patrol'},{axis:'x',lane:1601,speed:92,color:'#1f7a4a',type:'taxi',offset:2600},{axis:'y',lane:1890,speed:88,color:'#2a6b9a',type:'hatchback',offset:2050},{axis:'x',lane:1705,speed:-74,color:'#8a8f93',type:'suv',offset:900},...(KEKE_FREE_DISTRICTS.has(place.id)?[]:[{axis:'x',lane:798,speed:64,color:'#e2b93b',type:'keke',offset:1500},{axis:'y',lane:2011,speed:-58,color:'#e2b93b',type:'keke',offset:620},{axis:'x',lane:1705,speed:-61,color:'#2f8f5b',type:'keke',offset:2100}])],pedestrians:[{x:640,y:681,toX:1190,toY:681},{x:2140,y:677,toX:2760,toY:677},{x:1320,y:1490,toX:1700,toY:1490},{x:2230,y:1490,toX:2800,toY:1490},{x:790,y:1040,toX:1720,toY:1040},{x:2960,y:1040,toX:3310,toY:1040},{x:1030,y:1040,toX:1180,toY:1040,role:'FCT Patrol'},{x:2470,y:1490,toX:2590,toY:1490,role:'City Security'}]};
 }

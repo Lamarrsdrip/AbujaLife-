@@ -3,6 +3,7 @@ import { ECONOMY_CONFIG } from '../shared/economy.mjs';
 import { economyTransactionType } from '../shared/transactions.mjs';
 import { TENANCY_RULES, recordHousingLifeEvent, syncHomeTenancy } from '../shared/tenancy.mjs';
 import { HOUSING_ACTIONS, HOUSING_MONEY_ACTIONS, applyHousingAction } from './housingActions.mjs';
+import { GIG_ACTIONS, GIG_MONEY_ACTIONS, applyServerGigAction } from './streetGigs.mjs';
 import { promisify } from 'node:util';
 import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
@@ -30,8 +31,8 @@ const initialAppearance = {skinTone:'brown',face:'oval',body:'regular',hair:'cro
 function updateAppearance(current, incoming, inventory=[]) { if(incoming&&typeof incoming==='object')for(const [key,values] of Object.entries(appearanceOptions))if(incoming[key]!==undefined){check(values.includes(incoming[key]),`Choose a supported ${key}`);if(key==='top'&&!['forest','ochre'].includes(incoming[key])){const item=catalog.find(item=>item.category==='clothing'&&item.slot==='top'&&item.value===incoming[key]);check(item&&inventory.includes(item.id),'Buy this outfit in Okrika Marketplace before wearing it',403,'outfit_not_owned');}current[key]=incoming[key];}return current; }
 
 export class GameStore {
-  constructor({dataDir=process.env.ABUJALIFE_DATA_DIR||path.resolve('.local'),clock=Date.now,originRandomInt=crypto.randomInt}={}) {
-    fs.mkdirSync(dataDir,{recursive:true});this.db=new DatabaseSync(path.join(dataDir,'abujalife.sqlite'));this.clock=clock;this.originRandomInt=originRandomInt;this.emitUser=()=>{};this.emitZone=()=>{};this.isOnline=()=>false;this.onlineInZone=()=>null;
+  constructor({dataDir=process.env.ABUJALIFE_DATA_DIR||path.resolve('.local'),clock=Date.now,originRandomInt=crypto.randomInt,gigRandomInt=crypto.randomInt}={}) {
+    fs.mkdirSync(dataDir,{recursive:true});this.db=new DatabaseSync(path.join(dataDir,'abujalife.sqlite'));this.clock=clock;this.originRandomInt=originRandomInt;this.gigRandomInt=gigRandomInt;this.emitUser=()=>{};this.emitZone=()=>{};this.isOnline=()=>false;this.onlineInZone=()=>null;
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
       CREATE TABLE IF NOT EXISTS residents(id TEXT PRIMARY KEY,username TEXT UNIQUE NOT NULL,password TEXT NOT NULL,profile TEXT NOT NULL,created_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS resident_origins(resident_id TEXT PRIMARY KEY REFERENCES residents(id),origin TEXT NOT NULL,created_at INTEGER NOT NULL);
@@ -73,6 +74,12 @@ export class GameStore {
   save(profile){const origin=this.get('SELECT origin FROM resident_origins WHERE resident_id=?',profile.id);if(origin)profile.origin=JSON.parse(origin.origin);this.run('UPDATE residents SET profile=? WHERE id=?',JSON.stringify(profile),profile.id);return structuredClone(profile);}
   propertiesFor(id){const p=typeof id==='string'?this.profile(id):id;return p?.origin?.residence?[...properties,p.origin.residence]:[...properties];}
   propertyFor(profile,propertyId=profile.home.propertyId){return this.propertiesFor(profile).find(item=>item.id===propertyId);}
+  // Street gigs (ride-hailing, deliveries, errands). The payout is a normal ledger
+  // entry inside the same atomic, idempotent economy operation as every wage.
+  gigAction(id,action,payload={}){
+    const normalized=Object.fromEntries(Object.entries(payload).filter(([key])=>key!=='idempotencyKey').sort(([a],[b])=>a.localeCompare(b)));
+    return this.economyOperation(id,action,payload,normalized,(p,now)=>applyServerGigAction(p,action,payload,{now,randomInt:this.gigRandomInt}),{requireKey:GIG_MONEY_ACTIONS.has(action)});
+  }
   housingAction(id,action,payload={}){
     const kind=action==='renew-rent'?'pay-rent':action,normalized=Object.fromEntries(Object.entries(payload).filter(([key])=>key!=='idempotencyKey').sort(([a],[b])=>a.localeCompare(b)));
     return this.economyOperation(id,kind,payload,normalized,(p,now)=>applyHousingAction(p,kind,payload,{now,properties:this.propertiesFor(p)}),{requireKey:HOUSING_MONEY_ACTIONS.has(action)});
@@ -281,6 +288,7 @@ export class GameStore {
     if(action==='play-dice')return this.playDice(id,payload);
     if(['borrow-loan','repay-loan'].includes(action))return this.loanAction(id,action,payload);
     if(HOUSING_ACTIONS.has(action))return this.housingAction(id,action,payload);
+    if(GIG_ACTIONS.has(action))return this.gigAction(id,action,payload);
     if(payload.idempotencyKey&&(['paint-vehicle'].includes(action)||(action==='purchase'&&catalog.some(item=>item.id===payload.itemId&&item.category==='vehicle'))))return this.vehicleAction(id,action,payload);
     const normalized=Object.fromEntries(Object.entries(payload).filter(([key])=>key!=='idempotencyKey').sort(([a],[b])=>a.localeCompare(b)));
     const result=this.economyOperation(id,action,payload,normalized,(p,timestamp)=>{

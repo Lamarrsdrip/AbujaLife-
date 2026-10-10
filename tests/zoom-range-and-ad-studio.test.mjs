@@ -96,8 +96,8 @@ test('camera envelope and floor picking stay aligned at extreme zoom-out', () =>
 test('street view stays the default and zooms out into a clear aerial view', () => {
   const player = {x: 900, y: 900}, building = (x, y) => y > 1000;
   const near = streetCameraPose({player, yaw: 0, zoom: 1, blocked: building}), far = streetCameraPose({player, yaw: 0, zoom: .0001, blocked: building});
-  assert.equal(near.shortened, true, 'at street level a building still stops the camera');
-  assert.equal(far.shortened, false, 'the aerial eye is above the rooftops');
+  assert.equal(near.raised, true, 'at street level a building behind the resident lifts the camera');
+  assert.equal(far.raised, false, 'the aerial eye is already above the rooftops');
   assert.ok(Math.abs(far.distance - STREET_VIEW.walk.distance / STREET_VIEW.minZoom) < 1e-6);
   assert.ok(far.distance > streetCameraPose({player, yaw: 0, zoom: 1}).distance * 9);
   assert.ok(far.pitch >= STREET_VIEW.clearPitch && far.pitch <= STREET_VIEW.maxPitch && far.position.y > 1500);

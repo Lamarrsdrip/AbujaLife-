@@ -89,15 +89,18 @@ export function createStreetBackdrop(T, {width = 1600, depth = 1400, seed = 'abu
   let paletteKey = '';
   return {
     group, fog,
-    update({daylight = 1, night = false, condition = 'clear', eye} = {}) {
+    update({daylight = 1, night = false, condition = 'clear', eye, distance = 0} = {}) {
       if (eye) sky.position.set(eye.x, 0, eye.z);
+      // Haze starts beyond the resident, however far the eye has pulled back, so an
+      // aerial view shows the city instead of a wall of fog.
+      const rain = condition === 'rain', reach = Math.max(0, Number(distance) || 0);
+      fog.near = (rain ? 900 : 1500) + reach * 1.1; fog.far = (rain ? 6200 : 9800) + reach * 2.2;
       const key = `${night ? 'n' : daylight < .3 ? 'k' : 'd'}:${condition}`;
       if (key === paletteKey) return;
       paletteKey = key;
       const palette = skyPalette({daylight, night, condition});
       skyUniforms.top.value.set(palette.top); skyUniforms.horizon.value.set(palette.horizon);
       groundMaterial.color.set(palette.ground); fog.color.set(palette.fog);
-      fog.near = condition === 'rain' ? 900 : 1500; fog.far = condition === 'rain' ? 6200 : 9800;
     },
     dispose() { for (const item of disposables) item.dispose(); towers.dispose(); trees.dispose(); },
   };

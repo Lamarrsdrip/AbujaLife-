@@ -30,7 +30,7 @@ test('the live map opens safe blank land directly without requiring Advertise mo
 
 test('map parcel renderer stays tightly bounded for fast phone navigation',()=>{
  const source=fs.readFileSync(new URL('../app/map-ad-parcels.js',import.meta.url),'utf8');
- assert.match(source,/maxVisible=96/);assert.match(source,/size\.width<720\?64/);assert.match(source,/InstancedMesh/);assert.match(source,/drawCalls:2/);
+ assert.match(source,/maxVisible=96/);assert.match(source,/size\.width<720\?64/);assert.match(source,/InstancedMesh/);assert.match(source,/drawCalls:4/); // tiles, boundaries, standing boards and posts: still four bounded instanced draws
 });
 
 test('admin in-game bypass is shipped without changing the customer ₦2,000 price',()=>{

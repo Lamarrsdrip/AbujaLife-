@@ -78,6 +78,14 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
   const clubColors=clubPalette.map(value=>new THREE.Color(value));
   const clubLights=[];
   if(isClub){const lightCount=mobile?2:4;for(let i=0;i<lightCount;i++){const light=new THREE.PointLight(clubPalette[i%clubPalette.length],0,mobile?430:560,2);light.castShadow=false;scene.add(light);clubLights.push(light);}}
+  // Destination beacon for gigs and guided tasks: a soft light column and ground ring.
+  const beacon=new THREE.Group();beacon.visible=false;beacon.name='Waypoint beacon';
+  const beaconColumnMaterial=new THREE.MeshBasicMaterial({color:'#ffd35a',transparent:true,opacity:.34,depthWrite:false,side:THREE.DoubleSide,fog:false});
+  const beaconRingMaterial=new THREE.MeshBasicMaterial({color:'#ffd35a',transparent:true,opacity:.85,depthWrite:false,side:THREE.DoubleSide,fog:false});
+  const beaconColumn=new THREE.Mesh(new THREE.CylinderGeometry(26,34,520,20,1,true),beaconColumnMaterial);beaconColumn.position.y=260;
+  const beaconRing=new THREE.Mesh(new THREE.RingGeometry(46,58,36),beaconRingMaterial);beaconRing.rotation.x=-Math.PI/2;beaconRing.position.y=2.5;
+  beacon.add(beaconColumn,beaconRing);beacon.traverse(node=>{node.userData.excludeFromBounds=true;node.frustumCulled=false;});scene.add(beacon);
+  let beaconKey='';
   let previousWidth=0,previousHeight=0,lost=false,disposed=false,frames=0,viewWidth=0,viewHeight=0,lastLightKey='';
   let qualityLast=0,qualityTime=0,qualityFrames=0;
   let lastRender=-Infinity,lastShadow=-Infinity,shadowDirty=true,cameraDirty=true,previousCamera=null;
@@ -93,6 +101,7 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
   queueMicrotask(syncResidentFallbacks);
   return {
     setCameraViewport:updateCamera,
+    setBeacon(point){const key=point?`${point.x}:${point.y}:${point.color||''}`:'';if(key===beaconKey)return;beaconKey=key;beacon.visible=!!point;if(point){beacon.position.set(point.x,0,point.y/DEPTH);const color=point.color||'#ffd35a';beaconColumnMaterial.color.set(color);beaconRingMaterial.color.set(color);}shadowDirty=true;cameraDirty=true;},
     setFurniturePreview(item,options){return environment?.setFurniturePreview?.(item,options);},
     updateFurniture(nextLayout){const updated=environment?.updateFurniture?.(nextLayout)||false;if(updated)shadowDirty=true;return updated;},
     setFurnitureHidden(itemId,hidden){environment?.setFurnitureHidden?.(itemId,hidden);shadowDirty=true;},
@@ -127,7 +136,7 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
       const nextStreetKey=streetOn?`${street.position.x.toFixed(1)}:${street.position.y.toFixed(1)}:${street.position.z.toFixed(1)}:${street.target.x.toFixed(1)}:${street.target.z.toFixed(1)}`:'';
       if(nextStreetKey!==streetKey)cameraDirty=true;
       const now=performance.now(),cameraChanged=cameraDirty||!previousCamera||previousCamera.x!==position.x||previousCamera.y!==position.y||previousCamera.width!==width||previousCamera.height!==height||previousCamera.yaw!==orientation.yaw||previousCamera.elevation!==orientation.elevation;
-      const playerBusy=cameraChanged||moving||transport||activity||environment?.furniturePreview?.();
+      const playerBusy=cameraChanged||moving||transport||activity||beacon.visible||environment?.furniturePreview?.();
       const lively=!indoors&&(weather?.condition==='rain'||npcPositions.some(p=>p.moving||p.activity)||isClub&&clubOpen);
       const lightKey=`${clock?.isNight?'n':'d'}:${weather?.condition||'clear'}:${Math.round(Number(clock?.sunlight??1)*4)}`;
       if(frames>0&&!playerBusy&&lightKey===lastLightKey&&!shadowDirty&&(!lively||now-lastRender<80))return;
@@ -145,8 +154,9 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
       rain.visible=!indoors&&weather?.condition==='rain';if(rain.visible){for(let i=0;i<180;i++){const j=i*6,rx=position.x+((i*137.51+time*28)%rainSpan)-rainSpan/2,rz=position.y/DEPTH+((i*89.23)%(rainDepth/DEPTH))-rainDepth/DEPTH/2,ry=410-(i*61.5+time*330)%410;rainPositions.set([rx,ry,rz,rx-1.3,ry+16,rz],j);}rainGeometry.attributes.position.needsUpdate=true;}
       const figure=streetOn?STREET_VIEW.residentScale:0;own.root.visible=!transport;animate(own,{...player,angle,phase,time,moving,activity,scale:figure||1.6});npcPositions.forEach((p,i)=>{const club=isClub;npcs[i].root.visible=!club||clubOpen||i===0;animate(npcs[i],{...p,activity:club&&!clubOpen?null:p.activity,time,scale:figure?figure*.97:1.28});});onlinePositions.forEach((p,i)=>{if(online[i])animate(online[i],{...p,time,scale:figure||1.4});});
       shower.visible=activity?.name==='shower';if(shower.visible){shower.position.copy(own.root.position);shower.children.forEach((drop,i)=>{drop.position.set(Math.sin(i*2.4)*13,165-((i*19+time*98)%151),Math.cos(i*2.4)*15);});}
-      container.dataset.activityPose=activity?.name||'';environment?.update?.({clock,weather,clubOpen,elapsed:time,player,angle,transport,driving,carColor,carStyle,ownVehicle,carWithYou,parked,trafficPositions,trip});
-      if(streetOn&&backdrop)backdrop.update({daylight,night,condition:weather?.condition||'clear',eye:chase.position});
+      container.dataset.activityPose=activity?.name||'';environment?.update?.({clock,weather,clubOpen,elapsed:time,player,angle,transport,driving,carColor,carStyle,ownVehicle,carWithYou,parked,trafficPositions,trip,vehicleScale:streetOn?STREET_VIEW.vehicleScale:1});
+      if(beacon.visible){const pulse=.5+.5*Math.sin((Number(time)||0)*3.2);beaconColumnMaterial.opacity=.2+pulse*.2;beaconRing.scale.setScalar(1+pulse*.28);beaconRingMaterial.opacity=.9-pulse*.4;}
+      if(streetOn&&backdrop)backdrop.update({daylight,night,condition:weather?.condition||'clear',eye:chase.position,distance:street.distance});
       renderer.shadowMap.needsUpdate=shadows&&(shadowDirty||now-lastShadow>=(dynamic?(mobile?80:1000/30):180));if(renderer.shadowMap.needsUpdate){lastShadow=now;shadowDirty=false;}renderer.render(scene,eye);cameraDirty=false;syncResidentFallbacks();
       if(frames%6===0){container.dataset.renderCalls=String(renderer.info.render.calls);container.dataset.renderTriangles=String(renderer.info.render.triangles);const preview=environment?.furniturePreview?.();if(preview){bounds.setFromObject(preview);let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;for(const x of[bounds.min.x,bounds.max.x])for(const y of[bounds.min.y,bounds.max.y])for(const z of[bounds.min.z,bounds.max.z]){projected.set(x,y,z).project(eye);const px=rect.left+(projected.x+1)*rect.width/2,py=rect.top+(1-projected.y)*rect.height/2;minX=Math.min(minX,px);minY=Math.min(minY,py);maxX=Math.max(maxX,px);maxY=Math.max(maxY,py);}container.dataset.furnitureModelBounds=JSON.stringify({x:minX,y:minY,width:maxX-minX,height:maxY-minY});}else delete container.dataset.furnitureModelBounds;}
       // Only consecutive, unthrottled gameplay frames measure device speed. Idle and

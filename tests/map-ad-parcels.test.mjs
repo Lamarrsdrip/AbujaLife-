@@ -8,7 +8,8 @@ function camera(x=0,z=0){const view=new THREE.OrthographicCamera(-6000,6000,4500
 test('vacant map inventory stays bounded without creatives or fabricated campaigns',()=>{
  const world=new THREE.Group(),parcels=[...MAP_AD_INVENTORY,...COMPATIBILITY_MAP_AD_INVENTORY];let time=1000;
  const layer=createMapAdParcels(world,parcels,{now:()=>time,maxVisible:12});layer.setView(camera(),{width:1440,height:900});
- assert.equal(world.children.length,2);assert.equal(layer.diagnostics.visibleParcels,12);assert.equal(layer.diagnostics.totalParcels,parcels.length);assert.ok(parcels.length>=197,'authored and compatibility inventory remains available');
+ // Ground tile fill and boundary, plus the empty standing board and its posts: four instanced draws.
+ assert.equal(world.children.length,4);assert.equal(layer.diagnostics.drawCalls,4);assert.equal(layer.diagnostics.vacantBoards,12,'every free plot shown also stands up as a billboard');assert.equal(world.children[3].count,24,'two posts per board');assert.equal(layer.diagnostics.visibleParcels,12);assert.equal(layer.diagnostics.totalParcels,parcels.length);assert.ok(parcels.length>=197,'authored and compatibility inventory remains available');
  assert.equal(world.children[0].material.opacity,.58,'available plots stay discoverable without expensive heavy fill');
  assert.equal(world.children[1].material.opacity,1,'plot boundaries stay crisp without floating labels');
  assert.ok(world.children[0].instanceColor,'tile fill has per-plot state colour');

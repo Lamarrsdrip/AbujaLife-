@@ -139,7 +139,7 @@ export function createSessionRuntime({store,admin,social=null,directory=null,cor
    if(url.pathname==='/api/auth/register'){
     const settings=await admin.publicSettings();if(settings?.registrationOpen===false)throw Object.assign(new Error('Registration is temporarily paused'),{status:503,code:'registration_paused'});
    }
-   const session=url.pathname==='/api/auth/login'?await store.login(payload):await store.register(payload);
+   const session=url.pathname==='/api/auth/login'?await store.login(payload):await store.register({...payload,originId:undefined});
    if(await admin.isSuspended(session.residentId)){await store.logout(session.token);throw Object.assign(new Error('This account is suspended'),{status:403,code:'account_suspended'});}
    log(url.pathname==='/api/auth/login'?'login':'signup',{residentId:session.residentId});
    send(res,url.pathname==='/api/auth/login'?200:201,{ok:true,authenticated:true,residentId:session.residentId},{'set-cookie':sessionCookie(session.token,{secureCookies})});return true;

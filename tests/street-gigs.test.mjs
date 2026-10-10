@@ -60,6 +60,8 @@ test('an errand on foot pays exactly once through the ledger', async t => {
   assert.equal(entry.amount, offered.fare + tip); assert.equal(entry.type, 'JOB_INCOME'); assert.match(entry.reason, /^Errand fee · /); assert.equal(entry.balance_after, before + offered.fare + tip);
   assert.equal(f.ledger().filter(row => row.type === 'JOB_INCOME').length, 1);
   assert.equal(f.store.profile(f.id).reputation, 1);
+  // Working costs a little energy and appetite, never below zero.
+  const worked = f.store.profile(f.id); assert.ok(worked.energy <= 82 - GIG_RULES.effort.onFoot.energy && worked.energy >= 0); assert.ok(worked.hunger <= 72 - GIG_RULES.effort.onFoot.hunger && worked.hunger >= 0);
 });
 
 test('rides need the resident to really be driving their own car, and pay more in a luxury car', async t => {

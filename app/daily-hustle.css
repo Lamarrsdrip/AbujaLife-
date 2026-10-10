@@ -1,0 +1,28 @@
+/* Today's Hustle: daily missions, Abuja Rep and the check-in streak. */
+.hustle-chip{position:absolute;left:var(--hud-edge,12px);top:168px;z-index:4;height:30px;padding:0 12px;border:1px solid rgba(255,255,255,.7);border-radius:15px;background:rgba(31,74,58,.92);color:#f6f1df;font:600 12px/1 inherit;box-shadow:0 3px 12px rgba(16,42,34,.22);cursor:pointer}
+@media(max-height:480px){.hustle-chip{display:none}}
+.abj-hustle-entry>span:first-child{font-size:20px}
+.abj-hustle h2{margin:6px 0 12px;font-size:26px;letter-spacing:-.6px}
+.hustle-rep{display:grid;gap:6px;padding:12px 14px;border-radius:16px;background:linear-gradient(135deg,#1f4a3a,#2f6b53);color:#f6f1df}
+.hustle-rep small{font-size:10px;letter-spacing:.8px;opacity:.85}.hustle-rep strong{display:block;font-size:20px;margin-top:2px}
+.hustle-rep-bar{height:8px;border-radius:4px;background:rgba(255,255,255,.22);overflow:hidden}.hustle-rep-bar i{display:block;height:100%;border-radius:4px;background:#ffd35a}
+.hustle-streak{margin-top:12px;padding:12px;border-radius:16px;background:#f3f1e6;border:1px solid #dfe2d3;display:grid;gap:10px}
+.hustle-days{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
+.hustle-days span{display:grid;justify-items:center;gap:3px;padding:6px 2px;border-radius:10px;background:#fbf8ee;border:1px solid #e3e5d8;font-size:10px;color:#5a7163}
+.hustle-days b{font-size:13px;color:#2c4a3c}.hustle-days .done{background:#dff0e3;border-color:#a9d4b5}.hustle-days .today{border-color:#e0b84a;box-shadow:0 0 0 2px rgba(255,211,90,.45)}
+.hustle-days small{font-size:9px}
+.abj-hustle button.primary{min-height:44px}.abj-hustle button:disabled{opacity:.6}
+.hustle-heading{display:flex;justify-content:space-between;align-items:baseline;margin:16px 2px 8px;font-size:14px}.hustle-heading small{font-size:11px;font-weight:500;color:#6a7f71}
+.hustle-missions{display:grid;gap:8px}
+.hustle-mission,.hustle-bonus{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;background:#fbf8ee;border:1px solid #e3e5d8}
+.hustle-mission.ready,.hustle-bonus.ready{border-color:#3fae72;background:#eef8f0}.hustle-mission.claimed,.hustle-bonus.claimed{opacity:.62}
+.hustle-icon,.hustle-bonus>span{flex:none;display:grid;place-items:center;width:38px;height:38px;border-radius:12px;background:#e3efdf;font-size:19px}
+.hustle-mission>div:nth-child(2),.hustle-bonus>div{flex:1;min-width:0}
+.hustle-mission small{font-size:9px;letter-spacing:.8px;color:#7b8f80}.hustle-mission strong,.hustle-bonus strong{display:block;font-size:13px;line-height:1.25}
+.hustle-mission p{margin:2px 0 6px;font-size:11px;line-height:1.3;color:#5a7163}.hustle-bonus small{font-size:11px;color:#5a7163}
+.hustle-progress{height:5px;border-radius:3px;background:#e2e6d8;overflow:hidden}.hustle-progress i{display:block;height:100%;background:#2f9b63;border-radius:3px}
+.hustle-side{flex:none;display:grid;justify-items:end;gap:3px;min-width:74px}.hustle-side b{font-size:14px;color:#1c6b45}.hustle-side small{font-size:10px;color:#6a7f71;letter-spacing:0}
+.hustle-side em,.hustle-bonus em{font-style:normal;font-size:11px;color:#5a7163}
+.hustle-side button{min-height:36px;padding:0 12px;border-radius:10px;border:1px solid #cbd8cc;background:#f3f1e6;font:600 12px/1 inherit;color:#2c4a3c;cursor:pointer}
+.hustle-side button.primary,.hustle-bonus button.primary{min-height:36px;padding:0 14px;border:0;border-radius:10px}
+.hustle-bonus{margin-top:8px}.hustle-note{margin-top:10px;font-size:11px}

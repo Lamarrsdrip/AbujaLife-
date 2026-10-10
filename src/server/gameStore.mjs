@@ -4,6 +4,7 @@ import { economyTransactionType } from '../shared/transactions.mjs';
 import { TENANCY_RULES, recordHousingLifeEvent, syncHomeTenancy } from '../shared/tenancy.mjs';
 import { HOUSING_ACTIONS, HOUSING_MONEY_ACTIONS, applyHousingAction } from './housingActions.mjs';
 import { GIG_ACTIONS, GIG_MONEY_ACTIONS, applyServerGigAction } from './streetGigs.mjs';
+import { HUSTLE_ACTIONS, HUSTLE_MONEY_ACTIONS, applyServerHustleAction, recordHustleProgress } from './dailyHustle.mjs';
 import { promisify } from 'node:util';
 import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
@@ -76,6 +77,11 @@ export class GameStore {
   propertyFor(profile,propertyId=profile.home.propertyId){return this.propertiesFor(profile).find(item=>item.id===propertyId);}
   // Street gigs (ride-hailing, deliveries, errands). The payout is a normal ledger
   // entry inside the same atomic, idempotent economy operation as every wage.
+  // Today's Hustle: claiming a finished mission, the daily check-in and one swap a day.
+  hustleAction(id,action,payload={}){
+    const normalized=Object.fromEntries(Object.entries(payload).filter(([key])=>key!=='idempotencyKey').sort(([a],[b])=>a.localeCompare(b)));
+    return this.economyOperation(id,action,payload,normalized,(p,now)=>applyServerHustleAction(p,action,payload,{now}),{requireKey:HUSTLE_MONEY_ACTIONS.has(action)});
+  }
   gigAction(id,action,payload={}){
     const normalized=Object.fromEntries(Object.entries(payload).filter(([key])=>key!=='idempotencyKey').sort(([a],[b])=>a.localeCompare(b)));
     return this.economyOperation(id,action,payload,normalized,(p,now)=>applyServerGigAction(p,action,payload,{now,randomInt:this.gigRandomInt}),{requireKey:GIG_MONEY_ACTIONS.has(action)});
@@ -126,7 +132,7 @@ export class GameStore {
       const existing=this.get('SELECT * FROM economy_operations WHERE resident_id=? AND operation_key=?',id,key);
       if(existing){check(existing.kind===kind&&existing.fingerprint===fingerprint,'This request key was already used for a different action',409,'idempotency_conflict');replayed=true;return{...JSON.parse(existing.result),profile:this.profile(id)};}
       const p=this.profile(id),timestamp=this.clock(),before=p.wallet;
-      const extra=mutate(p,timestamp);recordHousingLifeEvent(p,{kind,extra,now:timestamp,beforeBalance:before});
+      const extra=mutate(p,timestamp);recordHousingLifeEvent(p,{kind,extra,now:timestamp,beforeBalance:before});recordHustleProgress(p,{kind,payload,extra,now:timestamp});
       check(Number.isSafeInteger(p.wallet)&&p.wallet>=0,'This action cannot be represented as exact whole Naira',409,'numeric_limit');
       p.lastActionAt=timestamp;this.save(p);
       if(p.wallet!==before)this.appendLedger(id,p.wallet-before,extra.ledgerReason||kind,timestamp,key,extra.ledgerType||economyTransactionType(kind,normalized,catalog),p.wallet);
@@ -289,6 +295,7 @@ export class GameStore {
     if(['borrow-loan','repay-loan'].includes(action))return this.loanAction(id,action,payload);
     if(HOUSING_ACTIONS.has(action))return this.housingAction(id,action,payload);
     if(GIG_ACTIONS.has(action))return this.gigAction(id,action,payload);
+    if(HUSTLE_ACTIONS.has(action))return this.hustleAction(id,action,payload);
     if(payload.idempotencyKey&&(['paint-vehicle'].includes(action)||(action==='purchase'&&catalog.some(item=>item.id===payload.itemId&&item.category==='vehicle'))))return this.vehicleAction(id,action,payload);
     const normalized=Object.fromEntries(Object.entries(payload).filter(([key])=>key!=='idempotencyKey').sort(([a],[b])=>a.localeCompare(b)));
     const result=this.economyOperation(id,action,payload,normalized,(p,timestamp)=>{

@@ -117,11 +117,22 @@ export function generateCityFabric({ width = 11200, height = 4190, placeId = 'ab
     kiosks.push({ ...rect, color: pick(['#d9a441', '#c8553d', '#3f7f5c', '#2f6f9a', '#e2e0d2', '#7a5c9a']) }); solid.push(rect);
   }
 
+  // Roadside digital billboards stand on the pavement strip between the building
+  // line and the kerb, facing the traffic. They keep clear of doors, side roads,
+  // kiosks and buildings, but (unlike buildings) are allowed right beside the road.
+  const billboards = [], besideRoad = rect => rect.x > 60 && rect.x + rect.w < width - 60 && !solid.some(o => overlaps(rect, o, 6)) && !clear.some(zone => overlaps(rect, zone, 0))
+    && !CITY_ROADS.vertical.some(([vx, vw]) => rect.x < vx + vw + 30 && rect.x + rect.w > vx - 30);
+  for (const [index, [roadY, roadH]] of CITY_ROADS.horizontal.entries()) for (let x = 520 + index * 230, onRoad = 0; x < width - 300 && onRoad < 4; x += 90) {
+    const north = (billboards.length + index) % 2 === 0, y = north ? roadY - 20 : roadY + roadH + 20, rect = { x: x - 95, y: y - 7, w: 190, h: 14 };
+    if (!besideRoad(rect)) continue;
+    billboards.push({ id: `street-board-${billboards.length + 1}`, x, y, width: 190, facing: north ? 1 : -1, mega: billboards.length % 4 === 0 }); solid.push(rect); onRoad++; x += 2300;
+  }
+
   const fabricObstacles = [
     ...blocks.map(b => ({ x: b.x - 4, y: b.y - b.h - 6, w: b.w + 8, h: b.h + 12, fabric: true })),
     ...kiosks.map(k => ({ x: k.x, y: k.y, w: k.w, h: k.h, fabric: true })),
   ];
-  return { character, blocks, lamps, trees, kiosks, obstacles: fabricObstacles };
+  return { character, blocks, lamps, trees, kiosks, billboards, obstacles: fabricObstacles };
 }
 
 /** Flat SVG fallback for devices without WebGL: simple footprints, no detail. */

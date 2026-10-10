@@ -2,6 +2,7 @@
 // Floor coordinates remain identical to the gameplay/collision coordinates.
 import { HOME_ITEM_MODELS } from '../src/shared/home-items.mjs';
 import { buildCityFabric } from './world-city-fabric.js';
+import { buildStreetBillboards } from './world-billboards.js';
 import { vehicleFor } from '../src/shared/vehicles.mjs';
 import { createWorldMaterialLibrary } from './world-materials.js';
 import { WORLD_LANDMARK_FACADES } from '../src/shared/world-landmark-sizes.mjs';
@@ -813,11 +814,11 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     const arrow=box(door,0,10,-27,7,4,34,handle,true);arrow.rotation.z=Math.PI/4;
     return door;
   }
-  let cityFabric=null;
+  let cityFabric=null,streetBoards=null;
   function citySet() {
     const affluent=/maitama|asokoro|guzape|jabi/i.test(profile.district||place?.name||'');
     floor(group,0,0,layout.width,layout.height,'grass',-6);
-    if(layout.fabric){const coarse=globalThis.matchMedia?.('(pointer: coarse)').matches===true;cityFabric=buildCityFabric(T,layout.fabric,{ds,light:coarse});group.add(cityFabric.group);}
+    if(layout.fabric){const coarse=globalThis.matchMedia?.('(pointer: coarse)').matches===true;cityFabric=buildCityFabric(T,layout.fabric,{ds,light:coarse});group.add(cityFabric.group);streetBoards=buildStreetBillboards(T,layout.fabric.billboards,{ds});group.add(streetBoards.group);}
     floor(group,0,610,layout.width,132,'tile',-1);floor(group,0,1390,layout.width,144,'tile',-1);floor(group,0,2170,layout.width,114,'tile',-1);
     for(const [y,h] of [[722,252],[1534,234],[2284,234],[3170,234]]) {
       floor(group,0,y,layout.width,h,'road',0);
@@ -1018,7 +1019,7 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     playerModel:()=>ownCar?.group,
     update({clock,weather,clubOpen,elapsed=0,player,angle=0,transport,driving,carColor,ownVehicle=ownId,carWithYou=true,parked,trafficPositions=[],trip,vehicleScale:nextVehicleScale=1}) {
       vehicleScale=nextVehicleScale;
-      const night=!!clock?.isNight;cityFabric?.update({night});if(night!==lastNight){for(const glow of glowingMaterials)glow.material.emissiveIntensity=night?Math.max(.9,glow.day*5):glow.day;for(const beams of nightBeams)beams.visible=night;lastNight=night;}
+      const night=!!clock?.isNight;cityFabric?.update({night});streetBoards?.update();if(night!==lastNight){for(const glow of glowingMaterials)glow.material.emissiveIntensity=night?Math.max(.9,glow.day*5):glow.day;for(const beams of nightBeams)beams.visible=night;lastNight=night;}
       clubLights.forEach((light,i)=>{light.intensity=clubOpen?21000+Math.sin(elapsed*2+i)*5000:0;light.target.position.set(580+i*180+Math.sin(elapsed*.55+i)*150,0,(630+Math.cos(elapsed*.4+i)*160)*ds);});
       if(carColor&&carColor!==appliedColor) {
         for(const car of [ownCar,parkedCar])if(car)car.group.traverse(o=>{if(o.material?.metalness===.28)o.material.color.set(carColor);});appliedColor=carColor;

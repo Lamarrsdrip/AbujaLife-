@@ -70,9 +70,15 @@ export function buildStreetBillboards(T, boards = [], { ds = Math.SQRT2, now = (
       for (const face of faces) {
         const ad = boardCampaign(campaigns, face.userData.boardIndex, time), texture = ad ? textureFor(ad) : null;
         if (ad && !texture) shownKey = ''; // still decoding: try again next frame
-        const map = texture || house; face.userData.campaignRef = ad && texture ? adCampaignId(ad) : '';
+        const map = texture || house; face.userData.campaignRef = ad && texture ? adCampaignId(ad) : ''; face.userData.ad = ad && texture ? ad : null;
         if (face.material.map !== map) { face.material.map = map; face.material.needsUpdate = true; }
       }
+    },
+    /** The board under a tap, with the advert it is showing right now (null = the house panel). */
+    pick(raycaster) {
+      if (disposed || !faces.length) return null;
+      const hit = raycaster.intersectObjects(faces, false)[0];
+      return hit ? { boardId: hit.object.userData.boardId, ad: hit.object.userData.ad || null, distance: hit.distance } : null;
     },
     dispose() { disposed = true; for (const row of cache.values()) row.texture?.dispose(); cache.clear(); house?.dispose(); for (const face of faces) face.material.dispose(); box.dispose(); plane.dispose(); frame.dispose(); post.dispose(); },
   };

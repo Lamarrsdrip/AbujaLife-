@@ -897,7 +897,8 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
       for(const a of [0,2.1,4.2]){const palm=new T.Group();palm.position.set(Math.cos(a)*r.island*.62,8,Math.sin(a)*r.island*.62*ds);isle.add(palm);plant(palm,30,38);}
       for(let i=0;i<24;i++){const a=i/24*Math.PI*2;mark(paint,r.x+Math.cos(a)*(r.island+46),1.1,(r.y+Math.sin(a)*(r.island+46))*ds,10,1,3);}
     }
-    const unit=geo('roadpaint:unit',()=>new T.BoxGeometry(1,1,1)),matrix=new T.Matrix4(),q=new T.Quaternion(),pos=new T.Vector3(),scl=new T.Vector3();
+    // Paint is flat: a 2-triangle quad per mark instead of a 12-triangle box.
+    const unit=geo('roadpaint:quad',()=>{const g=new T.PlaneGeometry(1,1);g.rotateX(-Math.PI/2);return g;}),matrix=new T.Matrix4(),q=new T.Quaternion(),pos=new T.Vector3(),scl=new T.Vector3();
     for(const [material,list] of marks){
       const paintMesh=new T.InstancedMesh(unit,material,list.length);paintMesh.name='Road paint';paintMesh.receiveShadow=true;paintMesh.userData.excludeFromBounds=true;
       list.forEach(([x,y,z,w,h,d],k)=>paintMesh.setMatrixAt(k,matrix.compose(pos.set(x,y,z),q,scl.set(w,h,d))));
@@ -1138,8 +1139,8 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
       positionCar(ownCar,player,trip?0:angle,!!transport,true,elapsed);
       if(ownCar?.beams)ownCar.beams.visible=!!transport&&night;
       positionCar(parkedCar,parked||player,0,!transport&&!indoor&&!!ownVehicle&&carWithYou,false,elapsed);
-      // Cars beyond the street camera's useful range are not drawn at all.
-      trafficPositions.forEach((p,i)=>positionCar(movingCars[i],p,p.angle,!street||!player||Math.hypot(p.x-player.x,p.y-player.y)<2800,true,elapsed));
+      // Cars beyond the camera's useful range are not drawn at all (wider in overview).
+      trafficPositions.forEach((p,i)=>positionCar(movingCars[i],p,p.angle,!player||Math.hypot(p.x-player.x,p.y-player.y)<(street?2800:3600),true,elapsed));
       for(const material of water)material.opacity=.91+Math.sin(elapsed*.7)*.025;
     },
     dispose:disposeResources

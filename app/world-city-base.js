@@ -126,7 +126,7 @@ const TRAFFIC_TYPES=['sedan','suv','hatchback','sedan','suv','sedan'];
 // the shops and offices. The simulator hides walkers outside their hours.
 function extraPedestrians(){
   const out=[];
-  for(const [i,[y,h]] of BOULEVARDS.entries())for(const x0 of [4600,6300,8100,9800]){const side=i%2?y+h+22:y-22,x=x0+i*170;out.push({x,y:side,toX:x+520,toY:side,hours:i===3?'day':'any'});}
+  for(const [i,[y,h]] of BOULEVARDS.entries())for(const x0 of [5200,8400]){const side=i%2?y+h+22:y-22,x=x0+i*170;out.push({x,y:side,toX:x+520,toY:side,hours:i===3?'day':'any'});}
   out.push({x:2330,y:3062,toX:2330,toY:3062,stationary:true,activity:'social',hours:'night'},{x:2398,y:3066,toX:2398,toY:3066,stationary:true,activity:'social',hours:'night'},{x:2470,y:3060,toX:2560,toY:3060,hours:'night'},
     {x:2300,y:4010,toX:2300,toY:4010,stationary:true,activity:'social',hours:'night'},{x:2900,y:1430,toX:3200,toY:1430,hours:'day'},{x:880,y:1430,toX:1180,toY:1430,hours:'day'});
   return out;
@@ -135,8 +135,9 @@ function extraTraffic(placeId){
   const id=String(placeId||''),busy=/central|wuse|garki|utako|jabi|wuye|area|sector/.test(id)?1:/maitama|asokoro|guzape|katampe/.test(id)?.55:.8;
   let seed=[...id].reduce((h,c)=>Math.imul(h^c.charCodeAt(0),16777619),2166136261)>>>0;const rnd=()=>((seed=Math.imul(seed^seed>>>15,2246822519)+0x9e3779b9>>>0)/4294967296);
   const cars=[];const add=(axis,lane,dirSign,count)=>{for(let i=0;i<count;i++){const k=cars.length;cars.push({axis,lane,speed:dirSign*(80+Math.round(rnd()*40)),color:k%9===4?'#1f7a4a':TRAFFIC_COLORS[k%TRAFFIC_COLORS.length],type:k%9===4?'taxi':TRAFFIC_TYPES[k%TRAFFIC_TYPES.length],offset:Math.round(rnd()*(axis==='x'?11200:4190))});}};
-  for(const [y,h] of BOULEVARDS.slice(2)){add('x',y+60,1,Math.round(3*busy));add('x',y+h-60,-1,Math.round(3*busy));}
-  for(const [x,w] of AVENUES.filter(([x,w])=>w<200))if(rnd()<busy*.75){add('y',x+26,1,1);add('y',x+w-26,-1,1);}
+  // Kept modest: every car is a full, shadow-casting model, and slow phones pay for each one.
+  for(const [y,h] of BOULEVARDS.slice(2)){add('x',y+60,1,Math.max(1,Math.round(1.5*busy)));add('x',y+h-60,-1,Math.max(1,Math.round(1.5*busy)));}
+  for(const [i,[x,w]] of AVENUES.filter(([,w])=>w<200).entries())if(i%3===1&&rnd()<busy){add('y',x+26,1,1);add('y',x+w-26,-1,1);}
   return cars;
 }
 export function buildCity({profile={},place={},id='city',venues=[]}={}) {

@@ -47,6 +47,8 @@ let renderedSceneKey=null;
 let pendingFurnitureItem;
 let serverClockAt=Date.now(), serverClockObservedAt=performance.now();
 function gameNow(){return serverClockAt+Math.max(0,performance.now()-serverClockObservedAt);}
+// Side modules (City Moments) read the same server-anchored game clock.
+globalThis.__ABJ_GAME_NOW__=gameNow;
 let draft={skinTone:'brown',hair:'crop',top:'forest',bottom:'charcoal',shoes:'white',body:'regular',face:'oval',presentation:'neutral',facialHair:'none',accessory:'none'};
 const esc = value => String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money = n => new Intl.NumberFormat('en-NG',{maximumFractionDigits:0}).format(Number(n||0));

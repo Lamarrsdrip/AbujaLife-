@@ -1013,6 +1013,17 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
   if(ownId||profile.activeTrip) {
     const item=vehicleFor(ownId);
     ownCar=profile.activeTrip?.mode==='bike'?bikeModel():carModel('#d8d8ca',profile.activeTrip?.mode==='bus'?'bus':profile.activeTrip?.mode==='taxi'?'taxi':item?.bodyStyle||'sedan',ownId);group.add(ownCar.group);
+    // Headlights after dark: two soft additive beams and a pool on the road ahead.
+    // Unlit meshes only, so switching them never recompiles a shader.
+    if(profile.activeTrip?.mode!=='bike'){
+      const beams=new T.Group();beams.name='Headlight beams';beams.visible=false;
+      const beamMaterial=new T.MeshBasicMaterial({color:'#ffe6b0',transparent:true,opacity:.13,depthWrite:false,blending:T.AdditiveBlending,side:T.DoubleSide,toneMapped:false});
+      const beamGeometry=new T.CylinderGeometry(4,58,360,14,1,true);beamGeometry.rotateZ(Math.PI/2);beamGeometry.translate(290,0,0);
+      for(const z of[-26,26]){const beam=new T.Mesh(beamGeometry,beamMaterial);beam.position.set(0,36,z);beam.rotation.z=-.06;beams.add(beam);}
+      const poolGeometry=new T.CircleGeometry(1,24);poolGeometry.rotateX(-Math.PI/2);
+      const pool=new T.Mesh(poolGeometry,new T.MeshBasicMaterial({color:'#ffd99a',transparent:true,opacity:.3,depthWrite:false,blending:T.AdditiveBlending,toneMapped:false}));pool.position.set(250,1.8,0);pool.scale.set(190,1,95);beams.add(pool);
+      beams.traverse(node=>{node.userData.excludeFromBounds=true;if(node.material)materials.set(`headlight:${node.material.uuid}`,node.material);});ownCar.group.add(beams);ownCar.beams=beams;
+    }
     if(kind==='public'){parkedCar=carModel('#d8d8ca',item?.bodyStyle||'sedan',ownId);group.add(parkedCar.group);}
   }
   for(const traffic of layout.traffic||[]){const car=carModel(traffic.color,traffic.type||'sedan');group.add(car.group);movingCars.push(car);}
@@ -1070,7 +1081,7 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     updateView,
     pickBillboard:raycaster=>streetBoards?.pick(raycaster)||null,
     playerModel:()=>ownCar?.group,
-    update({clock,weather,clubOpen,elapsed=0,player,angle=0,transport,driving,carColor,ownVehicle=ownId,carWithYou=true,parked,trafficPositions=[],trip,vehicleScale:nextVehicleScale=1}) {
+    update({clock,weather,clubOpen,elapsed=0,player,angle=0,transport,driving,carColor,ownVehicle=ownId,carWithYou=true,parked,trafficPositions=[],trip,street=false,vehicleScale:nextVehicleScale=1}) {
       vehicleScale=nextVehicleScale;
       const night=!!clock?.isNight;cityFabric?.update({night});streetBoards?.update();if(night!==lastNight){for(const glow of glowingMaterials)glow.material.emissiveIntensity=night?Math.max(.9,glow.day*5):glow.day;for(const beams of nightBeams)beams.visible=night;lastNight=night;}
       clubLights.forEach((light,i)=>{light.intensity=clubOpen?21000+Math.sin(elapsed*2+i)*5000:0;light.target.position.set(580+i*180+Math.sin(elapsed*.55+i)*150,0,(630+Math.cos(elapsed*.4+i)*160)*ds);});
@@ -1078,8 +1089,10 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
         for(const car of [ownCar,parkedCar])if(car)car.group.traverse(o=>{if(o.material?.metalness===.28)o.material.color.set(carColor);});appliedColor=carColor;
       }
       positionCar(ownCar,player,trip?0:angle,!!transport,true,elapsed);
+      if(ownCar?.beams)ownCar.beams.visible=!!transport&&night;
       positionCar(parkedCar,parked||player,0,!transport&&!indoor&&!!ownVehicle&&carWithYou,false,elapsed);
-      trafficPositions.forEach((p,i)=>positionCar(movingCars[i],p,p.angle,true,true,elapsed));
+      // Cars beyond the street camera's useful range are not drawn at all.
+      trafficPositions.forEach((p,i)=>positionCar(movingCars[i],p,p.angle,!street||!player||Math.hypot(p.x-player.x,p.y-player.y)<2800,true,elapsed));
       for(const material of water)material.opacity=.91+Math.sin(elapsed*.7)*.025;
     },
     dispose:disposeResources

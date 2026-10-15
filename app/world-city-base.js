@@ -75,7 +75,7 @@ const LANDMARK_POINTS=(()=>{
   for(const landmark of CITY_LANDMARKS){
     const [w,h]=WORLD_LANDMARK_SIZES[landmark.builder]||[390,280],p=authoredLandmarkPoint(landmark);
     const footprint={x:p.x-w/2-7,y:p.y-h/2-8,w:w+14,h:h+18};
-    const fit=fitInsideBlock(footprint,{solids,roadMargin:12,solidMargin:40,step:4,bounds:{x:3560,y:0,w:11200-3560,h:4190}})||{dx:0,dy:0};
+    const fit=fitInsideBlock(footprint,{solids,roadMargin:12,solidMargin:40,bounds:{x:3560,y:0,w:11200-3560,h:4190}})||{dx:0,dy:0};
     const point={x:p.x+fit.dx,y:p.y+fit.dy};placed.set(landmark.id,point);
     // Reserve the forecourt so the next landmark never builds across this door.
     solids.push({x:footprint.x+fit.dx,y:footprint.y+fit.dy,w:footprint.w,h:footprint.h},{x:point.x-110,y:point.y+h/2,w:220,h:70});
@@ -116,6 +116,29 @@ export function landmarkExterior(place,x,y,size=null){
   return {art:`<g class="city-landmark city-landmark-${id}" data-world-target="${id}">${body}<rect x="${left-8}" y="${y+8}" width="${w+16}" height="42" rx="9" fill="#f1ead2"/><text x="${x}" y="${y+35}" text-anchor="middle" fill="#466655" font-size="${label.length>20?13:16}" font-weight="700">${label}</text></g>`,obstacle:{x:left-7,y:top-8,w:w+14,h:h+18},entrance:{x,y:y+84}};
 }
 
+// The two southern boulevards and the landmark-quarter avenues used to carry no
+// traffic at all. Their lanes come from the shared road network; busier
+// districts get more cars. Lanes keep clear of the roundabout islands.
+const TRAFFIC_COLORS=['#e6dfc9','#2b2f33','#8a8f93','#b5332e','#1f4e79','#f1f3e9','#6b7f5e','#c9a24b','#3d3f46','#dfe2d0'];
+const TRAFFIC_TYPES=['sedan','suv','hatchback','sedan','suv','sedan'];
+// Pavement walkers along the landmark quarter, plus people who are only out at
+// certain times: a night crowd outside Tokyo and the clubs, a daytime crowd at
+// the shops and offices. The simulator hides walkers outside their hours.
+function extraPedestrians(){
+  const out=[];
+  for(const [i,[y,h]] of BOULEVARDS.entries())for(const x0 of [4600,6300,8100,9800]){const side=i%2?y+h+22:y-22,x=x0+i*170;out.push({x,y:side,toX:x+520,toY:side,hours:i===3?'day':'any'});}
+  out.push({x:2330,y:3062,toX:2330,toY:3062,stationary:true,activity:'social',hours:'night'},{x:2398,y:3066,toX:2398,toY:3066,stationary:true,activity:'social',hours:'night'},{x:2470,y:3060,toX:2560,toY:3060,hours:'night'},
+    {x:2300,y:4010,toX:2300,toY:4010,stationary:true,activity:'social',hours:'night'},{x:2900,y:1430,toX:3200,toY:1430,hours:'day'},{x:880,y:1430,toX:1180,toY:1430,hours:'day'});
+  return out;
+}
+function extraTraffic(placeId){
+  const id=String(placeId||''),busy=/central|wuse|garki|utako|jabi|wuye|area|sector/.test(id)?1:/maitama|asokoro|guzape|katampe/.test(id)?.55:.8;
+  let seed=[...id].reduce((h,c)=>Math.imul(h^c.charCodeAt(0),16777619),2166136261)>>>0;const rnd=()=>((seed=Math.imul(seed^seed>>>15,2246822519)+0x9e3779b9>>>0)/4294967296);
+  const cars=[];const add=(axis,lane,dirSign,count)=>{for(let i=0;i<count;i++){const k=cars.length;cars.push({axis,lane,speed:dirSign*(80+Math.round(rnd()*40)),color:k%9===4?'#1f7a4a':TRAFFIC_COLORS[k%TRAFFIC_COLORS.length],type:k%9===4?'taxi':TRAFFIC_TYPES[k%TRAFFIC_TYPES.length],offset:Math.round(rnd()*(axis==='x'?11200:4190))});}};
+  for(const [y,h] of BOULEVARDS.slice(2)){add('x',y+60,1,Math.round(3*busy));add('x',y+h-60,-1,Math.round(3*busy));}
+  for(const [x,w] of AVENUES.filter(([x,w])=>w<200))if(rnd()<busy*.75){add('y',x+26,1,1);add('y',x+w-26,-1,1);}
+  return cars;
+}
 export function buildCity({profile={},place={},id='city',venues=[]}={}) {
  const width=11200,height=4190,interactables=[],obstacles=[],waterBodies=[];
  const definitions=`<defs><pattern id="${id}-paving" width="66" height="46" patternUnits="userSpaceOnUse"><path d="M0 0H66V46H0Z" fill="none" stroke="#a9b098" stroke-opacity=".26"/></pattern><pattern id="${id}-asphalt" width="17" height="17" patternUnits="userSpaceOnUse"><circle cx="3" cy="4" r=".8" fill="#e6dfbb" opacity=".2"/></pattern></defs>`;
@@ -232,5 +255,5 @@ export function buildCity({profile={},place={},id='city',venues=[]}={}) {
  const fabric=generateCityFabric({width,height,placeId:place.id||profile.district||'abuja',obstacles,interactables,spawn:{x:445,y:679}});
  art+=cityFabricArt(fabric);obstacles.push(...fabric.obstacles);
 
- return {width,height,art,obstacles,interactables,fabric,waterBodies,buildings:visibleBuildings,spawn:{x:445,y:679},title:place.name||'Abuja',subtitle:'Neighbourhood · free roam',traffic:[{axis:'x',lane:798,speed:115,color:'#1f7a4a',type:'taxi',offset:190},{axis:'x',lane:902,speed:-96,color:'#e6dfc9',offset:2350},{axis:'x',lane:1601,speed:106,color:'#8baba2',offset:1200},{axis:'x',lane:1705,speed:-85,color:'#d3cdb0',type:'bus',offset:2780},{axis:'y',lane:1890,speed:94,color:'#b98761',offset:260},{axis:'y',lane:2011,speed:-112,color:'#dfe2d0',offset:1700},{axis:'x',lane:902,speed:78,color:'#f1f3e9',type:'suv',offset:3200,role:'FCT Patrol'},{axis:'x',lane:1601,speed:92,color:'#1f7a4a',type:'taxi',offset:2600},{axis:'y',lane:1890,speed:88,color:'#2a6b9a',type:'hatchback',offset:2050},{axis:'x',lane:1705,speed:-74,color:'#8a8f93',type:'suv',offset:900},...(KEKE_FREE_DISTRICTS.has(place.id)?[]:[{axis:'x',lane:798,speed:64,color:'#e2b93b',type:'keke',offset:1500},{axis:'y',lane:2011,speed:-58,color:'#e2b93b',type:'keke',offset:620},{axis:'x',lane:1705,speed:-61,color:'#2f8f5b',type:'keke',offset:2100}])],pedestrians:[{x:640,y:681,toX:1190,toY:681},{x:2140,y:677,toX:2760,toY:677},{x:1320,y:1490,toX:1700,toY:1490},{x:2230,y:1490,toX:2800,toY:1490},{x:790,y:1040,toX:1720,toY:1040},{x:2960,y:1040,toX:3310,toY:1040},{x:1030,y:1040,toX:1180,toY:1040,role:'FCT Patrol'},{x:2470,y:1490,toX:2590,toY:1490,role:'City Security'}]};
+ return {width,height,art,obstacles,interactables,fabric,waterBodies,buildings:visibleBuildings,spawn:{x:445,y:679},title:place.name||'Abuja',subtitle:'Neighbourhood · free roam',traffic:[{axis:'x',lane:798,speed:115,color:'#1f7a4a',type:'taxi',offset:190},{axis:'x',lane:902,speed:-96,color:'#e6dfc9',offset:2350},{axis:'x',lane:1601,speed:106,color:'#8baba2',offset:1200},{axis:'x',lane:1705,speed:-85,color:'#d3cdb0',type:'bus',offset:2780},{axis:'y',lane:1890,speed:94,color:'#b98761',offset:260},{axis:'y',lane:2011,speed:-112,color:'#dfe2d0',offset:1700},{axis:'x',lane:902,speed:78,color:'#f1f3e9',type:'suv',offset:3200,role:'FCT Patrol'},{axis:'x',lane:1601,speed:92,color:'#1f7a4a',type:'taxi',offset:2600},{axis:'y',lane:1890,speed:88,color:'#2a6b9a',type:'hatchback',offset:2050},{axis:'x',lane:1705,speed:-74,color:'#8a8f93',type:'suv',offset:900},...(KEKE_FREE_DISTRICTS.has(place.id)?[]:[{axis:'x',lane:798,speed:64,color:'#e2b93b',type:'keke',offset:1500},{axis:'y',lane:2011,speed:-58,color:'#e2b93b',type:'keke',offset:620},{axis:'x',lane:1705,speed:-61,color:'#2f8f5b',type:'keke',offset:2100}]),...extraTraffic(place.id||profile.district)],pedestrians:[...extraPedestrians(),{x:640,y:681,toX:1190,toY:681},{x:2140,y:677,toX:2760,toY:677},{x:1320,y:1490,toX:1700,toY:1490},{x:2230,y:1490,toX:2800,toY:1490},{x:790,y:1040,toX:1720,toY:1040},{x:2960,y:1040,toX:3310,toY:1040},{x:1030,y:1040,toX:1180,toY:1040,role:'FCT Patrol'},{x:2470,y:1490,toX:2590,toY:1490,role:'City Security'}]};
 }

@@ -27,7 +27,7 @@ const CHARACTER = Object.freeze({
     walls: ['#cfd6d8', '#b9c6cc', '#d8d4c6', '#aebbc2', '#c4cbc3', '#e0dccf'], roofs: ['#5d6a70', '#6c7478', '#4f5b60'] },
   commercial: { lot: [250, 400], depth: [200, 280], gap: [56, 96], floors: [2, 6], rows: 2, pitched: .12, tank: .25, trees: 190, kiosks: 46,
     walls: ['#e1d6bd', '#d6cdb6', '#cdd3c4', '#e7dcc6', '#c9c2ad', '#dcc9aa', '#bfcac4'], roofs: ['#6b6f66', '#7a6a58', '#5f6d68', '#8a5f4c'] },
-  affluent: { lot: [300, 430], depth: [200, 260], gap: [90, 150], floors: [1, 2], rows: 2, pitched: .55, tank: .3, trees: 420, kiosks: 6,
+  affluent: { lot: [270, 400], depth: [190, 250], gap: [80, 140], floors: [1, 2], rows: 2, pitched: .55, tank: .3, trees: 420, kiosks: 6,
     walls: ['#efe8d6', '#e8e2d1', '#f1ead9', '#e2dcc8', '#ece3cf'], roofs: ['#8a4f3d', '#6f7466', '#7d5a45', '#5f6a63'] },
   satellite: { lot: [200, 320], depth: [170, 240], gap: [40, 76], floors: [1, 3], rows: 2, pitched: .78, tank: .6, trees: 230, kiosks: 60,
     walls: ['#e3d5b8', '#d9c9a8', '#d2cdb9', '#e6dcc4', '#c9bfa6', '#dfd0b3', '#cfc7b0'], roofs: ['#9a4a38', '#7a3f33', '#3f6f8a', '#4f7d5c', '#8c8f8a', '#a35b3f'] },
@@ -57,10 +57,26 @@ export function generateCityFabric({ width = 11200, height = 4190, placeId = 'ab
     ...CITY_ROADS.vertical.filter(([x]) => x < width).map(([x, w]) => ({ x, y: 0, w, h: height })),
   ];
   // Keep the walk from every door, marker and the spawn point down to its road completely clear.
+  // Buildings keep the walk from each door to its road clear; billboards also keep
+  // the opposite pavement clear so a door is never hidden behind a screen.
   const clear = [...interactables.map(point => ({ x: point.x - 130, y: point.y - 70, w: 260, h: 190 })), ...(spawn ? [{ x: spawn.x - 220, y: spawn.y - 200, w: 440, h: 420 }] : [])];
-  const solid = obstacles.map(o => ({ x: o.x, y: o.y, w: o.w, h: o.h }));
+  const sightlines = [...interactables.map(point => ({ x: point.x - 130, y: point.y - 70, w: 260, h: 380 })), ...(spawn ? [clear.at(-1)] : [])];
+  // Solid footprints live in a coarse spatial grid: the fabric tests thousands
+  // of candidate plots and trees, and scanning every placed building each time
+  // made generation the slowest part of entering the street.
+  const CELL = 512;
+  const spatial = () => {
+    const grid = new Map(); let query = 0;
+    const each = (r, m, fn) => { for (let gy = Math.floor((r.y - m) / CELL), y1 = Math.floor((r.y + r.h + m) / CELL); gy <= y1; gy++) for (let gx = Math.floor((r.x - m) / CELL), x1 = Math.floor((r.x + r.w + m) / CELL); gx <= x1; gx++) if (fn(gy * 1024 + gx)) return true; return false; };
+    return {
+      push(...rects) { for (const r of rects) each(r, 0, k => { let list = grid.get(k); if (!list) grid.set(k, list = []); list.push({ r, q: 0 }); }); },
+      // Each stored rect is checked once per query, even when it spans several cells.
+      some(test, r, m) { const q = ++query; return each(r, m, k => { for (const entry of grid.get(k) || []) { if (entry.q === q) continue; entry.q = q; if (test(entry.r)) return true; } return false; }); },
+    };
+  };
+  const solid = spatial(), doors = spatial(); solid.push(...obstacles.map(o => ({ x: o.x, y: o.y, w: o.w, h: o.h }))); doors.push(...clear);
   const free = (rect, margin) => rect.x >= 40 && rect.y >= 40 && rect.x + rect.w <= width - 40 && rect.y + rect.h <= height - 30
-    && !roads.some(road => overlaps(rect, road, 26)) && !solid.some(o => overlaps(rect, o, margin)) && !clear.some(zone => overlaps(rect, zone, 0));
+    && !roads.some(road => overlaps(rect, road, 26)) && !solid.some(o => overlaps(rect, o, margin), rect, margin) && !doors.some(zone => overlaps(rect, zone, 0), rect, 0);
 
   const blocks = [];
   const bandEdges = [40, ...CITY_ROADS.horizontal.flatMap(([y, h]) => [y, y + h]), height - 30];
@@ -94,8 +110,11 @@ export function generateCityFabric({ width = 11200, height = 4190, placeId = 'ab
 
   const lamps = [];
   for (const [y, h] of CITY_ROADS.horizontal) for (let x = 130; x < width - 60; x += 250) {
-    if (CITY_ROADS.vertical.some(([vx, vw]) => x > vx - 40 && x < vx + vw + 40)) continue;
-    lamps.push({ x, y: y - 16, side: -1 }, { x: x + 125, y: y + h + 16, side: 1 });
+    // Each lamp of the pair is checked on its own: the far-side lamp used to land
+    // in the middle of an avenue whenever only its partner was clear.
+    const clearOfSideRoads = lx => !CITY_ROADS.vertical.some(([vx, vw]) => lx > vx - 40 && lx < vx + vw + 40);
+    if (clearOfSideRoads(x)) lamps.push({ x, y: y - 16, side: -1 });
+    if (clearOfSideRoads(x + 125)) lamps.push({ x: x + 125, y: y + h + 16, side: 1 });
   }
   for (const [x, w] of CITY_ROADS.vertical.filter(([vx]) => vx < width)) for (let y = 150; y < height - 60; y += 330) {
     if (CITY_ROADS.horizontal.some(([hy, hh]) => y > hy - 40 && y < hy + hh + 40)) continue;
@@ -119,7 +138,7 @@ export function generateCityFabric({ width = 11200, height = 4190, placeId = 'ab
   // Roadside digital billboards stand on the pavement strip between the building
   // line and the kerb, facing the traffic. They keep clear of doors, side roads,
   // kiosks and buildings, but (unlike buildings) are allowed right beside the road.
-  const billboards = [], besideRoad = rect => rect.x > 60 && rect.x + rect.w < width - 60 && !solid.some(o => overlaps(rect, o, 6)) && !clear.some(zone => overlaps(rect, zone, 0))
+  const billboards = [], besideRoad = rect => rect.x > 60 && rect.x + rect.w < width - 60 && !solid.some(o => overlaps(rect, o, 6), rect, 6) && !sightlines.some(zone => overlaps(rect, zone, 0))
     && !CITY_ROADS.vertical.some(([vx, vw]) => rect.x < vx + vw + 30 && rect.x + rect.w > vx - 30);
   for (const [index, [roadY, roadH]] of CITY_ROADS.horizontal.entries()) for (let x = 520 + index * 230, onRoad = 0; x < width - 300 && onRoad < 4; x += 90) {
     const north = (billboards.length + index) % 2 === 0, y = north ? roadY - 20 : roadY + roadH + 20, rect = { x: x - 95, y: y - 7, w: 190, h: 14 };
@@ -130,6 +149,9 @@ export function generateCityFabric({ width = 11200, height = 4190, placeId = 'ab
   const fabricObstacles = [
     ...blocks.map(b => ({ x: b.x - 4, y: b.y - b.h - 6, w: b.w + 8, h: b.h + 12, fabric: true })),
     ...kiosks.map(k => ({ x: k.x, y: k.y, w: k.w, h: k.h, fabric: true })),
+    // Trunks and lamp posts are solid too: a car used to pass straight through them.
+    ...trees.map(t => ({ x: t.x - 8, y: t.y - 8, w: 16, h: 16, fabric: true, prop: 'tree' })),
+    ...lamps.map(l => ({ x: l.x - 4, y: l.y - 4, w: 8, h: 8, fabric: true, prop: 'lamp' })),
   ];
   return { character, blocks, lamps, trees, kiosks, billboards, obstacles: fabricObstacles };
 }
@@ -190,6 +212,13 @@ export function buildCityFabric(T, fabric, { ds = Math.SQRT2, light = false } = 
   const lampGlow = material('#f4ecd0', { roughness: .4, emissive: '#ffd9a0', emissiveIntensity: 0 });
   const heads = instanced(box, lampGlow, fabric.lamps.length, { receive: false });
   for (const lamp of fabric.lamps) { put(poles, lamp.x, 72, lamp.y * ds, 3, 144, 3); put(heads, lamp.x, 146, (lamp.y + lamp.side * 16) * ds, 14, 6, 34); }
+  // After dark each lamp throws a warm pool of light on the road. One instanced,
+  // additive, unlit disc per lamp: the look of hundreds of street lights for a
+  // single draw call and no real-time light cost.
+  const poolMaterial = new T.MeshBasicMaterial({ color: '#ffb45a', transparent: true, opacity: .3, depthWrite: false, blending: T.AdditiveBlending, fog: true, toneMapped: false }); keep.push(poolMaterial);
+  const poolGeometry = new T.CircleGeometry(1, 20); poolGeometry.rotateX(-Math.PI / 2);
+  const pools = instanced(poolGeometry, poolMaterial, fabric.lamps.length, { receive: false }); pools.renderOrder = 2; pools.visible = false;
+  for (const lamp of fabric.lamps) put(pools, lamp.x, 1.6, (lamp.y + lamp.side * 44) * ds, 92, 1, 92 * ds);
 
   const broad = fabric.trees.filter(tree => !tree.palm), palms = fabric.trees.filter(tree => tree.palm);
   const trunks = instanced(new T.CylinderGeometry(.7, 1, 1, 6), material('#7a5f45', { roughness: .95 }), fabric.trees.length, { receive: false });
@@ -212,7 +241,7 @@ export function buildCityFabric(T, fabric, { ds = Math.SQRT2, light = false } = 
   return {
     group,
     stats: { blocks: blocks.length, lamps: fabric.lamps.length, trees: fabric.trees.length, kiosks: fabric.kiosks.length, drawCalls: group.children.length },
-    update({ night = false } = {}) { if (night === nightKey) return; nightKey = night; glassLit.emissiveIntensity = night ? .85 : 0; lampGlow.emissiveIntensity = night ? 1.6 : 0; },
+    update({ night = false } = {}) { if (night === nightKey) return; nightKey = night; glassLit.emissiveIntensity = night ? .85 : 0; lampGlow.emissiveIntensity = night ? 1.6 : 0; pools.visible = night; },
     dispose() { for (const item of keep) item.dispose(); group.traverse(node => { if (node.isInstancedMesh) node.dispose(); }); },
   };
 }

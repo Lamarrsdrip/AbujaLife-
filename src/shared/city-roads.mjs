@@ -52,19 +52,25 @@ export function touchesRoad(rect, margin = 0, width = STREET_WIDTH, height = STR
  * `solidMargin`, and inside the given bounds. Deterministic. Returns the
  * offset to apply, or null when no spot exists within `reach`.
  */
-export function fitInsideBlock(rect, { solids = [], roadMargin = 30, solidMargin = 30, bounds = { x: 0, y: 0, w: STREET_WIDTH, h: STREET_HEIGHT }, reach = 900, step = 10 } = {}) {
+export function fitInsideBlock(rect, { solids = [], roadMargin = 30, solidMargin = 30, bounds = { x: 0, y: 0, w: STREET_WIDTH, h: STREET_HEIGHT }, reach = 900 } = {}) {
   const roads = roadRects(bounds.x + bounds.w, bounds.y + bounds.h);
   const ok = r => r.x >= bounds.x + 40 && r.y >= bounds.y + 40 && r.x + r.w <= bounds.x + bounds.w - 40 && r.y + r.h <= bounds.y + bounds.h - 40
     && !roads.some(road => rectsOverlap(r, road, roadMargin)) && !solids.some(s => rectsOverlap(r, s, solidMargin));
   if (ok(rect)) return { dx: 0, dy: 0 };
-  let best = null;
-  for (let radius = step; radius <= reach && !best; radius += step) {
-    for (let dy = -radius; dy <= radius; dy += step) for (let dx = -radius; dx <= radius; dx += step) {
-      if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue;
-      if (!ok({ ...rect, x: rect.x + dx, y: rect.y + dy })) continue;
-      const cost = Math.hypot(dx, dy * 1.15);
-      if (!best || cost < best.cost) best = { dx, dy, cost };
-    }
+  // Roads and solids are axis-aligned, so the nearest legal spot always has an
+  // edge flush against some obstacle edge (or stays on the original axis).
+  // Testing only those candidate coordinates is exact and fast.
+  const xs = new Set([rect.x]), ys = new Set([rect.y]);
+  for (const road of roads) {
+    if (road.axis === 'y') { xs.add(road.x - roadMargin - rect.w - 1); xs.add(road.x + road.w + roadMargin + 1); }
+    else { ys.add(road.y - roadMargin - rect.h - 1); ys.add(road.y + road.h + roadMargin + 1); }
   }
+  for (const solid of solids) { xs.add(solid.x - solidMargin - rect.w - 1); xs.add(solid.x + solid.w + solidMargin + 1); ys.add(solid.y - solidMargin - rect.h - 1); ys.add(solid.y + solid.h + solidMargin + 1); }
+  xs.add(bounds.x + 41); xs.add(bounds.x + bounds.w - 41 - rect.w); ys.add(bounds.y + 41); ys.add(bounds.y + bounds.h - 41 - rect.h);
+  const near = (values, origin) => [...values].map(v => Math.round(v)).filter(v => Math.abs(v - origin) <= reach);
+  const candidates = [];
+  for (const x of near(xs, rect.x)) for (const y of near(ys, rect.y)) candidates.push({ dx: x - rect.x, dy: y - rect.y, cost: Math.hypot(x - rect.x, (y - rect.y) * 1.15) });
+  candidates.sort((a, b) => a.cost - b.cost || a.dy - b.dy || a.dx - b.dx);
+  const best = candidates.find(c => ok({ ...rect, x: rect.x + c.dx, y: rect.y + c.dy }));
   return best ? { dx: best.dx, dy: best.dy } : null;
 }

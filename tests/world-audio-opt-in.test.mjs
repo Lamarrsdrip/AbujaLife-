@@ -12,7 +12,7 @@ test('each scene hands its soundscape to the shared director instead of owning a
   assert.match(handle, /import \{ audioDirector \} from '\.\/audio-director\.js';/);
   assert.doesNotMatch(handle, /new (?:Audio|webkitAudio)Context|createOscillator/, 'no second audio graph per scene');
   assert.match(handle, /director\.setScene\(open \? scene : closedScene\)/); assert.match(handle, /director\.setDucked\(!active\)/);
-  assert.match(sim, /scene:preview\?null:soundscapeFor\(\{kind:trip\?'transit':kind,venueId:venue\?\.id,venueKind:venue\?\.kind,night:abujaTime\(now\(\)\)\.isNight\}\)/, 'the login preview stays silent');
+  assert.match(sim, /scene:preview\?null:soundscapeFor\(\{kind:trip\?'transit':kind,venueId:venue\?\.id,venueKind:venue\?\.kind,night:abujaTime\(now\(\)\)\.isNight(?:,driving)?\}\)/, 'the login preview stays silent');
   assert.match(sim, /sound\.setActive\(!blocked,!isClub\|\|clubSchedule\(currentNow\)\.isOpen\);/, 'a closed club plays the quiet room, an open sheet ducks the music');
   assert.match(sim, /enabled:profile\.settings\?\.soundEnabled!==false/, 'the account sound setting still applies');
 });

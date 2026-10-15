@@ -112,6 +112,9 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
   beacon.add(beaconColumn,beaconRing);beacon.traverse(node=>{node.userData.excludeFromBounds=true;node.frustumCulled=false;});scene.add(beacon);
   let beaconKey='';
   let previousWidth=0,previousHeight=0,lost=false,disposed=false,frames=0,viewWidth=0,viewHeight=0,lastLightKey='';
+  // Size the canvas now, before any frame: a reused or freshly created canvas
+  // must never be seen at the browser's default 300×150.
+  {const box=container.getBoundingClientRect();if(box.width>=2&&box.height>=2){previousWidth=Math.round(box.width);previousHeight=Math.round(box.height);renderer.setSize(previousWidth,previousHeight,false);}}
   // Compile every shader the scene needs off the main thread (KHR_parallel_shader_compile)
   // before the first frame; drawing first made the browser compile them all
   // synchronously and froze the page for seconds on each scene change.
@@ -155,7 +158,7 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
       if(!lost&&viewWidth>0&&container.isConnected!==false){renderer.render(scene,eye);}
     },
     draw({player,camera:position,width,height,orientation={},street=null,angle,phase,time,moving,transport,driving,activity,clock,weather,clubOpen,carColor,carStyle,ownVehicle,carWithYou,parked,trafficPositions,trip,npcPositions=[],onlinePositions=[]}){
-      if(lost||disposed||container.isConnected===false||document.hidden||warming)return;
+      if(lost||disposed||container.isConnected===false||document.hidden)return;
       syncResidentFallbacks();
       const streetOn=!!street&&!!street.position;
       if(streetOn!==streetActive){
@@ -173,6 +176,8 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
       if(frames>0&&!playerBusy&&lightKey===lastLightKey&&!shadowDirty&&(!lively||now-lastRender<80))return;
       lastLightKey=lightKey;const dynamic=playerBusy||lively;if(!dynamic&&!shadowDirty&&now-lastRender<1000/30-1)return;lastRender=now;
       const rect=container.getBoundingClientRect();if(rect.width<2||rect.height<2)return;const renderWidth=Math.round(rect.width),renderHeight=Math.round(rect.height);if(renderWidth!==previousWidth||renderHeight!==previousHeight){renderer.setSize(renderWidth,renderHeight,false);previousWidth=renderWidth;previousHeight=renderHeight;}
+      // While shaders compile off-thread the canvas is already sized; only drawing waits.
+      if(warming)return;
       if(streetOn){
         const aspect=renderWidth/renderHeight;if(chase.aspect!==aspect){chase.aspect=aspect;chase.fov=streetFieldOfView(aspect);chase.updateProjectionMatrix();}
         chase.position.set(street.position.x,street.position.y,street.position.z);chase.lookAt(street.target.x,street.target.y,street.target.z);chase.updateMatrixWorld(true);

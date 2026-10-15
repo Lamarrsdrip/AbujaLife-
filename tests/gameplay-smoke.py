@@ -134,7 +134,7 @@ async def finish_wizard(page,name,hair='locs',goal='drive'):
             observed.append('appearance')
         goal_control=form.locator(f'[name="lifeGoal"][value="{goal}"]')
         if await goal_control.count() and await goal_control.is_visible():
-            await goal_control.check()
+            await goal_control.locator('xpath=ancestor::label[1]').click();await expect(goal_control).to_be_checked()
             observed.append('life goal')
         begin=page.locator('#begin-life')
         if await begin.count() and await begin.is_visible():

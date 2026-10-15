@@ -128,7 +128,7 @@ async def onboarding(page, url, preview=False):
         if step == 1:
             await form.locator('[name="hair"][value="braids"]').locator('xpath=..').click()
         if step == 3:
-            await form.locator('[name="lifeGoal"][value="home"]').check()
+            goal=form.locator('[name="lifeGoal"][value="home"]');await goal.locator('xpath=ancestor::label[1]').click();await expect(goal).to_be_checked()
         await form.locator('#begin-life' if step == 4 else '[data-onboarding-next]').click()
     await expect(page.locator('[data-nav-outside]')).to_be_visible()
     profile = (await state(page))['profile']

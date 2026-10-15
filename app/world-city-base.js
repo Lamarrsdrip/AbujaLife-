@@ -1,6 +1,7 @@
 import { CITY_LANDMARKS } from '../src/shared/city-landmarks.mjs';
 import { generateCityFabric, cityFabricArt } from './world-city-fabric.js';
 import { WORLD_LANDMARK_SIZES, WORLD_LANDMARK_FACADES } from '../src/shared/world-landmark-sizes.mjs';
+import { BOULEVARDS, AVENUES, ROUNDABOUTS, roundaboutObstacles, fitInsideBlock } from '../src/shared/city-roads.mjs';
 // Authored Abuja-inspired game blocks. This is a playable set, not a street map.
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const lineForShutter = (x,y,w) => `<path d="M${x} ${y}h${w}" stroke="#b0b8a2" stroke-width="2"/>`;
@@ -64,7 +65,29 @@ const WORLD_LANDMARK_LAYOUT=Object.freeze({
   'sahad-cbd':[8880,1510],'grand-square-abuja':[9720,1510],'ceddi-plaza':[10560,1510],
   'sahad-area-11':[8880,2190],'ceddi-genesis-cinema':[9720,2190]
 });
-const landmarkWorldPoint=place=>{const point=WORLD_LANDMARK_LAYOUT[place.id];return point?{x:point[0],y:point[1]}:{x:3900+(place.lon-7.2642)*15500,y:430+(9.09-place.lat)*18000};};
+const authoredLandmarkPoint=place=>{const point=WORLD_LANDMARK_LAYOUT[place.id];return point?{x:point[0],y:point[1]}:{x:3900+(place.lon-7.2642)*15500,y:430+(9.09-place.lat)*18000};};
+// The authored points predate the shared street network and several of them
+// straddled a boulevard or avenue. Each landmark keeps its authored spot when
+// it already sits inside a block; otherwise it moves the shortest distance that
+// clears every carriageway, the approach to its own door and its neighbours.
+const LANDMARK_POINTS=(()=>{
+  const placed=new Map(),solids=[];
+  for(const landmark of CITY_LANDMARKS){
+    const [w,h]=WORLD_LANDMARK_SIZES[landmark.builder]||[390,280],p=authoredLandmarkPoint(landmark);
+    const footprint={x:p.x-w/2-7,y:p.y-h/2-8,w:w+14,h:h+18};
+    const fit=fitInsideBlock(footprint,{solids,roadMargin:12,solidMargin:40,step:4,bounds:{x:3560,y:0,w:11200-3560,h:4190}})||{dx:0,dy:0};
+    const point={x:p.x+fit.dx,y:p.y+fit.dy};placed.set(landmark.id,point);
+    // Reserve the forecourt so the next landmark never builds across this door.
+    solids.push({x:footprint.x+fit.dx,y:footprint.y+fit.dy,w:footprint.w,h:footprint.h},{x:point.x-110,y:point.y+h/2,w:220,h:70});
+  }
+  return placed;
+})();
+const landmarkWorldPoint=place=>LANDMARK_POINTS.get(place.id)||authoredLandmarkPoint(place);
+export const landmarkStreetPoint=id=>{const p=LANDMARK_POINTS.get(id);return p?{...p}:null;};
+// Sidewalk trees in the legacy neighbourhood. SVG, WebGL and collision share this list.
+export const SIDEWALK_TREES=Object.freeze([[93,650,1,0],[655,614,.83,1],[1205,643,.83,1],[1745,633,.94,0],[2152,616,.76,1],[2730,626,.86,0],[3400,643,1.1,0],[80,1441,1,0],[705,1449,.85,1],[1264,1455,.83,1],[1740,1435,.93,0],[2145,1450,.81,1],[2728,1440,.87,0],[3390,1435,1.1,0],[1040,1998,1.2,0],[1710,2010,1.2,1]].map(Object.freeze));
+// The Green's fountain is the one solid object in the park.
+export const PARK_FOUNTAIN=Object.freeze({x:1440,y:1216,w:164,h:115,cx:1521,cy:1278});
 export function landmarkExterior(place,x,y,size=null){
   const id=esc(place.id),label=esc(place.short||place.name),b=place.builder,w=size?.[0]||(place.id==='airport-hub'?430:place.id==='national-stadium-hub'?330:place.id==='jabi-lake-mall'?320:270),h=size?.[1]||(['wtc','transcorp'].includes(b)?330:['assembly','mosque','church','inec','efcc','court'].includes(b)?240:190),left=x-w/2,top=y-h;
   let body='';
@@ -94,7 +117,7 @@ export function landmarkExterior(place,x,y,size=null){
 }
 
 export function buildCity({profile={},place={},id='city',venues=[]}={}) {
- const width=11200,height=4190,interactables=[],obstacles=[];
+ const width=11200,height=4190,interactables=[],obstacles=[],waterBodies=[];
  const definitions=`<defs><pattern id="${id}-paving" width="66" height="46" patternUnits="userSpaceOnUse"><path d="M0 0H66V46H0Z" fill="none" stroke="#a9b098" stroke-opacity=".26"/></pattern><pattern id="${id}-asphalt" width="17" height="17" patternUnits="userSpaceOnUse"><circle cx="3" cy="4" r=".8" fill="#e6dfbb" opacity=".2"/></pattern></defs>`;
  let art=definitions+rect(0,0,width,height,'#b4c59a')+rect(70,75,3400,3980,'#c9ceb2',70)+rect(80,80,3380,3960,`url(#${id}-paving)`,60);
  // Wide boulevards give both cars and residents a continuous navigable route.
@@ -143,7 +166,7 @@ export function buildCity({profile={},place={},id='city',venues=[]}={}) {
   {x:40,y:1188,w:330,h:145,c:'#d9d1be'},{x:430,y:1200,w:285,h:132,c:'#c9cfbf'},{x:820,y:1192,w:310,h:150,c:'#e0d7c2'},
   {x:2140,y:1200,w:320,h:145,c:'#d2c9b6'},{x:2570,y:1200,w:300,h:138,c:'#c8d0c0'},{x:2960,y:1200,w:315,h:150,c:'#ddd4be'},
   {x:820,y:2840,w:325,h:154,c:'#d4cbb8'},{x:1370,y:2840,w:315,h:146,c:'#cad1c1'},{x:2160,y:2840,w:330,h:150,c:'#e0d6c0'},
-  {x:2700,y:2840,w:310,h:142,c:'#cdd0bd'},{x:3050,y:3650,w:300,h:148,c:'#d9ceb9'},{x:1710,y:3650,w:330,h:150,c:'#c9d0bf'}
+  {x:2700,y:2840,w:310,h:142,c:'#cdd0bd'},{x:3050,y:3650,w:300,h:148,c:'#d9ceb9'},{x:2110,y:3590,w:300,h:140,c:'#c9d0bf'}
  ];
  for(const [i,b] of neighbourhoodFabric.entries()){
   const top=b.y-b.h,windows=Array.from({length:4},(_,k)=>rect(b.x+28+k*(b.w-62)/4,top+38,34,42,'#76918b',3)+rect(b.x+28+k*(b.w-62)/4,top+91,34,28,'#829a91',3)).join('');
@@ -152,16 +175,16 @@ export function buildCity({profile={},place={},id='city',venues=[]}={}) {
   if(i%2===0)art+=cityTree(b.x-24,b.y-8,.58,i%4===0);
  }
  art+=garden(1340,1102,362,352,true)+garden(155,1850,640,280)+garden(2250,1860,1030,280,true);
- obstacles.push({x:1440,y:1216,w:164,h:115});
+ obstacles.push({x:PARK_FOUNTAIN.x,y:PARK_FOUNTAIN.y,w:PARK_FOUNTAIN.w,h:PARK_FOUNTAIN.h});
  interactables.push({id:'park',x:1518,y:1480,label:venues.find(v=>v.id==='park')?.name||'Neighbourhood park',action:'enter-venue',payload:{venueId:'park'},radius:80,icon:'♧'});
  art+=`<text x="1518" y="1090" fill="#5e775a" text-anchor="middle" font-size="15" letter-spacing="4">THE GREEN</text>`;
  if(venues.some(v=>v.id==='jabi-lake')){
   art+=rect(2220,1850,1070,290,'#9fb8a0',29)+rect(2240,1865,1030,205,'#78aaa6',26)+`<path d="M2280 1930Q2420 1910 2570 1930T2860 1930T3170 1930M2340 1990Q2480 1970 2630 1990T2920 1990T3210 1990" stroke="#d2e1cf" stroke-width="3" opacity=".5" fill="none"/><path d="M2600 2050H2810V2086H2600Z" fill="#c2aa7a"/><text x="2755" y="2117" text-anchor="middle" fill="#466f66" font-size="16" letter-spacing="4">JABI LAKE</text>`;
-  obstacles.push({x:2240,y:1865,w:1030,h:205});
+  obstacles.push({x:2240,y:1865,w:1030,h:205});waterBodies.push({id:'jabi-lake',x:2240,y:1865,w:1030,h:205});
   interactables.push({id:'jabi-lake',x:2755,y:2200,label:'Jabi Lake',action:'enter-venue',payload:{venueId:'jabi-lake'},radius:90});
  }
  // Sidewalk trees and planters frame each block, leaving the street and doors open.
- for(const [x,y,s,palm] of [[93,650,1,0],[655,614,.83,1],[1205,643,.83,1],[1745,633,.94,0],[2152,616,.76,1],[2730,626,.86,0],[3400,643,1.1,0],[80,1441,1,0],[705,1449,.85,1],[1264,1455,.83,1],[1740,1435,.93,0],[2145,1450,.81,1],[2728,1440,.87,0],[3390,1435,1.1,0],[1040,1998,1.2,0],[1710,2010,1.2,1]]) {
+ for(const [x,y,s,palm] of SIDEWALK_TREES) {
   art+=cityTree(x,y,s,!!palm);obstacles.push({x:x-10,y:y-12,w:20,h:25});
  }
  for(const y of [672,1480,3090])for(const x of [570,1160,2660,3270])art+=`<g transform="translate(${x} ${y})"><ellipse cy="7" rx="13" ry="5" fill="#294a3320"/><path d="M0 0V-124Q0-133 12-133H31" stroke="#6e816c" stroke-width="5" fill="none"/><path d="M18-136H44L38-127H18Z" fill="#456955"/><path d="M20-127H36" stroke="#efd9a4" stroke-width="3"/></g>`;
@@ -175,23 +198,19 @@ export function buildCity({profile={},place={},id='city',venues=[]}={}) {
 
  // The full-city landmark quarter mirrors the map registry. The legacy neighbourhood remains intact on the left;
  // these recognisable Abuja destinations extend the same walkable world instead of teleporting residents to a fake block.
- art+=rect(3540,0,width-3540,height,'#b4c59a')+rect(3600,92,width-3690,2420,'#c8cdb1',60)+rect(3590,2380,width-3650,236,'#718378')+`<path d="M3590 2498H${width}" stroke="#e8e0b7" stroke-width="4" stroke-dasharray="52 48"/>`;
+ art+=rect(3540,0,width-3540,height,'#b4c59a')+rect(3600,92,width-3690,2420,'#c8cdb1',60);
+ // The boulevards run the full width of the world (the WebGL street, the fabric
+ // and collision all agree), so the landmark quarter repaints them over its lawn.
+ for(const [y,h] of BOULEVARDS)art+=rect(3540,y,width-3540,h,'#728478')+`<path d="M3540 ${y+h/2}H${width}" stroke="#e8e0b7" stroke-width="3" stroke-dasharray="52 48"/>`;
  // Abuja's landmark half needs enough surrounding city fabric to feel inhabited when the camera zooms out.
  // These are intentionally non-interactive context blocks; named destinations below stay canonical.
- for(const avenueX of [3740,4440,5140,5840,6540,7240,7940,8540,9380,10220,11000]){
+ for(const [avenueX] of AVENUES.filter(([x])=>x>=3540)){
   art+=rect(avenueX,0,96,height,'#74867a')+`<path d="M${avenueX+48} 0V${height}" stroke="#e8e0b7" stroke-width="3" stroke-dasharray="46 44"/>`;
  }
- const landmarkPoints=CITY_LANDMARKS.map(landmarkWorldPoint),contextPalette=['#ddd6c3','#d2d0bf','#c9c8b6','#e4dcc6','#c7cfbf','#d7ccb6'];
- for(let row=0;row<5;row++)for(let col=0;col<7;col++){
-  const cx=3780+col*645+(row%2)*96,groundY=520+row*690;
-  if(cx>width-220||groundY>height-150)continue;
-  if(landmarkPoints.some(point=>Math.hypot(point.x-cx,point.y-groundY)<380))continue;
-  const bw=220+(col%3)*36,bh=145+((row+col)%3)*48,left=cx-bw/2,top=groundY-bh,wall=contextPalette[(row*7+col)%contextPalette.length];
-  const windows=Array.from({length:Math.max(2,Math.floor((bw-36)/54))},(_,i)=>rect(left+20+i*54,top+34,31,42,'#6f8d8a',3)+rect(left+20+i*54,top+88,31,31,'#799590',3)).join('');
-  art+=`<g class="city-context-block" aria-hidden="true">${rect(left,top,bw,bh,wall,7)}${rect(left-9,top,bw+18,11,'#ede6d2',4)}${windows}<path d="M${left+bw} ${top+8}L${left+bw+20} ${top+22}V${groundY+4}L${left+bw} ${groundY}Z" fill="#aeb8a8"/><rect x="${left+bw*.43}" y="${groundY-62}" width="${bw*.18}" height="62" rx="3" fill="#58766d"/></g>`;
-  obstacles.push({x:left-7,y:top-8,w:bw+30,h:bh+20});
-  if((row+col)%2===0)art+=cityTree(left-26,groundY-10,.62,(row+col)%5===0);
- }
+ // Landmark-quarter blocks used to be painted here as SVG-only context boxes
+ // with colliders but no WebGL body: invisible walls, several standing on the
+ // boulevards. The procedural city fabric below now fills those blocks with
+ // real (rendered, collidable) buildings instead.
  const localVenueIds=new Set(venues.map(v=>v.id));
  for(const landmark of CITY_LANDMARKS){
   const legacyLocal=['banex','jabi-lake'].includes(landmark.id)&&localVenueIds.has(landmark.id);
@@ -201,16 +220,17 @@ export function buildCity({profile={},place={},id='city',venues=[]}={}) {
  }
 
  const landmarkSizes=WORLD_LANDMARK_SIZES;
- const legacyIds=new Set(specs.map(b=>b.id));
  const contextBuildings=neighbourhoodFabric.map((b,i)=>({id:`context-${i}`,x:b.x,y:b.y,w:b.w,h:b.h,name:'',wall:b.c,floors:2,context:true}));
- const landmarkBuildings=CITY_LANDMARKS.filter(landmark=>!legacyIds.has(landmark.id)).map(landmark=>{const point=landmarkWorldPoint(landmark),size=landmarkSizes[landmark.builder]||[290,210];return{id:landmark.id,x:point.x-size[0]/2,y:point.y+size[1]/2,w:size[0],h:size[1],name:landmark.short||landmark.name,kind:WORLD_LANDMARK_FACADES[landmark.builder],wall:'#d8d3c4',floors:landmark.builder==='wtc'?7:landmark.builder==='cbn'?6:landmark.builder==='transcorp'?4:landmark.builder==='inec'||landmark.builder==='efcc'||landmark.builder==='court'?3:2,landmarkBuilder:landmark.builder,frontY:true};});
+ const landmarkBuildings=CITY_LANDMARKS.filter(landmark=>!(['banex','jabi-lake'].includes(landmark.id)&&localVenueIds.has(landmark.id))).map(landmark=>{const point=landmarkWorldPoint(landmark),size=landmarkSizes[landmark.builder]||[290,210];return{id:landmark.id,x:point.x-size[0]/2,y:point.y+size[1]/2,w:size[0],h:size[1],name:landmark.short||landmark.name,kind:WORLD_LANDMARK_FACADES[landmark.builder],wall:'#d8d3c4',floors:landmark.builder==='wtc'?7:landmark.builder==='cbn'?6:landmark.builder==='transcorp'?4:landmark.builder==='inec'||landmark.builder==='efcc'||landmark.builder==='court'?3:2,landmarkBuilder:landmark.builder,frontY:true};});
  const visibleLegacyBuildings=specs.map(spec=>spec.id==='home'||localVenueIds.has(spec.id)?spec:{...spec,id:`context-spec-${spec.id}`,name:'',context:true});
  const safeLandmarkBuildings=landmarkBuildings.map(b=>localVenueIds.has(b.id)?b:{...b,id:`context-landmark-${b.id}`,name:'',context:true});
  const visibleBuildings=[...visibleLegacyBuildings,...contextBuildings,...safeLandmarkBuildings];
  // Fill every remaining block with the district's own built character. The fabric
  // avoids roads, authored buildings and the approach to each interaction point.
+ for(const r of ROUNDABOUTS)art+=`<g class="city-roundabout" aria-hidden="true"><circle cx="${r.x}" cy="${r.y}" r="${r.island+46}" fill="none" stroke="#e8e0b7" stroke-width="3" stroke-dasharray="26 22"/><circle cx="${r.x}" cy="${r.y}" r="${r.island+6}" fill="#e7e2cd"/><circle cx="${r.x}" cy="${r.y}" r="${r.island}" fill="#7fa36b"/></g>`;
+ obstacles.push(...roundaboutObstacles());
  const fabric=generateCityFabric({width,height,placeId:place.id||profile.district||'abuja',obstacles,interactables,spawn:{x:445,y:679}});
  art+=cityFabricArt(fabric);obstacles.push(...fabric.obstacles);
 
- return {width,height,art,obstacles,interactables,fabric,buildings:visibleBuildings,spawn:{x:445,y:679},title:place.name||'Abuja',subtitle:'Neighbourhood · free roam',traffic:[{axis:'x',lane:798,speed:115,color:'#1f7a4a',type:'taxi',offset:190},{axis:'x',lane:902,speed:-96,color:'#e6dfc9',offset:2350},{axis:'x',lane:1601,speed:106,color:'#8baba2',offset:1200},{axis:'x',lane:1705,speed:-85,color:'#d3cdb0',type:'bus',offset:2780},{axis:'y',lane:1890,speed:94,color:'#b98761',offset:260},{axis:'y',lane:2011,speed:-112,color:'#dfe2d0',offset:1700},{axis:'x',lane:902,speed:78,color:'#f1f3e9',type:'suv',offset:3200,role:'FCT Patrol'},{axis:'x',lane:1601,speed:92,color:'#1f7a4a',type:'taxi',offset:2600},{axis:'y',lane:1890,speed:88,color:'#2a6b9a',type:'hatchback',offset:2050},{axis:'x',lane:1705,speed:-74,color:'#8a8f93',type:'suv',offset:900},...(KEKE_FREE_DISTRICTS.has(place.id)?[]:[{axis:'x',lane:798,speed:64,color:'#e2b93b',type:'keke',offset:1500},{axis:'y',lane:2011,speed:-58,color:'#e2b93b',type:'keke',offset:620},{axis:'x',lane:1705,speed:-61,color:'#2f8f5b',type:'keke',offset:2100}])],pedestrians:[{x:640,y:681,toX:1190,toY:681},{x:2140,y:677,toX:2760,toY:677},{x:1320,y:1490,toX:1700,toY:1490},{x:2230,y:1490,toX:2800,toY:1490},{x:790,y:1040,toX:1720,toY:1040},{x:2960,y:1040,toX:3310,toY:1040},{x:1030,y:1040,toX:1180,toY:1040,role:'FCT Patrol'},{x:2470,y:1490,toX:2590,toY:1490,role:'City Security'}]};
+ return {width,height,art,obstacles,interactables,fabric,waterBodies,buildings:visibleBuildings,spawn:{x:445,y:679},title:place.name||'Abuja',subtitle:'Neighbourhood · free roam',traffic:[{axis:'x',lane:798,speed:115,color:'#1f7a4a',type:'taxi',offset:190},{axis:'x',lane:902,speed:-96,color:'#e6dfc9',offset:2350},{axis:'x',lane:1601,speed:106,color:'#8baba2',offset:1200},{axis:'x',lane:1705,speed:-85,color:'#d3cdb0',type:'bus',offset:2780},{axis:'y',lane:1890,speed:94,color:'#b98761',offset:260},{axis:'y',lane:2011,speed:-112,color:'#dfe2d0',offset:1700},{axis:'x',lane:902,speed:78,color:'#f1f3e9',type:'suv',offset:3200,role:'FCT Patrol'},{axis:'x',lane:1601,speed:92,color:'#1f7a4a',type:'taxi',offset:2600},{axis:'y',lane:1890,speed:88,color:'#2a6b9a',type:'hatchback',offset:2050},{axis:'x',lane:1705,speed:-74,color:'#8a8f93',type:'suv',offset:900},...(KEKE_FREE_DISTRICTS.has(place.id)?[]:[{axis:'x',lane:798,speed:64,color:'#e2b93b',type:'keke',offset:1500},{axis:'y',lane:2011,speed:-58,color:'#e2b93b',type:'keke',offset:620},{axis:'x',lane:1705,speed:-61,color:'#2f8f5b',type:'keke',offset:2100}])],pedestrians:[{x:640,y:681,toX:1190,toY:681},{x:2140,y:677,toX:2760,toY:677},{x:1320,y:1490,toX:1700,toY:1490},{x:2230,y:1490,toX:2800,toY:1490},{x:790,y:1040,toX:1720,toY:1040},{x:2960,y:1040,toX:3310,toY:1040},{x:1030,y:1040,toX:1180,toY:1040,role:'FCT Patrol'},{x:2470,y:1490,toX:2590,toY:1490,role:'City Security'}]};
 }

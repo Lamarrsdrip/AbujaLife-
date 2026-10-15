@@ -19,7 +19,8 @@ test('playable World can frame the full Abuja landmark city',()=>{
  assert.match(camera,/min: \.01, max: 10/);
  assert.match(sim,/scene\.width\/2,y:scene\.height\/2/);
  assert.match(sim,/atOne\.baseWidth\/Math\.max\(scene\.width\*1\.32/);
- assert.match(city,/CITY_LANDMARKS\.map\(landmarkWorldPoint\)/);
+ // Landmarks are placed inside blocks of the shared street network (see world-collision-integrity).
+ assert.match(city,/fitInsideBlock\(footprint/);
  assert.match(city,/city-context-block/);
  assert.match(city,/airport-plane-a/);
 });

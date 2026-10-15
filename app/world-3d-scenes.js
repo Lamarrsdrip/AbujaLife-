@@ -7,6 +7,8 @@ import { vehicleFor } from '../src/shared/vehicles.mjs';
 import { createWorldMaterialLibrary } from './world-materials.js';
 import { WORLD_LANDMARK_FACADES } from '../src/shared/world-landmark-sizes.mjs';
 import { worldVehicleState } from './world-vehicle-state.js';
+import { BOULEVARDS, AVENUES, ROUNDABOUTS, intersections } from '../src/shared/city-roads.mjs';
+import { SIDEWALK_TREES, PARK_FOUNTAIN } from './world-city-base.js';
 
 // Combine rigid, opaque pieces with identical materials. Vertex normals, UVs,
 // triangles and joints are preserved; moving parts and transparent surfaces stay separate.
@@ -814,27 +816,66 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     const arrow=box(door,0,10,-27,7,4,34,handle,true);arrow.rotation.z=Math.PI/4;
     return door;
   }
+  // Roads, kerbs, pavements, junction markings, traffic signals and roundabouts
+  // come from the shared street network (src/shared/city-roads.mjs), the same
+  // rectangles the collision map, fabric and traffic use. Nothing solid is
+  // added on a carriageway here except the roundabout islands, which are
+  // colliders too.
+  function buildStreetNetwork() {
+    const W=layout.width,H=layout.height,junctions=intersections(W).filter(j=>j.x<W);
+    const paint=mat('#ece6cf',.6,0),yellow=mat('#e0b64a',.55,0),kerb=mat('#c9c8b9',.82,0),pole=mat('#3a4547',.5,.4);
+    const inJunction=(x,y,pad=0)=>junctions.some(j=>x>j.x-pad&&x<j.x+j.w+pad&&y>j.y-pad&&y<j.y+j.h+pad);
+    for(const [y,h] of BOULEVARDS){
+      floor(group,0,y,W,h,'road',0);
+      for(const edge of [y-12,y+h])floor(group,0,edge,W,12,'tile',.5);
+      for(const z of [y,y+h])box(group,W/2,3,z*ds,W,6,8*ds,kerb,false,false);
+      // Double centre line, dashed lane lines, both broken across junctions.
+      for(let x=0;x<W;x+=100){
+        if(inJunction(x+26,y+h/2,6))continue;
+        box(group,x+50,1,(y+h/2-5)*ds,100,1,3*ds,yellow,false,false);box(group,x+50,1,(y+h/2+5)*ds,100,1,3*ds,yellow,false,false);
+        if(h>200)for(const lane of [y+h*.25,y+h*.75])box(group,x+28,1,lane*ds,52,1,4*ds,paint,false,false);
+      }
+    }
+    for(const [x,w] of AVENUES){
+      if(x>=W)continue;
+      floor(group,x,0,w,H,'road',0);
+      for(const edge of [x-12,x+w])floor(group,edge,0,12,H,'tile',.5);
+      for(const ex of [x,x+w])box(group,ex,3,H/2*ds,8,6,H*ds,kerb,false,false);
+      for(let y=0;y<H;y+=160){if(inJunction(x+w/2,y+38,6))continue;box(group,x+w/2,1,(y+38)*ds,3,1,48*ds,w>200?yellow:paint,false,false);}
+    }
+    // Zebra crossings and stop lines on every approach of every junction.
+    for(const j of junctions){
+      for(const side of [-1,1]){
+        const zy=side<0?j.y-4:j.y+j.h+4;
+        for(let i=6;i<j.w-6;i+=16)box(group,j.x+i+5,1.2,zy*ds,9,1,22*ds,paint,false,false);
+        const zx=side<0?j.x-14:j.x+j.w+14;
+        for(let i=6;i<j.h-6;i+=16)box(group,zx,1.2,(j.y+i+5)*ds,22,1,9*ds,paint,false,false);
+      }
+      if(!j.major&&j.x<3500)continue;
+      // Signals on two corners; their poles stand on the pavement, not the road.
+      for(const [cx,cy] of [[j.x-20,j.y-20],[j.x+j.w+20,j.y+j.h+20]]){
+        cylinder(group,cx,48,cy*ds,2.4,96,pole,2,8);
+        const head=box(group,cx,98,cy*ds,9,26,9,pole,false,true);head.name='Traffic signal';
+        for(const [dy,color] of [[8,'#d44b3c'],[0,'#e8b33c'],[-8,'#3fbf6a']])ball(group,cx,98+dy,cy*ds+5,3.2,3.2,2,mat(color,.4,0,{emissive:color,emissiveIntensity:color==='#3fbf6a'?.9:.12}),8);
+      }
+    }
+    for(const r of ROUNDABOUTS){
+      if(r.x>W)continue;
+      const isle=new T.Group();isle.name=`Roundabout ${r.id}`;isle.position.set(r.x,0,r.y*ds);group.add(isle);
+      cylinder(isle,0,4,0,r.island+5,8,kerb,r.island+5,28);cylinder(isle,0,8.5,0,r.island,2,mat('#6f9a5c',.9,0),r.island,28);
+      // A slim green-white-green obelisk: a civic marker, not a copy of a real monument.
+      box(isle,0,40,0,10,64,10,mat('#e9e4d4',.55,0));box(isle,0,40,0,10.6,64,3.4,mat('#2f8a52',.6,0));
+      for(const a of [0,2.1,4.2]){const palm=new T.Group();palm.position.set(Math.cos(a)*r.island*.62,8,Math.sin(a)*r.island*.62*ds);isle.add(palm);plant(palm,30,38);}
+      for(let i=0;i<24;i++){const a=i/24*Math.PI*2;box(group,r.x+Math.cos(a)*(r.island+46),1.1,(r.y+Math.sin(a)*(r.island+46))*ds,10,1,3,paint,false,false);}
+    }
+  }
   let cityFabric=null,streetBoards=null;
   function citySet() {
     const affluent=/maitama|asokoro|guzape|jabi/i.test(profile.district||place?.name||'');
     floor(group,0,0,layout.width,layout.height,'grass',-6);
     if(layout.fabric){const coarse=globalThis.matchMedia?.('(pointer: coarse)').matches===true;cityFabric=buildCityFabric(T,layout.fabric,{ds,light:coarse});group.add(cityFabric.group);streetBoards=buildStreetBillboards(T,layout.fabric.billboards,{ds});group.add(streetBoards.group);}
     floor(group,0,610,layout.width,132,'tile',-1);floor(group,0,1390,layout.width,144,'tile',-1);floor(group,0,2170,layout.width,114,'tile',-1);
-    for(const [y,h] of [[722,252],[1534,234],[2284,234],[3170,234]]) {
-      floor(group,0,y,layout.width,h,'road',0);
-      for(let x=0;x<layout.width;x+=100)box(group,x+28,1,(y+h/2)*ds,52,1,4*ds,'#e0dccb',false,false);
-      box(group,layout.width/2,3,y*ds,layout.width,6,8*ds,'#c2c5b6',false,false);box(group,layout.width/2,3,(y+h)*ds,layout.width,6,8*ds,'#c2c5b6',false,false);
-      for(const x of[350,1180,2510,3300]){box(group,x,3.3,(y-8)*ds,40,1,14*ds,metal,false,false);for(let i=0;i<5;i++)box(group,x-15+i*7,4,(y-8)*ds,2,.5,11*ds,'#2e3c3d',false,false);}
-      if(y<2400)for(let i=0;i<6;i++)box(group,1710+i*17,1.4,(y+h/2)*ds,9,1,h*.72*ds,'#e8e6d9',false,false);
-    }
-    floor(group,1820,0,254,layout.height,'road',0);
-    for(let y=0;y<layout.height;y+=100)box(group,1947,1,(y+25)*ds,4,1,51*ds,'#d4cbb2',false,false);
-    // These avenues already belong to the authored free-roam layout. Render
-    // them in WebGL too, so the expanded quarter has connected walkable streets.
-    for(const x of[3740,4440,5140,5840,6540,7240,7940,8540,9380,10220,11000]){
-      if(x>=layout.width)continue;floor(group,x,0,96,layout.height,'road',0);
-      for(let y=0;y<layout.height;y+=160)box(group,x+48,1,(y+38)*ds,3,1,48*ds,'#ddd5b8',false,false);
-    }
+    buildStreetNetwork();
     const renderLandmarkBuilding=(parent,b)=>{
       const w=Math.max(120,b.w||260),d=Math.max(100,(b.h||210)*ds),builder=b.landmarkBuilder,plaster=surfaces.material('plaster','#ded8c8'),glassLandmark=mat('#76979a',.38,.08),greenLandmark=mat('#6f9368'),stone=mat('#b9b19f');
       const slab=(x,y,z,bw,bh,bd,color=plaster)=>box(parent,x,y,z,bw,bh,bd,color,true);
@@ -934,7 +975,18 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
       }
     }
     contactShadows(buildings.map(b=>({kind:'building',x:b.x,y:b.frontY===false?b.y:b.y-b.h,w:b.w,h:b.h})));
-    for(const [x,y,size] of [[91,650,110],[658,610,85],[1204,643,82],[1745,633,103],[2152,615,85],[2730,626,95],[3400,643,123],[80,1441,114],[705,1449,91],[1740,1435,101],[2728,1440,97],[1040,1998,125],[1710,2010,128]]){const p=new T.Group();p.position.set(x,0,y*ds);group.add(p);tree(p,size);}
+    // Same list as the SVG art and the colliders, so every trunk you bump is drawn.
+    for(const [x,y,scale] of SIDEWALK_TREES){const p=new T.Group();p.position.set(x,0,y*ds);group.add(p);tree(p,Math.round(104*scale));}
+    // Open water that blocks movement is always drawn as water (Jabi's lakeside).
+    for(const w of layout.waterBodies||[]){
+      const p=new T.Group();p.name=`Water: ${w.id}`;p.position.set(w.x+w.w/2,0,(w.y+w.h/2)*ds);group.add(p);
+      box(p,0,1,0,w.w+36,4,(w.h+36)*ds,mat('#c9bf9f',.85,0),false,false);
+      const surface=mat('#4f8f95',.16,.12,{transparent:true,opacity:.92});box(p,0,3.2,0,w.w,2,w.h*ds,surface,false,false);water.push(surface);
+      for(let x=-w.w/2+60;x<w.w/2;x+=120)cylinder(p,x,6,(w.h/2+12)*ds,2,12,mat('#6c5a45'),2,6);
+    }
+    {const f=PARK_FOUNTAIN,p=new T.Group();p.name='The Green fountain';p.position.set(f.cx,0,f.cy*ds);group.add(p);
+      cylinder(p,0,6,0,f.w*.55,12,mat('#d9d3bf',.7,0),f.w*.58,32);cylinder(p,0,12.5,0,f.w*.49,1.5,mat('#7fb3ad',.18,.05),f.w*.49,32);
+      cylinder(p,0,26,0,9,30,mat('#e4dfcc',.6,0),12,12);cylinder(p,0,42,0,24,4,mat('#d9d3bf',.7,0),18,20);ball(p,0,52,0,7,12,7,mat('#cfe6df',.2,0,{transparent:true,opacity:.75}),10);}
     for(const y of [668,1480])for(const x of [570,1160,2660,3270]) {
       cylinder(group,x,66,y*ds,3,132,'#626c63',2);box(group,x+15,134,y*ds,34,6,12,metal);box(group,x+16,130,y*ds,23,1,7,mat('#dcd2a9',.8,0,{emissive:'#d8bf80',emissiveIntensity:.15}));
     }

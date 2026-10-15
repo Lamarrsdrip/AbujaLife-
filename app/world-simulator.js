@@ -71,6 +71,7 @@ import { createClubAudio } from './world-audio.js';
 import { soundscapeFor } from './audio-director.js';
 import { WORLD_ZOOM, clampWorldZoom, worldViewport, constrainWorldCamera, screenToWorld, worldToScreen, worldFloorTransform, screenVectorToWorld } from './world-camera.js';
 import { worldEntryState } from './world-spawn.js';
+import { makeNavigation } from './world-navigation.js';
 import { createWorldOrbit } from './world-orbit.js';
 import { STREET_VIEW, streetCameraPose, streetPoseAtDistance, streetFollowYaw, easeYaw, readStreetPreference, writeStreetPreference } from './world-street-camera.js';
 import { bindWorldTouch } from './world-touch.js';
@@ -131,35 +132,6 @@ function movingResident(appearance={},own=false) {
   const earrings=appearance.presentation==='feminine'?'<circle cx="-13" cy="-60" r="1.8" fill="#dbbd72"/><circle cx="13" cy="-60" r="1.8" fill="#dbbd72"/>':'';
   const hair={crop:'<path d="M-12-57V-64Q-13-78 0-78Q14-78 13-64L10-60L8-69Q0-66-9-70L-9-59Z"/>',bald:'',afro:'<path d="M-12-56Q-21-63-16-69Q-20-79-10-81Q-5-90 3-83Q14-88 17-78Q25-73 16-63L11-56L8-69L-10-68Z"/>',locs:'<path d="M-13-56Q-20-76-4-82Q15-85 17-67L15-49L9-52L9-71L-8-66L-10-50L-16-49Z"/>',braids:'<path d="M-13-57Q-17-78-1-82Q19-80 15-60L17-38L11-38L8-69L-8-68L-11-39L-16-39Z"/>'}[appearance.hair||'crop'];
   return `<g class="walker-silhouette"><ellipse cy="0" rx="19" ry="7" fill="#253e2c" opacity=".18"/><g class="walker-body"><g class="walker-leg walker-leg-left"><path d="M-10-30H-1L-3-5H-12Z" fill="${trousers}"/><path d="M-13-7H-3L-2-1H-17V-4Z" fill="${shoe}"/></g><g class="walker-leg walker-leg-right"><path d="M1-30H11L12-5H3Z" fill="${trousers}"/><path d="M3-7H13L17-3V0H2Z" fill="${shoe}"/></g><g class="walker-arm walker-arm-left"><path d="M${-11-broad}-51Q-18-48-18-38L-21-29" fill="none" stroke="${skin}" stroke-width="8" stroke-linecap="round"/></g><g class="walker-arm walker-arm-right"><path d="M${11+broad}-51Q18-48 18-38L21-29" fill="none" stroke="${skin}" stroke-width="8" stroke-linecap="round"/></g><path d="M-8-56Q0-59 8-56L${15+broad}-50L${12+broad}-30Q0-26 ${-12-broad}-30L${-15-broad}-50Z" fill="${shirt}"/><path d="M-7-54Q0-49 7-54" fill="none" stroke="#f9edcf" stroke-width="2" opacity=".4"/>${appearance.top==='agbada'?`<path d="M-11-54L-25-45L-19-23L-10-26L-11-15H13L12-26L21-23L25-45L10-54Z" fill="${shirt}"/><path d="M0-49V-20M-5-42V-28M5-42V-28" stroke="#eee1b7" stroke-width="2"/>`:''}<path d="M-5-60H5V-51H-5Z" fill="${skin}"/>${head}<g class="walker-face"><path d="M-7-65H-3M3-65H7" stroke="#382b21" stroke-width="2" stroke-linecap="round"/><path d="M-3-58Q0-56 4-59" fill="none" stroke="#58382a" stroke-width="1.5"/>${appearance.accessory==='glasses'?'<path d="M-10-68H-2V-62H-10ZM2-68H10V-62H2ZM-2-66H2" fill="none" stroke="#253831" stroke-width="1.5"/>':''}${beard}${earrings}</g><g fill="#312e25">${hair}</g><ellipse class="walker-back-head" cy="-66" rx="12" ry="13" fill="${appearance.hair==='bald'?skin:'#312e25'}" opacity="0"/></g></g>`;
-}
-
-function makeNavigation(scene,radius=10) {
-  const step=26,cols=Math.ceil(scene.width/step),rows=Math.ceil(scene.height/step),blocked=new Uint8Array(cols*rows);
-  const contains=(x,y,r=radius)=>x<r+12||y<r+12||x>scene.width-r-12||y>scene.height-r-12||scene.obstacles.some(o=>x>o.x-r&&x<o.x+o.w+r&&y>o.y-r&&y<o.y+o.h+r);
-  for(let gy=0;gy<rows;gy++)for(let gx=0;gx<cols;gx++)blocked[gy*cols+gx]=contains((gx+.5)*step,(gy+.5)*step)?1:0;
-  const free=(x,y)=>x>=0&&y>=0&&x<cols&&y<rows&&!blocked[y*cols+x];
-  const nearest=p=>{
-    const ox=clamp(Math.floor(p.x/step),0,cols-1),oy=clamp(Math.floor(p.y/step),0,rows-1);
-    if(free(ox,oy))return [ox,oy];
-    for(let r=1;r<16;r++)for(let y=oy-r;y<=oy+r;y++)for(let x=ox-r;x<=ox+r;x++)if((Math.abs(x-ox)===r||Math.abs(y-oy)===r)&&free(x,y))return [x,y];
-    return null;
-  };
-  const clear=(a,b)=>{const n=Math.ceil(distance(a,b)/10);for(let i=0;i<=n;i++)if(contains(a.x+(b.x-a.x)*i/(n||1),a.y+(b.y-a.y)*i/(n||1)))return false;return true;};
-  const path=(start,end)=>{
-    if(!contains(end.x,end.y)&&clear(start,end))return [{...end}];
-    const from=nearest(start),to=nearest(end);if(!from||!to)return [];
-    const startIndex=from[1]*cols+from[0],endIndex=to[1]*cols+to[0];
-    const scores=new Float64Array(cols*rows).fill(Infinity),parents=new Int32Array(cols*rows).fill(-1),closed=new Uint8Array(cols*rows),open=[startIndex];scores[startIndex]=0;
-    const heuristic=i=>Math.hypot(i%cols-to[0],Math.floor(i/cols)-to[1]);let found=false;
-    while(open.length){let best=0;for(let i=1;i<open.length;i++)if(scores[open[i]]+heuristic(open[i])<scores[open[best]]+heuristic(open[best]))best=i;const index=open.splice(best,1)[0];if(index===endIndex){found=true;break;}closed[index]=1;const x=index%cols,y=Math.floor(index/cols);
-      for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]]){const nx=x+dx,ny=y+dy,ni=ny*cols+nx;if(!free(nx,ny)||closed[ni]||(dx&&dy&&(!free(x+dx,y)||!free(x,y+dy))))continue;const score=scores[index]+(dx&&dy?1.4142:1);if(score<scores[ni]){scores[ni]=score;parents[ni]=index;if(!open.includes(ni))open.push(ni);}}
-    }
-    if(!found)return [];
-    const result=[];for(let cursor=endIndex;cursor!==startIndex&&cursor!==-1;cursor=parents[cursor])result.push({x:(cursor%cols+.5)*step,y:(Math.floor(cursor/cols)+.5)*step});result.reverse();
-    if(!contains(end.x,end.y)&&(!result.length||clear(result.at(-1),end)))result.push({...end});
-    const smooth=[];let anchor=start;for(let i=0;i<result.length;){let j=result.length-1;while(j>i&&!clear(anchor,result[j]))j--;smooth.push(result[j]);anchor=result[j];i=j+1;}return smooth;
-  };
-  return {contains,clear,path,nearest,step};
 }
 
 /** A locally simulated playable world. Online residents only come from the server. */

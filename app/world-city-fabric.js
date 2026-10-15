@@ -7,11 +7,10 @@
 // an authored building or the approach to an interaction point, and the 3D side
 // draws everything with instancing (about a dozen draw calls in total).
 
-// Road geometry shared with the authored scene (world-city-base.js / world-3d-scenes.js).
-export const CITY_ROADS = Object.freeze({
-  horizontal: Object.freeze([[722, 252], [1534, 234], [2284, 234], [3170, 234]]),
-  vertical: Object.freeze([[1820, 254], ...[3740, 4440, 5140, 5840, 6540, 7240, 7940, 8540, 9380, 10220, 11000].map(x => [x, 96])]),
-});
+// Road geometry lives in src/shared/city-roads.mjs; this alias keeps older imports working.
+import { BOULEVARDS, AVENUES } from '../src/shared/city-roads.mjs';
+
+export const CITY_ROADS = Object.freeze({ horizontal: BOULEVARDS, vertical: AVENUES });
 
 const CORE = new Set(['central-area', 'sector-a', 'sector-b', 'sector-c', 'sector-d', 'sector-e', 'sector-f', 'sector-g', 'sector-h']);
 const COMMERCIAL = new Set(['garki-i', 'garki-ii', 'wuse-i', 'wuse-ii-a07', 'wuse-ii-a08', 'utako', 'jabi', 'wuye', 'mabushi', 'kado', 'gudu', 'durumi', 'kukwaba', 'industrial-1', 'industrial-2', 'institution-research']);
@@ -58,7 +57,7 @@ export function generateCityFabric({ width = 11200, height = 4190, placeId = 'ab
     ...CITY_ROADS.vertical.filter(([x]) => x < width).map(([x, w]) => ({ x, y: 0, w, h: height })),
   ];
   // Keep the walk from every door, marker and the spawn point down to its road completely clear.
-  const clear = [...interactables.map(point => ({ x: point.x - 130, y: point.y - 70, w: 260, h: 380 })), ...(spawn ? [{ x: spawn.x - 220, y: spawn.y - 200, w: 440, h: 420 }] : [])];
+  const clear = [...interactables.map(point => ({ x: point.x - 130, y: point.y - 70, w: 260, h: 190 })), ...(spawn ? [{ x: spawn.x - 220, y: spawn.y - 200, w: 440, h: 420 }] : [])];
   const solid = obstacles.map(o => ({ x: o.x, y: o.y, w: o.w, h: o.h }));
   const free = (rect, margin) => rect.x >= 40 && rect.y >= 40 && rect.x + rect.w <= width - 40 && rect.y + rect.h <= height - 30
     && !roads.some(road => overlaps(rect, road, 26)) && !solid.some(o => overlaps(rect, o, margin)) && !clear.some(zone => overlaps(rect, zone, 0));

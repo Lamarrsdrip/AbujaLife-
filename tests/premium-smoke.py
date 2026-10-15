@@ -115,7 +115,7 @@ async def finish_cards(page,name,hair,goal,qa,label):
         if await hair_choice.count():
             await hair_choice.locator('xpath=..').click();await expect(hair_choice).to_be_checked();observed.append('hair')
         goal_choice=form.locator(f'[name="lifeGoal"][value="{goal}"]')
-        if await goal_choice.count():await goal_choice.check();observed.append('goal')
+        if await goal_choice.count():await goal_choice.locator('xpath=ancestor::label[1]').click();await expect(goal_choice).to_be_checked();observed.append('goal')
         await game.no_overflow(page)
         await page.screenshot(path=str(ARTIFACTS/f'{label}-onboarding-{step+1}.png'),full_page=True)
         start=form.locator('#begin-life')

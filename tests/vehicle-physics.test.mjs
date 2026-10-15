@@ -77,3 +77,11 @@ test('touching another car never locks the resident in place', () => {
   const side = run(1, { throttle: 1 }, world, createCarState(90), { x: 10, y: 0 }).position.y;
   assert.ok(side > 30, `drives out sideways: ${side}`);
 });
+
+test('wedged against a wall, the stick backs the car out and round toward where it points', () => {
+  const wall = { blocked: x => x > 100, onRoad: () => true }, state = createCarState(0), position = { x: 0, y: 0 };
+  run(1.5, { throttle: 1 }, wall, state, position);
+  assert.ok(position.x > 50, 'reached the wall');
+  run(2.5, s => carInput(s, { direction: { x: 0, y: 1 } }), wall, state, position);
+  assert.ok(position.y > 40 || Math.abs(state.heading - Math.PI / 2) < .6, `turned out of the corner: ${JSON.stringify(position)} heading ${state.heading}`);
+});

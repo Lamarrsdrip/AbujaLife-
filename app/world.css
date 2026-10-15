@@ -142,7 +142,7 @@
 .world-speedometer small{font-size:9px;font-weight:800;letter-spacing:.8px;color:#cfe2d6;text-transform:uppercase}
 .world-speedometer i{position:absolute;left:0;bottom:0;height:3px;width:calc(var(--speed,0) * 100%);background:linear-gradient(90deg,#3fbf6a,#e8b33c 70%,#d44b3c);transition:width .12s linear}
 .world-speedometer.is-reversing small::after{content:" · R";color:#f2c46b}
-@media (max-width:700px){.world-speedometer{top:calc(118px + env(safe-area-inset-top));padding:5px 12px 6px}.world-speedometer b{font-size:17px}}
+@media (max-width:700px){.world-speedometer{top:calc(172px + env(safe-area-inset-top));padding:5px 12px 6px;max-width:200px}.world-speedometer b{font-size:17px}}
 .world-speedometer{flex-wrap:wrap}
 .world-speedometer em{display:none;flex-basis:100%;text-align:center;font-style:normal;font-size:9px;font-weight:800;letter-spacing:.3px;color:#bfe3cc;white-space:nowrap;max-width:62vw;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
 .world-speedometer.has-road em{display:block}

@@ -170,7 +170,9 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
  const initial=saved?{x:saved.x,y:saved.y}:scene.spawn;
  let player={x:initial.x,y:initial.y},camera={x:saved?.cameraX??player.x,y:saved?.cameraY??player.y},angle=saved?.angle||0,dir=saved?.dir||1,disposed=false,raf=0,lastTime=0,elapsed=0,travelDistance=0,walkPhase=0,path=[],pending=null,routeRepairs=0,nearby=null,moving=false,sprinting=false,arrived=false,furnitureMode=null,furnitureRotation=0,activity=null,lastStatus='',parked={x:saved?.parked?.x??scene.spawn.x+144,y:saved?.parked?.y??scene.spawn.y+108};
  if(saved&&saved.driving&&!driving&&!interior&&!trip){parked={...player};player.x+=78;}
- if(saved&&!saved.driving&&driving){player={...parked};camera={...player};}
+ // Taking the wheel always starts at the car (parked on the road), including the
+ // first drive in a scene with no remembered pose.
+ if((!saved||!saved.driving)&&driving){player={...parked};camera={...player};}
  // Furniture and scene geometry can change between visits; repair stale positions.
  const fitPosition=(position,fallback,navigation=nav)=>{
   const inBounds=p=>Number.isFinite(p.x)&&Number.isFinite(p.y)&&p.x>=0&&p.x<=scene.width&&p.y>=0&&p.y<=scene.height;
@@ -185,7 +187,8 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
  camera.x=clamp(camera.x,0,scene.width);camera.y=clamp(camera.y,0,scene.height);
  const keyboard=new Set(),joy={x:0,y:0,pointer:null},listeners=[];
  let viewWidth=1050,viewHeight=650,zoom=clampWorldZoom(saved?.zoom ?? 1),frameCount=0;
- const orbit=createWorldOrbit({yaw:saved?.cameraYaw,elevation:saved?.cameraElevation,zoom});
+ // A driver starts with the chase camera behind the car, so the stick's 'up' is the car's forward.
+ const orbit=createWorldOrbit({yaw:driving&&!interior?streetFollowYaw(angle):saved?.cameraYaw,elevation:saved?.cameraElevation,zoom});
  if(preview)camera={x:scene.width/2,y:scene.height/2};
  const orientation=()=>orbit.getState();
  // Third-person street view is the default presentation. The overview (dollhouse)

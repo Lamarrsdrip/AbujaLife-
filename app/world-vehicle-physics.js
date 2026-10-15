@@ -44,6 +44,13 @@ export function carInput(state, { forward = 0, turn = 0, direction = null } = {}
     const magnitude = clamp(Math.hypot(direction.x, direction.y), 0, 1);
     const wanted = Math.atan2(direction.y, direction.x), diff = wrap(wanted - state.heading);
     const behind = Math.abs(diff) > 2.0;
+    // Nosed into something with the stick pointing elsewhere: back up while
+    // turning (a three-point turn) instead of pushing into the wall forever.
+    if (state.contact > 0 && Math.abs(state.speed) < 40 && Math.abs(diff) > .5) state.recover = .8;
+    if (state.recover > 0 && !behind) {
+      // Reversing turns the nose the other way, so steer against the gap.
+      return { throttle: -magnitude, steer: clamp(-diff * 1.6, -1, 1) };
+    }
     if (behind && state.speed < 60) {
       // Reverse: steer so the tail swings toward the stick.
       return { throttle: -magnitude, steer: clamp(-wrap(wanted + Math.PI - state.heading) * 1.6, -1, 1) };
@@ -65,6 +72,7 @@ export function carInput(state, { forward = 0, turn = 0, direction = null } = {}
 export function stepCar(position, state, control, world, dt) {
   dt = clamp(Number(dt) || 0, 0, .1);
   if (!dt) return { moved: 0, hit: false, speed: state.speed };
+  state.recover = Math.max(0, (state.recover || 0) - dt);
   const { throttle = 0, steer = 0, boost = false } = control || {};
   const road = world.onRoad ? world.onRoad(position.x, position.y) : true;
   const top = (boost ? CAR.boostSpeed : CAR.topSpeed) * (road ? 1 : CAR.offRoadTop);

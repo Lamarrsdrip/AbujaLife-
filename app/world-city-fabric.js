@@ -152,6 +152,8 @@ export function generateCityFabric({ width = 11200, height = 4190, placeId = 'ab
     // Tree trunks are solid: a car used to pass straight through them. Slim lamp
     // posts line every pavement where cars start, so they stay pass-through.
     ...trees.map(t => ({ x: t.x - 8, y: t.y - 8, w: 16, h: 16, fabric: true, prop: 'tree' })),
+    // Roadside billboards stand on the pavement; their posts and screen are solid.
+    ...billboards.map(b => ({ x: b.x - b.width / 2, y: b.y - 7, w: b.width, h: 14, fabric: true, prop: 'billboard' })),
   ];
   return { character, blocks, lamps, trees, kiosks, billboards, obstacles: fabricObstacles };
 }

@@ -35,7 +35,7 @@ test('every collider in every district has visible geometry (no invisible walls)
     const scene = cityFor(id), solids = renderedSolids(scene);
     // Trunks are generated from the drawn fabric list itself.
     const props = scene.obstacles.filter(o => o.prop);
-    assert.equal(props.length, scene.fabric.trees.length, `${id}: every solid prop is a drawn tree`);
+    assert.equal(props.length, scene.fabric.trees.length + scene.fabric.billboards.length, `${id}: every solid prop is a drawn tree or billboard`);
     for (const o of scene.obstacles) {
       if (o.roundabout || o.prop) continue;
       const covered = solids.reduce((sum, r) => sum + overlap(o, r), 0);

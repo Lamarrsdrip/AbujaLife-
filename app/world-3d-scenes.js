@@ -842,6 +842,9 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
   function buildStreetNetwork() {
     const W=layout.width,H=layout.height,junctions=intersections(W).filter(j=>j.x<W);
     const paint=mat('#ece6cf',.6,0),yellow=mat('#e0b64a',.55,0),kerb=mat('#c9c8b9',.82,0),pole=mat('#3a4547',.5,.4);
+    // Road paint is thousands of tiny boxes: collect them and draw one instanced
+    // mesh per paint colour instead of creating (and later merging) a mesh each.
+    const marks=new Map(),mark=(material,x,y,z,w,h,d)=>{let list=marks.get(material);if(!list)marks.set(material,list=[]);list.push([x,y,z,w,h,d]);};
     const inJunction=(x,y,pad=0)=>junctions.some(j=>x>j.x-pad&&x<j.x+j.w+pad&&y>j.y-pad&&y<j.y+j.h+pad);
     for(const [y,h] of BOULEVARDS){
       floor(group,0,y,W,h,'road',0);
@@ -850,8 +853,8 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
       // Double centre line, dashed lane lines, both broken across junctions.
       for(let x=0;x<W;x+=100){
         if(inJunction(x+26,y+h/2,6))continue;
-        box(group,x+50,1,(y+h/2-5)*ds,100,1,3*ds,yellow,false,false);box(group,x+50,1,(y+h/2+5)*ds,100,1,3*ds,yellow,false,false);
-        if(h>200)for(const lane of [y+h*.25,y+h*.75])box(group,x+28,1,lane*ds,52,1,4*ds,paint,false,false);
+        mark(yellow,x+50,1,(y+h/2-5)*ds,100,1,3*ds);mark(yellow,x+50,1,(y+h/2+5)*ds,100,1,3*ds);
+        if(h>200)for(const lane of [y+h*.25,y+h*.75])mark(paint,x+28,1,lane*ds,52,1,4*ds);
       }
     }
     for(const [x,w] of AVENUES){
@@ -865,9 +868,9 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     for(const j of junctions){
       for(const side of [-1,1]){
         const zy=side<0?j.y-4:j.y+j.h+4;
-        for(let i=6;i<j.w-6;i+=16)box(group,j.x+i+5,1.2,zy*ds,9,1,22*ds,paint,false,false);
+        for(let i=6;i<j.w-6;i+=16)mark(paint,j.x+i+5,1.2,zy*ds,9,1,22*ds);
         const zx=side<0?j.x-14:j.x+j.w+14;
-        for(let i=6;i<j.h-6;i+=16)box(group,zx,1.2,(j.y+i+5)*ds,22,1,9*ds,paint,false,false);
+        for(let i=6;i<j.h-6;i+=16)mark(paint,zx,1.2,(j.y+i+5)*ds,22,1,9*ds);
       }
       if(!j.major&&j.x<3500)continue;
       // Signals on two corners; their poles stand on the pavement, not the road.
@@ -892,7 +895,13 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
       // A slim green-white-green obelisk: a civic marker, not a copy of a real monument.
       box(isle,0,40,0,10,64,10,mat('#e9e4d4',.55,0));box(isle,0,40,0,10.6,64,3.4,mat('#2f8a52',.6,0));
       for(const a of [0,2.1,4.2]){const palm=new T.Group();palm.position.set(Math.cos(a)*r.island*.62,8,Math.sin(a)*r.island*.62*ds);isle.add(palm);plant(palm,30,38);}
-      for(let i=0;i<24;i++){const a=i/24*Math.PI*2;box(group,r.x+Math.cos(a)*(r.island+46),1.1,(r.y+Math.sin(a)*(r.island+46))*ds,10,1,3,paint,false,false);}
+      for(let i=0;i<24;i++){const a=i/24*Math.PI*2;mark(paint,r.x+Math.cos(a)*(r.island+46),1.1,(r.y+Math.sin(a)*(r.island+46))*ds,10,1,3);}
+    }
+    const unit=geo('roadpaint:unit',()=>new T.BoxGeometry(1,1,1)),matrix=new T.Matrix4(),q=new T.Quaternion(),pos=new T.Vector3(),scl=new T.Vector3();
+    for(const [material,list] of marks){
+      const paintMesh=new T.InstancedMesh(unit,material,list.length);paintMesh.name='Road paint';paintMesh.receiveShadow=true;paintMesh.userData.excludeFromBounds=true;
+      list.forEach(([x,y,z,w,h,d],k)=>paintMesh.setMatrixAt(k,matrix.compose(pos.set(x,y,z),q,scl.set(w,h,d))));
+      paintMesh.instanceMatrix.needsUpdate=true;paintMesh.computeBoundingSphere();group.add(paintMesh);
     }
   }
   let cityFabric=null,streetBoards=null;

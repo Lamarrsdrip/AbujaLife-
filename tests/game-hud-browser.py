@@ -9,6 +9,10 @@ from playwright.async_api import async_playwright, expect
 REPO=Path(__file__).resolve().parents[1]
 PORT=int(os.environ.get('ABUJALIFE_HUD_PORT','8797'))
 BASE=f'http://127.0.0.1:{PORT}'
+# CI's Linux WebKit renders the 3D city in software and is many times slower than
+# Chromium there (main measured 11-12s per layout step on 2026-10-15); give
+# scene loads proportionally longer instead of failing on the clock.
+SLOW=1
 ART=Path(os.environ.get('ABUJALIFE_HUD_ARTIFACTS','/tmp/abuja-hud-qa'))
 APPEARANCE={'presentation':'masculine','skinTone':'brown','face':'oval','hair':'afro','body':'regular','top':'forest','bottom':'charcoal','shoes':'white','facialHair':'none','accessory':'none'}
 results=[]
@@ -35,13 +39,13 @@ async def load(p):
     await p.bring_to_front()
     if p.url.startswith(BASE):await p.reload(wait_until='domcontentloaded')
     else:await p.goto(BASE+'/#world',wait_until='domcontentloaded')
-    await expect(p.locator('.game-nav')).to_be_visible(timeout=30000)
+    await expect(p.locator('.game-nav')).to_be_visible(timeout=SLOW*30000)
     # Welcome is optional and may arrive before the renderer. Its absence is
     # valid; its presence must be acknowledged before exercising gameplay.
-    await p.wait_for_function("()=>document.querySelector('[data-welcome-continue]')||document.querySelector('#world-scene.world-playable')",timeout=60000)
+    await p.wait_for_function("()=>document.querySelector('[data-welcome-continue]')||document.querySelector('#world-scene.world-playable')",timeout=SLOW*60000)
     if await p.locator('[data-welcome-continue]').is_visible():
         await p.locator('[data-welcome-continue]').click()
-    await expect(p.locator('#world-scene.world-playable')).to_be_visible(timeout=30000)
+    await expect(p.locator('#world-scene.world-playable')).to_be_visible(timeout=SLOW*30000)
     await p.wait_for_timeout(300)
     if await p.locator('[data-welcome-continue]').is_visible():
         await p.locator('[data-welcome-continue]').click()
@@ -110,7 +114,7 @@ async def go_outside(c,p,venue):
     before=(await api(c,'/api/bootstrap'))['profile']
     await expect(p.locator('.world-exit-shortcut')).to_be_visible()
     await p.locator('.world-exit-shortcut').click()
-    await p.wait_for_function("()=>document.querySelector('#world-scene')?.dataset.sceneKind==='public'",timeout=30000)
+    await p.wait_for_function("()=>document.querySelector('#world-scene')?.dataset.sceneKind==='public'",timeout=SLOW*30000)
     after=(await api(c,'/api/bootstrap'))['profile']
     assert after['location']['kind']=='public' and after['district']==before['district'],(venue,before,after)
     assert after['wallet']==before['wallet'] and after['home']['propertyId']==before['home']['propertyId'],(venue,'exit charged or changed home',before,after)
@@ -154,6 +158,7 @@ async def main():
                     except Exception:await asyncio.sleep(.1)
                 async with async_playwright() as pw:
                     for engine in os.getenv('ABUJALIFE_HUD_ENGINES','chromium,webkit').split(','):
+                        global SLOW;SLOW=3 if engine=='webkit' else 1
                         browser=await getattr(pw,engine).launch(headless=True)
                         c,p,errors,wire=await resident(browser,{'width':390,'height':844})
                         try:

@@ -1,0 +1,23 @@
+/* City Moments: phone-style notices in the shared context slot, a chip beside the Hustle chip. */
+.hud-context-slot:has(.moment-card){flex-direction:column;align-items:center;gap:8px}
+/* On the street a notice briefly takes the gig bar's place; a venue's activity tray is never displaced. */
+.hud-context-slot:has(.moment-card) .street-gigs{display:none}
+@media(max-width:799px){#app .world-stage:has(.play-chat,.club-life-dock) .hud-context-slot:has(.moment-card){bottom:calc(var(--hud-context) + 52px)}}
+.moment-card{pointer-events:auto;display:flex;align-items:center;gap:10px;width:min(460px,100%);padding:10px 10px 10px 12px;border-radius:18px;border:1px solid rgba(255,255,255,.8);background:rgba(251,247,235,.97);color:#1f3d31;box-shadow:0 10px 26px rgba(16,42,34,.24);animation:moment-in .32s cubic-bezier(.2,.9,.25,1.1)}
+.moment-card.is-done{border-color:#7cc596;background:rgba(240,251,243,.97)}
+.moment-icon{flex:none;display:grid;place-items:center;width:38px;height:38px;border-radius:12px;background:#f3e3ef;font-size:20px}
+.moment-card.is-done .moment-icon{background:#dff0e3}
+.moment-card>div{flex:1;min-width:0}
+.moment-card small{display:block;font-size:9px;letter-spacing:.7px;text-transform:uppercase;color:#6a7f71}
+.moment-card strong{display:block;font-size:13px;line-height:1.3;margin-top:1px}
+.moment-card p{margin:2px 0 0;font-size:11px;line-height:1.35;color:#4d6457;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.moment-go{flex:none;min-height:40px;min-width:58px;padding:0 12px;border:0;border-radius:12px;background:#1f6b4a;color:#fff;font:700 12px/1 inherit;cursor:pointer}
+.moment-card.is-done .moment-go{background:#c99a2e}
+.moment-close{flex:none;width:30px;height:40px;border:0;background:transparent;color:#6a7f71;font-size:18px;cursor:pointer}
+@keyframes moment-in{from{transform:translateY(14px) scale(.97);opacity:0}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){.moment-card{animation:none}}
+.moments-chip{position:absolute;left:var(--hud-edge,12px);top:204px;z-index:4;height:30px;padding:0 11px;border:1px solid rgba(255,255,255,.7);border-radius:15px;background:rgba(31,74,58,.92);color:#f6f1df;font:600 12px/1 inherit;box-shadow:0 3px 12px rgba(16,42,34,.22);cursor:pointer}
+.moments-chip.has-ready{background:#c99a2e;color:#1f2a22}
+@media(max-height:480px){.moments-chip{display:none}}
+@media(max-height:600px){#app .world-stage:has(.needs-coach-card,.moment-card) .moments-chip{display:none}}
+.abj-moments .hustle-side button:not(.primary){min-height:36px;padding:0 14px;border-radius:11px;border:1px solid #cfd7c8;background:#fff;color:#1f4a3a;font-weight:700}

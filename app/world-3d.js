@@ -28,6 +28,22 @@ function lathe(parent,mat,points,x,y,z){const mesh=new THREE.Mesh(new THREE.Lath
 
 export function createCharacterModel(appearance={}) {return character(appearance).root;}
 
+// One WebGL context for the whole session. Every scene change used to create a
+// new context (and its extensions) and throw the old one away: about three
+// seconds of a street mount on a fast laptop. The renderer is parked when a
+// scene is disposed and handed to the next one with the same options.
+let parkedRenderer=null,parkedKey='';
+function acquireRenderer(options){
+  const key=JSON.stringify(options),parked=parkedRenderer;parkedRenderer=null;
+  if(parked&&parkedKey===key&&!parked.getContext().isContextLost())return parked;
+  parked?.dispose();parked?.forceContextLoss?.();
+  return new THREE.WebGLRenderer(options);
+}
+function releaseRenderer(r,options){
+  r.domElement.remove();
+  if(r.getContext().isContextLost()){r.dispose();return;}
+  parkedRenderer?.dispose();parkedRenderer=r;parkedKey=JSON.stringify(options);
+}
 export function createCharacterRenderer(container,{appearance={},pedestrians=[],neighbours=[],scene:gameScene,profile,kind,venue,place}={}){
   let renderer;
   const coarse=globalThis.matchMedia?.('(pointer: coarse)').matches===true||(globalThis.navigator?.maxTouchPoints||0)>0;
@@ -38,7 +54,12 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
   // Modern phones get the same authored light/shadow model as desktop. Only
   // genuinely constrained devices fall back to the no-shadow path.
   const shadows=!constrained;
-  try{renderer=new THREE.WebGLRenderer({alpha:true,antialias:!constrained,powerPreference:constrained?'low-power':'high-performance'});}catch{return null;}
+  const rendererOptions={alpha:true,antialias:!constrained,powerPreference:constrained?'low-power':'high-performance'};
+  try{renderer=acquireRenderer(rendererOptions);}catch{return null;}
+  // Reading every shader's compile log blocks the main thread until the driver
+  // finishes compiling (measured ~4s of a 26s street mount). The shaders are
+  // fixed and tested; skip the synchronous check.
+  renderer.debug.checkShaderErrors=false;
   // Phones render close to native sharpness; the measured-FPS governor in draw()
   // steps the ratio down on devices that cannot hold the frame budget.
   const maxPixelRatio=Math.min(globalThis.devicePixelRatio||1,constrained?1:mobile?1.75:2);
@@ -59,7 +80,11 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
   const rim=new THREE.DirectionalLight('#d5e6ee',.68);rim.position.set(300,300,-600);scene.add(rim);
   const characterSurfaces=createWorldMaterialLibrary(THREE,{size:64}),resident=appearance=>character(appearance,{materials:characterSurfaces});
   const own=resident(appearance);scene.add(own.root);
-  const npcs=pedestrians.map((n,i)=>{const rig=resident(ambientAppearance(`${gameScene?.title||'Abuja'}:${i}`));scene.add(rig.root);return rig;});
+  // Ambient pedestrians are built when first needed on screen, at most one per
+  // frame. Building every rig up front (~250ms each with hair strands) froze
+  // each street mount for seconds; most walkers start out of view or off-hours.
+  const npcs=pedestrians.map(()=>null);
+  const npcRig=i=>{if(!npcs[i]){const rig=resident(ambientAppearance(`${gameScene?.title||'Abuja'}:${i}`));scene.add(rig.root);npcs[i]=rig;shadowDirty=true;}return npcs[i];};
   let online=neighbours.map(p=>{const rig=resident(p.appearance);scene.add(rig.root);return rig;});
   let onlineById=new Map(neighbours.map((person,i)=>[String(person.id),{rig:online[i],appearance:JSON.stringify(person.appearance)}]));
   const syncResidentFallbacks=()=>{
@@ -87,6 +112,14 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
   beacon.add(beaconColumn,beaconRing);beacon.traverse(node=>{node.userData.excludeFromBounds=true;node.frustumCulled=false;});scene.add(beacon);
   let beaconKey='';
   let previousWidth=0,previousHeight=0,lost=false,disposed=false,frames=0,viewWidth=0,viewHeight=0,lastLightKey='';
+  // Size the canvas now, before any frame: a reused or freshly created canvas
+  // must never be seen at the browser's default 300×150.
+  {const box=container.getBoundingClientRect();if(box.width>=2&&box.height>=2){previousWidth=Math.round(box.width);previousHeight=Math.round(box.height);renderer.setSize(previousWidth,previousHeight,false);}}
+  // Compile every shader the scene needs off the main thread (KHR_parallel_shader_compile)
+  // before the first frame; drawing first made the browser compile them all
+  // synchronously and froze the page for seconds on each scene change.
+  let warming=typeof renderer.compileAsync==='function';
+  if(warming){container.dataset.shadersWarming='true';renderer.compileAsync(scene,camera).catch(()=>{}).finally(()=>{warming=false;delete container.dataset.shadersWarming;cameraDirty=true;shadowDirty=true;});}
   let qualityLast=0,qualityTime=0,qualityFrames=0;
   let lastRender=-Infinity,lastShadow=-Infinity,shadowDirty=true,cameraDirty=true,previousCamera=null;
   let litDaylight,litNight,litCloud,litClub;
@@ -143,19 +176,28 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
       if(frames>0&&!playerBusy&&lightKey===lastLightKey&&!shadowDirty&&(!lively||now-lastRender<80))return;
       lastLightKey=lightKey;const dynamic=playerBusy||lively;if(!dynamic&&!shadowDirty&&now-lastRender<1000/30-1)return;lastRender=now;
       const rect=container.getBoundingClientRect();if(rect.width<2||rect.height<2)return;const renderWidth=Math.round(rect.width),renderHeight=Math.round(rect.height);if(renderWidth!==previousWidth||renderHeight!==previousHeight){renderer.setSize(renderWidth,renderHeight,false);previousWidth=renderWidth;previousHeight=renderHeight;}
+      // While shaders compile off-thread the canvas is already sized; only drawing waits.
+      if(warming)return;
       if(streetOn){
         const aspect=renderWidth/renderHeight;if(chase.aspect!==aspect){chase.aspect=aspect;chase.fov=streetFieldOfView(aspect);chase.updateProjectionMatrix();}
         chase.position.set(street.position.x,street.position.y,street.position.z);chase.lookAt(street.target.x,street.target.y,street.target.z);chase.updateMatrixWorld(true);
         viewWidth=width;viewHeight=height;previousCamera={x:position.x,y:position.y,width,height,yaw:orientation.yaw,elevation:orientation.elevation};streetKey=nextStreetKey;
       }else updateCamera({...position,width,height,...orientation});
-      environment?.updateView?.(streetOn&&indoors?{...orientation,street:true}:orientation);sun.position.set(position.x-550,1200,position.y/DEPTH+650);sun.target.position.set(position.x,0,position.y/DEPTH);
+      environment?.updateView?.({...orientation,...(streetOn&&indoors?{street:true}:{}),focus:indoors?player:null,eye:indoors?{x:eye.position.x,z:eye.position.z}:null});{
+        // The sun crosses the sky with Abuja time: low and warm in the east after
+        // 06:15, high at midday, long shadows to the east before 18:30. Abuja is
+        // ~9°N, so it sits a little south of overhead. At night the moon is fixed.
+        const hours=Number(clock?.hour??13)+Number(clock?.minute??0)/60,arc=Math.min(1,Math.max(0,(hours-6.25)/12.25)),night=clock?.isNight??false;
+        const east=night?-.35:Math.cos(arc*Math.PI),lift=night?.75:Math.max(.16,Math.sin(arc*Math.PI));
+        sun.position.set(position.x+east*1250,180+lift*1150,position.y/DEPTH+560);sun.target.position.set(position.x,0,position.y/DEPTH);
+      }
       const daylight=clock?.sunlight??1,night=clock?.isNight??false,rainSpan=streetOn?Math.max(width,1900):width,rainDepth=streetOn?Math.max(height,1900):height,cloud=weather?.condition==='rain'?.72:weather?.condition==='cloudy'?.84:1;
-      if(daylight!==litDaylight||night!==litNight||cloud!==litCloud||clubOpen!==litClub){ambient.intensity=indoors?(isClub&&clubOpen?.48:.74):.55+daylight*.69*cloud;ambient.color.set(indoors?'#f7e6cd':night?'#b8c7e7':'#fff0d4');ambient.groundColor.set(indoors?'#665e51':night?'#3b4d60':'#52604f');sun.intensity=indoors?(isClub&&clubOpen?.75:2.8):(night?.4:Math.pow(daylight,.5)*2.45)*cloud;sun.color.set(indoors?'#ffe4bd':night?'#a6bdea':daylight<.3?'#edbf91':'#ffedcf');rim.intensity=indoors?.62:night?.5:.58;litDaylight=daylight;litNight=night;litCloud=cloud;litClub=clubOpen;}
+      if(daylight!==litDaylight||night!==litNight||cloud!==litCloud||clubOpen!==litClub){ambient.intensity=indoors?(isClub&&clubOpen?.48:.74):.55+daylight*.69*cloud;ambient.color.set(indoors?'#f7e6cd':night?'#b8c7e7':'#fff0d4');ambient.groundColor.set(indoors?'#665e51':night?'#3b4d60':'#52604f');sun.intensity=indoors?(isClub&&clubOpen?.75:2.8):(night?.4:Math.pow(daylight,.5)*2.45)*cloud;sun.color.set(indoors?'#ffe4bd':night?'#a6bdea':daylight<.3?'#f0b47c':daylight<.55?'#f6d2a4':'#ffedcf');rim.intensity=indoors?.62:night?.5:.58;litDaylight=daylight;litNight=night;litCloud=cloud;litClub=clubOpen;}
       if(isClub){const partyOn=Boolean(clubOpen),clubTime=Number(time)||0;renderer.toneMappingExposure=partyOn?1.16:1.06;clubLights.forEach((light,i)=>{light.visible=partyOn;if(!partyOn)return;const phase=(clubTime*.34+i*.83)%clubColors.length,index=Math.floor(phase),mix=phase-index;light.color.copy(clubColors[index]).lerp(clubColors[(index+1)%clubColors.length],mix);light.intensity=(mobile?3.2:4.8)*(.78+Math.sin(clubTime*3.1+i*1.7)*.22);light.position.set(765+Math.sin(clubTime*.72+i*2.05)*430,205+Math.sin(clubTime*1.45+i)*55,(585+Math.cos(clubTime*.88+i*1.31)*285)/DEPTH);});rim.color.set(partyOn?clubPalette[1]:'#ceddec');}else renderer.toneMappingExposure=1.12;
       rain.visible=!indoors&&weather?.condition==='rain';if(rain.visible){for(let i=0;i<180;i++){const j=i*6,rx=position.x+((i*137.51+time*28)%rainSpan)-rainSpan/2,rz=position.y/DEPTH+((i*89.23)%(rainDepth/DEPTH))-rainDepth/DEPTH/2,ry=410-(i*61.5+time*330)%410;rainPositions.set([rx,ry,rz,rx-1.3,ry+16,rz],j);}rainGeometry.attributes.position.needsUpdate=true;}
-      const figure=streetOn?STREET_VIEW.residentScale:0;own.root.visible=!transport;animate(own,{...player,angle,phase,time,moving,activity,scale:figure||1.6});npcPositions.forEach((p,i)=>{const club=isClub;npcs[i].root.visible=!club||clubOpen||i===0;animate(npcs[i],{...p,activity:club&&!clubOpen?null:p.activity,time,scale:figure?figure*.97:1.28});});onlinePositions.forEach((p,i)=>{if(online[i])animate(online[i],{...p,time,scale:figure||1.4});});
+      const figure=streetOn?STREET_VIEW.residentScale:0;own.root.visible=!transport;animate(own,{...player,angle,phase,time,moving,activity,scale:figure||1.6});let built=0;npcPositions.forEach((p,i)=>{const club=isClub,show=(!club||clubOpen||i===0)&&!p.hidden;if(!npcs[i]){if(!show||built>=1)return;built++;npcRig(i);}npcs[i].root.visible=show;if(!show)return;animate(npcs[i],{...p,activity:club&&!clubOpen?null:p.activity,time,scale:figure?figure*.97:1.28});});onlinePositions.forEach((p,i)=>{if(online[i])animate(online[i],{...p,time,scale:figure||1.4});});
       shower.visible=activity?.name==='shower';if(shower.visible){shower.position.copy(own.root.position);shower.children.forEach((drop,i)=>{drop.position.set(Math.sin(i*2.4)*13,165-((i*19+time*98)%151),Math.cos(i*2.4)*15);});}
-      container.dataset.activityPose=activity?.name||'';environment?.update?.({clock,weather,clubOpen,elapsed:time,player,angle,transport,driving,carColor,carStyle,ownVehicle,carWithYou,parked,trafficPositions,trip,vehicleScale:streetOn?STREET_VIEW.vehicleScale:1});
+      container.dataset.activityPose=activity?.name||'';environment?.update?.({clock,weather,clubOpen,elapsed:time,player,angle,transport,driving,carColor,carStyle,ownVehicle,carWithYou,parked,trafficPositions,trip,street:!!streetOn,vehicleScale:streetOn?STREET_VIEW.vehicleScale:1});
       if(beacon.visible){const pulse=.5+.5*Math.sin((Number(time)||0)*3.2);beaconColumnMaterial.opacity=.2+pulse*.2;beaconRing.scale.setScalar(1+pulse*.28);beaconRingMaterial.opacity=.9-pulse*.4;}
       if(streetOn&&backdrop)backdrop.update({daylight,night,condition:weather?.condition||'clear',eye:chase.position,distance:street.distance});
       renderer.shadowMap.needsUpdate=shadows&&(shadowDirty||now-lastShadow>=(dynamic?(mobile?80:1000/30):180));if(renderer.shadowMap.needsUpdate){lastShadow=now;shadowDirty=false;}renderer.render(scene,eye);cameraDirty=false;syncResidentFallbacks();
@@ -167,7 +209,7 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
        if(qualityFrames>=45){const fps=qualityFrames*1000/qualityTime;if(fps<27&&renderer.getPixelRatio()>1){renderer.setPixelRatio(Math.max(1,renderer.getPixelRatio()-.25));previousWidth=0;}container.dataset.renderFps=fps.toFixed(1);container.dataset.renderPixelRatio=renderer.getPixelRatio().toFixed(2);qualityFrames=0;qualityTime=0;}}
       if(++frames%10===0){const model=transport?environment?.playerModel?.():own.root;if(model?.visible){bounds.makeEmpty();model.traverse(part=>{if(part.isMesh&&!part.userData.excludeFromBounds){if(!part.geometry.boundingBox)part.geometry.computeBoundingBox();bounds.union(partBounds.copy(part.geometry.boundingBox).applyMatrix4(part.matrixWorld));}});let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;for(const x of[bounds.min.x,bounds.max.x])for(const y of[bounds.min.y,bounds.max.y])for(const z of[bounds.min.z,bounds.max.z]){projected.set(x,y,z).project(eye);const sx=rect.left+(projected.x+1)*rect.width/2,sy=rect.top+(1-projected.y)*rect.height/2;minX=Math.min(minX,sx);minY=Math.min(minY,sy);maxX=Math.max(maxX,sx);maxY=Math.max(maxY,sy);}container.dataset.playerModelBounds=JSON.stringify({x:minX,y:minY,width:maxX-minX,height:maxY-minY});}}
     },
-    dispose(){if(disposed)return;disposed=true;container.querySelectorAll?.('[data-world-resident].has-webgl-resident').forEach(node=>node.classList.remove('has-webgl-resident'));renderer.domElement.removeEventListener('webglcontextlost',lose);renderer.domElement.removeEventListener('webglcontextrestored',restore);renderer.domElement.remove();container.removeAttribute('data-character-renderer');container.removeAttribute('data-environment-renderer');container.removeAttribute('data-webgl-residents');container.removeAttribute('data-environment-lighting');if(environment){scene.remove(environment.group);environment.dispose();}if(backdrop){scene.remove(backdrop.group);backdrop.dispose();scene.fog=null;}container.removeAttribute('data-view-mode');ibl.dispose();scene.environment=null;scene.remove(own.root);own.dispose();for(const rig of[...npcs,...online]){scene.remove(rig.root);rig.dispose();}characterSurfaces.dispose();const geometrySet=new Set(),materialSet=new Set();scene.traverse(o=>{if(o.geometry)geometrySet.add(o.geometry);if(o.material)for(const m of Array.isArray(o.material)?o.material:[o.material])materialSet.add(m);});geometrySet.forEach(g=>g.dispose());materialSet.forEach(m=>m.dispose());sun.shadow.map?.dispose();renderer.dispose();}
+    dispose(){if(disposed)return;disposed=true;container.querySelectorAll?.('[data-world-resident].has-webgl-resident').forEach(node=>node.classList.remove('has-webgl-resident'));renderer.domElement.removeEventListener('webglcontextlost',lose);renderer.domElement.removeEventListener('webglcontextrestored',restore);renderer.domElement.remove();container.removeAttribute('data-character-renderer');container.removeAttribute('data-environment-renderer');container.removeAttribute('data-webgl-residents');container.removeAttribute('data-environment-lighting');if(environment){scene.remove(environment.group);environment.dispose();}if(backdrop){scene.remove(backdrop.group);backdrop.dispose();scene.fog=null;}container.removeAttribute('data-view-mode');ibl.dispose();scene.environment=null;scene.remove(own.root);own.dispose();for(const rig of[...npcs,...online]){if(!rig)continue;scene.remove(rig.root);rig.dispose();}characterSurfaces.dispose();const geometrySet=new Set(),materialSet=new Set();scene.traverse(o=>{if(o.geometry)geometrySet.add(o.geometry);if(o.material)for(const m of Array.isArray(o.material)?o.material:[o.material])materialSet.add(m);});geometrySet.forEach(g=>g.dispose());materialSet.forEach(m=>m.dispose());sun.shadow.map?.dispose();renderer.renderLists.dispose();releaseRenderer(renderer,rendererOptions);}
   };
 }
 

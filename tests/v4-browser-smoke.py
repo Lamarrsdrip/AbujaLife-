@@ -134,7 +134,7 @@ async def register(page,url,name,username,qa,origin='nepo'):
             await form.locator('[name="displayName"]').fill(name)
             await form.locator('[name="presentation"][value="feminine"]').check()
         if step==1:await form.locator('[name="hair"][value="braids"]').locator('xpath=..').click()
-        if step==3:await form.locator('[name="lifeGoal"][value="home"]').check()
+        if step==3:goal=form.locator('[name="lifeGoal"][value="home"]');await goal.locator('xpath=ancestor::label[1]').click();await expect(goal).to_be_checked()
         if step==4:
             expected={'nepo':('Nepo Baby','100,000,000'),'lapo':('Lapo Baby','10,000,000')}[origin]
             await expect(form).to_contain_text(expected[0]);await expect(form).to_contain_text(expected[1]);await qa.screenshot(page,username+'-origin')

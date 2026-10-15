@@ -126,7 +126,7 @@
    screen-space overlay that keeps markers, labels and tap targets. */
 .world-canvas.world-canvas[data-street-view="on"]{background:linear-gradient(#f3ead9,#d9cfbb)!important}
 .world-canvas[data-street-view="on"] .world-character-layer{filter:none}
-.world-canvas[data-street-view="on"] .world-art,.world-canvas[data-street-view="on"] .world-traffic,.world-canvas[data-street-view="on"] .world-ambient,.world-canvas[data-street-view="on"] .world-route,.world-canvas[data-street-view="on"] .world-player,.world-canvas[data-street-view="on"] .world-minimap{display:none}
+.world-canvas[data-street-view="on"] .world-art,.world-canvas[data-street-view="on"] .world-traffic,.world-canvas[data-street-view="on"] .world-ambient,.world-canvas[data-street-view="on"] .world-route,.world-canvas[data-street-view="on"] .world-player,.world-canvas[data-street-view="on"] .world-minimap,.world-canvas[data-street-view="on"] .world-ad-layer{display:none}
 /* Off-screen markers stay in the tree so keyboard and assistive activation still walk to them. */
 .world-canvas[data-street-view="on"] .is-out-of-view{opacity:0;pointer-events:none}
 .world-canvas[data-street-view="on"] .world-parked-car>.vehicle-figure{display:none}
@@ -136,3 +136,13 @@
 .world-camera-tools>button{display:grid;place-items:center;padding:0;pointer-events:auto}
 .world-camera-tools .world-view-toggle svg{width:20px;height:20px}
 .world-hud:has(.world-camera-tools) .world-location-chip{max-width:calc(100% - 108px)!important}
+/* Driving speedometer: a small pill under the top bar, never over the controls. */
+.world-speedometer{position:absolute;top:calc(74px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:6;display:flex;align-items:baseline;gap:4px;min-width:84px;justify-content:center;padding:6px 14px 7px;border-radius:999px;background:#10291fd9;color:#fffaf0;box-shadow:0 8px 22px #0b1d1640;pointer-events:none;font-variant-numeric:tabular-nums;overflow:hidden}
+.world-speedometer b{font-size:20px;font-weight:900;letter-spacing:-.5px;line-height:1}
+.world-speedometer small{font-size:9px;font-weight:800;letter-spacing:.8px;color:#cfe2d6;text-transform:uppercase}
+.world-speedometer i{position:absolute;left:0;bottom:0;height:3px;width:calc(var(--speed,0) * 100%);background:linear-gradient(90deg,#3fbf6a,#e8b33c 70%,#d44b3c);transition:width .12s linear}
+.world-speedometer.is-reversing small::after{content:" · R";color:#f2c46b}
+@media (max-width:700px){.world-speedometer{top:calc(172px + env(safe-area-inset-top));padding:5px 12px 6px;max-width:200px}.world-speedometer b{font-size:17px}}
+.world-speedometer{flex-wrap:wrap}
+.world-speedometer em{display:none;flex-basis:100%;text-align:center;font-style:normal;font-size:9px;font-weight:800;letter-spacing:.3px;color:#bfe3cc;white-space:nowrap;max-width:62vw;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.world-speedometer.has-road em{display:block}

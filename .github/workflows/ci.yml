@@ -58,6 +58,11 @@ jobs:
       - name: Full-height HUD and independent multiplayer activities
         env:
           ABUJALIFE_HUD_ARTIFACTS: ${{ runner.temp }}/abujalife-hud
+          # Temporary (2026-10-15): the runner's Linux WebKit cannot load a venue
+          # within 180s even on unmodified main (probe PRs #60-#62). WebKit stays
+          # covered by the Mobile WebKit city-entry gate above; restore
+          # chromium,webkit once the runner image is healthy again.
+          ABUJALIFE_HUD_ENGINES: chromium
         run: python tests/game-hud-browser.py
       - name: Mobile and desktop advertising fit, zoom and tap regression
         env:

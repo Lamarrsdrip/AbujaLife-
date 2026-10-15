@@ -4,6 +4,7 @@ import { economyTransactionType } from '../../shared/transactions.mjs';
 import { TENANCY_RULES, recordHousingLifeEvent, syncHomeTenancy, nextTenancyCheck } from '../../shared/tenancy.mjs';
 import { HOUSING_ACTIONS, HOUSING_MONEY_ACTIONS, applyHousingAction } from '../housingActions.mjs';
 import { GIG_ACTIONS, GIG_MONEY_ACTIONS, applyServerGigAction } from '../streetGigs.mjs';
+import { MOMENT_ACTIONS, applyServerMomentAction } from '../cityMoments.mjs';
 import { HUSTLE_ACTIONS, HUSTLE_MONEY_ACTIONS, applyServerHustleAction, recordHustleProgress } from '../dailyHustle.mjs';
 import { ABUJA_ATLAS } from '../../shared/atlas.mjs';
 import * as life from '../../shared/life.mjs';
@@ -36,7 +37,7 @@ function appearance(current,incoming,inventory=[]){
 }
 const pick=(source,keys)=>Object.fromEntries(keys.filter(key=>source[key]!==undefined).map(key=>[key,source[key]]));
 const needsKeys=['energy','hunger','hygiene','social','fun','stress','mood','lastActionAt'];
-const progressionKeys=['reputation','careerLevel','skills','completedShifts','nextShiftAt','job','activeShift','gig','gigDays','gigStats','gigCooldownUntil','hustle','rep'];
+const progressionKeys=['reputation','careerLevel','skills','completedShifts','nextShiftAt','job','activeShift','gig','gigDays','gigStats','gigCooldownUntil','hustle','rep','moments'];
 const stateKeys=['district','location','activeTrip','drivingVehicle'];
 const residentKeys=['displayName','settings','lifeGoal','onboardingComplete'];
 
@@ -130,6 +131,11 @@ export class MongoGameStore {
   async stopHousingReconciliation(){this.housingStopping=true;clearInterval(this.housingTimer);this.housingTimer=null;await this.housingRun;}
   // Street gigs share the atomic, idempotent economy operation used by wages.
   // Today's Hustle: claiming a finished mission, the daily check-in and one swap a day.
+  // City Moments: collecting the reward for a finished moment.
+  async momentAction(id,action,payload={}){
+    const normalized=Object.fromEntries(Object.entries(payload).filter(([key])=>key!=='idempotencyKey').sort(([a],[b])=>a.localeCompare(b)));
+    return this.economyOperation(id,action,payload,normalized,(p,now)=>applyServerMomentAction(p,action,payload,{now}),{requireKey:true});
+  }
   async hustleAction(id,action,payload={}){
     const normalized=Object.fromEntries(Object.entries(payload).filter(([key])=>key!=='idempotencyKey').sort(([a],[b])=>a.localeCompare(b)));
     return this.economyOperation(id,action,payload,normalized,(p,now)=>applyServerHustleAction(p,action,payload,{now}),{requireKey:HUSTLE_MONEY_ACTIONS.has(action)});
@@ -332,6 +338,7 @@ export class MongoGameStore {
     if(HOUSING_ACTIONS.has(action))return this.housingAction(id,action,payload);
     if(GIG_ACTIONS.has(action))return this.gigAction(id,action,payload);
     if(HUSTLE_ACTIONS.has(action))return this.hustleAction(id,action,payload);
+    if(MOMENT_ACTIONS.has(action))return this.momentAction(id,action,payload);
     if(['paint-vehicle'].includes(action)||(action==='purchase'&&catalog.some(item=>item.id===payload.itemId&&item.category==='vehicle')))return this.vehicleAction(id,action,payload);
     const moneyActions=new Set(['eat','hangout','exercise','cinema','venue-action','travel','return-home','purchase','sell-item','move-home','pay-bills','renew-rent']);
     const normalized=Object.fromEntries(Object.entries(payload).filter(([key])=>key!=='idempotencyKey').sort(([a],[b])=>a.localeCompare(b)));

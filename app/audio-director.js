@@ -28,10 +28,10 @@ export function writeAudioPrefs(prefs, storage = globalThis.localStorage) {
 
 const CLUBS = new Set(['club', 'club-cage', 'magic-city', 'bear-barn']);
 /** Which soundscape belongs to a place. Unknown places fall back to a quiet interior. */
-export function soundscapeFor({ kind, venueId = '', venueKind = '', night = false, clubOpen = true } = {}) {
+export function soundscapeFor({ kind, venueId = '', venueKind = '', night = false, clubOpen = true, driving = false } = {}) {
   if (kind === 'home' || kind === 'visit') return 'home';
   if (kind === 'transit') return 'drive';
-  if (kind === 'public') return night ? 'street-night' : 'street';
+  if (kind === 'public') return driving ? 'drive' : night ? 'street-night' : 'street';
   const id = String(venueId), type = String(venueKind);
   if (CLUBS.has(id) || type === 'club') return clubOpen ? 'club' : 'lounge';
   if (/gym|stadium/.test(id) || type === 'gym') return 'gym';
@@ -135,6 +135,9 @@ export const EFFECTS = Object.freeze({
   notify: { notes: [[659.25, 0, .08], [880, .1, .14]], type: 'sine', level: .07, haptic: [8] },
   tap: { notes: [[1046.5, 0, .03]], type: 'sine', level: .04 },
   error: { notes: [[220, 0, .1], [185, .1, .16]], type: 'triangle', level: .07, haptic: [20, 30, 20] },
+  bump: { notes: [[92, 0, .09], [70, .03, .12]], type: 'triangle', level: .09, haptic: [24] },
+  ignition: { notes: [[110, 0, .12], [146.83, .1, .1], [98, .2, .3]], type: 'sawtooth', level: .035, haptic: [10] },
+  money: { notes: [[1046.5, 0, .07], [1318.5, .06, .07], [1568, .12, .16]], type: 'triangle', level: .08, haptic: [8, 30, 8] },
 });
 
 export function createAudioDirector({ AudioContextClass = globalThis.AudioContext || globalThis.webkitAudioContext, storage = globalThis.localStorage, documentRef = globalThis.document,
@@ -142,6 +145,7 @@ export function createAudioDirector({ AudioContextClass = globalThis.AudioContex
   let prefs = readAudioPrefs(storage), context = null, master = null, musicBus = null, effectsBus = null, noise = null;
   let unlocked = false, hidden = false, allowed = true, ducked = false, wanted = null, current = null, timer = null, disposed = false, startCount = 0;
   const fading = new Set();
+  let engine = null, engineWanted = null;
 
   const state = () => ({ ...prefs, unlocked, scene: current?.key || null, wanted, playing: Boolean(current) && !prefs.muted && unlocked && !hidden && allowed, voices: (current ? 1 : 0) + fading.size, starts: startCount });
   const emit = () => { const snapshot = state(); try { onState(snapshot); } catch {} try { globalThis.dispatchEvent?.(new CustomEvent('abj:audio-state', { detail: snapshot })); } catch {} return snapshot; };
@@ -216,6 +220,7 @@ export function createAudioDirector({ AudioContextClass = globalThis.AudioContex
   }
   function sync() {
     if (disposed) return emit();
+    applyEngine();
     if (!audible()) { if (timer) { clearTimer(timer); timer = null; } if (context && context.state === 'running') context.suspend?.()?.catch?.(() => {}); return emit(); }
     if (!ensureContext()) return emit();
     if (context.state !== 'running') context.resume?.()?.catch?.(() => {});
@@ -226,6 +231,27 @@ export function createAudioDirector({ AudioContextClass = globalThis.AudioContex
     return emit();
   }
 
+  // A continuous engine voice on the effects bus: two detuned oscillators through
+  // a low-pass filter. Pitch and brightness follow speed; it fades out the moment
+  // the car stops being driven or the game goes quiet.
+  function applyEngine() {
+    const want = engineWanted && audible();
+    if (!want) {
+      if (engine && context) { const t = context.currentTime, e = engine; engine = null; e.gain.gain.setTargetAtTime(.0001, t, .08); setTimeout(() => { try { e.a.stop(); e.b.stop(); } catch {} e.gain.disconnect(); }, 400); }
+      return;
+    }
+    if (!ensureContext()) return;
+    if (!engine) {
+      const a = context.createOscillator(), b = context.createOscillator(), filter = context.createBiquadFilter(), gain = context.createGain();
+      a.type = 'sawtooth'; b.type = 'square'; filter.type = 'lowpass'; filter.Q.value = 1.4; gain.gain.value = .0001;
+      a.connect(filter); b.connect(filter); filter.connect(gain); gain.connect(effectsBus); a.start(); b.start();
+      engine = { a, b, filter, gain };
+    }
+    const t = context.currentTime, { rpm, load } = engineWanted;
+    engine.a.frequency.setTargetAtTime(34 + rpm * 74, t, .06); engine.b.frequency.setTargetAtTime((34 + rpm * 74) * .5 * 1.01, t, .06);
+    engine.filter.frequency.setTargetAtTime(260 + rpm * 900 + load * 300, t, .08);
+    engine.gain.gain.setTargetAtTime(.010 + load * .016 + rpm * .008, t, .1);
+  }
   const unlock = () => { if (unlocked || disposed) return; unlocked = true; sync(); };
   const onVisibility = () => { hidden = documentRef?.hidden === true; sync(); };
   const onHide = () => { hidden = true; sync(); }, onShow = () => { hidden = documentRef?.hidden === true; sync(); };
@@ -243,6 +269,8 @@ export function createAudioDirector({ AudioContextClass = globalThis.AudioContex
     /** Sets the soundscape for where the player is. Idempotent: the same key never restarts the music. */
     setScene(key) { const next = key && SOUNDSCAPES[key] ? key : null; if (next === wanted) return state(); wanted = next; return sync(); },
     /** Lowers music under sheets and dialogs without stopping it. */
+    /** Engine voice: null/false turns it off; otherwise rpm and load are 0..1. */
+    setEngine(value) { engineWanted = value ? { rpm: clamp(Number(value.rpm) || 0, 0, 1), load: clamp(Number(value.load) || 0, 0, 1) } : null; applyEngine(); },
     setDucked(value) { if (ducked === Boolean(value)) return; ducked = Boolean(value); applyLevels(); },
     /** The account-level sound setting. Turning it off silences everything. */
     setAllowed(value) { if (allowed === (value !== false)) return state(); allowed = value !== false; return sync(); },
@@ -250,13 +278,15 @@ export function createAudioDirector({ AudioContextClass = globalThis.AudioContex
     toggleMute() { return this.setPrefs({ muted: !prefs.muted }); },
     effect(name) {
       const effect = EFFECTS[name]; if (!effect) return false;
-      if (effect.haptic && allowed && !prefs.muted) { try { vibrate(effect.haptic); } catch {} }
+      // Browsers refuse (and log) vibration before the first tap, so wait for it.
+      if (effect.haptic && unlocked && allowed && !prefs.muted) { try { vibrate(effect.haptic); } catch {} }
       if (!audible() || !ensureContext() || prefs.effects <= 0) return false;
       const t = context.currentTime + .01;
       for (const [frequency, offset, duration] of effect.notes) { const o = context.createOscillator(), g = context.createGain(); o.type = effect.type; o.frequency.value = frequency; g.gain.setValueAtTime(.0001, t + offset); g.gain.exponentialRampToValueAtTime(effect.level, t + offset + .01); g.gain.exponentialRampToValueAtTime(.0001, t + offset + duration); o.connect(g); g.connect(effectsBus); o.onended = () => { o.disconnect(); g.disconnect(); }; o.start(t + offset); o.stop(t + offset + duration + .03); }
       return true;
     },
     dispose() {
+      engineWanted = null; if (engine) { try { engine.a.stop(); engine.b.stop(); } catch {} engine.gain.disconnect(); engine = null; }
       disposed = true; if (timer) clearTimer(timer); timer = null;
       for (const voice of [...fading]) { clearTimeout(voice.release); voice.finish?.(); }
       if (current) { try { current.bed?.source.stop(); current.bed?.lfo?.stop(); } catch {} current.bus.disconnect(); current = null; }

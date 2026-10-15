@@ -7,6 +7,8 @@ import { vehicleFor } from '../src/shared/vehicles.mjs';
 import { createWorldMaterialLibrary } from './world-materials.js';
 import { WORLD_LANDMARK_FACADES } from '../src/shared/world-landmark-sizes.mjs';
 import { worldVehicleState } from './world-vehicle-state.js';
+import { BOULEVARDS, AVENUES, ROUNDABOUTS, BOULEVARD_NAMES, AVENUE_NAMES, intersections } from '../src/shared/city-roads.mjs';
+import { SIDEWALK_TREES, PARK_FOUNTAIN } from './world-city-base.js';
 
 // Combine rigid, opaque pieces with identical materials. Vertex normals, UVs,
 // triangles and joints are preserved; moving parts and transparent surfaces stay separate.
@@ -678,7 +680,7 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
   }
   function cutawayWall(x,y,w,h,height,color) {
     const wall=new T.Group();wall.userData.cameraCutaway=true;
-    wall.userData.center={x:x+w/2,z:(y+h/2)*ds};
+    wall.userData.center={x:x+w/2,z:(y+h/2)*ds};wall.userData.halfWidth=Math.max(w,h*ds)/2;
     const geometry=geo(`cutaway-wall:${w}:${h}:${height}:${color}`,()=>{
       const pieces=[[w,height,h*ds,height/2,color],[w+1,3,h*ds+1,height+1,'#ede4d3'],[w+1,5,h*ds+1,7,'#755237']].map(([width,high,depth,y,tint])=>{
         const piece=new T.BoxGeometry(width,high,depth);piece.translate(0,y,0);
@@ -792,6 +794,22 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
       for(const [x,y] of [[150,790],[layout.width-150,790],[layout.width-140,430]]){const t=new T.Group();t.position.set(x,0,y*ds);group.add(t);tree(t,110);}
     }
   }
+  // Abuja road sign: white lettering on green, both faces, cached per name.
+  function roadSign(parent,name,x,y,z) {
+    const key=`roadsign:${name}`;
+    if(!materials.has(key)){
+      const canvas=document.createElement('canvas');canvas.width=512;canvas.height=96;const c=canvas.getContext('2d');
+      if(c){c.fillStyle='#1d6a45';c.fillRect(0,0,512,96);c.strokeStyle='#f4f1e6';c.lineWidth=6;c.strokeRect(7,7,498,82);c.fillStyle='#f8f6ee';c.font=`700 ${name.length>22?30:38}px sans-serif`;c.textAlign='center';c.textBaseline='middle';c.fillText(name,256,50,470);}
+      const texture=new T.CanvasTexture(canvas);texture.colorSpace=T.SRGBColorSpace;textures.push(texture);
+      materials.set(key,new T.MeshStandardMaterial({map:texture,roughness:.6}));
+    }
+    // Two single-sided faces back to back, so the name reads correctly from both sides.
+    const holder=new T.Group();holder.position.set(x,y,z);parent.add(holder);
+    const plane=geo('roadsign:plane',()=>new T.PlaneGeometry(96,18));
+    mesh(holder,plane,materials.get(key),0,0,.6,false);const back=mesh(holder,plane,materials.get(key),0,0,-.6,false);back.rotation.y=Math.PI;
+    box(holder,0,0,0,98,20,1,mat('#1d6a45',.6,0),false,false);
+    return holder;
+  }
   function sign(parent,name,width=220,height=38,x=0,y=0,z=0) {
     const canvas=document.createElement('canvas');canvas.width=512;canvas.height=128;const c=canvas.getContext('2d');if(!c)return;
     c.fillStyle='#e6dfcd';c.fillRect(0,0,512,128);c.fillStyle='#314d42';c.font=`600 ${name.length>21?28:36}px sans-serif`;c.textAlign='center';c.textBaseline='middle';c.fillText(name,256,66,480);
@@ -800,7 +818,9 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     const plane=mesh(parent,geo(`sign:${width}:${height}`,()=>new T.PlaneGeometry(width,height)),material,x,y,z,false);return plane;
   }
   function frontDoor(parent,x,y,label='Head outside') {
-    const door=new T.Group();door.name='Front door exit';door.position.set(x,0,y*ds);parent.add(door);exitDoors.push(door);
+    // cameraCutaway keeps the door out of static-mesh batching: once merged, hiding
+    // the leaf when it stands between camera and resident had no effect.
+    const door=new T.Group();door.name='Front door exit';door.userData.cameraCutaway=true;door.position.set(x,0,y*ds);parent.add(door);exitDoors.push(door);
     const frame=mat('#315943',.72),panel=mat('#8fb39a',.7),trim=mat('#f2e5bd',.68),handle=mat('#e8d09a',.46,.12);
     box(door,0,96,0,156,192,18,frame,true);
     box(door,0,96,-11,120,176,6,trim,true);
@@ -814,27 +834,84 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     const arrow=box(door,0,10,-27,7,4,34,handle,true);arrow.rotation.z=Math.PI/4;
     return door;
   }
+  // Roads, kerbs, pavements, junction markings, traffic signals and roundabouts
+  // come from the shared street network (src/shared/city-roads.mjs), the same
+  // rectangles the collision map, fabric and traffic use. Nothing solid is
+  // added on a carriageway here except the roundabout islands, which are
+  // colliders too.
+  function buildStreetNetwork() {
+    const W=layout.width,H=layout.height,junctions=intersections(W).filter(j=>j.x<W);
+    const paint=mat('#ece6cf',.6,0),yellow=mat('#e0b64a',.55,0),kerb=mat('#c9c8b9',.82,0),pole=mat('#3a4547',.5,.4);
+    // Road paint is thousands of tiny boxes: collect them and draw one instanced
+    // mesh per paint colour instead of creating (and later merging) a mesh each.
+    const marks=new Map(),mark=(material,x,y,z,w,h,d)=>{let list=marks.get(material);if(!list)marks.set(material,list=[]);list.push([x,y,z,w,h,d]);};
+    const inJunction=(x,y,pad=0)=>junctions.some(j=>x>j.x-pad&&x<j.x+j.w+pad&&y>j.y-pad&&y<j.y+j.h+pad);
+    for(const [y,h] of BOULEVARDS){
+      floor(group,0,y,W,h,'road',0);
+      for(const edge of [y-12,y+h])floor(group,0,edge,W,12,'tile',.5);
+      for(const z of [y,y+h])box(group,W/2,3,z*ds,W,6,8*ds,kerb,false,false);
+      // Double centre line, dashed lane lines, both broken across junctions.
+      for(let x=0;x<W;x+=100){
+        if(inJunction(x+26,y+h/2,6))continue;
+        mark(yellow,x+50,1,(y+h/2-5)*ds,100,1,3*ds);mark(yellow,x+50,1,(y+h/2+5)*ds,100,1,3*ds);
+        if(h>200)for(const lane of [y+h*.25,y+h*.75])mark(paint,x+28,1,lane*ds,52,1,4*ds);
+      }
+    }
+    for(const [x,w] of AVENUES){
+      if(x>=W)continue;
+      floor(group,x,0,w,H,'road',0);
+      for(const edge of [x-12,x+w])floor(group,edge,0,12,H,'tile',.5);
+      for(const ex of [x,x+w])box(group,ex,3,H/2*ds,8,6,H*ds,kerb,false,false);
+      for(let y=0;y<H;y+=160){if(inJunction(x+w/2,y+38,6))continue;box(group,x+w/2,1,(y+38)*ds,3,1,48*ds,w>200?yellow:paint,false,false);}
+    }
+    // Zebra crossings and stop lines on every approach of every junction.
+    for(const j of junctions){
+      for(const side of [-1,1]){
+        const zy=side<0?j.y-4:j.y+j.h+4;
+        for(let i=6;i<j.w-6;i+=16)mark(paint,j.x+i+5,1.2,zy*ds,9,1,22*ds);
+        const zx=side<0?j.x-14:j.x+j.w+14;
+        for(let i=6;i<j.h-6;i+=16)mark(paint,zx,1.2,(j.y+i+5)*ds,22,1,9*ds);
+      }
+      if(!j.major&&j.x<3500)continue;
+      // Signals on two corners; their poles stand on the pavement, not the road.
+      for(const [cx,cy] of [[j.x-20,j.y-20],[j.x+j.w+20,j.y+j.h+20]]){
+        cylinder(group,cx,48,cy*ds,2.4,96,pole,2,8);
+        const head=box(group,cx,98,cy*ds,9,26,9,pole,false,true);head.name='Traffic signal';
+        for(const [dy,color] of [[8,'#d44b3c'],[0,'#e8b33c'],[-8,'#3fbf6a']])ball(group,cx,98+dy,cy*ds+5,3.2,3.2,2,mat(color,.4,0,{emissive:color,emissiveIntensity:color==='#3fbf6a'?.9:.12}),8);
+      }
+    }
+    // Green Abuja street-name signs on a corner of every junction: the avenue's
+    // name faces boulevard traffic and the boulevard's name faces the avenue.
+    for(const j of junctions){
+      const bi=BOULEVARDS.findIndex(([y])=>y===j.y),ai=AVENUES.findIndex(([x])=>x===j.x);if(bi<0||ai<0)continue;
+      const cx=j.x-26,cz=(j.y-26)*ds;cylinder(group,cx,58,cz,2.2,116,pole,2.2,8);
+      const a=roadSign(group,AVENUE_NAMES[ai],cx,104,cz+2);a.rotation.y=0;
+      const b=roadSign(group,BOULEVARD_NAMES[bi],cx+2,88,cz);b.rotation.y=Math.PI/2;
+    }
+    for(const r of ROUNDABOUTS){
+      if(r.x>W)continue;
+      const isle=new T.Group();isle.name=`Roundabout ${r.id}`;isle.position.set(r.x,0,r.y*ds);group.add(isle);
+      cylinder(isle,0,4,0,r.island+5,8,kerb,r.island+5,28);cylinder(isle,0,8.5,0,r.island,2,mat('#6f9a5c',.9,0),r.island,28);
+      // A slim green-white-green obelisk: a civic marker, not a copy of a real monument.
+      box(isle,0,40,0,10,64,10,mat('#e9e4d4',.55,0));box(isle,0,40,0,10.6,64,3.4,mat('#2f8a52',.6,0));
+      for(const a of [0,2.1,4.2]){const palm=new T.Group();palm.position.set(Math.cos(a)*r.island*.62,8,Math.sin(a)*r.island*.62*ds);isle.add(palm);plant(palm,30,38);}
+      for(let i=0;i<24;i++){const a=i/24*Math.PI*2;mark(paint,r.x+Math.cos(a)*(r.island+46),1.1,(r.y+Math.sin(a)*(r.island+46))*ds,10,1,3);}
+    }
+    // Paint is flat: a 2-triangle quad per mark instead of a 12-triangle box.
+    const unit=geo('roadpaint:quad',()=>{const g=new T.PlaneGeometry(1,1);g.rotateX(-Math.PI/2);return g;}),matrix=new T.Matrix4(),q=new T.Quaternion(),pos=new T.Vector3(),scl=new T.Vector3();
+    for(const [material,list] of marks){
+      const paintMesh=new T.InstancedMesh(unit,material,list.length);paintMesh.name='Road paint';paintMesh.receiveShadow=true;paintMesh.userData.excludeFromBounds=true;
+      list.forEach(([x,y,z,w,h,d],k)=>paintMesh.setMatrixAt(k,matrix.compose(pos.set(x,y,z),q,scl.set(w,h,d))));
+      paintMesh.instanceMatrix.needsUpdate=true;paintMesh.computeBoundingSphere();group.add(paintMesh);
+    }
+  }
   let cityFabric=null,streetBoards=null;
   function citySet() {
     const affluent=/maitama|asokoro|guzape|jabi/i.test(profile.district||place?.name||'');
     floor(group,0,0,layout.width,layout.height,'grass',-6);
     if(layout.fabric){const coarse=globalThis.matchMedia?.('(pointer: coarse)').matches===true;cityFabric=buildCityFabric(T,layout.fabric,{ds,light:coarse});group.add(cityFabric.group);streetBoards=buildStreetBillboards(T,layout.fabric.billboards,{ds});group.add(streetBoards.group);}
     floor(group,0,610,layout.width,132,'tile',-1);floor(group,0,1390,layout.width,144,'tile',-1);floor(group,0,2170,layout.width,114,'tile',-1);
-    for(const [y,h] of [[722,252],[1534,234],[2284,234],[3170,234]]) {
-      floor(group,0,y,layout.width,h,'road',0);
-      for(let x=0;x<layout.width;x+=100)box(group,x+28,1,(y+h/2)*ds,52,1,4*ds,'#e0dccb',false,false);
-      box(group,layout.width/2,3,y*ds,layout.width,6,8*ds,'#c2c5b6',false,false);box(group,layout.width/2,3,(y+h)*ds,layout.width,6,8*ds,'#c2c5b6',false,false);
-      for(const x of[350,1180,2510,3300]){box(group,x,3.3,(y-8)*ds,40,1,14*ds,metal,false,false);for(let i=0;i<5;i++)box(group,x-15+i*7,4,(y-8)*ds,2,.5,11*ds,'#2e3c3d',false,false);}
-      if(y<2400)for(let i=0;i<6;i++)box(group,1710+i*17,1.4,(y+h/2)*ds,9,1,h*.72*ds,'#e8e6d9',false,false);
-    }
-    floor(group,1820,0,254,layout.height,'road',0);
-    for(let y=0;y<layout.height;y+=100)box(group,1947,1,(y+25)*ds,4,1,51*ds,'#d4cbb2',false,false);
-    // These avenues already belong to the authored free-roam layout. Render
-    // them in WebGL too, so the expanded quarter has connected walkable streets.
-    for(const x of[3740,4440,5140,5840,6540,7240,7940,8540,9380,10220,11000]){
-      if(x>=layout.width)continue;floor(group,x,0,96,layout.height,'road',0);
-      for(let y=0;y<layout.height;y+=160)box(group,x+48,1,(y+38)*ds,3,1,48*ds,'#ddd5b8',false,false);
-    }
+    buildStreetNetwork();
     const renderLandmarkBuilding=(parent,b)=>{
       const w=Math.max(120,b.w||260),d=Math.max(100,(b.h||210)*ds),builder=b.landmarkBuilder,plaster=surfaces.material('plaster','#ded8c8'),glassLandmark=mat('#76979a',.38,.08),greenLandmark=mat('#6f9368'),stone=mat('#b9b19f');
       const slab=(x,y,z,bw,bh,bd,color=plaster)=>box(parent,x,y,z,bw,bh,bd,color,true);
@@ -934,7 +1011,18 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
       }
     }
     contactShadows(buildings.map(b=>({kind:'building',x:b.x,y:b.frontY===false?b.y:b.y-b.h,w:b.w,h:b.h})));
-    for(const [x,y,size] of [[91,650,110],[658,610,85],[1204,643,82],[1745,633,103],[2152,615,85],[2730,626,95],[3400,643,123],[80,1441,114],[705,1449,91],[1740,1435,101],[2728,1440,97],[1040,1998,125],[1710,2010,128]]){const p=new T.Group();p.position.set(x,0,y*ds);group.add(p);tree(p,size);}
+    // Same list as the SVG art and the colliders, so every trunk you bump is drawn.
+    for(const [x,y,scale] of SIDEWALK_TREES){const p=new T.Group();p.position.set(x,0,y*ds);group.add(p);tree(p,Math.round(104*scale));}
+    // Open water that blocks movement is always drawn as water (Jabi's lakeside).
+    for(const w of layout.waterBodies||[]){
+      const p=new T.Group();p.name=`Water: ${w.id}`;p.position.set(w.x+w.w/2,0,(w.y+w.h/2)*ds);group.add(p);
+      box(p,0,1,0,w.w+36,4,(w.h+36)*ds,mat('#c9bf9f',.85,0),false,false);
+      const surface=mat('#4f8f95',.16,.12,{transparent:true,opacity:.92});box(p,0,3.2,0,w.w,2,w.h*ds,surface,false,false);water.push(surface);
+      for(let x=-w.w/2+60;x<w.w/2;x+=120)cylinder(p,x,6,(w.h/2+12)*ds,2,12,mat('#6c5a45'),2,6);
+    }
+    {const f=PARK_FOUNTAIN,p=new T.Group();p.name='The Green fountain';p.position.set(f.cx,0,f.cy*ds);group.add(p);
+      cylinder(p,0,6,0,f.w*.55,12,mat('#d9d3bf',.7,0),f.w*.58,32);cylinder(p,0,12.5,0,f.w*.49,1.5,mat('#7fb3ad',.18,.05),f.w*.49,32);
+      cylinder(p,0,26,0,9,30,mat('#e4dfcc',.6,0),12,12);cylinder(p,0,42,0,24,4,mat('#d9d3bf',.7,0),18,20);ball(p,0,52,0,7,12,7,mat('#cfe6df',.2,0,{transparent:true,opacity:.75}),10);}
     for(const y of [668,1480])for(const x of [570,1160,2660,3270]) {
       cylinder(group,x,66,y*ds,3,132,'#626c63',2);box(group,x+15,134,y*ds,34,6,12,metal);box(group,x+16,130,y*ds,23,1,7,mat('#dcd2a9',.8,0,{emissive:'#d8bf80',emissiveIntensity:.15}));
     }
@@ -961,6 +1049,17 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
   if(ownId||profile.activeTrip) {
     const item=vehicleFor(ownId);
     ownCar=profile.activeTrip?.mode==='bike'?bikeModel():carModel('#d8d8ca',profile.activeTrip?.mode==='bus'?'bus':profile.activeTrip?.mode==='taxi'?'taxi':item?.bodyStyle||'sedan',ownId);group.add(ownCar.group);
+    // Headlights after dark: two soft additive beams and a pool on the road ahead.
+    // Unlit meshes only, so switching them never recompiles a shader.
+    if(profile.activeTrip?.mode!=='bike'){
+      const beams=new T.Group();beams.name='Headlight beams';beams.visible=false;
+      const beamMaterial=new T.MeshBasicMaterial({color:'#ffe6b0',transparent:true,opacity:.13,depthWrite:false,blending:T.AdditiveBlending,side:T.DoubleSide,toneMapped:false});
+      const beamGeometry=new T.CylinderGeometry(4,58,360,14,1,true);beamGeometry.rotateZ(Math.PI/2);beamGeometry.translate(290,0,0);
+      for(const z of[-26,26]){const beam=new T.Mesh(beamGeometry,beamMaterial);beam.position.set(0,36,z);beam.rotation.z=-.06;beams.add(beam);}
+      const poolGeometry=new T.CircleGeometry(1,24);poolGeometry.rotateX(-Math.PI/2);
+      const pool=new T.Mesh(poolGeometry,new T.MeshBasicMaterial({color:'#ffd99a',transparent:true,opacity:.3,depthWrite:false,blending:T.AdditiveBlending,toneMapped:false}));pool.position.set(250,1.8,0);pool.scale.set(190,1,95);beams.add(pool);
+      beams.traverse(node=>{node.userData.excludeFromBounds=true;if(node.material)materials.set(`headlight:${node.material.uuid}`,node.material);});ownCar.group.add(beams);ownCar.beams=beams;
+    }
     if(kind==='public'){parkedCar=carModel('#d8d8ca',item?.bodyStyle||'sedan',ownId);group.add(parkedCar.group);}
   }
   for(const traffic of layout.traffic||[]){const car=carModel(traffic.color,traffic.type||'sedan');group.add(car.group);movingCars.push(car);}
@@ -969,17 +1068,29 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
   for(const geometry of mergedGeometries)if(!attachedGeometry.has(geometry)){geometry.dispose();mergedGeometries.delete(geometry);}
   // WebGL scene metadata supports acceptance checks without replacing gameplay.
   group.userData={environment:'true-3d',indoor,objects:(layout.objects||[]).map(o=>o.kind),materials:'authored wood grain, woven fabric, stone, tile, glass and metal',surfaceTextures:surfaces.stats().textures};
-  function updateView({yaw=31*Math.PI/180,elevation=38*Math.PI/180,delta=0,street=false}={}) {
+  function updateView({yaw=31*Math.PI/180,elevation=38*Math.PI/180,delta=0,street=false,focus=null,eye=null}={}) {
     const viewX=Math.sin(yaw),viewZ=Math.cos(yaw),centerX=layout.width/2,centerZ=layout.height*ds/2;
     const mix=delta>0?1-Math.exp(-Math.min(delta,.1)*14):1;
+    // Anything standing between the real camera and the resident is cut away,
+    // measured on the floor plane from the camera's actual position, so it
+    // holds for the chase camera and the orbit/overview camera alike.
+    const fx=Number.isFinite(focus?.x)?focus.x:null,fz=Number.isFinite(focus?.y)?focus.y*ds:null,ex=Number.isFinite(eye?.x)?eye.x:null,ez=Number.isFinite(eye?.z)?eye.z:null;
+    const shields=(x,z,reach=150)=>{
+      if(fx===null||ex===null)return false;
+      const sx=fx-ex,sz=fz-ez,length=Math.hypot(sx,sz)||1,t=((x-ex)*sx+(z-ez)*sz)/(length*length);
+      if(t<=0||t>=1)return false;
+      const lateral=Math.abs((x-ex)*sz-(z-ez)*sx)/length,beforeFocus=(1-t)*length;
+      return lateral<reach&&beforeFocus>14;
+    };
     for(const wall of cutawayWalls){const c=wall.userData.center;
-      const inFront=(c.x-centerX)*viewX+(c.z-centerZ)*viewZ>0;
+      const inFront=(c.x-centerX)*viewX+(c.z-centerZ)*viewZ>0||shields(c.x,c.z,wall.userData.halfWidth?Math.max(90,wall.userData.halfWidth):150);
       const target=inFront?Math.max(.19,Math.min(.32,.20+(elevation-.35)*.1)):1;
       wall.scale.y+=(target-wall.scale.y)*mix;
     }
-    // A full-height exit door between the street camera and the resident would
-    // hide them; its floor marker and prompt remain while the leaf steps aside.
-    for(const door of exitDoors)door.visible=!(street&&((door.position.x-centerX)*viewX+(door.position.z-centerZ)*viewZ>0));
+    // A full-height exit door on the camera side of the room hides the resident
+    // standing beside it (the spawn is right at the door) in both cameras, just as
+    // the near walls are cut down; its floor marker and prompt remain.
+    for(const door of exitDoors)door.visible=!(((door.position.x-centerX)*viewX+(door.position.z-centerZ)*viewZ>0&&!eye)||shields(door.position.x,door.position.z,110));
     group.userData.viewYaw=yaw;
   }
   updateView();
@@ -1018,7 +1129,7 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     updateView,
     pickBillboard:raycaster=>streetBoards?.pick(raycaster)||null,
     playerModel:()=>ownCar?.group,
-    update({clock,weather,clubOpen,elapsed=0,player,angle=0,transport,driving,carColor,ownVehicle=ownId,carWithYou=true,parked,trafficPositions=[],trip,vehicleScale:nextVehicleScale=1}) {
+    update({clock,weather,clubOpen,elapsed=0,player,angle=0,transport,driving,carColor,ownVehicle=ownId,carWithYou=true,parked,trafficPositions=[],trip,street=false,vehicleScale:nextVehicleScale=1}) {
       vehicleScale=nextVehicleScale;
       const night=!!clock?.isNight;cityFabric?.update({night});streetBoards?.update();if(night!==lastNight){for(const glow of glowingMaterials)glow.material.emissiveIntensity=night?Math.max(.9,glow.day*5):glow.day;for(const beams of nightBeams)beams.visible=night;lastNight=night;}
       clubLights.forEach((light,i)=>{light.intensity=clubOpen?21000+Math.sin(elapsed*2+i)*5000:0;light.target.position.set(580+i*180+Math.sin(elapsed*.55+i)*150,0,(630+Math.cos(elapsed*.4+i)*160)*ds);});
@@ -1026,8 +1137,10 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
         for(const car of [ownCar,parkedCar])if(car)car.group.traverse(o=>{if(o.material?.metalness===.28)o.material.color.set(carColor);});appliedColor=carColor;
       }
       positionCar(ownCar,player,trip?0:angle,!!transport,true,elapsed);
+      if(ownCar?.beams)ownCar.beams.visible=!!transport&&night;
       positionCar(parkedCar,parked||player,0,!transport&&!indoor&&!!ownVehicle&&carWithYou,false,elapsed);
-      trafficPositions.forEach((p,i)=>positionCar(movingCars[i],p,p.angle,true,true,elapsed));
+      // Cars beyond the camera's useful range are not drawn at all (wider in overview).
+      trafficPositions.forEach((p,i)=>positionCar(movingCars[i],p,p.angle,!player||Math.hypot(p.x-player.x,p.y-player.y)<(street?2800:3600),true,elapsed));
       for(const material of water)material.opacity=.91+Math.sin(elapsed*.7)*.025;
     },
     dispose:disposeResources

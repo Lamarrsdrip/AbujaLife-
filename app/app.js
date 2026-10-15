@@ -47,6 +47,8 @@ let renderedSceneKey=null;
 let pendingFurnitureItem;
 let serverClockAt=Date.now(), serverClockObservedAt=performance.now();
 function gameNow(){return serverClockAt+Math.max(0,performance.now()-serverClockObservedAt);}
+// Side modules (City Moments) read the same server-anchored game clock.
+globalThis.__ABJ_GAME_NOW__=gameNow;
 let draft={skinTone:'brown',hair:'crop',top:'forest',bottom:'charcoal',shoes:'white',body:'regular',face:'oval',presentation:'neutral',facialHair:'none',accessory:'none'};
 const esc = value => String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money = n => new Intl.NumberFormat('en-NG',{maximumFractionDigits:0}).format(Number(n||0));
@@ -68,7 +70,9 @@ async function api(path,options={}) {
  if(opts.body!==undefined)opts.headers['content-type']='application/json';
  const response=await apiFetch(path,{...opts,signal:opts.signal,timeoutMs:opts.timeoutMs||(path.startsWith('/api/bootstrap')?8000:15000)});
  if((response.headers.get('content-type')||'').includes('text/html')){const error=new Error('The city could not be reached. Try again.');throw error;}
- const body=await response.json();
+ // A proxy or outage page can answer with something that is not JSON; say so plainly.
+ const body=await response.json().catch(()=>null);
+ if(!body){const error=new Error(response.ok?'The city sent an unexpected reply. Please try again.':'The city is having a moment. Please try again shortly.');error.status=response.status;error.code='bad_response';throw error;}
  if(!response.ok||body.ok===false){const error=new Error(body.error||'Please try again.');error.status=response.status;error.code=body.code;throw error;}
  return body;
 }

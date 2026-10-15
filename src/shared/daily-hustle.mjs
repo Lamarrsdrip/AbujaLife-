@@ -4,6 +4,7 @@
 // through the ledger like any other income. Shared so the phone can present the
 // same day the server will honour.
 import { abujaTime } from './simulation.mjs';
+import { recordMomentProgress } from './city-moments.mjs';
 
 const DAY = 86_400_000;
 export const HUSTLE_RULES = Object.freeze({
@@ -79,14 +80,17 @@ export function hustleEvent(kind, payload = {}, extra = {}) {
   if (kind === 'complete-shift') return { type: 'shift' };
   if (kind === 'venue-action') return { type: 'venue-activity', activityId: String(payload.activityId || ''), venueId: String(payload.venueId || '') };
   if (kind === 'enter-venue') return { type: 'enter-venue', venueId: String(payload.venueId || '') };
-  if (kind === 'travel' && payload.district) return { type: 'travel', district: String(payload.district) };
-  if (['shower', 'exercise', 'cinema', 'hangout'].includes(kind)) return { type: kind };
+  if (kind === 'travel' && payload.district) return { type: 'travel', district: String(payload.district), ...(payload.mode ? { mode: String(payload.mode) } : {}) };
+  if (['shower', 'exercise', 'cinema', 'hangout', 'relax', 'sleep', 'eat'].includes(kind)) return { type: kind };
+  if (kind === 'purchase' && extra.item) return { type: 'purchase', category: String(extra.item.category || '') };
   return null;
 }
 /** Called by both stores after an action succeeds, inside the same atomic operation. */
 export function recordHustleProgress(profile, { kind, payload, extra, now }) {
   const event = hustleEvent(kind, payload, extra); if (!event) return;
   if (event.type === 'venue-activity' && !event.venueId) event.venueId = String(profile.location?.venue || '');
+  // City Moments listen to exactly the same validated events.
+  recordMomentProgress(profile, event, now);
   const day = ensureHustleDay(profile, now);
   for (const row of day.missions) { const mission = missionById.get(row.id); if (mission && !row.claimed && row.progress < mission.goal && mission.when(event)) row.progress += 1; }
   const passive = event.type === 'gig' ? HUSTLE_RULES.gigRep : event.type === 'shift' ? HUSTLE_RULES.shiftRep : 0;

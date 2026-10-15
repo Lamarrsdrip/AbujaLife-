@@ -129,7 +129,8 @@ async def timed_activity(c,p,activity,seconds):
     before=(await api(c,'/api/bootstrap'))['profile'];pose=await p.locator('#world-scene').get_attribute('data-player-x')
     await p.locator(f'[data-location-activity="{activity}"]').click()
     await expect(p.locator('#world-scene[data-activity]')).to_be_visible()
-    assert await p.locator('#world-scene').get_attribute('data-player-x')==pose,'direct action walked to a hotspot'
+    after=await p.locator('#world-scene').get_attribute('data-player-x')
+    assert after==pose,f'direct action walked to a hotspot ({pose} -> {after}, y {await p.locator("#world-scene").get_attribute("data-player-y")})'
     await layout(p,'activity-in-progress')
     await p.wait_for_function("()=>!document.querySelector('#world-scene')?.hasAttribute('data-activity')",timeout=(seconds+8)*1000)
     await expect(p.locator('#toast.visible')).to_be_visible()

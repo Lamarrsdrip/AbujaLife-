@@ -451,6 +451,8 @@ export function renderWorld(container,{profile={},place={},people=[],serverNow,w
   if(result.hit&&Math.abs(before)>150&&performance.now()-lastBumpAt>700){lastBumpAt=performance.now();audioDirector().effect('bump');}
   return result;
  };
+ // Taking the wheel starts the engine (silently until the first tap unlocks audio).
+ if(driving&&!preview)queueMicrotask(()=>audioDirector().effect('ignition'));
  const paintSpeed=()=>{
   speedNode||=container.querySelector('.world-speedometer');if(!speedNode)return;
   const kmh=speedKmh(car.speed);speedNode.querySelector('b').textContent=String(kmh);speedNode.classList.toggle('is-reversing',car.speed<-5);speedNode.style.setProperty('--speed',String(Math.min(1,Math.abs(car.speed)/760)));

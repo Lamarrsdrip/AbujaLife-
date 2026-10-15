@@ -24,7 +24,7 @@ async def entry(page,url,qa):
             await expect(form.locator('[name="presentation"]:checked')).to_have_count(0)
             await form.locator('[name="presentation"][value="feminine"]').check()
         if step==1:await form.locator('[name="hair"][value="locs"]').locator('xpath=..').click()
-        if step==3:await form.locator('[name="lifeGoal"][value="home"]').check()
+        if step==3:goal=form.locator('[name="lifeGoal"][value="home"]');await goal.locator('xpath=ancestor::label[1]').click();await expect(goal).to_be_checked()
         if step==4:await expect(form).to_contain_text(origin['name']);await qa.screenshot(page,'preview-random-origin')
         await form.locator('#begin-life' if step==4 else '[data-onboarding-next]').click()
     await v.webgl(page);assert len(set(names))==5

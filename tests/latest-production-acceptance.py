@@ -74,7 +74,7 @@ async def finish_existing_signup(page, gender):
     await page.locator(f'#onboarding-form [name="presentation"][value="{gender}"]').check()
     for _ in range(8):
         if await page.locator('#onboarding-form [name="lifeGoal"][value="career"]').count():
-            await page.locator('#onboarding-form [name="lifeGoal"][value="career"]').check()
+            goal=page.locator('#onboarding-form [name="lifeGoal"][value="career"]');await goal.locator('xpath=ancestor::label[1]').click();await expect(goal).to_be_checked()
         if await page.locator('#begin-life:visible').count():
             await page.locator('#begin-life').click()
             break

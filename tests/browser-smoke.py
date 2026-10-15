@@ -156,7 +156,8 @@ async def complete_resident_wizard(page, display_name, hair):
                 await hair_control.select_option(hair)
         goal_control=form.locator('[name="lifeGoal"][value="career"]')
         if await goal_control.count() and await goal_control.is_visible():
-            await goal_control.check()
+            # Players tap the goal card; the radio sits under its icon.
+            await goal_control.locator('xpath=ancestor::label[1]').click();await expect(goal_control).to_be_checked()
         begin=page.locator('#begin-life:visible')
         if await begin.count():
             await begin.click()

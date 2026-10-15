@@ -172,7 +172,7 @@ async def register(page, name, username, gender):
     for _ in range(8):
         goal = page.locator('#onboarding-form [name="lifeGoal"][value="career"]')
         if await goal.count():
-            await goal.check()
+            await goal.locator('xpath=ancestor::label[1]').click();await expect(goal).to_be_checked()
         begin = page.locator('#begin-life:visible')
         if await begin.count():
             await begin.click()

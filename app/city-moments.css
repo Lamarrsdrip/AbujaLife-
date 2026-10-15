@@ -1,6 +1,7 @@
 /* City Moments: phone-style notices in the shared context slot, a chip beside the Hustle chip. */
 .hud-context-slot:has(.moment-card){flex-direction:column;align-items:center;gap:8px}
-.hud-context-slot:has(.moment-card) :is(.street-gigs,.location-activity-tray){display:none}
+/* On the street a notice briefly takes the gig bar's place; a venue's activity tray is never displaced. */
+.hud-context-slot:has(.moment-card) .street-gigs{display:none}
 @media(max-width:799px){#app .world-stage:has(.play-chat,.club-life-dock) .hud-context-slot:has(.moment-card){bottom:calc(var(--hud-context) + 52px)}}
 .moment-card{pointer-events:auto;display:flex;align-items:center;gap:10px;width:min(460px,100%);padding:10px 10px 10px 12px;border-radius:18px;border:1px solid rgba(255,255,255,.8);background:rgba(251,247,235,.97);color:#1f3d31;box-shadow:0 10px 26px rgba(16,42,34,.24);animation:moment-in .32s cubic-bezier(.2,.9,.25,1.1)}
 .moment-card.is-done{border-color:#7cc596;background:rgba(240,251,243,.97)}

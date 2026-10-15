@@ -31,9 +31,10 @@ function refresh() { view = profile ? momentsView(profile, now()) : null; paintC
 function busy() {
   const scene = canvas(); if (!scene || scene.classList.contains('world-preview')) return true;
   const slot = stage()?.querySelector('.hud-context-slot');
-  return Boolean(sheetRoot?.childElementCount) || document.body.classList.contains('phone-is-open') || scene.dataset.sceneKind === 'transit'
+  // Notices appear on the street only; indoors the activity tray owns the slot (the chip still counts).
+  return Boolean(sheetRoot?.childElementCount) || document.body.classList.contains('phone-is-open') || scene.dataset.sceneKind !== 'public'
     || Boolean(scene.dataset.activity) || Boolean(profile?.activeTrip) || !profile?.onboardingComplete
-    || Boolean(slot?.querySelector('.needs-coach-card,.activity-discovery-card,.gig-card'));
+    || Boolean(slot?.querySelector('.needs-coach-card,.activity-discovery-card,.gig-card,.location-activity-tray:not([data-mode="minimized"]):not([data-mode="dismissed"])'));
 }
 function dismiss() { clearTimeout(hideTimer); card?.remove(); card = null; }
 

@@ -33,9 +33,9 @@ test('the 3D street, fabric and collision share one road network', () => {
 test('every collider in every district has visible geometry (no invisible walls)', () => {
   for (const { id } of ABUJA_ATLAS) {
     const scene = cityFor(id), solids = renderedSolids(scene);
-    // Trunks and lamp posts are generated from the drawn fabric lists themselves.
+    // Trunks are generated from the drawn fabric list itself.
     const props = scene.obstacles.filter(o => o.prop);
-    assert.equal(props.length, scene.fabric.trees.length + scene.fabric.lamps.length, `${id}: every solid prop is a drawn tree or lamp`);
+    assert.equal(props.length, scene.fabric.trees.length, `${id}: every solid prop is a drawn tree`);
     for (const o of scene.obstacles) {
       if (o.roundabout || o.prop) continue;
       const covered = solids.reduce((sum, r) => sum + overlap(o, r), 0);

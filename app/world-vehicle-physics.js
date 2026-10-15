@@ -17,7 +17,7 @@ export const CAR = Object.freeze({
   coast: 170,             // engine braking with no throttle
   offRoadTop: .5,         // grass, kerbs and verges: half top speed
   offRoadDrag: 2.1,
-  maxYawRate: 2.5,        // radians per second at ideal speed
+  maxYawRate: 2.1,        // radians per second at ideal speed
   yawSpeed: 150,          // speed at which steering reaches full authority
   grip: 9,                // how quickly sideways velocity is scrubbed
   wallKeep: .55,          // speed kept when glancing off a wall
@@ -84,8 +84,9 @@ export function stepCar(position, state, control, world, dt) {
   if (!road) speed *= Math.exp(-CAR.offRoadDrag * dt * Math.min(1, Math.abs(speed) / 200));
 
   // Steering authority grows with speed, then eases off at the top end.
-  const authority = clamp(Math.abs(speed) / CAR.yawSpeed, 0, 1) * (1 - .35 * clamp((Math.abs(speed) - 380) / 380, 0, 1));
-  state.steer += (steer - state.steer) * (1 - Math.exp(-dt * 10));
+  const authority = clamp(Math.abs(speed) / CAR.yawSpeed, 0, 1) * (1 - .4 * clamp((Math.abs(speed) - 320) / 420, 0, 1));
+  // Steering eases in and self-centres quickly, like a wheel returning.
+  state.steer += (steer - state.steer) * (1 - Math.exp(-dt * (Math.abs(steer) > Math.abs(state.steer) ? 7 : 12)));
   state.heading = wrap(state.heading + state.steer * CAR.maxYawRate * authority * Math.sign(speed || 1) * dt);
 
   // Velocity follows the heading through tyre grip, leaving a small slide.
@@ -98,7 +99,9 @@ export function stepCar(position, state, control, world, dt) {
 
   // Move in short sub-steps; slide along whichever axis is still free.
   const dx = state.vx * dt, dy = state.vy * dt, steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / 8));
-  const solid = (x, y) => world.blocked(x, y) || (world.dynamic || []).some(o => Math.hypot(o.x - x, o.y - y) < o.r);
+  // Other cars block only moves that close the gap; once touching (or if one
+  // drove into us) any move that opens it is allowed, so nobody gets locked.
+  const solid = (x, y) => world.blocked(x, y) || (world.dynamic || []).some(o => { const next = Math.hypot(o.x - x, o.y - y); return next < o.r && next < Math.hypot(o.x - position.x, o.y - position.y) - .01; });
   let hit = false, blockedX = false, blockedY = false;
   const start = { x: position.x, y: position.y };
   for (let i = 0; i < steps; i++) {
@@ -109,9 +112,17 @@ export function stepCar(position, state, control, world, dt) {
     if (!blockedY && !solid(position.x, position.y + sy)) position.y += sy; else blockedY = true;
   }
   if (hit) {
-    const along = Math.abs(fx * (blockedX ? 0 : 1)) + Math.abs(fy * (blockedY ? 0 : 1));
+    const along = Math.abs(fx * (blockedX ? 0 : 1)) + Math.abs(fy * (blockedY ? 0 : 1)), fresh = state.contact <= 0;
     if (blockedX && blockedY || along < .25) { state.speed = -state.speed * CAR.bounce; state.vx = state.vy = 0; }
-    else { state.speed *= Math.pow(CAR.wallKeep, dt * 6); if (blockedX) state.vx = 0; if (blockedY) state.vy = 0; }
+    else {
+      // Glancing contact: lose speed once, by how square the hit was, then slide
+      // with light friction while the body eases parallel to the wall.
+      if (fresh) state.speed *= Math.max(CAR.wallKeep, along);
+      state.speed *= Math.exp(-.6 * dt);
+      if (blockedX) state.vx = 0; if (blockedY) state.vy = 0;
+      const options = blockedY ? [0, Math.PI] : [Math.PI / 2, -Math.PI / 2], tangent = options.reduce((best, a) => Math.abs(wrap(a - state.heading)) < Math.abs(wrap(best - state.heading)) ? a : best);
+      state.heading = wrap(state.heading + wrap(tangent - state.heading) * (1 - Math.exp(-dt * 3)));
+    }
     state.contact = .25;
   } else state.contact = Math.max(0, state.contact - dt);
   return { moved: Math.hypot(position.x - start.x, position.y - start.y), hit, speed: state.speed };

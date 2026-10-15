@@ -149,9 +149,9 @@ export function generateCityFabric({ width = 11200, height = 4190, placeId = 'ab
   const fabricObstacles = [
     ...blocks.map(b => ({ x: b.x - 4, y: b.y - b.h - 6, w: b.w + 8, h: b.h + 12, fabric: true })),
     ...kiosks.map(k => ({ x: k.x, y: k.y, w: k.w, h: k.h, fabric: true })),
-    // Trunks and lamp posts are solid too: a car used to pass straight through them.
+    // Tree trunks are solid: a car used to pass straight through them. Slim lamp
+    // posts line every pavement where cars start, so they stay pass-through.
     ...trees.map(t => ({ x: t.x - 8, y: t.y - 8, w: 16, h: 16, fabric: true, prop: 'tree' })),
-    ...lamps.map(l => ({ x: l.x - 4, y: l.y - 4, w: 8, h: 8, fabric: true, prop: 'lamp' })),
   ];
   return { character, blocks, lamps, trees, kiosks, billboards, obstacles: fabricObstacles };
 }

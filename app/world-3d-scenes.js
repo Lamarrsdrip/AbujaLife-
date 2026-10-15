@@ -7,7 +7,7 @@ import { vehicleFor } from '../src/shared/vehicles.mjs';
 import { createWorldMaterialLibrary } from './world-materials.js';
 import { WORLD_LANDMARK_FACADES } from '../src/shared/world-landmark-sizes.mjs';
 import { worldVehicleState } from './world-vehicle-state.js';
-import { BOULEVARDS, AVENUES, ROUNDABOUTS, intersections } from '../src/shared/city-roads.mjs';
+import { BOULEVARDS, AVENUES, ROUNDABOUTS, BOULEVARD_NAMES, AVENUE_NAMES, intersections } from '../src/shared/city-roads.mjs';
 import { SIDEWALK_TREES, PARK_FOUNTAIN } from './world-city-base.js';
 
 // Combine rigid, opaque pieces with identical materials. Vertex normals, UVs,
@@ -794,6 +794,22 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
       for(const [x,y] of [[150,790],[layout.width-150,790],[layout.width-140,430]]){const t=new T.Group();t.position.set(x,0,y*ds);group.add(t);tree(t,110);}
     }
   }
+  // Abuja road sign: white lettering on green, both faces, cached per name.
+  function roadSign(parent,name,x,y,z) {
+    const key=`roadsign:${name}`;
+    if(!materials.has(key)){
+      const canvas=document.createElement('canvas');canvas.width=512;canvas.height=96;const c=canvas.getContext('2d');
+      if(c){c.fillStyle='#1d6a45';c.fillRect(0,0,512,96);c.strokeStyle='#f4f1e6';c.lineWidth=6;c.strokeRect(7,7,498,82);c.fillStyle='#f8f6ee';c.font=`700 ${name.length>22?30:38}px sans-serif`;c.textAlign='center';c.textBaseline='middle';c.fillText(name,256,50,470);}
+      const texture=new T.CanvasTexture(canvas);texture.colorSpace=T.SRGBColorSpace;textures.push(texture);
+      materials.set(key,new T.MeshStandardMaterial({map:texture,roughness:.6}));
+    }
+    // Two single-sided faces back to back, so the name reads correctly from both sides.
+    const holder=new T.Group();holder.position.set(x,y,z);parent.add(holder);
+    const plane=geo('roadsign:plane',()=>new T.PlaneGeometry(96,18));
+    mesh(holder,plane,materials.get(key),0,0,.6,false);const back=mesh(holder,plane,materials.get(key),0,0,-.6,false);back.rotation.y=Math.PI;
+    box(holder,0,0,0,98,20,1,mat('#1d6a45',.6,0),false,false);
+    return holder;
+  }
   function sign(parent,name,width=220,height=38,x=0,y=0,z=0) {
     const canvas=document.createElement('canvas');canvas.width=512;canvas.height=128;const c=canvas.getContext('2d');if(!c)return;
     c.fillStyle='#e6dfcd';c.fillRect(0,0,512,128);c.fillStyle='#314d42';c.font=`600 ${name.length>21?28:36}px sans-serif`;c.textAlign='center';c.textBaseline='middle';c.fillText(name,256,66,480);
@@ -860,6 +876,14 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
         const head=box(group,cx,98,cy*ds,9,26,9,pole,false,true);head.name='Traffic signal';
         for(const [dy,color] of [[8,'#d44b3c'],[0,'#e8b33c'],[-8,'#3fbf6a']])ball(group,cx,98+dy,cy*ds+5,3.2,3.2,2,mat(color,.4,0,{emissive:color,emissiveIntensity:color==='#3fbf6a'?.9:.12}),8);
       }
+    }
+    // Green Abuja street-name signs on a corner of every junction: the avenue's
+    // name faces boulevard traffic and the boulevard's name faces the avenue.
+    for(const j of junctions){
+      const bi=BOULEVARDS.findIndex(([y])=>y===j.y),ai=AVENUES.findIndex(([x])=>x===j.x);if(bi<0||ai<0)continue;
+      const cx=j.x-26,cz=(j.y-26)*ds;cylinder(group,cx,58,cz,2.2,116,pole,2.2,8);
+      const a=roadSign(group,AVENUE_NAMES[ai],cx,104,cz+2);a.rotation.y=0;
+      const b=roadSign(group,BOULEVARD_NAMES[bi],cx+2,88,cz);b.rotation.y=Math.PI/2;
     }
     for(const r of ROUNDABOUTS){
       if(r.x>W)continue;

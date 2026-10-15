@@ -35,10 +35,11 @@ const paths = {
 const icon = (name, extra='') => `<svg class="ph-icon ${extra}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.globe}</svg>`;
 paths.browser=paths.globe;paths.social=paths.heart;paths.xshare=paths.profile;
 paths.x='<path d="m4 3 16 18M20 3 4 21M3 3h5l13 18h-5Z"/>';
+paths.moments='<rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 9h18M8 2v4M16 2v4M8 14l2.5 2.5L16 12"/>';
 paths.tiktok='<path d="M14 3v13a4 4 0 1 1-4-4M14 3c1 4 3 5 7 5"/>';
 const apps = [
   ['messages','Messages','green'],['contacts','Contacts','sand'],['map','Outside','blue'],
-  ['ride','Ride','ink'],['jobs','Jobs','blue'],['wallet','Wallet','ink'],['earn','Earn','green'],['property','Property','amber'],
+  ['ride','Ride','ink'],['jobs','Jobs','blue'],['wallet','Wallet','ink'],['earn','Earn','green'],['moments','Moments','coral'],['property','Property','amber'],
   ['market','Marketplace','orange'],['events','Events','cream'],['profile','Camera','ink'],['friends','Friends','coral'],
   ['groups','Groups','violet'],['social','City Circle','orange'],['browser','Browser','blue'],['x','X','ink'],
   ['tiktok','TikTok','ink'],['xshare','Xshare','coral'],['notifications','Activity','coral'],['settings','Settings','silver']
@@ -594,7 +595,8 @@ export function createPhone({ root, getState, api, onUpdate, onNavigate, toast, 
       case 'lock':locked=true;render();break;
       case 'home':locked=false;screen='home';history=[];render();break;
       case 'back':goBack();break;
-      case 'app':if(screen==='walletreceipt' && app==='wallet'){history=[];navigate(app,null,false);}else navigate(app);break;
+      // City Moments live in their own sheet; the phone hands over to it.
+      case 'app':if(app==='moments'){close();dispatchEvent(new CustomEvent('abj:open-moments'));break;}if(screen==='walletreceipt' && app==='wallet'){history=[];navigate(app,null,false);}else navigate(app);break;
       case 'housing':close();onNavigate?.('world',{housing:true,source:'phone'});break;
       case 'property-investments':close();onNavigate?.('property',{tab:'investments',source:'phone'});break;
       case 'wallet-topup':walletError='';navigate('topup');break;

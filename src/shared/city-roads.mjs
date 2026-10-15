@@ -14,6 +14,21 @@ export const BOULEVARDS = Object.freeze([[722, 252], [1534, 234], [2284, 234], [
 /** [x, width] of each north–south road: the legacy expressway, then the landmark-quarter avenues. */
 export const AVENUES = Object.freeze([[1820, 254], ...[3740, 4440, 5140, 5840, 6540, 7240, 7940, 8540, 9380, 10220, 11000].map(x => [x, 96])].map(Object.freeze));
 
+// Street names borrowed from Abuja's real road network so the city reads as
+// Abuja at a glance. The layout itself is an original, game-scale grid.
+export const BOULEVARD_NAMES = Object.freeze(['Ahmadu Bello Way', 'Herbert Macaulay Way', 'Constitution Avenue', 'Independence Avenue']);
+export const AVENUE_NAMES = Object.freeze(['Shehu Shagari Way', 'Aminu Kano Crescent', 'Adetokunbo Ademola Crescent', 'Gana Street', 'Usuma Street', 'Aguiyi Ironsi Street',
+  'Ibrahim Babangida Way', 'Yakubu Gowon Crescent', 'Ralph Shodeinde Street', 'Obafemi Awolowo Way', 'Nnamdi Azikiwe Expressway', 'Tafawa Balewa Way']);
+
+/** The road (or junction) under a point, for signs and the driving HUD. */
+export function roadNameAt(x, y, width = STREET_WIDTH) {
+  const across = BOULEVARDS.findIndex(([ry, rh]) => y >= ry && y <= ry + rh), along = AVENUES.findIndex(([rx, rw]) => rx < width && x >= rx && x <= rx + rw);
+  if (across >= 0 && along >= 0) return `${BOULEVARD_NAMES[across]} × ${AVENUE_NAMES[along]}`;
+  if (across >= 0) return BOULEVARD_NAMES[across];
+  if (along >= 0) return AVENUE_NAMES[along];
+  return null;
+}
+
 /** Roundabouts sit on the expressway crossings, as Abuja's big junctions do. */
 export const ROUNDABOUTS = Object.freeze([
   Object.freeze({ id: 'roundabout-north', x: 1947, y: 848, island: 34 }),

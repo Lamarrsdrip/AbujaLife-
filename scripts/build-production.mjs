@@ -25,6 +25,7 @@ export const productionEntryPoints = Object.freeze({
   'street-gigs': 'app/street-gigs.js',
   'daily-hustle': 'app/daily-hustle.js',
   'city-moments': 'app/city-moments.js',
+  'player-feedback': 'app/player-feedback.js',
   'native-feel': 'app/native-feel.js',
   'audio-ui': 'app/audio-ui.js',
   'needs-coach': 'app/needs-coach.js',

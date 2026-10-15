@@ -56,7 +56,25 @@ export function boundedFetch(input, options = {}, fetchImpl = globalThis.fetch) 
   catch (error) { release(); return Promise.reject(error); }
 }
 
+// Browsers report a dropped connection as "Failed to fetch", "Load failed" or
+// "NetworkError…", and a deadline as a DOMException. Players see the message,
+// so translate those (and only those) into plain words. A caller's own abort
+// is passed through untouched; callers ignore it.
+export function friendlyNetworkError(error) {
+  if (!error || error.name === 'AbortError') return error;
+  const offline = globalThis.navigator?.onLine === false;
+  if (error.name === 'TimeoutError') return Object.assign(new Error(offline ? 'You\'re offline. Reconnect and try again.' : 'The city is taking too long to answer. Check your connection and try again.'), { name: 'TimeoutError', code: 'network_timeout', cause: error });
+  if (error instanceof TypeError || /failed to fetch|load failed|networkerror|network request failed/i.test(String(error.message))) {
+    return Object.assign(new Error(offline ? 'You\'re offline. Reconnect and try again.' : 'Can\'t reach the city right now. Check your connection and try again.'), { name: 'NetworkError', code: 'network_unreachable', cause: error });
+  }
+  return error;
+}
+
 export function apiFetch(path, options = {}) {
+  return apiFetchRaw(path, options).catch(error => { throw friendlyNetworkError(error); });
+}
+
+function apiFetchRaw(path, options = {}) {
   const method=String(options.method||'GET').toUpperCase();
   const url=apiURL(path);
   const init={...options,credentials:'include',cache:'no-store'};

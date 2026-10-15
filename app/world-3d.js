@@ -148,7 +148,7 @@ export function createCharacterRenderer(container,{appearance={},pedestrians=[],
         chase.position.set(street.position.x,street.position.y,street.position.z);chase.lookAt(street.target.x,street.target.y,street.target.z);chase.updateMatrixWorld(true);
         viewWidth=width;viewHeight=height;previousCamera={x:position.x,y:position.y,width,height,yaw:orientation.yaw,elevation:orientation.elevation};streetKey=nextStreetKey;
       }else updateCamera({...position,width,height,...orientation});
-      environment?.updateView?.(streetOn&&indoors?{...orientation,street:true}:orientation);{
+      environment?.updateView?.({...orientation,...(streetOn&&indoors?{street:true}:{}),focus:indoors?player:null,eye:indoors?{x:eye.position.x,z:eye.position.z}:null});{
         // The sun crosses the sky with Abuja time: low and warm in the east after
         // 06:15, high at midday, long shadows to the east before 18:30. Abuja is
         // ~9°N, so it sits a little south of overhead. At night the moon is fixed.

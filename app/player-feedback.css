@@ -1,0 +1,12 @@
+/* Balance change: a small floating chip under the Naira balance. */
+.wallet-delta{position:fixed;z-index:950;transform:translateX(-50%);padding:5px 10px;border-radius:999px;font:800 12px/1 inherit;font-variant-numeric:tabular-nums;pointer-events:none;box-shadow:0 8px 20px rgba(12,30,22,.25);animation:wallet-delta 2.2s cubic-bezier(.2,.8,.3,1) forwards}
+.wallet-delta.is-gain{background:#1f8a52;color:#fff}.wallet-delta.is-spend{background:#fbf3e6;color:#9a3c2b;border:1px solid #e6c9b8}
+@keyframes wallet-delta{0%{opacity:0;transform:translate(-50%,-6px) scale(.9)}12%{opacity:1;transform:translate(-50%,0) scale(1)}75%{opacity:1}100%{opacity:0;transform:translate(-50%,10px)}}
+.wallet-button.wallet-pulse{animation:wallet-pulse .6s ease}.wallet-button.wallet-pulse-spend{animation:wallet-pulse-spend .6s ease}
+@keyframes wallet-pulse{40%{box-shadow:0 0 0 4px rgba(63,191,106,.45);transform:scale(1.04)}}
+@keyframes wallet-pulse-spend{40%{box-shadow:0 0 0 4px rgba(200,85,61,.32)}}
+@media (prefers-reduced-motion:reduce){.wallet-delta{animation-duration:1.6s}.wallet-button.wallet-pulse,.wallet-button.wallet-pulse-spend{animation:none}}
+/* Connection: quiet unless the game genuinely cannot reach the city. */
+.connection-banner{position:fixed;z-index:960;left:50%;top:calc(70px + env(safe-area-inset-top));transform:translateX(-50%);max-width:calc(100% - 32px);padding:9px 14px;border-radius:14px;font:700 12px/1.35 inherit;color:#fffaf0;background:#16352a;box-shadow:0 12px 28px rgba(10,24,18,.3);text-align:center;pointer-events:none}
+.connection-banner[data-kind="offline"]{background:#7b3324}.connection-banner[data-kind="reconnecting"]{background:#5d4a17}.connection-banner[data-kind="back"]{background:#1f6b4a}
+.visually-hidden{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}

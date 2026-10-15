@@ -680,7 +680,7 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
   }
   function cutawayWall(x,y,w,h,height,color) {
     const wall=new T.Group();wall.userData.cameraCutaway=true;
-    wall.userData.center={x:x+w/2,z:(y+h/2)*ds};
+    wall.userData.center={x:x+w/2,z:(y+h/2)*ds};wall.userData.halfWidth=Math.max(w,h*ds)/2;
     const geometry=geo(`cutaway-wall:${w}:${h}:${height}:${color}`,()=>{
       const pieces=[[w,height,h*ds,height/2,color],[w+1,3,h*ds+1,height+1,'#ede4d3'],[w+1,5,h*ds+1,7,'#755237']].map(([width,high,depth,y,tint])=>{
         const piece=new T.BoxGeometry(width,high,depth);piece.translate(0,y,0);
@@ -802,7 +802,9 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
     const plane=mesh(parent,geo(`sign:${width}:${height}`,()=>new T.PlaneGeometry(width,height)),material,x,y,z,false);return plane;
   }
   function frontDoor(parent,x,y,label='Head outside') {
-    const door=new T.Group();door.name='Front door exit';door.position.set(x,0,y*ds);parent.add(door);exitDoors.push(door);
+    // cameraCutaway keeps the door out of static-mesh batching: once merged, hiding
+    // the leaf when it stands between camera and resident had no effect.
+    const door=new T.Group();door.name='Front door exit';door.userData.cameraCutaway=true;door.position.set(x,0,y*ds);parent.add(door);exitDoors.push(door);
     const frame=mat('#315943',.72),panel=mat('#8fb39a',.7),trim=mat('#f2e5bd',.68),handle=mat('#e8d09a',.46,.12);
     box(door,0,96,0,156,192,18,frame,true);
     box(door,0,96,-11,120,176,6,trim,true);
@@ -1032,17 +1034,29 @@ export function buildThreeEnvironment(T, {scene: layout, profile = {}, kind, ven
   for(const geometry of mergedGeometries)if(!attachedGeometry.has(geometry)){geometry.dispose();mergedGeometries.delete(geometry);}
   // WebGL scene metadata supports acceptance checks without replacing gameplay.
   group.userData={environment:'true-3d',indoor,objects:(layout.objects||[]).map(o=>o.kind),materials:'authored wood grain, woven fabric, stone, tile, glass and metal',surfaceTextures:surfaces.stats().textures};
-  function updateView({yaw=31*Math.PI/180,elevation=38*Math.PI/180,delta=0,street=false}={}) {
+  function updateView({yaw=31*Math.PI/180,elevation=38*Math.PI/180,delta=0,street=false,focus=null,eye=null}={}) {
     const viewX=Math.sin(yaw),viewZ=Math.cos(yaw),centerX=layout.width/2,centerZ=layout.height*ds/2;
     const mix=delta>0?1-Math.exp(-Math.min(delta,.1)*14):1;
+    // Anything standing between the real camera and the resident is cut away,
+    // measured on the floor plane from the camera's actual position, so it
+    // holds for the chase camera and the orbit/overview camera alike.
+    const fx=Number.isFinite(focus?.x)?focus.x:null,fz=Number.isFinite(focus?.y)?focus.y*ds:null,ex=Number.isFinite(eye?.x)?eye.x:null,ez=Number.isFinite(eye?.z)?eye.z:null;
+    const shields=(x,z,reach=150)=>{
+      if(fx===null||ex===null)return false;
+      const sx=fx-ex,sz=fz-ez,length=Math.hypot(sx,sz)||1,t=((x-ex)*sx+(z-ez)*sz)/(length*length);
+      if(t<=0||t>=1)return false;
+      const lateral=Math.abs((x-ex)*sz-(z-ez)*sx)/length,beforeFocus=(1-t)*length;
+      return lateral<reach&&beforeFocus>14;
+    };
     for(const wall of cutawayWalls){const c=wall.userData.center;
-      const inFront=(c.x-centerX)*viewX+(c.z-centerZ)*viewZ>0;
+      const inFront=(c.x-centerX)*viewX+(c.z-centerZ)*viewZ>0||shields(c.x,c.z,wall.userData.halfWidth?Math.max(90,wall.userData.halfWidth):150);
       const target=inFront?Math.max(.19,Math.min(.32,.20+(elevation-.35)*.1)):1;
       wall.scale.y+=(target-wall.scale.y)*mix;
     }
-    // A full-height exit door between the street camera and the resident would
-    // hide them; its floor marker and prompt remain while the leaf steps aside.
-    for(const door of exitDoors)door.visible=!(street&&((door.position.x-centerX)*viewX+(door.position.z-centerZ)*viewZ>0));
+    // A full-height exit door on the camera side of the room hides the resident
+    // standing beside it (the spawn is right at the door) in both cameras, just as
+    // the near walls are cut down; its floor marker and prompt remain.
+    for(const door of exitDoors)door.visible=!(((door.position.x-centerX)*viewX+(door.position.z-centerZ)*viewZ>0&&!eye)||shields(door.position.x,door.position.z,110));
     group.userData.viewYaw=yaw;
   }
   updateView();

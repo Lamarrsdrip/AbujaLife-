@@ -126,6 +126,8 @@ async def go_outside(c,p,venue):
             await p.set_viewport_size({'width':size[0],'height':size[1]});await layout(p,'street-gig-bar-'+str(size))
         await p.set_viewport_size({'width':390,'height':844})
 async def timed_activity(c,p,activity,seconds):
+    # Slow engines publish the resident's position a few frames after the scene mounts.
+    await p.wait_for_function("()=>document.querySelector('#world-scene')?.dataset.playerX",timeout=15000)
     before=(await api(c,'/api/bootstrap'))['profile'];pose=await p.locator('#world-scene').get_attribute('data-player-x')
     await p.locator(f'[data-location-activity="{activity}"]').click()
     await expect(p.locator('#world-scene[data-activity]')).to_be_visible()
